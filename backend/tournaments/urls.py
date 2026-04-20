@@ -1,0 +1,18 @@
+from django.urls import path
+from .views import (
+    TournamentListCreateView,
+    TournamentDetailView,
+    join_tournament,
+    start_tournament,
+    blind_levels,
+    rebuy_tournament,
+)
+
+urlpatterns = [
+    path("",                       TournamentListCreateView.as_view(), name="tournament-list"),
+    path("<int:pk>/",              TournamentDetailView.as_view(),     name="tournament-detail"),
+    path("<int:pk>/join/",         join_tournament,                    name="tournament-join"),
+    path("<int:pk>/start/",        start_tournament,                   name="tournament-start"),
+    path("<int:pk>/levels/",       blind_levels,                       name="tournament-levels"),
+    path("<int:pk>/rebuy/",        rebuy_tournament,                   name="tournament-rebuy"),
+]

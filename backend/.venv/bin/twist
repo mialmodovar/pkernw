@@ -1,0 +1,6 @@
+#!/Users/mialmodo/pkernw/backend/.venv/bin/python
+import sys
+from twisted.application.twist._twist import Twist
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(Twist.main())

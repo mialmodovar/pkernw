@@ -21,6 +21,48 @@ def _normalize_level_payload(level_data):
     return level
 
 
+def _normalize_payout_structure(payout_structure):
+    normalized = []
+    seen_places = set()
+    total_percentage = 0
+
+    if payout_structure in (None, ""):
+        return normalized
+    if not isinstance(payout_structure, list):
+        raise serializers.ValidationError({"payout_structure": "Payout structure must be a list."})
+
+    for index, row in enumerate(payout_structure, 1):
+        if not isinstance(row, dict):
+            raise serializers.ValidationError({"payout_structure": f"Payout row {index} must be an object."})
+        try:
+            place = int(row.get("place"))
+            percentage = float(row.get("percentage"))
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({"payout_structure": f"Payout row {index} needs a place and percentage."})
+
+        if place <= 0:
+            raise serializers.ValidationError({"payout_structure": "Payout places must be positive."})
+        if place in seen_places:
+            raise serializers.ValidationError({"payout_structure": "Payout places cannot be duplicated."})
+        if percentage <= 0 or percentage > 100:
+            raise serializers.ValidationError({"payout_structure": "Payout percentages must be between 0 and 100."})
+
+        seen_places.add(place)
+        total_percentage += percentage
+        normalized.append(
+            {
+                "place": place,
+                "label": str(row.get("label") or f"{place}").strip()[:50],
+                "percentage": round(percentage, 2),
+            }
+        )
+
+    if normalized and round(total_percentage, 2) != 100:
+        raise serializers.ValidationError({"payout_structure": "Payout percentages must add up to 100."})
+
+    return sorted(normalized, key=lambda item: item["place"])
+
+
 class BlindLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlindLevel
@@ -92,6 +134,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "finish_position",
             "is_eliminated",
             "rebuy_count",
+            "time_bank_seconds_remaining",
         )
 
 
@@ -112,7 +155,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
         model = Tournament
         fields = ("id", "name", "host_name", "status", "starting_chips",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
-                  "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at", "created_at")
+                  "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
+                  "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
+                  "time_bank_refill_level", "prize_pool_note", "payout_structure", "created_at")
 
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
@@ -126,7 +171,9 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "host_name", "status", "starting_chips",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
-                  "scheduled_start_at", "created_at")
+                  "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
+                  "time_bank_refill_every_hands", "time_bank_refill_level",
+                  "prize_pool_note", "payout_structure", "created_at")
 
 
 class TournamentCreateSerializer(serializers.ModelSerializer):
@@ -136,7 +183,9 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         model = Tournament
         fields = ("id", "name", "starting_chips", "max_players", "players_per_table",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
-                  "scheduled_start_at", "levels")
+                  "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
+                  "time_bank_refill_every_hands", "time_bank_refill_level",
+                  "prize_pool_note", "payout_structure", "levels")
 
     def validate(self, attrs):
         max_players = attrs.get("max_players", getattr(self.instance, "max_players", 9))
@@ -146,6 +195,12 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         late_reg_level = attrs.get("late_reg_level", getattr(self.instance, "late_reg_level", 4))
         rebuy_level = attrs.get("rebuy_level", getattr(self.instance, "rebuy_level", 4))
         scheduled_start_at = attrs.get("scheduled_start_at")
+        time_bank_seconds = attrs.get("time_bank_seconds", getattr(self.instance, "time_bank_seconds", 0))
+        time_bank_refill_rule = attrs.get("time_bank_refill_rule", getattr(self.instance, "time_bank_refill_rule", "none"))
+        time_bank_refill_every_hands = attrs.get("time_bank_refill_every_hands")
+        time_bank_refill_level = attrs.get("time_bank_refill_level")
+        prize_pool_note = attrs.get("prize_pool_note", "")
+        payout_structure = attrs.get("payout_structure", [])
         levels = attrs.get("levels")
 
         if max_players < 2:
@@ -164,6 +219,28 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             attrs["max_rebuys"] = 0
         if scheduled_start_at is not None and scheduled_start_at <= timezone.now():
             raise serializers.ValidationError({"scheduled_start_at": "Scheduled start must be in the future."})
+        if time_bank_seconds < 0:
+            raise serializers.ValidationError({"time_bank_seconds": "Time bank length cannot be negative."})
+        if time_bank_refill_rule not in {"none", "hands", "blind_level"}:
+            raise serializers.ValidationError({"time_bank_refill_rule": "Choose a valid time bank refill rule."})
+        if time_bank_seconds == 0:
+            attrs["time_bank_refill_rule"] = "none"
+            attrs["time_bank_refill_every_hands"] = None
+            attrs["time_bank_refill_level"] = None
+        elif time_bank_refill_rule == "hands":
+            if time_bank_refill_every_hands is None or time_bank_refill_every_hands <= 0:
+                raise serializers.ValidationError({"time_bank_refill_every_hands": "Enter a positive hand interval."})
+            attrs["time_bank_refill_level"] = None
+        elif time_bank_refill_rule == "blind_level":
+            if time_bank_refill_level is None or time_bank_refill_level <= 0:
+                raise serializers.ValidationError({"time_bank_refill_level": "Enter a positive blind level."})
+            attrs["time_bank_refill_every_hands"] = None
+        else:
+            attrs["time_bank_refill_every_hands"] = None
+            attrs["time_bank_refill_level"] = None
+        if len(prize_pool_note) > 1000:
+            raise serializers.ValidationError({"prize_pool_note": "Prize pool note must be 1000 characters or fewer."})
+        attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
 
         if levels:
             blind_level_count = sum(1 for level in levels if not level.get("is_break", False))
@@ -173,6 +250,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"late_reg_level": "Late registration cutoff cannot exceed the number of blind levels."})
             if rebuy_level > blind_level_count:
                 raise serializers.ValidationError({"rebuy_level": "Rebuy cutoff cannot exceed the number of blind levels."})
+            if time_bank_refill_rule == "blind_level" and time_bank_refill_level > blind_level_count:
+                raise serializers.ValidationError({"time_bank_refill_level": "Time bank refill level cannot exceed the number of blind levels."})
 
         return attrs
 
@@ -207,5 +286,6 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         TournamentPlayer.objects.create(
             tournament=tournament, user=tournament.host,
             table=primary_table, seat=0, seat_at_table=0, chips=tournament.starting_chips,
+            time_bank_seconds_remaining=tournament.time_bank_seconds,
         )
         return tournament

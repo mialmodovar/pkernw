@@ -19,6 +19,18 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
   const [allowRebuys, setAllowRebuys] = useState(true);
   const [maxRebuys, setMaxRebuys] = useState(2);
   const [rebuyLevel, setRebuyLevel] = useState(4);
+  const [timeBankEnabled, setTimeBankEnabled] = useState(false);
+  const [timeBankSeconds, setTimeBankSeconds] = useState(30);
+  const [timeBankRefillRule, setTimeBankRefillRule] = useState("hands");
+  const [timeBankRefillEveryHands, setTimeBankRefillEveryHands] = useState(10);
+  const [timeBankRefillLevel, setTimeBankRefillLevel] = useState(4);
+  const [payoutEnabled, setPayoutEnabled] = useState(false);
+  const [prizePoolNote, setPrizePoolNote] = useState("");
+  const [payoutRows, setPayoutRows] = useState([
+    { place: 1, label: "1st", percentage: 50 },
+    { place: 2, label: "2nd", percentage: 30 },
+    { place: 3, label: "3rd", percentage: 20 },
+  ]);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
   const [error, setError] = useState("");
 
@@ -26,6 +38,25 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
   const blindLevelCount = effectiveLevels.filter((level) => !level.is_break).length;
   const normalizedLateRegLevel = Math.min(Math.max(lateRegLevel, 1), blindLevelCount || 1);
   const normalizedRebuyLevel = Math.min(Math.max(rebuyLevel, 1), blindLevelCount || 1);
+  const normalizedTimeBankRefillLevel = Math.min(Math.max(timeBankRefillLevel, 1), blindLevelCount || 1);
+  const payoutTotal = payoutRows.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
+
+  const updatePayoutRow = (index, field, value) => {
+    setPayoutRows((rows) => rows.map((row, rowIndex) => (
+      rowIndex === index ? { ...row, [field]: field === "label" ? value : Number(value) } : row
+    )));
+  };
+
+  const addPayoutRow = () => {
+    setPayoutRows((rows) => [
+      ...rows,
+      { place: rows.length + 1, label: `${rows.length + 1}${rows.length + 1 === 2 ? "nd" : rows.length + 1 === 3 ? "rd" : "th"}`, percentage: 0 },
+    ]);
+  };
+
+  const removePayoutRow = (index) => {
+    setPayoutRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,6 +74,26 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
       }
       scheduledStartAt = scheduledDate.toISOString();
     }
+    if (timeBankEnabled) {
+      if (timeBankSeconds <= 0) {
+        setError("Time bank length must be positive.");
+        return;
+      }
+      if (timeBankRefillRule === "hands" && timeBankRefillEveryHands <= 0) {
+        setError("Hands before refill must be positive.");
+        return;
+      }
+    }
+    if (payoutEnabled) {
+      if (!payoutRows.length) {
+        setError("Add at least one payout row.");
+        return;
+      }
+      if (Math.round(payoutTotal * 100) / 100 !== 100) {
+        setError("Payout percentages must add up to 100.");
+        return;
+      }
+    }
     const payload = {
       name: name || "Tournament",
       scheduled_start_at: scheduledStartAt,
@@ -53,6 +104,16 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
       allow_rebuys: allowRebuys,
       max_rebuys: allowRebuys ? maxRebuys : 0,
       rebuy_level: allowRebuys ? normalizedRebuyLevel : 0,
+      time_bank_seconds: timeBankEnabled ? timeBankSeconds : 0,
+      time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
+      time_bank_refill_every_hands: timeBankEnabled && timeBankRefillRule === "hands" ? timeBankRefillEveryHands : null,
+      time_bank_refill_level: timeBankEnabled && timeBankRefillRule === "blind_level" ? normalizedTimeBankRefillLevel : null,
+      prize_pool_note: payoutEnabled ? prizePoolNote.trim() : "",
+      payout_structure: payoutEnabled ? payoutRows.map((row) => ({
+        place: row.place,
+        label: row.label,
+        percentage: row.percentage,
+      })) : [],
     };
     if (customLevels) payload.levels = customLevels;
     try {
@@ -179,6 +240,147 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
                   <option key={level} value={level}>Level {level}</option>
                 ))}
               </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-900 rounded-lg p-3 space-y-3">
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-gray-300">Time Bank</span>
+            <input type="checkbox" checked={timeBankEnabled} onChange={(e) => setTimeBankEnabled(e.target.checked)} />
+          </label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Length</label>
+              <input
+                type="number"
+                min={1}
+                className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                value={timeBankSeconds}
+                disabled={!timeBankEnabled}
+                onChange={(e) => setTimeBankSeconds(Number(e.target.value))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Seconds per player</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Refill Rule</label>
+              <select
+                className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                value={timeBankRefillRule}
+                disabled={!timeBankEnabled}
+                onChange={(e) => setTimeBankRefillRule(e.target.value)}
+              >
+                <option value="hands">Every N hands</option>
+                <option value="blind_level">At blind level</option>
+                <option value="none">No refill</option>
+              </select>
+            </div>
+          </div>
+
+          {timeBankRefillRule === "hands" && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Hands Before Refill</label>
+              <input
+                type="number"
+                min={1}
+                className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                value={timeBankRefillEveryHands}
+                disabled={!timeBankEnabled}
+                onChange={(e) => setTimeBankRefillEveryHands(Number(e.target.value))}
+              />
+            </div>
+          )}
+
+          {timeBankRefillRule === "blind_level" && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Refill At Blind Level</label>
+              <select
+                className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                value={normalizedTimeBankRefillLevel}
+                disabled={!timeBankEnabled}
+                onChange={(e) => setTimeBankRefillLevel(Number(e.target.value))}
+              >
+                {levelOptions.map((level) => (
+                  <option key={level} value={level}>Level {level}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-gray-900 rounded-lg p-3 space-y-3">
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-gray-300">Prize Pool Reference</span>
+            <input type="checkbox" checked={payoutEnabled} onChange={(e) => setPayoutEnabled(e.target.checked)} />
+          </label>
+          <p className="text-xs text-gray-500">
+            Reference only. This does not process or track real-money payments.
+          </p>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Prize Pool Note</label>
+            <textarea
+              className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+              rows={2}
+              value={prizePoolNote}
+              disabled={!payoutEnabled}
+              placeholder="Example: $100 prize pool collected externally"
+              onChange={(e) => setPrizePoolNote(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-gray-500">
+              <span>Place</span>
+              <span>Label</span>
+              <span>Percent</span>
+              <span></span>
+            </div>
+            {payoutRows.map((row, index) => (
+              <div key={index} className="grid grid-cols-[70px_1fr_90px_32px] gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  className="px-2 py-1 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                  value={row.place}
+                  disabled={!payoutEnabled}
+                  onChange={(e) => updatePayoutRow(index, "place", e.target.value)}
+                />
+                <input
+                  className="px-2 py-1 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                  value={row.label}
+                  disabled={!payoutEnabled}
+                  onChange={(e) => updatePayoutRow(index, "label", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  className="px-2 py-1 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+                  value={row.percentage}
+                  disabled={!payoutEnabled}
+                  onChange={(e) => updatePayoutRow(index, "percentage", e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="text-red-400 disabled:opacity-30"
+                  disabled={!payoutEnabled || payoutRows.length <= 1}
+                  onClick={() => removePayoutRow(index)}
+                >
+                  x
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between">
+              <button type="button" className="text-xs text-green-400 disabled:opacity-50" disabled={!payoutEnabled} onClick={addPayoutRow}>
+                + Add Payout
+              </button>
+              <span className={`text-xs ${payoutEnabled && Math.round(payoutTotal * 100) / 100 !== 100 ? "text-red-400" : "text-gray-500"}`}>
+                Total {payoutTotal.toFixed(2)}%
+              </span>
             </div>
           </div>
         </div>

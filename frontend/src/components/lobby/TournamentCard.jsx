@@ -25,6 +25,12 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen }) {
         {scheduledStart && (
           <p className="text-sm text-blue-300">Scheduled start: {scheduledStart}</p>
         )}
+        {t.time_bank_seconds > 0 && (
+          <p className="text-sm text-gray-500">Time bank: {t.time_bank_seconds}s</p>
+        )}
+        {t.payout_structure?.length > 0 && (
+          <p className="text-sm text-gray-500">Payouts: {t.payout_structure.length} places</p>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <span className={`text-xs px-2 py-1 rounded ${statusColor}`}>{t.status}</span>

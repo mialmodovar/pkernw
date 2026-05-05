@@ -8,6 +8,11 @@ class Tournament(models.Model):
         ("running",  "Running"),
         ("finished", "Finished"),
     ]
+    TIME_BANK_REFILL_CHOICES = [
+        ("none",        "No refill"),
+        ("hands",       "Every N hands"),
+        ("blind_level", "At blind level"),
+    ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
     name           = models.CharField(max_length=100)
@@ -20,6 +25,12 @@ class Tournament(models.Model):
     allow_rebuys   = models.BooleanField(default=True)
     max_rebuys     = models.IntegerField(default=2)    # per player
     rebuy_level    = models.IntegerField(default=4)    # rebuys allowed through this level (0 = disabled)
+    time_bank_seconds = models.IntegerField(default=0)
+    time_bank_refill_rule = models.CharField(max_length=20, choices=TIME_BANK_REFILL_CHOICES, default="none")
+    time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
+    time_bank_refill_level = models.IntegerField(null=True, blank=True)
+    prize_pool_note = models.TextField(blank=True)
+    payout_structure = models.JSONField(default=list, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
 
     def required_table_count(self, player_count=None):
@@ -82,6 +93,7 @@ class TournamentPlayer(models.Model):
     finish_position = models.IntegerField(null=True, blank=True)
     is_eliminated   = models.BooleanField(default=False)
     rebuy_count     = models.IntegerField(default=0)
+    time_bank_seconds_remaining = models.IntegerField(default=0)
     joined_at       = models.DateTimeField(auto_now_add=True)
 
     class Meta:

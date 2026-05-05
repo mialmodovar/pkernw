@@ -11,6 +11,19 @@ const formatScheduledStart = (value) => {
   }).format(new Date(value));
 };
 
+const formatTimeBankRefill = (tournament) => {
+  if (!tournament.time_bank_seconds) return "Time bank disabled";
+  if (tournament.time_bank_refill_rule === "hands") {
+    return `Refills every ${tournament.time_bank_refill_every_hands} hands`;
+  }
+  if (tournament.time_bank_refill_rule === "blind_level") {
+    return `Refills at blind level ${tournament.time_bank_refill_level}`;
+  }
+  return "No refill";
+};
+
+const formatPayoutLabel = (row) => row.label || `Place ${row.place}`;
+
 export default function TournamentSetupPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -77,6 +90,34 @@ export default function TournamentSetupPage() {
             <p className="text-sm text-blue-300 mt-1">This tournament starts automatically once the scheduled time arrives and enough players are seated.</p>
           )}
         </div>
+        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
+          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Time Bank</p>
+          <p className="text-sm text-gray-200">
+            {tournament.time_bank_seconds
+              ? `${tournament.time_bank_seconds} seconds per player`
+              : "Disabled"}
+          </p>
+          <p className="text-sm text-gray-400">{formatTimeBankRefill(tournament)}</p>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
+          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Prize Pool Reference</p>
+          {tournament.prize_pool_note ? (
+            <p className="text-sm text-gray-200 whitespace-pre-wrap">{tournament.prize_pool_note}</p>
+          ) : (
+            <p className="text-sm text-gray-400">No prize pool note.</p>
+          )}
+          <p className="text-xs text-gray-500 mt-1">Reference only. Payments are handled outside this app.</p>
+          {tournament.payout_structure?.length > 0 && (
+            <ul className="mt-3 divide-y divide-gray-700 rounded bg-gray-900 text-sm">
+              {tournament.payout_structure.map((row) => (
+                <li key={row.place} className="flex justify-between px-3 py-2">
+                  <span className="text-gray-200">{formatPayoutLabel(row)}</span>
+                  <span className="text-green-400">{row.percentage}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <h2 className="font-semibold mb-2">Players ({tournament.players.length}/{tournament.max_players})</h2>
@@ -84,7 +125,10 @@ export default function TournamentSetupPage() {
         {tournament.players.map((p) => (
           <li key={p.id} className="px-4 py-2 flex justify-between">
             <span>{p.username}</span>
-            <span className="text-gray-500">Seat {p.seat}</span>
+            <span className="text-gray-500">
+              Seat {p.seat}
+              {tournament.time_bank_seconds > 0 && ` | Bank ${p.time_bank_seconds_remaining}s`}
+            </span>
           </li>
         ))}
       </ul>

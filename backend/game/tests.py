@@ -5,7 +5,16 @@ from .coordinator import MultiTableTournamentCoordinator
 
 
 class MultiTableTournamentCoordinatorTests(TestCase):
-    def _record(self, index, *, table_number=1, seat_at_table=None, chips=1000, is_eliminated=False):
+    def _record(
+        self,
+        index,
+        *,
+        table_number=1,
+        seat_at_table=None,
+        chips=1000,
+        is_eliminated=False,
+        time_bank_seconds_remaining=0,
+    ):
         return {
             "id": index + 1,
             "user_id": 100 + index,
@@ -17,6 +26,7 @@ class MultiTableTournamentCoordinatorTests(TestCase):
             "chips": chips,
             "is_eliminated": is_eliminated,
             "finish_position": None,
+            "time_bank_seconds_remaining": time_bank_seconds_remaining,
         }
 
     def _build_coordinator(self, records, *, players_per_table=3):
@@ -129,3 +139,39 @@ class MultiTableTournamentCoordinatorTests(TestCase):
         self.assertEqual(coordinator.table_summaries(), [{"table_number": 1, "table_id": 201, "player_count": 3, "max_seats": 3}])
         self.assertEqual(self.assignments[-1]["active_table_numbers"], [1])
         self.assertEqual({payload["table_number"] for _user_id, payload in self.notifications}, {1})
+
+    def test_time_bank_refills_every_configured_hands(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, time_bank_seconds_remaining=0) for index in range(3)],
+            players_per_table=3,
+        )
+        coordinator.time_bank_seconds = 30
+        coordinator.time_bank_refill_rule = "hands"
+        coordinator.time_bank_refill_every_hands = 2
+        self._sync_and_rebalance(coordinator)
+
+        coordinator._hands_played = 1
+        coordinator._refill_time_banks_after_hand()
+        self.assertTrue(all(player.time_bank_seconds_remaining == 0 for player in coordinator._players_by_id.values()))
+
+        coordinator._hands_played = 2
+        coordinator._refill_time_banks_after_hand()
+        self.assertTrue(all(player.time_bank_seconds_remaining == 30 for player in coordinator._players_by_id.values()))
+
+    def test_time_bank_refills_at_configured_blind_level(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, time_bank_seconds_remaining=0) for index in range(3)],
+            players_per_table=3,
+        )
+        coordinator.levels = [
+            {"small_blind": 10, "big_blind": 20, "ante": 0, "duration_hands": 1},
+            {"small_blind": 20, "big_blind": 40, "ante": 0, "duration_hands": 1},
+        ]
+        coordinator.time_bank_seconds = 45
+        coordinator.time_bank_refill_rule = "blind_level"
+        coordinator.time_bank_refill_level = 2
+        self._sync_and_rebalance(coordinator)
+
+        coordinator._set_next_level()
+
+        self.assertTrue(all(player.time_bank_seconds_remaining == 45 for player in coordinator._players_by_id.values()))

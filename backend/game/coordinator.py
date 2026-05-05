@@ -43,10 +43,18 @@ class MultiTableTournamentCoordinator:
         load_players: LoadPlayersFn,
         persist_assignments: PersistAssignmentsFn,
         persist_player_states: PersistPlayerStatesFn,
+        time_bank_seconds: int = 0,
+        time_bank_refill_rule: str = "none",
+        time_bank_refill_every_hands: Optional[int] = None,
+        time_bank_refill_level: Optional[int] = None,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
         self.levels = levels
+        self.time_bank_seconds = max(0, time_bank_seconds or 0)
+        self.time_bank_refill_rule = time_bank_refill_rule or "none"
+        self.time_bank_refill_every_hands = time_bank_refill_every_hands
+        self.time_bank_refill_level = time_bank_refill_level
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -61,8 +69,10 @@ class MultiTableTournamentCoordinator:
         self._table_states: Dict[int, dict] = {}
         self._level_index = 0
         self._hands_in_level = 0
+        self._hands_played = 0
         self._level_start_time = 0.0
         self._standings: List[EnginePlayer] = []
+        self._refilled_blind_levels = set()
 
     @property
     def current_blind_level_number(self) -> int:
@@ -144,9 +154,11 @@ class MultiTableTournamentCoordinator:
                     },
                 )
 
-            await self.persist_player_states(list(self._players_by_id.values()))
             self._hands_in_level += 1
+            self._hands_played += 1
+            self._refill_time_banks_after_hand()
             self._advance_level()
+            await self.persist_player_states(list(self._players_by_id.values()))
             await asyncio.sleep(3)
 
         winner = next(
@@ -226,6 +238,7 @@ class MultiTableTournamentCoordinator:
             runtime_player.chips = record["chips"]
             runtime_player.is_eliminated = record["is_eliminated"]
             runtime_player.finish_position = record["finish_position"] or 0
+            runtime_player.time_bank_seconds_remaining = record["time_bank_seconds_remaining"] or 0
             runtime_player._user_id = record["user_id"]
             runtime_player._table_id = record["table_id"]
             runtime_player._table_number = record["table_number"] or 1
@@ -332,7 +345,13 @@ class MultiTableTournamentCoordinator:
             request_action=lambda player, context: self.request_action(
                 table.table_number,
                 player,
-                {**context, "table_number": table.table_number, "table_id": table.table_id},
+                {
+                    **context,
+                    "table_number": table.table_number,
+                    "table_id": table.table_id,
+                    "action_timer_seconds": 20,
+                    "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
+                },
             ),
         )
         result = await engine.run()
@@ -424,6 +443,7 @@ class MultiTableTournamentCoordinator:
         self._level_index += 1
         self._hands_in_level = 0
         self._level_start_time = time.monotonic()
+        self._refill_time_banks_for_level()
 
     def _level_payload(self) -> dict:
         level = self._current_level()
@@ -451,7 +471,38 @@ class MultiTableTournamentCoordinator:
             "table_number": player._table_number,
             "name": player.name,
             "chips": player.chips,
+            "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
             "is_eliminated": player.is_eliminated,
             "is_folded": player.is_folded,
             "is_all_in": player.is_all_in,
         }
+
+    def _refill_time_banks_after_hand(self):
+        if (
+            self.time_bank_seconds <= 0
+            or self.time_bank_refill_rule != "hands"
+            or not self.time_bank_refill_every_hands
+        ):
+            return
+        if self._hands_played % self.time_bank_refill_every_hands == 0:
+            self._refill_time_banks()
+
+    def _refill_time_banks_for_level(self):
+        if (
+            self.time_bank_seconds <= 0
+            or self.time_bank_refill_rule != "blind_level"
+            or not self.time_bank_refill_level
+        ):
+            return
+        blind_level_number = self.current_blind_level_number
+        if self._current_level().get("is_break") or blind_level_number != self.time_bank_refill_level:
+            return
+        if blind_level_number in self._refilled_blind_levels:
+            return
+        self._refilled_blind_levels.add(blind_level_number)
+        self._refill_time_banks()
+
+    def _refill_time_banks(self):
+        for player in self._players_by_id.values():
+            if not player.is_eliminated and player.chips > 0:
+                player.time_bank_seconds_remaining = self.time_bank_seconds

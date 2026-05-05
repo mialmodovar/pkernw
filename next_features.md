@@ -20,6 +20,8 @@
 - Automated tests for the multi-table coordinator (2-table boot, balancing trigger on elimination, final-table merge).
 - Frontend table-move affordance via a dismissible toast.
 - Scheduled tournament start date and time with lobby/setup display and start-time enforcement.
+- Time bank configuration with per-player bank length and refill by hand interval or blind level.
+- Prize pool reference note and payout percentage structure for player coordination outside the app.
 
 ## Partially Implemented
 
@@ -27,10 +29,6 @@
 
 ## Missing Compared With Poker Now
 
-- Prize pool distribution and payout structure customization.
-- Time bank configuration:
-	- time bank length
-	- refill rules such as number of hands played before refill
 - Tournament admin controls after creation:
 	- pause tournament
 	- resume tournament
@@ -43,7 +41,7 @@
 - Allow or block players from quitting the tournament.
 - Auto-remove offline players after a configured timeout.
 - Showdown presentation speed setting.
-- Re-entry as a separate feature from rebuy.
+
 
 ## Open Polish On Recently Shipped Work
 

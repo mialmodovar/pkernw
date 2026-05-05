@@ -30,6 +30,14 @@ class TournamentCreationTests(APITestCase):
 				"allow_rebuys": True,
 				"max_rebuys": 3,
 				"rebuy_level": 2,
+				"time_bank_seconds": 30,
+				"time_bank_refill_rule": "hands",
+				"time_bank_refill_every_hands": 10,
+				"prize_pool_note": "Reference only: players are collecting this externally.",
+				"payout_structure": [
+					{"place": 1, "label": "Winner", "percentage": 70},
+					{"place": 2, "label": "Runner-up", "percentage": 30},
+				],
 				"levels": [
 					{
 						"small_blind": 25,
@@ -61,12 +69,24 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(tournament.max_players, 18)
 		self.assertEqual(tournament.scheduled_start_at, scheduled_start_at)
 		self.assertEqual(tournament.late_reg_level, 2)
+		self.assertEqual(tournament.time_bank_seconds, 30)
+		self.assertEqual(tournament.time_bank_refill_rule, "hands")
+		self.assertEqual(tournament.time_bank_refill_every_hands, 10)
+		self.assertEqual(tournament.prize_pool_note, "Reference only: players are collecting this externally.")
+		self.assertEqual(
+			tournament.payout_structure,
+			[
+				{"place": 1, "label": "Winner", "percentage": 70.0},
+				{"place": 2, "label": "Runner-up", "percentage": 30.0},
+			],
+		)
 		self.assertEqual(tournament.players.count(), 1)
 		self.assertEqual(tournament.tables.count(), 1)
 		self.assertEqual(tournament.levels.count(), 3)
 		host_seat = tournament.players.get(user=self.user)
 		self.assertEqual(host_seat.table.table_number, 1)
 		self.assertEqual(host_seat.seat_at_table, 0)
+		self.assertEqual(host_seat.time_bank_seconds_remaining, 30)
 		self.assertTrue(tournament.levels.get(level_number=2).is_break)
 
 	def test_join_assigns_second_table_when_first_table_is_full(self):
@@ -125,6 +145,47 @@ class TournamentCreationTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertIn("levels", response.data)
+
+	def test_time_bank_blind_level_refill_cannot_exceed_blind_levels(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			{
+				"name": "Bad Bank",
+				"late_reg_level": 1,
+				"rebuy_level": 1,
+				"time_bank_seconds": 30,
+				"time_bank_refill_rule": "blind_level",
+				"time_bank_refill_level": 3,
+				"levels": [
+					{
+						"small_blind": 25,
+						"big_blind": 50,
+						"ante": 0,
+						"duration_hands": 8,
+					}
+				],
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("time_bank_refill_level", response.data)
+
+	def test_payout_structure_percentages_must_total_100(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			{
+				"name": "Bad Payouts",
+				"payout_structure": [
+					{"place": 1, "label": "First", "percentage": 60},
+					{"place": 2, "label": "Second", "percentage": 30},
+				],
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("payout_structure", response.data)
 
 	def test_create_rejects_scheduled_start_in_the_past(self):
 		response = self.client.post(

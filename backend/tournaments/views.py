@@ -89,6 +89,7 @@ def join_tournament(request, pk):
     tp = TournamentPlayer.objects.create(
         tournament=tournament, user=request.user,
         table=table, seat=next_seat, seat_at_table=seat_at_table, chips=tournament.starting_chips,
+        time_bank_seconds_remaining=tournament.time_bank_seconds,
     )
     _start_due_scheduled_tournaments()
     return Response(

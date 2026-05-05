@@ -23,6 +23,7 @@ class Player:
     # ── tournament state ────────────────────────────────────────────────────
     is_eliminated:    bool = False
     finish_position:  int  = 0   # filled in when knocked out
+    time_bank_seconds_remaining: int = 0
 
     # ── session stats ───────────────────────────────────────────────────────
     hands_played:     int  = 0

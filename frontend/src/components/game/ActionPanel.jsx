@@ -14,6 +14,7 @@ export default function ActionPanel({ mySeat, onAction }) {
   const ctx = actionContext || {};
   const valid = ctx.valid_actions || [];
   const timerSec = ctx.timer_sec || 10;
+  const timeBankRemaining = ctx.time_bank_seconds_remaining || 0;
 
   useEffect(() => {
     if (isMyTurn && ctx.min_raise) setRaiseAmount(ctx.min_raise);
@@ -108,6 +109,11 @@ export default function ActionPanel({ mySeat, onAction }) {
         <span className={`text-lg font-bold font-mono w-8 text-center ${timer != null && timer <= 3 ? "text-red-400" : "text-gray-300"}`}>
           {timer != null ? timer : ""}
         </span>
+        {timeBankRemaining > 0 && (
+          <span className="text-xs text-blue-300 whitespace-nowrap">
+            Bank {timeBankRemaining}s
+          </span>
+        )}
 
         {valid.includes("fold") && !valid.includes("check") && (
           <button onClick={() => onAction("fold", 0)}

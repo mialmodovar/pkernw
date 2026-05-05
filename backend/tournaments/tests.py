@@ -157,6 +157,24 @@ class TournamentCreationTests(APITestCase):
 		tournament.refresh_from_db()
 		self.assertEqual(tournament.status, "lobby")
 
+	def test_due_scheduled_tournament_starts_on_lobby_poll(self):
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Due Now",
+			scheduled_start_at=timezone.now() - timedelta(minutes=1),
+		)
+		primary_table = tournament.ensure_table(1)
+		tournament.players.create(user=self.user, table=primary_table, seat=0, seat_at_table=0, chips=10000)
+		opponent = User.objects.create_user(username="due_opponent", password="secret123")
+		tournament.players.create(user=opponent, table=primary_table, seat=1, seat_at_table=1, chips=10000)
+
+		response = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["status"], "running")
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.status, "running")
+
 	def test_start_allows_multi_table_runtime(self):
 		tournament = Tournament.objects.create(
 			host=self.user,

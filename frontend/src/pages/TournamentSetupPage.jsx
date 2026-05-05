@@ -74,7 +74,7 @@ export default function TournamentSetupPage() {
             {formattedScheduledStart || "Manual host-controlled start"}
           </p>
           {scheduledStartPending && (
-            <p className="text-sm text-blue-300 mt-1">The host can start this tournament once the scheduled time arrives.</p>
+            <p className="text-sm text-blue-300 mt-1">This tournament starts automatically once the scheduled time arrives and enough players are seated.</p>
           )}
         </div>
       </div>

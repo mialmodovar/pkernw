@@ -14,6 +14,18 @@ from .serializers import (
 from game.consumers import _tournament_runners
 
 
+def _start_due_scheduled_tournaments():
+    due_tournaments = Tournament.objects.filter(
+        status="lobby",
+        scheduled_start_at__isnull=False,
+        scheduled_start_at__lte=timezone.now(),
+    )
+    for tournament in due_tournaments:
+        if tournament.players.count() >= 2:
+            tournament.status = "running"
+            tournament.save(update_fields=["status"])
+
+
 def _get_table_assignment(tournament, global_seat):
     table_number = (global_seat // tournament.players_per_table) + 1
     seat_at_table = global_seat % tournament.players_per_table
@@ -24,6 +36,10 @@ def _get_table_assignment(tournament, global_seat):
 class TournamentListCreateView(generics.ListCreateAPIView):
     queryset = Tournament.objects.all().order_by("-created_at")
 
+    def get_queryset(self):
+        _start_due_scheduled_tournaments()
+        return super().get_queryset()
+
     def get_serializer_class(self):
         if self.request.method == "POST":
             return TournamentCreateSerializer
@@ -33,6 +49,10 @@ class TournamentListCreateView(generics.ListCreateAPIView):
 class TournamentDetailView(generics.RetrieveAPIView):
     queryset = Tournament.objects.all()
     serializer_class = TournamentDetailSerializer
+
+    def get_queryset(self):
+        _start_due_scheduled_tournaments()
+        return super().get_queryset()
 
 
 @api_view(["POST"])
@@ -70,6 +90,7 @@ def join_tournament(request, pk):
         tournament=tournament, user=request.user,
         table=table, seat=next_seat, seat_at_table=seat_at_table, chips=tournament.starting_chips,
     )
+    _start_due_scheduled_tournaments()
     return Response(
         {
             "seat": tp.seat,

@@ -101,7 +101,7 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
               onChange={(e) => setScheduledStart(e.target.value)}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Times use your local timezone. The host can start once the scheduled time arrives.
+              Times use your local timezone. The tournament starts automatically once enough players are seated.
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .serializers import (
     TournamentListSerializer,
@@ -11,6 +12,13 @@ from .serializers import (
 
 # Import shared runner reference from consumers (will be populated at runtime)
 from game.consumers import _tournament_runners
+
+
+def _get_table_assignment(tournament, global_seat):
+    table_number = (global_seat // tournament.players_per_table) + 1
+    seat_at_table = global_seat % tournament.players_per_table
+    table = tournament.ensure_table(table_number)
+    return table, seat_at_table
 
 
 class TournamentListCreateView(generics.ListCreateAPIView):
@@ -49,19 +57,29 @@ def join_tournament(request, pk):
         runner = _tournament_runners.get(pk)
         if runner is None:
             return Response({"error": "Tournament engine not running"}, status=status.HTTP_400_BAD_REQUEST)
-        if runner._level_index >= tournament.late_reg_level:
+        if runner.current_blind_level_number > tournament.late_reg_level:
             return Response({"error": "Late registration is closed"}, status=status.HTTP_400_BAD_REQUEST)
     else:
         return Response({"error": "Tournament already started"}, status=status.HTTP_400_BAD_REQUEST)
 
     taken_seats = set(tournament.players.values_list("seat", flat=True))
     next_seat = next(s for s in range(tournament.max_players) if s not in taken_seats)
+    table, seat_at_table = _get_table_assignment(tournament, next_seat)
 
     tp = TournamentPlayer.objects.create(
         tournament=tournament, user=request.user,
-        seat=next_seat, chips=tournament.starting_chips,
+        table=table, seat=next_seat, seat_at_table=seat_at_table, chips=tournament.starting_chips,
     )
-    return Response({"seat": tp.seat, "chips": tp.chips}, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "seat": tp.seat,
+            "table_id": tp.table_id,
+            "table_number": tp.table.table_number if tp.table_id else None,
+            "seat_at_table": tp.seat_at_table,
+            "chips": tp.chips,
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])
@@ -77,6 +95,15 @@ def start_tournament(request, pk):
 
     if tournament.players.count() < 2:
         return Response({"error": "Need at least 2 players"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if tournament.scheduled_start_at and tournament.scheduled_start_at > timezone.now():
+        return Response(
+            {
+                "error": "Tournament is scheduled to start later",
+                "scheduled_start_at": tournament.scheduled_start_at,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     tournament.status = "running"
     tournament.save()
@@ -107,6 +134,13 @@ def blind_levels(request, pk):
     tournament.levels.all().delete()
     for i, lvl in enumerate(serializer.validated_data, 1):
         lvl["level_number"] = i
+        lvl = {
+            **lvl,
+            "small_blind": 0 if lvl.get("is_break") else lvl["small_blind"],
+            "big_blind": 0 if lvl.get("is_break") else lvl["big_blind"],
+            "ante": 0 if lvl.get("is_break") else lvl.get("ante", 0),
+            "duration_hands": None if lvl.get("is_break") else lvl.get("duration_hands"),
+        }
         BlindLevel.objects.create(tournament=tournament, **lvl)
 
     return Response(BlindLevelSerializer(tournament.levels.all(), many=True).data)
@@ -130,7 +164,7 @@ def rebuy_tournament(request, pk):
     if runner is None:
         return Response({"error": "Tournament engine not running"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if runner._level_index >= tournament.rebuy_level:
+    if runner.current_blind_level_number > tournament.rebuy_level:
         return Response({"error": "Rebuy period has ended"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:

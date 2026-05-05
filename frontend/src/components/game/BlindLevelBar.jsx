@@ -34,6 +34,7 @@ export default function BlindLevelBar() {
   }
 
   const isTimed = level.duration_minutes != null;
+  const isBreak = Boolean(level.is_break);
 
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);
@@ -44,9 +45,10 @@ export default function BlindLevelBar() {
   return (
     <div className="bg-gray-800 px-4 py-2 flex items-center justify-between text-sm">
       <span>
-        Level {(level.level_index || 0) + 1} &mdash;{" "}
-        SB {level.small_blind} / BB {level.big_blind}
-        {level.ante > 0 && <> / Ante {level.ante}</>}
+        {isBreak
+          ? `Break after level ${level.blind_level_number || 0}`
+          : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
+        {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
       </span>
       <div className="flex items-center gap-3">
         <button

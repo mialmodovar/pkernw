@@ -37,6 +37,14 @@ class TournamentRunner:
         self._level_start_time: float = 0.0
         self._standings: List[Player] = []
 
+    @property
+    def current_blind_level_number(self) -> int:
+        count = 0
+        for idx in range(0, min(self._level_index, len(self.levels) - 1) + 1):
+            if not self.levels[idx].get("is_break"):
+                count += 1
+        return count
+
     async def run(self) -> List[Player]:
         self._level_start_time = time.monotonic()
 
@@ -60,6 +68,10 @@ class TournamentRunner:
 
             if self._hands_in_level == 0:
                 await self.broadcast("level_change", self._level_payload())
+
+            if level.get("is_break"):
+                await self._run_break(level)
+                continue
 
             engine = HandEngine(
                 players        = active,
@@ -123,20 +135,37 @@ class TournamentRunner:
         if self._is_time_based(level):
             elapsed = time.monotonic() - self._level_start_time
             if elapsed >= level["duration_minutes"] * 60:
-                self._level_index     += 1
-                self._hands_in_level   = 0
-                self._level_start_time = time.monotonic()
+                self._set_next_level()
         else:
             duration = level.get("duration_hands") or 8
             if self._hands_in_level >= duration:
-                self._level_index     += 1
-                self._hands_in_level   = 0
-                self._level_start_time = time.monotonic()
+                self._set_next_level()
+
+    def _set_next_level(self):
+        if self._level_index >= len(self.levels) - 1:
+            return
+        self._level_index += 1
+        self._hands_in_level = 0
+        self._level_start_time = time.monotonic()
+
+    async def _run_break(self, level: Dict[str, int]):
+        duration_minutes = level.get("duration_minutes") or 0
+        total_seconds = duration_minutes * 60
+        await self.broadcast("break_started", self._level_payload())
+
+        for remaining in range(total_seconds, 0, -1):
+            await self.broadcast("break_tick", {"remaining_seconds": remaining})
+            await asyncio.sleep(1)
+
+        await self.broadcast("break_tick", {"remaining_seconds": 0})
+        self._set_next_level()
 
     def _level_payload(self) -> dict:
         lvl = self._current_level()
         payload = {
             "level_index":    self._level_index,
+            "blind_level_number": self.current_blind_level_number,
+            "is_break":       bool(lvl.get("is_break")),
             "small_blind":    lvl["small_blind"],
             "big_blind":      lvl["big_blind"],
             "ante":           lvl["ante"],

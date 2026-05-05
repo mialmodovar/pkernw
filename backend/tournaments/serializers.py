@@ -1,47 +1,132 @@
 from rest_framework import serializers
-from .models import Tournament, BlindLevel, TournamentPlayer
+from django.utils import timezone
+from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
+
+
+def _normalize_level_payload(level_data):
+    level = dict(level_data)
+    is_break = level.get("is_break", False)
+
+    if is_break:
+        level["small_blind"] = 0
+        level["big_blind"] = 0
+        level["ante"] = 0
+        level["duration_hands"] = None
+        return level
+
+    if level.get("duration_minutes"):
+        level["duration_hands"] = None
+    else:
+        level["duration_minutes"] = None
+    return level
 
 
 class BlindLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlindLevel
-        fields = ("id", "level_number", "small_blind", "big_blind", "ante", "duration_hands", "duration_minutes")
+        fields = (
+            "id",
+            "level_number",
+            "is_break",
+            "small_blind",
+            "big_blind",
+            "ante",
+            "duration_hands",
+            "duration_minutes",
+        )
         extra_kwargs = {
             "level_number":     {"required": False},
+            "is_break":         {"required": False},
             "duration_hands":   {"required": False},
             "duration_minutes": {"required": False},
         }
 
+    def validate(self, attrs):
+        is_break = attrs.get("is_break", False)
+        duration_hands = attrs.get("duration_hands")
+        duration_minutes = attrs.get("duration_minutes")
+        small_blind = attrs.get("small_blind", 0)
+        big_blind = attrs.get("big_blind", 0)
+        ante = attrs.get("ante", 0)
+
+        if is_break:
+            if duration_minutes is None or duration_minutes <= 0:
+                raise serializers.ValidationError({"duration_minutes": "Break levels require a positive minute duration."})
+            if duration_hands not in (None, 0):
+                raise serializers.ValidationError({"duration_hands": "Break levels cannot be hand-based."})
+            if any(value not in (None, 0) for value in (small_blind, big_blind, ante)):
+                raise serializers.ValidationError("Break levels cannot define blinds or antes.")
+            return attrs
+
+        if small_blind <= 0 or big_blind <= 0:
+            raise serializers.ValidationError("Blind levels require positive small and big blinds.")
+        if big_blind < small_blind:
+            raise serializers.ValidationError({"big_blind": "Big blind must be greater than or equal to small blind."})
+
+        has_hands = duration_hands is not None
+        has_minutes = duration_minutes is not None
+        if has_hands == has_minutes:
+            raise serializers.ValidationError("Blind levels must use either hands or minutes, but not both.")
+        if has_hands and duration_hands <= 0:
+            raise serializers.ValidationError({"duration_hands": "Duration must be positive."})
+        if has_minutes and duration_minutes <= 0:
+            raise serializers.ValidationError({"duration_minutes": "Duration must be positive."})
+        return attrs
+
 
 class TournamentPlayerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
+    table_id = serializers.IntegerField(source="table.id", read_only=True)
+    table_number = serializers.IntegerField(source="table.table_number", read_only=True)
 
     class Meta:
         model = TournamentPlayer
-        fields = ("id", "username", "seat", "chips", "finish_position", "is_eliminated", "rebuy_count")
+        fields = (
+            "id",
+            "username",
+            "table_id",
+            "table_number",
+            "seat",
+            "seat_at_table",
+            "chips",
+            "finish_position",
+            "is_eliminated",
+            "rebuy_count",
+        )
+
+
+class TournamentTableSerializer(serializers.ModelSerializer):
+    player_count = serializers.IntegerField(source="players.count", read_only=True)
+
+    class Meta:
+        model = TournamentTable
+        fields = ("id", "table_number", "max_seats", "is_active", "player_count")
 
 
 class TournamentListSerializer(serializers.ModelSerializer):
     host_name    = serializers.CharField(source="host.username", read_only=True)
     player_count = serializers.IntegerField(source="players.count", read_only=True)
+    table_count  = serializers.IntegerField(source="tables.count", read_only=True)
 
     class Meta:
         model = Tournament
         fields = ("id", "name", "host_name", "status", "starting_chips",
-                  "max_players", "player_count", "late_reg_level", "created_at")
+                  "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
+                  "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at", "created_at")
 
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
     host_name = serializers.CharField(source="host.username", read_only=True)
     players   = TournamentPlayerSerializer(many=True, read_only=True)
+    tables    = TournamentTableSerializer(many=True, read_only=True)
     levels    = BlindLevelSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tournament
         fields = ("id", "name", "host_name", "status", "starting_chips",
-                  "max_players", "players", "levels",
+                  "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
-                  "created_at")
+                  "scheduled_start_at", "created_at")
 
 
 class TournamentCreateSerializer(serializers.ModelSerializer):
@@ -49,24 +134,59 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "starting_chips", "max_players",
+        fields = ("id", "name", "starting_chips", "max_players", "players_per_table",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
-                  "levels")
+                  "scheduled_start_at", "levels")
+
+    def validate(self, attrs):
+        max_players = attrs.get("max_players", getattr(self.instance, "max_players", 9))
+        players_per_table = attrs.get("players_per_table", getattr(self.instance, "players_per_table", 9))
+        allow_rebuys = attrs.get("allow_rebuys", getattr(self.instance, "allow_rebuys", True))
+        max_rebuys = attrs.get("max_rebuys", getattr(self.instance, "max_rebuys", 2))
+        late_reg_level = attrs.get("late_reg_level", getattr(self.instance, "late_reg_level", 4))
+        rebuy_level = attrs.get("rebuy_level", getattr(self.instance, "rebuy_level", 4))
+        scheduled_start_at = attrs.get("scheduled_start_at")
+        levels = attrs.get("levels")
+
+        if max_players < 2:
+            raise serializers.ValidationError({"max_players": "Tournament capacity must be at least 2 players."})
+        if players_per_table < 2 or players_per_table > 9:
+            raise serializers.ValidationError({"players_per_table": "Players per table must be between 2 and 9."})
+        if max_players < players_per_table:
+            raise serializers.ValidationError({"max_players": "Total player cap must be greater than or equal to players per table."})
+        if late_reg_level < 0:
+            raise serializers.ValidationError({"late_reg_level": "Late registration cutoff cannot be negative."})
+        if max_rebuys < 0:
+            raise serializers.ValidationError({"max_rebuys": "Max rebuys cannot be negative."})
+        if rebuy_level < 0:
+            raise serializers.ValidationError({"rebuy_level": "Rebuy cutoff cannot be negative."})
+        if not allow_rebuys and max_rebuys:
+            attrs["max_rebuys"] = 0
+        if scheduled_start_at is not None and scheduled_start_at <= timezone.now():
+            raise serializers.ValidationError({"scheduled_start_at": "Scheduled start must be in the future."})
+
+        if levels:
+            blind_level_count = sum(1 for level in levels if not level.get("is_break", False))
+            if blind_level_count == 0:
+                raise serializers.ValidationError({"levels": "At least one playable blind level is required."})
+            if late_reg_level > blind_level_count:
+                raise serializers.ValidationError({"late_reg_level": "Late registration cutoff cannot exceed the number of blind levels."})
+            if rebuy_level > blind_level_count:
+                raise serializers.ValidationError({"rebuy_level": "Rebuy cutoff cannot exceed the number of blind levels."})
+
+        return attrs
 
     def create(self, validated_data):
         levels_data = validated_data.pop("levels", None)
         tournament = Tournament.objects.create(host=self.context["request"].user, **validated_data)
+        primary_table = tournament.ensure_table(1)
 
         if levels_data:
             for i, lvl in enumerate(levels_data):
-                lvl["level_number"] = i + 1
-                lvl.pop("id", None)
-                # If time-based, clear duration_hands and vice versa
-                if lvl.get("duration_minutes"):
-                    lvl["duration_hands"] = None
-                else:
-                    lvl.pop("duration_minutes", None)
-                BlindLevel.objects.create(tournament=tournament, **lvl)
+                normalized = _normalize_level_payload(lvl)
+                normalized["level_number"] = i + 1
+                normalized.pop("id", None)
+                BlindLevel.objects.create(tournament=tournament, **normalized)
         else:
             # Provide a sensible default blind structure
             defaults = [
@@ -80,12 +200,12 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             for i, (sb, bb, ante, dur) in enumerate(defaults, 1):
                 BlindLevel.objects.create(
                     tournament=tournament, level_number=i,
-                    small_blind=sb, big_blind=bb, ante=ante, duration_hands=dur,
+                    is_break=False, small_blind=sb, big_blind=bb, ante=ante, duration_hands=dur,
                 )
 
         # Auto-join host at seat 0
         TournamentPlayer.objects.create(
             tournament=tournament, user=tournament.host,
-            seat=0, chips=tournament.starting_chips,
+            table=primary_table, seat=0, seat_at_table=0, chips=tournament.starting_chips,
         )
         return tournament

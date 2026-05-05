@@ -1,29 +1,40 @@
 import { useState } from "react";
+import { DEFAULT_HANDS, DEFAULT_TIMED } from "./blindStructureDefaults";
 
-const DEFAULT_HANDS = [
-  { small_blind: 25, big_blind: 50, ante: 0, duration_hands: 8 },
-  { small_blind: 50, big_blind: 100, ante: 10, duration_hands: 8 },
-  { small_blind: 75, big_blind: 150, ante: 25, duration_hands: 8 },
-  { small_blind: 100, big_blind: 200, ante: 25, duration_hands: 8 },
-  { small_blind: 150, big_blind: 300, ante: 50, duration_hands: 6 },
-  { small_blind: 200, big_blind: 400, ante: 50, duration_hands: 6 },
-  { small_blind: 300, big_blind: 600, ante: 75, duration_hands: 6 },
-  { small_blind: 400, big_blind: 800, ante: 100, duration_hands: 6 },
-];
+const normalizeBlindRow = (row, mode) => {
+  const base = {
+    is_break: false,
+    small_blind: Number(row.small_blind || 0),
+    big_blind: Number(row.big_blind || 0),
+    ante: Number(row.ante || 0),
+  };
 
-const DEFAULT_TIMED = [
-  { small_blind: 25, big_blind: 50, ante: 0, duration_minutes: 10 },
-  { small_blind: 50, big_blind: 100, ante: 10, duration_minutes: 10 },
-  { small_blind: 75, big_blind: 150, ante: 25, duration_minutes: 10 },
-  { small_blind: 100, big_blind: 200, ante: 25, duration_minutes: 10 },
-  { small_blind: 150, big_blind: 300, ante: 50, duration_minutes: 8 },
-  { small_blind: 200, big_blind: 400, ante: 50, duration_minutes: 8 },
-  { small_blind: 300, big_blind: 600, ante: 75, duration_minutes: 8 },
-  { small_blind: 400, big_blind: 800, ante: 100, duration_minutes: 8 },
-];
+  if (mode === "time") {
+    return {
+      ...base,
+      duration_hands: null,
+      duration_minutes: Number(row.duration_minutes || 10),
+    };
+  }
+
+  return {
+    ...base,
+    duration_hands: Number(row.duration_hands || 8),
+    duration_minutes: null,
+  };
+};
+
+const normalizeBreakRow = (row) => ({
+  is_break: true,
+  small_blind: 0,
+  big_blind: 0,
+  ante: 0,
+  duration_hands: null,
+  duration_minutes: Number(row.duration_minutes || 5),
+});
 
 export default function BlindStructureEditor({ levels, onChange }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(Boolean(levels?.length));
   const [mode, setMode] = useState(
     levels && levels[0]?.duration_minutes ? "time" : "hands"
   );
@@ -35,29 +46,54 @@ export default function BlindStructureEditor({ levels, onChange }) {
   const switchMode = (newMode) => {
     setMode(newMode);
     const newDefaults = newMode === "time" ? DEFAULT_TIMED : DEFAULT_HANDS;
-    const dKey = newMode === "time" ? "duration_minutes" : "duration_hands";
     const converted = (levels || defaults).map((r, i) => {
-      const base = { small_blind: r.small_blind, big_blind: r.big_blind, ante: r.ante };
-      base[dKey] = newDefaults[i]?.[dKey] || (newMode === "time" ? 10 : 8);
-      return base;
+      if (r.is_break) {
+        return normalizeBreakRow(r);
+      }
+
+      return normalizeBlindRow(
+        {
+          ...r,
+          duration_hands: newMode === "hands" ? (r.duration_hands ?? newDefaults[i]?.duration_hands ?? 8) : null,
+          duration_minutes: newMode === "time" ? (r.duration_minutes ?? newDefaults[i]?.duration_minutes ?? 10) : null,
+        },
+        newMode
+      );
     });
     onChange(converted);
   };
 
   const updateRow = (idx, field, value) => {
-    const updated = rows.map((r, i) => (i === idx ? { ...r, [field]: Number(value) } : r));
+    const updated = rows.map((r, i) => {
+      if (i !== idx) return r;
+      const nextValue = field === "is_break" ? value : Number(value);
+      if (field === "is_break") {
+        return nextValue ? normalizeBreakRow(r) : normalizeBlindRow(r, mode);
+      }
+      if (r.is_break) {
+        return normalizeBreakRow({ ...r, [field]: nextValue });
+      }
+      return normalizeBlindRow({ ...r, [field]: nextValue }, mode);
+    });
     onChange(updated);
   };
 
-  const addRow = () => {
-    const last = rows[rows.length - 1];
-    const newRow = {
-      small_blind: last.big_blind,
-      big_blind: last.big_blind * 2,
-      ante: Math.round(last.big_blind * 0.25),
-    };
-    newRow[durationKey] = last[durationKey];
+  const addBlindRow = () => {
+    const lastBlind = [...rows].reverse().find((row) => !row.is_break) || defaults[defaults.length - 1];
+    const newRow = normalizeBlindRow(
+      {
+        small_blind: lastBlind.big_blind,
+        big_blind: lastBlind.big_blind * 2,
+        ante: Math.round(lastBlind.big_blind * 0.25),
+        [durationKey]: lastBlind[durationKey] || (mode === "time" ? 10 : 8),
+      },
+      mode
+    );
     onChange([...rows, newRow]);
+  };
+
+  const addBreakRow = () => {
+    onChange([...rows, normalizeBreakRow({ duration_minutes: 5 })]);
   };
 
   const removeRow = (idx) => {
@@ -95,10 +131,11 @@ export default function BlindStructureEditor({ levels, onChange }) {
           <thead>
             <tr className="text-gray-500">
               <th className="px-2 py-1 text-left">Lvl</th>
+              {editing && <th className="px-2 py-1 text-left">Type</th>}
               <th className="px-2 py-1">SB</th>
               <th className="px-2 py-1">BB</th>
               <th className="px-2 py-1">Ante</th>
-              <th className="px-2 py-1">{mode === "time" ? "Min" : "Hands"}</th>
+              <th className="px-2 py-1">Duration</th>
               {editing && <th className="px-2 py-1"></th>}
             </tr>
           </thead>
@@ -108,18 +145,58 @@ export default function BlindStructureEditor({ levels, onChange }) {
                 <td className="px-2 py-1 text-gray-500">{i + 1}</td>
                 {editing ? (
                   <>
-                    <td><input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.small_blind} onChange={(e) => updateRow(i, "small_blind", e.target.value)} /></td>
-                    <td><input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.big_blind} onChange={(e) => updateRow(i, "big_blind", e.target.value)} /></td>
-                    <td><input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.ante} onChange={(e) => updateRow(i, "ante", e.target.value)} /></td>
-                    <td><input type="number" className="w-14 px-1 bg-gray-800 text-center rounded" value={r[durationKey]} onChange={(e) => updateRow(i, durationKey, e.target.value)} /></td>
+                    <td className="px-2 py-1">
+                      <select
+                        className="bg-gray-800 rounded px-2 py-1"
+                        value={r.is_break ? "break" : "blind"}
+                        onChange={(e) => updateRow(i, "is_break", e.target.value === "break")}
+                      >
+                        <option value="blind">Blind</option>
+                        <option value="break">Break</option>
+                      </select>
+                    </td>
+                    <td>
+                      {r.is_break ? (
+                        <span className="text-gray-500">-</span>
+                      ) : (
+                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.small_blind} onChange={(e) => updateRow(i, "small_blind", e.target.value)} />
+                      )}
+                    </td>
+                    <td>
+                      {r.is_break ? (
+                        <span className="text-gray-500">-</span>
+                      ) : (
+                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.big_blind} onChange={(e) => updateRow(i, "big_blind", e.target.value)} />
+                      )}
+                    </td>
+                    <td>
+                      {r.is_break ? (
+                        <span className="text-gray-500">-</span>
+                      ) : (
+                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.ante} onChange={(e) => updateRow(i, "ante", e.target.value)} />
+                      )}
+                    </td>
+                    <td>
+                      <div className="flex items-center justify-center gap-2">
+                        <input
+                          type="number"
+                          className="w-14 px-1 bg-gray-800 text-center rounded"
+                          value={r.is_break ? r.duration_minutes : (r[durationKey] ?? "")}
+                          onChange={(e) => updateRow(i, r.is_break ? "duration_minutes" : durationKey, e.target.value)}
+                        />
+                        <span className="text-gray-500">{r.is_break ? "min" : mode === "time" ? "min" : "hands"}</span>
+                      </div>
+                    </td>
                     <td><button type="button" onClick={() => removeRow(i)} className="text-red-500 hover:text-red-400 px-1">x</button></td>
                   </>
                 ) : (
                   <>
-                    <td className="text-center">{r.small_blind}</td>
-                    <td className="text-center">{r.big_blind}</td>
-                    <td className="text-center">{r.ante}</td>
-                    <td className="text-center">{r[durationKey]}</td>
+                    <td className="text-center">{r.is_break ? "Break" : r.small_blind}</td>
+                    <td className="text-center">{r.is_break ? "-" : r.big_blind}</td>
+                    <td className="text-center">{r.is_break ? "-" : r.ante}</td>
+                    <td className="text-center">
+                      {r.is_break ? `${r.duration_minutes} min` : `${r[durationKey]} ${mode === "time" ? "min" : "hands"}`}
+                    </td>
                   </>
                 )}
               </tr>
@@ -127,7 +204,10 @@ export default function BlindStructureEditor({ levels, onChange }) {
           </tbody>
         </table>
         {editing && (
-          <button type="button" onClick={addRow} className="w-full py-1 text-green-400 hover:bg-gray-800 text-xs">+ Add Level</button>
+          <div className="grid grid-cols-2 border-t border-gray-800">
+            <button type="button" onClick={addBlindRow} className="py-1 text-green-400 hover:bg-gray-800 text-xs border-r border-gray-800">+ Add Blind Level</button>
+            <button type="button" onClick={addBreakRow} className="py-1 text-blue-400 hover:bg-gray-800 text-xs">+ Add Break</button>
+          </div>
         )}
       </div>
     </div>

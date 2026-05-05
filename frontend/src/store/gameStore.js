@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-const useGameStore = create((set, get) => ({
+const useGameStore = create((set) => ({
   // Game state
   players: [],
   communityCards: [],
@@ -18,13 +18,18 @@ const useGameStore = create((set, get) => ({
   countdown: null,    // seconds remaining before tournament starts
   standings: null, // final standings when tournament finishes
   messages: [],    // action log
+  currentTableNumber: null,
+  currentTableId: null,
+  tableCount: 0,
+  tableSummaries: [],
+  tableAssignmentNotice: null,
   showBB: false,   // display chips as BB count
   toggleBB: () => set((s) => ({ showBB: !s.showBB })),
+  dismissTableAssignmentNotice: () => set({ tableAssignmentNotice: null }),
 
   // Incoming event handler
   handleEvent: (data) => {
     const type = data.type;
-    const state = get();
 
     switch (type) {
       case "game_state":
@@ -35,17 +40,22 @@ const useGameStore = create((set, get) => ({
           street: data.street || null,
           handNumber: data.hand_number || 0,
           holeCards: data.hole_cards && data.hole_cards.length ? data.hole_cards : s.holeCards,
+          currentTableNumber: data.current_table_number ?? s.currentTableNumber,
+          currentTableId: data.current_table_id ?? s.currentTableId,
+          tableCount: data.table_count ?? s.tableCount,
+          tableSummaries: data.table_summaries || s.tableSummaries,
         }));
         break;
 
       case "tournament_started":
         set({
-          players: data.players || [],
           level: data.level || null,
           standings: null,
           showdown: null,
           potAwards: null,
           messages: [],
+          tableCount: data.table_count || 0,
+          tableSummaries: data.tables || [],
         });
         break;
 
@@ -219,7 +229,51 @@ const useGameStore = create((set, get) => ({
         break;
 
       case "level_change":
-        set({ level: data });
+        set((s) => ({
+          level: data,
+          tableCount: data.table_count ?? s.tableCount,
+          tableSummaries: data.tables || s.tableSummaries,
+        }));
+        break;
+
+      case "table_assignment":
+        set((s) => ({
+          currentTableNumber: data.table_number ?? s.currentTableNumber,
+          currentTableId: data.table_id ?? s.currentTableId,
+          tableCount: data.table_count ?? s.tableCount,
+          tableSummaries: data.table_summaries || s.tableSummaries,
+          tableAssignmentNotice: {
+            tableNumber: data.table_number,
+            seat: data.seat,
+            tableCount: data.table_count ?? s.tableCount,
+          },
+          messages: [
+            ...s.messages.slice(-29),
+            `Moved to table ${data.table_number}, seat ${data.seat}`,
+          ],
+        }));
+        break;
+
+      case "table_rebalanced":
+        set((s) => ({
+          tableCount: data.table_count ?? s.tableCount,
+          tableSummaries: data.tables || s.tableSummaries,
+        }));
+        break;
+
+      case "break_started":
+        set((s) => ({
+          level: data,
+          tableCount: data.table_count ?? s.tableCount,
+          tableSummaries: data.tables || s.tableSummaries,
+          messages: [...s.messages.slice(-30), `Break started (${data.duration_minutes} min)`],
+        }));
+        break;
+
+      case "break_tick":
+        set((s) => ({
+          level: s.level ? { ...s.level, remaining_seconds: data.remaining_seconds } : s.level,
+        }));
         break;
 
       case "tournament_complete":
@@ -244,6 +298,8 @@ const useGameStore = create((set, get) => ({
       handNumber: 0, holeCards: [], actionOnSeat: null,
       actionContext: null, level: null, showdown: null,
       potAwards: null, winnerSeats: [], allInEquity: null, countdown: null, standings: null, messages: [],
+      currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
+      tableAssignmentNotice: null,
     }),
 }));
 

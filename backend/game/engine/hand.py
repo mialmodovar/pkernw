@@ -128,6 +128,7 @@ class HandEngine:
         hand_number:    int,
         broadcast:      BroadcastFn,
         request_action: RequestActionFn,
+        rabbit_hunting_enabled: bool = False,
     ):
         self.players        = players
         self.dealer_pos     = dealer_pos % len(players)
@@ -137,6 +138,7 @@ class HandEngine:
         self.hand_number    = hand_number
         self.broadcast      = broadcast
         self.request_action = request_action
+        self.rabbit_hunting_enabled = rabbit_hunting_enabled
 
         self.deck              = Deck()
         self.community_cards:  List[Card] = []
@@ -413,6 +415,13 @@ class HandEngine:
 
         stacks = [{"seat": _seat_of(p), "chips": p.chips} for p in self.players]
         await self.broadcast("hand_complete", {"stacks": stacks})
+
+        if self.rabbit_hunting_enabled and len(self.community_cards) < 5:
+            rabbit_cards = self.deck.deal(5 - len(self.community_cards))
+            await self.broadcast("rabbit_hunt", {
+                "cards": cards_to_list(rabbit_cards),
+                "would_complete_board": cards_to_list(self.community_cards + rabbit_cards),
+            })
 
         busted = [p for p in self.players if p.chips == 0]
         return HandResult(

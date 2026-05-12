@@ -7,7 +7,7 @@ const toDatetimeLocalValue = (date) => {
   return localDate.toISOString().slice(0, 16);
 };
 
-export default function CreateTournamentModal({ onClose, onCreate }) {
+export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [name, setName] = useState("");
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledStart, setScheduledStart] = useState(() => toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000)));
@@ -25,12 +25,14 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
   const [timeBankRefillEveryHands, setTimeBankRefillEveryHands] = useState(10);
   const [timeBankRefillLevel, setTimeBankRefillLevel] = useState(4);
   const [payoutEnabled, setPayoutEnabled] = useState(false);
-  const [prizePoolNote, setPrizePoolNote] = useState("");
   const [payoutRows, setPayoutRows] = useState([
     { place: 1, label: "1st", percentage: 50 },
     { place: 2, label: "2nd", percentage: 30 },
     { place: 3, label: "3rd", percentage: 20 },
   ]);
+  const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(false);
+  const [autoRemoveOfflineEnabled, setAutoRemoveOfflineEnabled] = useState(false);
+  const [autoRemoveOfflineSeconds, setAutoRemoveOfflineSeconds] = useState(300);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
   const [error, setError] = useState("");
 
@@ -94,6 +96,10 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
         return;
       }
     }
+    if (autoRemoveOfflineEnabled && autoRemoveOfflineSeconds <= 0) {
+      setError("Offline removal timeout must be positive.");
+      return;
+    }
     const payload = {
       name: name || "Tournament",
       scheduled_start_at: scheduledStartAt,
@@ -108,12 +114,13 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
       time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
       time_bank_refill_every_hands: timeBankEnabled && timeBankRefillRule === "hands" ? timeBankRefillEveryHands : null,
       time_bank_refill_level: timeBankEnabled && timeBankRefillRule === "blind_level" ? normalizedTimeBankRefillLevel : null,
-      prize_pool_note: payoutEnabled ? prizePoolNote.trim() : "",
       payout_structure: payoutEnabled ? payoutRows.map((row) => ({
         place: row.place,
         label: row.label,
         percentage: row.percentage,
       })) : [],
+      rabbit_hunting_enabled: rabbitHuntingEnabled,
+      auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
     if (customLevels) payload.levels = customLevels;
     try {
@@ -136,15 +143,14 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
   const levelOptions = Array.from({ length: Math.max(blindLevelCount, 1) }, (_, index) => index + 1);
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <form onSubmit={handleSubmit} className="bg-gray-800 p-6 rounded-xl w-[520px] max-h-[90vh] overflow-y-auto space-y-4">
-        <h2 className="text-xl font-bold">Create Tournament</h2>
+    <form onSubmit={handleSubmit} className="bg-gray-800 p-6 rounded-xl space-y-4">
+      <h2 className="text-xl font-bold">Create Tournament</h2>
 
-        <div className="space-y-2">
-          <label className="block text-sm text-gray-400">Name</label>
-          <input className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-            value={name} onChange={(e) => setName(e.target.value)} placeholder="My Tournament" />
-        </div>
+      <div className="space-y-2">
+        <label className="block text-sm text-gray-400">Name</label>
+        <input className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+          value={name} onChange={(e) => setName(e.target.value)} placeholder="My Tournament" />
+      </div>
 
         <div className="bg-gray-900 rounded-lg p-3 space-y-3">
           <label className="flex items-center justify-between text-sm">
@@ -319,18 +325,6 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
             Reference only. This does not process or track real-money payments.
           </p>
 
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Prize Pool Note</label>
-            <textarea
-              className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
-              rows={2}
-              value={prizePoolNote}
-              disabled={!payoutEnabled}
-              placeholder="Example: $100 prize pool collected externally"
-              onChange={(e) => setPrizePoolNote(e.target.value)}
-            />
-          </div>
-
           <div className="space-y-2">
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-gray-500">
               <span>Place</span>
@@ -385,15 +379,51 @@ export default function CreateTournamentModal({ onClose, onCreate }) {
           </div>
         </div>
 
+        <div className="bg-gray-900 rounded-lg p-3 space-y-3">
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-gray-300">Rabbit Hunting</span>
+            <input
+              type="checkbox"
+              checked={rabbitHuntingEnabled}
+              onChange={(e) => setRabbitHuntingEnabled(e.target.checked)}
+            />
+          </label>
+          <p className="text-xs text-gray-500">
+            Show unused board cards after a hand ends early. These cards are informational only.
+          </p>
+        </div>
+
+        <div className="bg-gray-900 rounded-lg p-3 space-y-3">
+          <label className="flex items-center justify-between text-sm">
+            <span className="text-gray-300">Auto-Remove Offline Players</span>
+            <input
+              type="checkbox"
+              checked={autoRemoveOfflineEnabled}
+              onChange={(e) => setAutoRemoveOfflineEnabled(e.target.checked)}
+            />
+          </label>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Timeout</label>
+            <input
+              type="number"
+              min={1}
+              className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none disabled:opacity-50"
+              value={autoRemoveOfflineSeconds}
+              disabled={!autoRemoveOfflineEnabled}
+              onChange={(e) => setAutoRemoveOfflineSeconds(Number(e.target.value))}
+            />
+            <p className="text-xs text-gray-500 mt-1">Seconds offline before removal at the next hand boundary</p>
+          </div>
+        </div>
+
         <BlindStructureEditor levels={customLevels} onChange={setCustomLevels} />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <div className="flex gap-3 justify-end">
-          <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-700 rounded">Cancel</button>
-          <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold">Create</button>
-        </div>
-      </form>
-    </div>
+      <div className="flex gap-3 justify-end">
+        <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-700 rounded">Cancel</button>
+        <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold">Create</button>
+      </div>
+    </form>
   );
 }

@@ -3,13 +3,10 @@ import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
 import TournamentList from "../components/lobby/TournamentList";
-import CreateTournamentModal from "../components/lobby/CreateTournamentModal";
-import { useState } from "react";
 
 export default function LobbyPage() {
   const { user, logout } = useAuthStore();
   const { tournaments, fetchTournaments, loading } = useLobbyStore();
-  const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => { fetchTournaments(); }, [fetchTournaments]);
@@ -20,7 +17,7 @@ export default function LobbyPage() {
         <h1 className="text-2xl font-bold">Tournaments</h1>
         <div className="flex gap-3 items-center">
           <span className="text-sm text-gray-400">{user?.username}</span>
-          <button onClick={() => setShowCreate(true)}
+          <button onClick={() => navigate("/tournaments/new")}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold text-sm">
             Create Tournament
           </button>
@@ -41,16 +38,6 @@ export default function LobbyPage() {
         />
       )}
 
-      {showCreate && (
-        <CreateTournamentModal
-          onClose={() => setShowCreate(false)}
-          onCreate={async (payload) => {
-            const t = await useLobbyStore.getState().createTournament(payload);
-            setShowCreate(false);
-            navigate(`/tournament/${t.id}`);
-          }}
-        />
-      )}
     </div>
   );
 }

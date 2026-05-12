@@ -101,11 +101,6 @@ export default function TournamentSetupPage() {
         </div>
         <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
           <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Prize Pool Reference</p>
-          {tournament.prize_pool_note ? (
-            <p className="text-sm text-gray-200 whitespace-pre-wrap">{tournament.prize_pool_note}</p>
-          ) : (
-            <p className="text-sm text-gray-400">No prize pool note.</p>
-          )}
           <p className="text-xs text-gray-500 mt-1">Reference only. Payments are handled outside this app.</p>
           {tournament.payout_structure?.length > 0 && (
             <ul className="mt-3 divide-y divide-gray-700 rounded bg-gray-900 text-sm">
@@ -117,6 +112,20 @@ export default function TournamentSetupPage() {
               ))}
             </ul>
           )}
+          {!tournament.payout_structure?.length && (
+            <p className="text-sm text-gray-400 mt-2">No payout structure configured.</p>
+          )}
+        </div>
+        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
+          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Table Rules</p>
+          <p className="text-sm text-gray-200">
+            Rabbit hunting {tournament.rabbit_hunting_enabled ? "enabled" : "disabled"}
+          </p>
+          <p className="text-sm text-gray-400">
+            {tournament.auto_remove_offline_seconds > 0
+              ? `Offline players removed after ${tournament.auto_remove_offline_seconds} seconds`
+              : "Offline auto-removal disabled"}
+          </p>
         </div>
       </div>
 

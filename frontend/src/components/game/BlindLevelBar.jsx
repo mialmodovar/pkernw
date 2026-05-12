@@ -3,6 +3,7 @@ import useGameStore from "../../store/gameStore";
 
 export default function BlindLevelBar() {
   const level = useGameStore((s) => s.level);
+  const isPaused = useGameStore((s) => s.isPaused);
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
   const [remaining, setRemaining] = useState(null);
@@ -14,10 +15,13 @@ export default function BlindLevelBar() {
     }
     setRemaining(level.remaining_seconds);
     const interval = setInterval(() => {
-      setRemaining((prev) => (prev != null && prev > 0 ? prev - 1 : 0));
+      setRemaining((prev) => {
+        if (isPaused) return prev;
+        return prev != null && prev > 0 ? prev - 1 : 0;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [level]);
+  }, [isPaused, level]);
 
   if (!level) {
     return (

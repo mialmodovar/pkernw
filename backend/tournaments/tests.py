@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import Tournament
+from game.consumers import _tournament_runners
 
 
 User = get_user_model()
@@ -15,6 +16,9 @@ class TournamentCreationTests(APITestCase):
 	def setUp(self):
 		self.user = User.objects.create_user(username="host", password="secret123")
 		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		_tournament_runners.clear()
 
 	def test_create_tournament_with_frontend_config_fields(self):
 		scheduled_start_at = timezone.now() + timedelta(days=1)
@@ -33,7 +37,8 @@ class TournamentCreationTests(APITestCase):
 				"time_bank_seconds": 30,
 				"time_bank_refill_rule": "hands",
 				"time_bank_refill_every_hands": 10,
-				"prize_pool_note": "Reference only: players are collecting this externally.",
+				"rabbit_hunting_enabled": True,
+				"auto_remove_offline_seconds": 300,
 				"payout_structure": [
 					{"place": 1, "label": "Winner", "percentage": 70},
 					{"place": 2, "label": "Runner-up", "percentage": 30},
@@ -72,7 +77,8 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(tournament.time_bank_seconds, 30)
 		self.assertEqual(tournament.time_bank_refill_rule, "hands")
 		self.assertEqual(tournament.time_bank_refill_every_hands, 10)
-		self.assertEqual(tournament.prize_pool_note, "Reference only: players are collecting this externally.")
+		self.assertTrue(tournament.rabbit_hunting_enabled)
+		self.assertEqual(tournament.auto_remove_offline_seconds, 300)
 		self.assertEqual(
 			tournament.payout_structure,
 			[
@@ -262,3 +268,53 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		tournament.refresh_from_db()
 		self.assertEqual(tournament.status, "running")
+
+	def test_host_can_pause_and_resume_running_tournament(self):
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Admin Controls",
+			status="running",
+		)
+
+		pause_response = self.client.post(reverse("tournament-pause", kwargs={"pk": tournament.id}))
+		self.assertEqual(pause_response.status_code, status.HTTP_200_OK)
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.status, "paused")
+
+		resume_response = self.client.post(reverse("tournament-resume", kwargs={"pk": tournament.id}))
+		self.assertEqual(resume_response.status_code, status.HTTP_200_OK)
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.status, "running")
+
+	def test_non_host_cannot_pause_tournament(self):
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Admin Controls",
+			status="running",
+		)
+		other = User.objects.create_user(username="not-host", password="secret123")
+		self.client.force_authenticate(other)
+
+		response = self.client.post(reverse("tournament-pause", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.status, "running")
+
+	def test_host_can_skip_blind_level_when_runner_is_active(self):
+		class FakeRunner:
+			async def skip_level(self):
+				return {"blind_level_number": 2, "skipped": True}
+
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Skip It",
+			status="running",
+		)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		response = self.client.post(reverse("tournament-skip-level", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["level"]["blind_level_number"], 2)
+		self.assertTrue(response.data["level"]["skipped"])

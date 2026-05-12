@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import useGameStore from "../../store/gameStore";
 
 export default function ActionPanel({ mySeat, onAction }) {
-  const { actionOnSeat, actionContext, showBB, level } = useGameStore();
+  const { actionOnSeat, actionContext, isPaused, showBB, level } = useGameStore();
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [timer, setTimer] = useState(null);
   const timerRef = useRef(null);
+  const pausedRef = useRef(isPaused);
   const bb = level?.big_blind || 0;
   const fmt = (v) => showBB && bb > 0 ? `${(v / bb).toFixed(1)} BB` : v?.toLocaleString();
   const useBBControls = showBB && bb > 0;
@@ -15,6 +16,10 @@ export default function ActionPanel({ mySeat, onAction }) {
   const valid = ctx.valid_actions || [];
   const timerSec = ctx.timer_sec || 10;
   const timeBankRemaining = ctx.time_bank_seconds_remaining || 0;
+
+  useEffect(() => {
+    pausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     if (isMyTurn && ctx.min_raise) setRaiseAmount(ctx.min_raise);
@@ -28,6 +33,7 @@ export default function ActionPanel({ mySeat, onAction }) {
       setTimer(timerSec);
       timerRef.current = setInterval(() => {
         setTimer((prev) => {
+          if (pausedRef.current) return prev;
           if (prev <= 1) {
             clearInterval(timerRef.current);
             return 0;

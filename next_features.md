@@ -21,7 +21,10 @@
 - Frontend table-move affordance via a dismissible toast.
 - Scheduled tournament start date and time with lobby/setup display and start-time enforcement.
 - Time bank configuration with per-player bank length and refill by hand interval or blind level.
-- Prize pool reference note and payout percentage structure for player coordination outside the app.
+- Payout percentage structure for player coordination outside the app.
+- Tournament host controls after start: pause, resume, and skip blind level.
+- Rabbit hunting toggle that reveals unused board cards after early hand endings.
+- Auto-remove offline players after a configured timeout at hand boundaries.
 
 ## Partially Implemented
 
@@ -29,17 +32,11 @@
 
 ## Missing Compared With Poker Now
 
-- Tournament admin controls after creation:
-	- pause tournament
-	- resume tournament
-	- skip blind level
 - Tournament description.
 - Tournament managers / additional admins.
 - Social image upload.
 - Invitation-code-only participation.
-- Rabbit hunting toggle.
 - Allow or block players from quitting the tournament.
-- Auto-remove offline players after a configured timeout.
 - Showdown presentation speed setting.
 
 

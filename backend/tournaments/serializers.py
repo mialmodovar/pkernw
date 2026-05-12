@@ -157,7 +157,8 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
-                  "time_bank_refill_level", "prize_pool_note", "payout_structure", "created_at")
+                  "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
+                  "auto_remove_offline_seconds", "created_at")
 
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
@@ -173,7 +174,8 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
-                  "prize_pool_note", "payout_structure", "created_at")
+                  "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "created_at")
 
 
 class TournamentCreateSerializer(serializers.ModelSerializer):
@@ -185,7 +187,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
-                  "prize_pool_note", "payout_structure", "levels")
+                  "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "levels")
 
     def validate(self, attrs):
         max_players = attrs.get("max_players", getattr(self.instance, "max_players", 9))
@@ -199,8 +202,11 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         time_bank_refill_rule = attrs.get("time_bank_refill_rule", getattr(self.instance, "time_bank_refill_rule", "none"))
         time_bank_refill_every_hands = attrs.get("time_bank_refill_every_hands")
         time_bank_refill_level = attrs.get("time_bank_refill_level")
-        prize_pool_note = attrs.get("prize_pool_note", "")
         payout_structure = attrs.get("payout_structure", [])
+        auto_remove_offline_seconds = attrs.get(
+            "auto_remove_offline_seconds",
+            getattr(self.instance, "auto_remove_offline_seconds", 0),
+        )
         levels = attrs.get("levels")
 
         if max_players < 2:
@@ -221,6 +227,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"scheduled_start_at": "Scheduled start must be in the future."})
         if time_bank_seconds < 0:
             raise serializers.ValidationError({"time_bank_seconds": "Time bank length cannot be negative."})
+        if auto_remove_offline_seconds < 0:
+            raise serializers.ValidationError({"auto_remove_offline_seconds": "Offline removal timeout cannot be negative."})
         if time_bank_refill_rule not in {"none", "hands", "blind_level"}:
             raise serializers.ValidationError({"time_bank_refill_rule": "Choose a valid time bank refill rule."})
         if time_bank_seconds == 0:
@@ -238,8 +246,6 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         else:
             attrs["time_bank_refill_every_hands"] = None
             attrs["time_bank_refill_level"] = None
-        if len(prize_pool_note) > 1000:
-            raise serializers.ValidationError({"prize_pool_note": "Prize pool note must be 1000 characters or fewer."})
         attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
 
         if levels:

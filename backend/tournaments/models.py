@@ -6,6 +6,7 @@ class Tournament(models.Model):
     STATUS_CHOICES = [
         ("lobby",    "Lobby"),
         ("running",  "Running"),
+        ("paused",   "Paused"),
         ("finished", "Finished"),
     ]
     TIME_BANK_REFILL_CHOICES = [
@@ -29,8 +30,9 @@ class Tournament(models.Model):
     time_bank_refill_rule = models.CharField(max_length=20, choices=TIME_BANK_REFILL_CHOICES, default="none")
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
-    prize_pool_note = models.TextField(blank=True)
     payout_structure = models.JSONField(default=list, blank=True)
+    rabbit_hunting_enabled = models.BooleanField(default=False)
+    auto_remove_offline_seconds = models.IntegerField(default=0)
     created_at     = models.DateTimeField(auto_now_add=True)
 
     def required_table_count(self, player_count=None):

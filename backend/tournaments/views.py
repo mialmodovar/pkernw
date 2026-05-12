@@ -1,6 +1,7 @@
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from asgiref.sync import async_to_sync
 from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .serializers import (
@@ -72,7 +73,7 @@ def join_tournament(request, pk):
     if tournament.status == "lobby":
         # Normal pre-start join
         pass
-    elif tournament.status == "running" and tournament.late_reg_level > 0:
+    elif tournament.status in ("running", "paused") and tournament.late_reg_level > 0:
         # Late registration — check current level from runner
         runner = _tournament_runners.get(pk)
         if runner is None:
@@ -132,6 +133,66 @@ def start_tournament(request, pk):
     return Response({"status": "running"})
 
 
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def pause_tournament(request, pk):
+    try:
+        tournament = Tournament.objects.get(pk=pk, host=request.user)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.status != "running":
+        return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
+
+    runner = _tournament_runners.get(pk)
+    if runner is not None:
+        async_to_sync(runner.pause)()
+
+    tournament.status = "paused"
+    tournament.save(update_fields=["status"])
+    return Response({"status": "paused"})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def resume_tournament(request, pk):
+    try:
+        tournament = Tournament.objects.get(pk=pk, host=request.user)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.status != "paused":
+        return Response({"error": "Tournament is not paused"}, status=status.HTTP_400_BAD_REQUEST)
+
+    tournament.status = "running"
+    tournament.save(update_fields=["status"])
+
+    runner = _tournament_runners.get(pk)
+    if runner is not None:
+        async_to_sync(runner.resume)()
+
+    return Response({"status": "running"})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def skip_blind_level(request, pk):
+    try:
+        tournament = Tournament.objects.get(pk=pk, host=request.user)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.status not in ("running", "paused"):
+        return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
+
+    runner = _tournament_runners.get(pk)
+    if runner is None:
+        return Response({"error": "Tournament engine not running"}, status=status.HTTP_400_BAD_REQUEST)
+
+    level = async_to_sync(runner.skip_level)()
+    return Response({"status": tournament.status, "level": level})
+
+
 @api_view(["GET", "PUT"])
 @permission_classes([permissions.IsAuthenticated])
 def blind_levels(request, pk):
@@ -176,7 +237,7 @@ def rebuy_tournament(request, pk):
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if tournament.status != "running":
+    if tournament.status not in ("running", "paused"):
         return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
 
     if not tournament.allow_rebuys:

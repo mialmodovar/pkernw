@@ -4,6 +4,7 @@ export default function ActionHistory() {
   const messages = useGameStore((s) => s.messages);
   const showdown = useGameStore((s) => s.showdown);
   const potAwards = useGameStore((s) => s.potAwards);
+  const rabbitCards = useGameStore((s) => s.rabbitCards);
 
   return (
     <div className="w-64 bg-gray-800 rounded-lg p-3 text-xs max-h-48 overflow-y-auto space-y-0.5">
@@ -20,6 +21,11 @@ export default function ActionHistory() {
           Seat {a.seat} wins {a.amount?.toLocaleString()} [{a.description}]
         </div>
       ))}
+      {rabbitCards?.length > 0 && (
+        <div className="text-purple-300">
+          Rabbit: {rabbitCards.join(" ")}
+        </div>
+      )}
     </div>
   );
 }

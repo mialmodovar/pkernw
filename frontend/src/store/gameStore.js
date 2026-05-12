@@ -13,9 +13,11 @@ const useGameStore = create((set) => ({
   level: null,
   showdown: null,
   potAwards: null,
+  rabbitCards: null,
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
   countdown: null,    // seconds remaining before tournament starts
+  isPaused: false,
   standings: null, // final standings when tournament finishes
   messages: [],    // action log
   currentTableNumber: null,
@@ -44,6 +46,7 @@ const useGameStore = create((set) => ({
           currentTableId: data.current_table_id ?? s.currentTableId,
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.table_summaries || s.tableSummaries,
+          isPaused: data.is_paused ?? s.isPaused,
         }));
         break;
 
@@ -51,6 +54,7 @@ const useGameStore = create((set) => ({
         set({
           level: data.level || null,
           standings: null,
+          isPaused: false,
           showdown: null,
           potAwards: null,
           messages: [],
@@ -71,6 +75,7 @@ const useGameStore = create((set) => ({
           street: "preflop",
           showdown: null,
           potAwards: null,
+          rabbitCards: null,
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
@@ -201,6 +206,15 @@ const useGameStore = create((set) => ({
         }
         break;
 
+      case "rabbit_hunt":
+        set((s) => ({
+          rabbitCards: data.cards || [],
+          messages: data.cards?.length
+            ? [...s.messages.slice(-30), `Rabbit hunt: ${data.cards.join(" ")}`]
+            : s.messages,
+        }));
+        break;
+
       case "player_eliminated":
         set((s) => ({
           players: s.players.map((p) =>
@@ -233,6 +247,22 @@ const useGameStore = create((set) => ({
           level: data,
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.tables || s.tableSummaries,
+        }));
+        break;
+
+      case "tournament_paused":
+        set((s) => ({
+          isPaused: true,
+          level: data.level || s.level,
+          messages: [...s.messages.slice(-30), "Tournament paused"],
+        }));
+        break;
+
+      case "tournament_resumed":
+        set((s) => ({
+          isPaused: false,
+          level: data.level || s.level,
+          messages: [...s.messages.slice(-30), "Tournament resumed"],
         }));
         break;
 
@@ -297,7 +327,7 @@ const useGameStore = create((set) => ({
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], actionOnSeat: null,
       actionContext: null, level: null, showdown: null,
-      potAwards: null, winnerSeats: [], allInEquity: null, countdown: null, standings: null, messages: [],
+      potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false, standings: null, messages: [],
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
     }),

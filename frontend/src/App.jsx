@@ -17,7 +17,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <p className="text-lg text-gray-400">Loading...</p>
+        <p className="text-lg text-(--color-text-muted)">Loading...</p>
       </div>
     );
   }

@@ -3,49 +3,50 @@ import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 
-// Positions for up to 9 seats around an oval table (CSS % offsets)
-const SEAT_POSITIONS = [
-  { top: "82%", left: "50%" },   // 0 — bottom center
-  { top: "72%", left: "15%" },   // 1
-  { top: "38%", left: "4%" },    // 2
-  { top: "8%",  left: "18%" },   // 3
-  { top: "2%",  left: "50%" },   // 4
-  { top: "8%",  left: "82%" },   // 5
-  { top: "38%", left: "96%" },   // 6
-  { top: "72%", left: "85%" },   // 7
-  { top: "82%", left: "50%" },   // 8 — same as 0 fallback
-];
+// Seats are spread evenly around the felt ellipse, so a short-handed table
+// spaces its players out instead of bunching them at the bottom.
+const RADIUS_X = 42; // % of container, from the centre
+const RADIUS_Y = 38;
+
+function seatPosition(index, total) {
+  if (total <= 0) return { top: "50%", left: "50%" };
+  // index 0 sits bottom-centre; the rest run around the table towards the left.
+  const angle = (index / total) * 2 * Math.PI;
+  return {
+    left: `${50 - RADIUS_X * Math.sin(angle)}%`,
+    top: `${50 + RADIUS_Y * Math.cos(angle)}%`,
+  };
+}
 
 export default function PokerTable({ mySeat }) {
   const { players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity } = useGameStore();
 
-  // Rotate seats so 'mySeat' is at position 0 (bottom center)
+  // Rotate seats so 'mySeat' is at position 0 (bottom center), keeping the
+  // real going-round-the-table order of the remaining players.
   const rotatedPlayers = [...players];
   if (mySeat !== null && players.length > 0) {
-    const offset = mySeat;
-    rotatedPlayers.sort(
-      (a, b) => ((a.seat - offset + players.length) % players.length) -
-                ((b.seat - offset + players.length) % players.length)
-    );
+    const seatSlots = Math.max(...players.map((p) => p.seat)) + 1;
+    const relativeSeat = (seat) => (((seat - mySeat) % seatSlots) + seatSlots) % seatSlots;
+    rotatedPlayers.sort((a, b) => relativeSeat(a.seat) - relativeSeat(b.seat));
   }
 
   return (
     <div className="relative w-[700px] h-[420px]">
       {/* Felt */}
-      <div className="absolute inset-8 rounded-[50%] bg-green-900 border-4 border-green-800 shadow-2xl" />
+      <div className="felt absolute inset-8 rounded-[50%]" />
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
         <CommunityCards />
         <PotDisplay />
         {handNumber > 0 && (
-          <span className="text-xs text-gray-500">Hand #{handNumber}</span>
+          <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
         )}
       </div>
 
       {/* Seats */}
       {rotatedPlayers.map((p, visualIdx) => {
-        const pos = SEAT_POSITIONS[visualIdx] || SEAT_POSITIONS[0];
+        const pos = seatPosition(visualIdx, rotatedPlayers.length);
         const isMe = p.seat === mySeat;
         return (
           <div key={p.seat}

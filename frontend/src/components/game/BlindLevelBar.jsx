@@ -3,6 +3,7 @@ import useGameStore from "../../store/gameStore";
 
 export default function BlindLevelBar() {
   const level = useGameStore((s) => s.level);
+  const isPaused = useGameStore((s) => s.isPaused);
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
   const [remaining, setRemaining] = useState(null);
@@ -14,18 +15,21 @@ export default function BlindLevelBar() {
     }
     setRemaining(level.remaining_seconds);
     const interval = setInterval(() => {
-      setRemaining((prev) => (prev != null && prev > 0 ? prev - 1 : 0));
+      setRemaining((prev) => {
+        if (isPaused) return prev;
+        return prev != null && prev > 0 ? prev - 1 : 0;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [level]);
+  }, [isPaused, level]);
 
   if (!level) {
     return (
-      <div className="bg-gray-800 px-4 py-2 flex items-center justify-between text-sm">
-        <span className="text-gray-500">Waiting for level info...</span>
+      <div className="panel px-4 py-2 flex items-center justify-between text-sm">
+        <span className="text-(--color-text-muted)">Waiting for level info...</span>
         <button
           onClick={toggleBB}
-          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-yellow-600 text-black" : "bg-gray-700 text-gray-300"}`}
+          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208] border border-[#e0c66b]" : "btn-secondary"}`}
         >
           {showBB ? "BB" : "Chips"}
         </button>
@@ -43,8 +47,8 @@ export default function BlindLevelBar() {
   };
 
   return (
-    <div className="bg-gray-800 px-4 py-2 flex items-center justify-between text-sm">
-      <span>
+    <div className="panel px-4 py-2 flex items-center justify-between text-sm">
+      <span className="text-(--color-silver)">
         {isBreak
           ? `Break after level ${level.blind_level_number || 0}`
           : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
@@ -53,11 +57,11 @@ export default function BlindLevelBar() {
       <div className="flex items-center gap-3">
         <button
           onClick={toggleBB}
-          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-yellow-600 text-black" : "bg-gray-700 text-gray-300"}`}
+          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208] border border-[#e0c66b]" : "btn-secondary"}`}
         >
           {showBB ? "BB" : "Chips"}
         </button>
-        <span className="text-gray-500">
+        <span className="text-(--color-text-muted)">
           {isTimed
             ? remaining != null
               ? formatTime(remaining)

@@ -1,14 +1,13 @@
 import useGameStore from "../../store/gameStore";
 
-const SUIT_MAP = { "♥": "text-red-500", "♦": "text-blue-400", "♣": "text-green-400", "♠": "text-gray-900" };
-const SUIT_CHAR = { h: "♥", d: "♦", c: "♣", s: "♠" };
+import { SUIT_COLOR, SUIT_CHAR, CARD_FACE } from "./cardStyles";
 
 function CardView({ card: str }) {
   const rank = str.slice(0, -1);
   const suit = SUIT_CHAR[str.slice(-1)] || str.slice(-1);
-  const color = SUIT_MAP[suit] || "text-gray-100";
   return (
-    <div className={`w-11 h-16 bg-white rounded border border-gray-300 flex flex-col items-center justify-center font-bold ${color}`}>
+    <div className={`w-11 h-16 rounded flex flex-col items-center justify-center font-bold ${CARD_FACE}`}
+      style={{ color: SUIT_COLOR[suit] || "#141414" }}>
       <span className="text-sm">{rank}</span>
       <span className="text-xs">{suit}</span>
     </div>

@@ -7,22 +7,22 @@ export default function ActionHistory() {
   const rabbitCards = useGameStore((s) => s.rabbitCards);
 
   return (
-    <div className="w-64 bg-gray-800 rounded-lg p-3 text-xs max-h-48 overflow-y-auto space-y-0.5">
+    <div className="w-64 panel rounded-lg p-3 text-xs max-h-48 overflow-y-auto space-y-0.5">
       {messages.map((m, i) => (
-        <div key={i} className="text-gray-400">{m}</div>
+        <div key={i} className="text-(--color-text-muted)">{m}</div>
       ))}
       {showdown && showdown.map((s, i) => (
-        <div key={`sd-${i}`} className="text-blue-300">
+        <div key={`sd-${i}`} className="text-(--color-silver)">
           Seat {s.seat}: {s.cards?.join(" ")} — {s.hand_name}
         </div>
       ))}
       {potAwards && potAwards.map((a, i) => (
-        <div key={`pa-${i}`} className="text-yellow-300">
+        <div key={`pa-${i}`} className="text-[#d9c07a]">
           Seat {a.seat} wins {a.amount?.toLocaleString()} [{a.description}]
         </div>
       ))}
       {rabbitCards?.length > 0 && (
-        <div className="text-purple-300">
+        <div className="text-[#c76b7a]">
           Rabbit: {rabbitCards.join(" ")}
         </div>
       )}

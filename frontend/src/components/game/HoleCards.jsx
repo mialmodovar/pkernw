@@ -1,5 +1,4 @@
-const SUIT_MAP = { "♥": "text-red-500", "♦": "text-blue-400", "♣": "text-green-400", "♠": "text-gray-900" };
-const SUIT_CHAR = { h: "♥", d: "♦", c: "♣", s: "♠", "♥": "♥", "♦": "♦", "♣": "♣", "♠": "♠" };
+import { SUIT_COLOR, SUIT_CHAR, CARD_FACE, CARD_BACK } from "./cardStyles";
 
 function parseCard(str) {
   if (!str || str === "??") return null;
@@ -12,14 +11,14 @@ function parseCard(str) {
 function CardFace({ card }) {
   if (!card) {
     return (
-      <div className="w-9 h-13 bg-blue-800 rounded border border-blue-600 flex items-center justify-center text-xs text-blue-400">
+      <div className={`w-9 h-13 rounded flex items-center justify-center text-xs ${CARD_BACK}`}>
         ?
       </div>
     );
   }
-  const color = SUIT_MAP[card.suit] || "text-gray-100";
   return (
-    <div className={`w-9 h-13 bg-white rounded border border-gray-300 flex flex-col items-center justify-center text-xs font-bold ${color}`}>
+    <div className={`w-9 h-13 rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE}`}
+      style={{ color: SUIT_COLOR[card.suit] || "#161616" }}>
       <span>{card.rank}</span>
       <span className="text-[10px]">{card.suit}</span>
     </div>

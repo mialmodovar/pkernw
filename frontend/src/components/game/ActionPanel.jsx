@@ -50,14 +50,14 @@ export default function ActionPanel({ mySeat, onAction }) {
 
   if (!isMyTurn) {
     return (
-      <div className="bg-gray-800 rounded-lg p-3 text-center text-sm text-gray-500">
+      <div className="panel rounded-lg p-3 text-center text-sm text-(--color-text-muted)">
         {actionOnSeat !== null ? `Waiting for seat ${actionOnSeat}...` : "Waiting for next hand..."}
       </div>
     );
   }
 
   const timerPct = timer != null ? (timer / timerSec) * 100 : 100;
-  const timerColor = timer != null && timer <= 3 ? "bg-red-500" : "bg-green-500";
+  const timerColor = timer != null && timer <= 3 ? "bg-[#b3243a]" : "bg-[#c9a227]";
 
   const sliderMin = useBBControls ? (ctx.min_raise || 0) / bb : (ctx.min_raise || 0);
   const sliderMax = useBBControls ? (ctx.max_raise || 0) / bb : (ctx.max_raise || 0);
@@ -75,7 +75,7 @@ export default function ActionPanel({ mySeat, onAction }) {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg overflow-hidden">
+    <div className="panel rounded-lg overflow-hidden">
       {/* Quick raise presets — above timer bar, right-aligned */}
       {valid.includes("raise") && (
         <div className="flex gap-1.5 justify-end px-3 pt-2">
@@ -84,7 +84,7 @@ export default function ActionPanel({ mySeat, onAction }) {
                 const val = Math.min(Math.round(ctx.min_raise * mult), ctx.max_raise);
                 return (
                   <button key={mult} onClick={() => setRaiseAmount(val)}
-                    className="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-semibold text-gray-300">
+                    className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors">
                     {mult}x
                   </button>
                 );
@@ -93,7 +93,7 @@ export default function ActionPanel({ mySeat, onAction }) {
                 const val = Math.min(Math.max(Math.round(ctx.pot * pct / 100), ctx.min_raise), ctx.max_raise);
                 return (
                   <button key={pct} onClick={() => setRaiseAmount(val)}
-                    className="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-semibold text-gray-300">
+                    className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors">
                     {pct}%
                   </button>
                 );
@@ -103,7 +103,7 @@ export default function ActionPanel({ mySeat, onAction }) {
       )}
 
       {/* Timer bar */}
-      <div className="h-1.5 bg-gray-700 w-full mt-1.5">
+      <div className="h-1.5 bg-black/50 w-full mt-1.5">
         <div
           className={`h-full ${timerColor} transition-all duration-1000 ease-linear`}
           style={{ width: `${timerPct}%` }}
@@ -112,26 +112,26 @@ export default function ActionPanel({ mySeat, onAction }) {
 
       <div className="p-3 flex items-center gap-3">
         {/* Timer number */}
-        <span className={`text-lg font-bold font-mono w-8 text-center ${timer != null && timer <= 3 ? "text-red-400" : "text-gray-300"}`}>
+        <span className={`text-lg font-bold font-mono w-8 text-center ${timer != null && timer <= 3 ? "text-[#c76b7a]" : "text-(--color-silver)"}`}>
           {timer != null ? timer : ""}
         </span>
         {timeBankRemaining > 0 && (
-          <span className="text-xs text-blue-300 whitespace-nowrap">
+          <span className="text-xs text-[#d9c07a] whitespace-nowrap">
             Bank {timeBankRemaining}s
           </span>
         )}
 
         {valid.includes("fold") && !valid.includes("check") && (
           <button onClick={() => onAction("fold", 0)}
-            className="px-4 py-2 bg-red-700 hover:bg-red-600 rounded font-semibold text-sm">Fold</button>
+            className="px-4 py-2 rounded font-semibold text-sm bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1] transition-colors">Fold</button>
         )}
         {valid.includes("check") && (
           <button onClick={() => onAction("check", 0)}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-semibold text-sm">Check</button>
+            className="btn-secondary px-4 py-2 rounded font-semibold text-sm transition-colors">Check</button>
         )}
         {valid.includes("call") && (
           <button onClick={() => onAction("call", 0)}
-            className="px-4 py-2 bg-green-700 hover:bg-green-600 rounded font-semibold text-sm">
+            className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
             Call {fmt(ctx.to_call)}
           </button>
         )}
@@ -153,16 +153,16 @@ export default function ActionPanel({ mySeat, onAction }) {
                 value={inputValue}
                 onChange={(e) => clampRaise(e.target.value)}
                 onBlur={() => clampRaise(inputValue)}
-                className={`text-sm text-right font-mono bg-gray-700 border border-gray-600 rounded py-1 text-white ${useBBControls ? "w-24 pr-8 pl-1.5" : "w-20 px-1.5"}`}
+                className={`input-field text-sm text-right font-mono rounded py-1 ${useBBControls ? "w-24 pr-8 pl-1.5" : "w-20 px-1.5"}`}
               />
               {useBBControls && (
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-gray-300">
+                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-(--color-text-muted)">
                   BB
                 </span>
               )}
             </div>
             <button onClick={() => onAction("raise", raiseAmount)}
-              className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded font-semibold text-sm">
+              className="px-4 py-2 rounded font-semibold text-sm bg-[linear-gradient(135deg,#d4af37,#8a6c18)] hover:bg-[linear-gradient(135deg,#e3c250,#a17c1e)] border border-[#e0c66b] text-[#1a1208] transition-colors">
               Raise
             </button>
           </div>

@@ -1,12 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from django.utils import timezone
-from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import Tournament
-from game.consumers import _tournament_runners
 
 
 User = get_user_model()
@@ -17,16 +14,11 @@ class TournamentCreationTests(APITestCase):
 		self.user = User.objects.create_user(username="host", password="secret123")
 		self.client.force_authenticate(self.user)
 
-	def tearDown(self):
-		_tournament_runners.clear()
-
 	def test_create_tournament_with_frontend_config_fields(self):
-		scheduled_start_at = timezone.now() + timedelta(days=1)
 		response = self.client.post(
 			reverse("tournament-list"),
 			{
 				"name": "Sunday Major",
-				"scheduled_start_at": scheduled_start_at.isoformat(),
 				"starting_chips": 20000,
 				"max_players": 18,
 				"players_per_table": 9,
@@ -34,15 +26,6 @@ class TournamentCreationTests(APITestCase):
 				"allow_rebuys": True,
 				"max_rebuys": 3,
 				"rebuy_level": 2,
-				"time_bank_seconds": 30,
-				"time_bank_refill_rule": "hands",
-				"time_bank_refill_every_hands": 10,
-				"rabbit_hunting_enabled": True,
-				"auto_remove_offline_seconds": 300,
-				"payout_structure": [
-					{"place": 1, "label": "Winner", "percentage": 70},
-					{"place": 2, "label": "Runner-up", "percentage": 30},
-				],
 				"levels": [
 					{
 						"small_blind": 25,
@@ -72,27 +55,13 @@ class TournamentCreationTests(APITestCase):
 		tournament = Tournament.objects.get(id=response.data["id"])
 		self.assertEqual(tournament.players_per_table, 9)
 		self.assertEqual(tournament.max_players, 18)
-		self.assertEqual(tournament.scheduled_start_at, scheduled_start_at)
 		self.assertEqual(tournament.late_reg_level, 2)
-		self.assertEqual(tournament.time_bank_seconds, 30)
-		self.assertEqual(tournament.time_bank_refill_rule, "hands")
-		self.assertEqual(tournament.time_bank_refill_every_hands, 10)
-		self.assertTrue(tournament.rabbit_hunting_enabled)
-		self.assertEqual(tournament.auto_remove_offline_seconds, 300)
-		self.assertEqual(
-			tournament.payout_structure,
-			[
-				{"place": 1, "label": "Winner", "percentage": 70.0},
-				{"place": 2, "label": "Runner-up", "percentage": 30.0},
-			],
-		)
 		self.assertEqual(tournament.players.count(), 1)
 		self.assertEqual(tournament.tables.count(), 1)
 		self.assertEqual(tournament.levels.count(), 3)
 		host_seat = tournament.players.get(user=self.user)
 		self.assertEqual(host_seat.table.table_number, 1)
 		self.assertEqual(host_seat.seat_at_table, 0)
-		self.assertEqual(host_seat.time_bank_seconds_remaining, 30)
 		self.assertTrue(tournament.levels.get(level_number=2).is_break)
 
 	def test_join_assigns_second_table_when_first_table_is_full(self):
@@ -152,96 +121,6 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertIn("levels", response.data)
 
-	def test_time_bank_blind_level_refill_cannot_exceed_blind_levels(self):
-		response = self.client.post(
-			reverse("tournament-list"),
-			{
-				"name": "Bad Bank",
-				"late_reg_level": 1,
-				"rebuy_level": 1,
-				"time_bank_seconds": 30,
-				"time_bank_refill_rule": "blind_level",
-				"time_bank_refill_level": 3,
-				"levels": [
-					{
-						"small_blind": 25,
-						"big_blind": 50,
-						"ante": 0,
-						"duration_hands": 8,
-					}
-				],
-			},
-			format="json",
-		)
-
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertIn("time_bank_refill_level", response.data)
-
-	def test_payout_structure_percentages_must_total_100(self):
-		response = self.client.post(
-			reverse("tournament-list"),
-			{
-				"name": "Bad Payouts",
-				"payout_structure": [
-					{"place": 1, "label": "First", "percentage": 60},
-					{"place": 2, "label": "Second", "percentage": 30},
-				],
-			},
-			format="json",
-		)
-
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertIn("payout_structure", response.data)
-
-	def test_create_rejects_scheduled_start_in_the_past(self):
-		response = self.client.post(
-			reverse("tournament-list"),
-			{
-				"name": "Too Late",
-				"scheduled_start_at": (timezone.now() - timedelta(minutes=5)).isoformat(),
-			},
-			format="json",
-		)
-
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertIn("scheduled_start_at", response.data)
-
-	def test_start_rejects_before_scheduled_time(self):
-		tournament = Tournament.objects.create(
-			host=self.user,
-			name="Scheduled",
-			scheduled_start_at=timezone.now() + timedelta(hours=1),
-		)
-		primary_table = tournament.ensure_table(1)
-		tournament.players.create(user=self.user, table=primary_table, seat=0, seat_at_table=0, chips=10000)
-		opponent = User.objects.create_user(username="opponent", password="secret123")
-		tournament.players.create(user=opponent, table=primary_table, seat=1, seat_at_table=1, chips=10000)
-
-		response = self.client.post(reverse("tournament-start", kwargs={"pk": tournament.id}))
-
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertEqual(response.data["error"], "Tournament is scheduled to start later")
-		tournament.refresh_from_db()
-		self.assertEqual(tournament.status, "lobby")
-
-	def test_due_scheduled_tournament_starts_on_lobby_poll(self):
-		tournament = Tournament.objects.create(
-			host=self.user,
-			name="Due Now",
-			scheduled_start_at=timezone.now() - timedelta(minutes=1),
-		)
-		primary_table = tournament.ensure_table(1)
-		tournament.players.create(user=self.user, table=primary_table, seat=0, seat_at_table=0, chips=10000)
-		opponent = User.objects.create_user(username="due_opponent", password="secret123")
-		tournament.players.create(user=opponent, table=primary_table, seat=1, seat_at_table=1, chips=10000)
-
-		response = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
-
-		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual(response.data["status"], "running")
-		tournament.refresh_from_db()
-		self.assertEqual(tournament.status, "running")
-
 	def test_start_allows_multi_table_runtime(self):
 		tournament = Tournament.objects.create(
 			host=self.user,
@@ -268,53 +147,3 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		tournament.refresh_from_db()
 		self.assertEqual(tournament.status, "running")
-
-	def test_host_can_pause_and_resume_running_tournament(self):
-		tournament = Tournament.objects.create(
-			host=self.user,
-			name="Admin Controls",
-			status="running",
-		)
-
-		pause_response = self.client.post(reverse("tournament-pause", kwargs={"pk": tournament.id}))
-		self.assertEqual(pause_response.status_code, status.HTTP_200_OK)
-		tournament.refresh_from_db()
-		self.assertEqual(tournament.status, "paused")
-
-		resume_response = self.client.post(reverse("tournament-resume", kwargs={"pk": tournament.id}))
-		self.assertEqual(resume_response.status_code, status.HTTP_200_OK)
-		tournament.refresh_from_db()
-		self.assertEqual(tournament.status, "running")
-
-	def test_non_host_cannot_pause_tournament(self):
-		tournament = Tournament.objects.create(
-			host=self.user,
-			name="Admin Controls",
-			status="running",
-		)
-		other = User.objects.create_user(username="not-host", password="secret123")
-		self.client.force_authenticate(other)
-
-		response = self.client.post(reverse("tournament-pause", kwargs={"pk": tournament.id}))
-
-		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-		tournament.refresh_from_db()
-		self.assertEqual(tournament.status, "running")
-
-	def test_host_can_skip_blind_level_when_runner_is_active(self):
-		class FakeRunner:
-			async def skip_level(self):
-				return {"blind_level_number": 2, "skipped": True}
-
-		tournament = Tournament.objects.create(
-			host=self.user,
-			name="Skip It",
-			status="running",
-		)
-		_tournament_runners[tournament.id] = FakeRunner()
-
-		response = self.client.post(reverse("tournament-skip-level", kwargs={"pk": tournament.id}))
-
-		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual(response.data["level"]["blind_level_number"], 2)
-		self.assertTrue(response.data["level"]["skipped"])

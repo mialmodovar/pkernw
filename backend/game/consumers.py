@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
-import time
 import traceback
-from typing import Callable, Dict, Tuple
+from typing import Dict, Tuple
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -80,7 +78,6 @@ def _db_get_player_records(tournament_id):
             "chips",
             "is_eliminated",
             "finish_position",
-            "time_bank_seconds_remaining",
         )
     )
 
@@ -137,7 +134,6 @@ def _db_update_player_states(tournament_id, states):
             chips=state["chips"],
             is_eliminated=state["is_eliminated"],
             finish_position=state["finish_position"] if state["is_eliminated"] else None,
-            time_bank_seconds_remaining=state["time_bank_seconds_remaining"],
         )
 
 
@@ -158,30 +154,11 @@ async def _notify_user(tournament_id: int, user_id: int, payload: dict):
     await get_channel_layer().send(channel, {"type": event_type, "data": data})
 
 
-async def _request_action(
-    tournament_id: int,
-    table_number: int,
-    player,
-    context: dict,
-    is_paused: Callable[[], bool] | None = None,
-):
+async def _request_action(tournament_id: int, table_number: int, player, context: dict):
     user_id = player._user_id
     key = (tournament_id, user_id)
     valid = context.get("valid_actions", [])
-    base_timer = context.get("action_timer_seconds", 20)
-    bank_remaining = max(0, getattr(player, "time_bank_seconds_remaining", 0))
-    total_timeout = base_timer + bank_remaining
-    await _broadcast_table(
-        tournament_id,
-        table_number,
-        "action_required",
-        {
-            **context,
-            "timer_sec": total_timeout,
-            "action_timer_sec": base_timer,
-            "time_bank_seconds_remaining": bank_remaining,
-        },
-    )
+    await _broadcast_table(tournament_id, table_number, "action_required", {**context, "timer_sec": 20})
 
     queue = _action_queues.get(key)
     if queue:
@@ -192,31 +169,8 @@ async def _request_action(
                 break
 
     try:
-        elapsed = 0.0
-        action = None
-        amount = 0
-
-        while elapsed < total_timeout:
-            if is_paused is not None and is_paused():
-                await asyncio.sleep(0.25)
-                continue
-
-            wait_slice = min(0.25, total_timeout - elapsed)
-            started_at = time.monotonic()
-            try:
-                action, amount = await asyncio.wait_for(queue.get(), timeout=wait_slice)
-                elapsed += time.monotonic() - started_at
-                break
-            except asyncio.TimeoutError:
-                elapsed += time.monotonic() - started_at
-
-        if action is None:
-            raise asyncio.TimeoutError
-
-        bank_used = min(bank_remaining, max(0, math.ceil(elapsed - base_timer)))
-        player.time_bank_seconds_remaining = bank_remaining - bank_used
+        action, amount = await asyncio.wait_for(queue.get(), timeout=20)
     except asyncio.TimeoutError:
-        player.time_bank_seconds_remaining = 0
         action = "check" if "check" in valid else "fold"
         amount = 0
     except Exception:
@@ -275,7 +229,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             await self._send_snapshot()
             runtime_player = _tournament_runners[self.tournament_id].get_runtime_player(self.user.id)
             if runtime_player is not None:
-                await _tournament_runners[self.tournament_id].mark_player_reconnected(self.user.id)
                 await _broadcast_table(
                     self.tournament_id,
                     runtime_player._table_number,
@@ -299,7 +252,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         if coordinator is not None:
             runtime_player = coordinator.get_runtime_player(self.user.id)
             if runtime_player is not None:
-                await coordinator.mark_player_disconnected(self.user.id)
                 await _broadcast_table(
                     self.tournament_id,
                     runtime_player._table_number,
@@ -331,12 +283,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             tournament_id=self.tournament_id,
             players_per_table=tournament.players_per_table,
             levels=levels,
-            time_bank_seconds=tournament.time_bank_seconds,
-            time_bank_refill_rule=tournament.time_bank_refill_rule,
-            time_bank_refill_every_hands=tournament.time_bank_refill_every_hands,
-            time_bank_refill_level=tournament.time_bank_refill_level,
-            rabbit_hunting_enabled=tournament.rabbit_hunting_enabled,
-            auto_remove_offline_seconds=tournament.auto_remove_offline_seconds,
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,
@@ -349,7 +295,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 table_number,
                 player,
                 context,
-                is_paused=lambda: coordinator.is_paused,
             ),
             notify_user=lambda user_id, payload: _notify_user(self.tournament_id, user_id, payload),
             load_players=lambda: self._load_player_records(),
@@ -408,7 +353,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "chips": record["chips"],
                 "is_eliminated": record["is_eliminated"],
                 "finish_position": record["finish_position"],
-                "time_bank_seconds_remaining": record["time_bank_seconds_remaining"],
             }
             for record in records
         ]
@@ -423,7 +367,6 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "chips": player.chips,
                 "is_eliminated": player.is_eliminated,
                 "finish_position": player.finish_position,
-                "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
             }
             for player in players
         ]

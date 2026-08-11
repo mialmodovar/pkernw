@@ -6,19 +6,12 @@ class Tournament(models.Model):
     STATUS_CHOICES = [
         ("lobby",    "Lobby"),
         ("running",  "Running"),
-        ("paused",   "Paused"),
         ("finished", "Finished"),
-    ]
-    TIME_BANK_REFILL_CHOICES = [
-        ("none",        "No refill"),
-        ("hands",       "Every N hands"),
-        ("blind_level", "At blind level"),
     ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
     name           = models.CharField(max_length=100)
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")
-    scheduled_start_at = models.DateTimeField(null=True, blank=True)
     starting_chips = models.IntegerField(default=10_000)
     max_players    = models.IntegerField(default=9)
     players_per_table = models.IntegerField(default=9)
@@ -26,13 +19,6 @@ class Tournament(models.Model):
     allow_rebuys   = models.BooleanField(default=True)
     max_rebuys     = models.IntegerField(default=2)    # per player
     rebuy_level    = models.IntegerField(default=4)    # rebuys allowed through this level (0 = disabled)
-    time_bank_seconds = models.IntegerField(default=0)
-    time_bank_refill_rule = models.CharField(max_length=20, choices=TIME_BANK_REFILL_CHOICES, default="none")
-    time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
-    time_bank_refill_level = models.IntegerField(null=True, blank=True)
-    payout_structure = models.JSONField(default=list, blank=True)
-    rabbit_hunting_enabled = models.BooleanField(default=False)
-    auto_remove_offline_seconds = models.IntegerField(default=0)
     created_at     = models.DateTimeField(auto_now_add=True)
 
     def required_table_count(self, player_count=None):
@@ -95,7 +81,6 @@ class TournamentPlayer(models.Model):
     finish_position = models.IntegerField(null=True, blank=True)
     is_eliminated   = models.BooleanField(default=False)
     rebuy_count     = models.IntegerField(default=0)
-    time_bank_seconds_remaining = models.IntegerField(default=0)
     joined_at       = models.DateTimeField(auto_now_add=True)
 
     class Meta:

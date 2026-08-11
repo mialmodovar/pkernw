@@ -1,28 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import useAuthStore from "../store/authStore";
-
-const formatScheduledStart = (value) => {
-  if (!value) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(new Date(value));
-};
-
-const formatTimeBankRefill = (tournament) => {
-  if (!tournament.time_bank_seconds) return "Time bank disabled";
-  if (tournament.time_bank_refill_rule === "hands") {
-    return `Refills every ${tournament.time_bank_refill_every_hands} hands`;
-  }
-  if (tournament.time_bank_refill_rule === "blind_level") {
-    return `Refills at blind level ${tournament.time_bank_refill_level}`;
-  }
-  return "No refill";
-};
-
-const formatPayoutLabel = (row) => row.label || `Place ${row.place}`;
 
 export default function TournamentSetupPage() {
   const { id } = useParams();
@@ -31,21 +10,18 @@ export default function TournamentSetupPage() {
   const [tournament, setTournament] = useState(null);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
     if (data.status === "running") navigate(`/tournament/${id}/play`);
-  }, [id, navigate]);
+  };
 
-  useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [load]);
+  useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [id]);
 
   if (!tournament) return <p className="text-center mt-10 text-gray-400">Loading...</p>;
 
   const isHost = tournament.host_name === user?.username;
   const joined = tournament.players?.some((p) => p.username === user?.username);
-  const scheduledStart = tournament.scheduled_start_at ? new Date(tournament.scheduled_start_at) : null;
-  const scheduledStartPending = scheduledStart && scheduledStart > new Date();
-  const formattedScheduledStart = formatScheduledStart(tournament.scheduled_start_at);
 
   const handleJoin = async () => {
     try { await api.post(`/tournaments/${id}/join/`); load(); } catch (e) { setError(e.response?.data?.error || "Error"); }
@@ -81,52 +57,6 @@ export default function TournamentSetupPage() {
               : "Rebuys disabled"}
           </p>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Scheduled Start</p>
-          <p className="text-sm text-gray-200">
-            {formattedScheduledStart || "Manual host-controlled start"}
-          </p>
-          {scheduledStartPending && (
-            <p className="text-sm text-blue-300 mt-1">This tournament starts automatically once the scheduled time arrives and enough players are seated.</p>
-          )}
-        </div>
-        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Time Bank</p>
-          <p className="text-sm text-gray-200">
-            {tournament.time_bank_seconds
-              ? `${tournament.time_bank_seconds} seconds per player`
-              : "Disabled"}
-          </p>
-          <p className="text-sm text-gray-400">{formatTimeBankRefill(tournament)}</p>
-        </div>
-        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Prize Pool Reference</p>
-          <p className="text-xs text-gray-500 mt-1">Reference only. Payments are handled outside this app.</p>
-          {tournament.payout_structure?.length > 0 && (
-            <ul className="mt-3 divide-y divide-gray-700 rounded bg-gray-900 text-sm">
-              {tournament.payout_structure.map((row) => (
-                <li key={row.place} className="flex justify-between px-3 py-2">
-                  <span className="text-gray-200">{formatPayoutLabel(row)}</span>
-                  <span className="text-green-400">{row.percentage}%</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {!tournament.payout_structure?.length && (
-            <p className="text-sm text-gray-400 mt-2">No payout structure configured.</p>
-          )}
-        </div>
-        <div className="bg-gray-800 rounded-lg p-4 sm:col-span-2">
-          <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">Table Rules</p>
-          <p className="text-sm text-gray-200">
-            Rabbit hunting {tournament.rabbit_hunting_enabled ? "enabled" : "disabled"}
-          </p>
-          <p className="text-sm text-gray-400">
-            {tournament.auto_remove_offline_seconds > 0
-              ? `Offline players removed after ${tournament.auto_remove_offline_seconds} seconds`
-              : "Offline auto-removal disabled"}
-          </p>
-        </div>
       </div>
 
       <h2 className="font-semibold mb-2">Players ({tournament.players.length}/{tournament.max_players})</h2>
@@ -134,10 +64,7 @@ export default function TournamentSetupPage() {
         {tournament.players.map((p) => (
           <li key={p.id} className="px-4 py-2 flex justify-between">
             <span>{p.username}</span>
-            <span className="text-gray-500">
-              Seat {p.seat}
-              {tournament.time_bank_seconds > 0 && ` | Bank ${p.time_bank_seconds_remaining}s`}
-            </span>
+            <span className="text-gray-500">Seat {p.seat}</span>
           </li>
         ))}
       </ul>
@@ -176,13 +103,7 @@ export default function TournamentSetupPage() {
           <button onClick={handleJoin} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold">Join</button>
         )}
         {isHost && tournament.status === "lobby" && tournament.players.length >= 2 && (
-          <button
-            onClick={handleStart}
-            disabled={Boolean(scheduledStartPending)}
-            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {scheduledStartPending ? "Scheduled" : "Start Tournament"}
-          </button>
+          <button onClick={handleStart} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded font-semibold">Start Tournament</button>
         )}
         <button onClick={() => navigate("/")} className="px-4 py-2 bg-gray-700 rounded">Back</button>
       </div>

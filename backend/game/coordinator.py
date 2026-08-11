@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 from .engine.hand import HandEngine, cards_to_list
 from .engine.player import Player as EnginePlayer
@@ -43,22 +43,10 @@ class MultiTableTournamentCoordinator:
         load_players: LoadPlayersFn,
         persist_assignments: PersistAssignmentsFn,
         persist_player_states: PersistPlayerStatesFn,
-        time_bank_seconds: int = 0,
-        time_bank_refill_rule: str = "none",
-        time_bank_refill_every_hands: Optional[int] = None,
-        time_bank_refill_level: Optional[int] = None,
-        rabbit_hunting_enabled: bool = False,
-        auto_remove_offline_seconds: int = 0,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
         self.levels = levels
-        self.time_bank_seconds = max(0, time_bank_seconds or 0)
-        self.time_bank_refill_rule = time_bank_refill_rule or "none"
-        self.time_bank_refill_every_hands = time_bank_refill_every_hands
-        self.time_bank_refill_level = time_bank_refill_level
-        self.rabbit_hunting_enabled = rabbit_hunting_enabled
-        self.auto_remove_offline_seconds = max(0, auto_remove_offline_seconds or 0)
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -73,13 +61,8 @@ class MultiTableTournamentCoordinator:
         self._table_states: Dict[int, dict] = {}
         self._level_index = 0
         self._hands_in_level = 0
-        self._hands_played = 0
         self._level_start_time = 0.0
         self._standings: List[EnginePlayer] = []
-        self._refilled_blind_levels = set()
-        self._offline_since: Dict[int, float] = {}
-        self.is_paused = False
-        self._paused_at: Optional[float] = None
 
     @property
     def current_blind_level_number(self) -> int:
@@ -109,9 +92,7 @@ class MultiTableTournamentCoordinator:
         await self.broadcast_tournament("countdown", {"seconds": 0})
 
         while self._active_player_count() > 1:
-            await self._wait_if_paused()
             await self._sync_players_from_db()
-            await self._remove_timed_out_offline_players()
             await self._rebalance_tables()
 
             level = self._current_level()
@@ -163,11 +144,9 @@ class MultiTableTournamentCoordinator:
                     },
                 )
 
-            self._hands_in_level += 1
-            self._hands_played += 1
-            self._refill_time_banks_after_hand()
-            self._advance_level()
             await self.persist_player_states(list(self._players_by_id.values()))
+            self._hands_in_level += 1
+            self._advance_level()
             await asyncio.sleep(3)
 
         winner = next(
@@ -218,17 +197,10 @@ class MultiTableTournamentCoordinator:
             "current_table_id": table.table_id,
             "table_count": len(self._tables),
             "table_summaries": self.table_summaries(),
-            "is_paused": self.is_paused,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:
         return self._players_by_user_id.get(user_id)
-
-    async def mark_player_disconnected(self, user_id: int):
-        self._offline_since.setdefault(user_id, time.monotonic())
-
-    async def mark_player_reconnected(self, user_id: int):
-        self._offline_since.pop(user_id, None)
 
     def table_summaries(self) -> List[dict]:
         return [
@@ -254,7 +226,6 @@ class MultiTableTournamentCoordinator:
             runtime_player.chips = record["chips"]
             runtime_player.is_eliminated = record["is_eliminated"]
             runtime_player.finish_position = record["finish_position"] or 0
-            runtime_player.time_bank_seconds_remaining = record["time_bank_seconds_remaining"] or 0
             runtime_player._user_id = record["user_id"]
             runtime_player._table_id = record["table_id"]
             runtime_player._table_number = record["table_number"] or 1
@@ -361,15 +332,8 @@ class MultiTableTournamentCoordinator:
             request_action=lambda player, context: self.request_action(
                 table.table_number,
                 player,
-                {
-                    **context,
-                    "table_number": table.table_number,
-                    "table_id": table.table_id,
-                    "action_timer_seconds": 20,
-                    "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
-                },
+                {**context, "table_number": table.table_number, "table_id": table.table_id},
             ),
-            rabbit_hunting_enabled=self.rabbit_hunting_enabled,
         )
         result = await engine.run()
         table.hand_number += 1
@@ -377,7 +341,7 @@ class MultiTableTournamentCoordinator:
         table.players = players
         return [player for player in result.busted_players if player.chips == 0]
 
-    async def _broadcast_to_table(self, table_number: int, event_type: str, payload: Any):
+    async def _broadcast_to_table(self, table_number: int, event_type: str, payload: dict):
         state = self._table_states.setdefault(
             table_number,
             {"community_cards": [], "pot": 0, "street": None, "hand_number": 0},
@@ -411,16 +375,11 @@ class MultiTableTournamentCoordinator:
             return
 
         table = self._tables.get(table_number)
-        if isinstance(payload, dict):
-            enriched_payload = {**payload}
-        else:
-            enriched_payload = {"data": payload}
-        enriched_payload.update(
-            {
-                "table_number": table_number,
-                "table_id": table.table_id if table else None,
-            }
-        )
+        enriched_payload = {
+            **payload,
+            "table_number": table_number,
+            "table_id": table.table_id if table else None,
+        }
         await self.broadcast_table(table_number, event_type, enriched_payload)
 
     async def _run_break(self, level: Dict[str, int]):
@@ -434,12 +393,9 @@ class MultiTableTournamentCoordinator:
                 "tables": self.table_summaries(),
             },
         )
-        remaining = total_seconds
-        while remaining > 0:
-            await self._wait_if_paused()
+        for remaining in range(total_seconds, 0, -1):
             await self.broadcast_tournament("break_tick", {"remaining_seconds": remaining})
             await asyncio.sleep(1)
-            remaining -= 1
         await self.broadcast_tournament("break_tick", {"remaining_seconds": 0})
         self._set_next_level()
 
@@ -468,40 +424,6 @@ class MultiTableTournamentCoordinator:
         self._level_index += 1
         self._hands_in_level = 0
         self._level_start_time = time.monotonic()
-        self._refill_time_banks_for_level()
-
-    async def pause(self) -> dict:
-        if not self.is_paused:
-            self.is_paused = True
-            self._paused_at = time.monotonic()
-        payload = {"status": "paused", "level": self._level_payload()}
-        await self.broadcast_tournament("tournament_paused", payload)
-        return payload
-
-    async def resume(self) -> dict:
-        if self.is_paused and self._paused_at is not None:
-            self._level_start_time += time.monotonic() - self._paused_at
-        self.is_paused = False
-        self._paused_at = None
-        payload = {"status": "running", "level": self._level_payload()}
-        await self.broadcast_tournament("tournament_resumed", payload)
-        return payload
-
-    async def skip_level(self) -> dict:
-        previous_index = self._level_index
-        self._set_next_level()
-        payload = {
-            **self._level_payload(),
-            "skipped": self._level_index != previous_index,
-            "table_count": len(self._tables),
-            "tables": self.table_summaries(),
-        }
-        await self.broadcast_tournament("level_change", payload)
-        return payload
-
-    async def _wait_if_paused(self):
-        while self.is_paused:
-            await asyncio.sleep(0.5)
 
     def _level_payload(self) -> dict:
         level = self._current_level()
@@ -515,8 +437,7 @@ class MultiTableTournamentCoordinator:
             "hands_in_level": self._hands_in_level,
         }
         if level.get("duration_minutes"):
-            now = self._paused_at if self.is_paused and self._paused_at is not None else time.monotonic()
-            elapsed = now - self._level_start_time
+            elapsed = time.monotonic() - self._level_start_time
             payload["duration_minutes"] = level["duration_minutes"]
             payload["remaining_seconds"] = int(max(0, level["duration_minutes"] * 60 - elapsed))
         else:
@@ -530,77 +451,7 @@ class MultiTableTournamentCoordinator:
             "table_number": player._table_number,
             "name": player.name,
             "chips": player.chips,
-            "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
             "is_eliminated": player.is_eliminated,
             "is_folded": player.is_folded,
             "is_all_in": player.is_all_in,
         }
-
-    def _refill_time_banks_after_hand(self):
-        if (
-            self.time_bank_seconds <= 0
-            or self.time_bank_refill_rule != "hands"
-            or not self.time_bank_refill_every_hands
-        ):
-            return
-        if self._hands_played % self.time_bank_refill_every_hands == 0:
-            self._refill_time_banks()
-
-    def _refill_time_banks_for_level(self):
-        if (
-            self.time_bank_seconds <= 0
-            or self.time_bank_refill_rule != "blind_level"
-            or not self.time_bank_refill_level
-        ):
-            return
-        blind_level_number = self.current_blind_level_number
-        if self._current_level().get("is_break") or blind_level_number != self.time_bank_refill_level:
-            return
-        if blind_level_number in self._refilled_blind_levels:
-            return
-        self._refilled_blind_levels.add(blind_level_number)
-        self._refill_time_banks()
-
-    def _refill_time_banks(self):
-        for player in self._players_by_id.values():
-            if not player.is_eliminated and player.chips > 0:
-                player.time_bank_seconds_remaining = self.time_bank_seconds
-
-    async def _remove_timed_out_offline_players(self):
-        if self.auto_remove_offline_seconds <= 0 or not self._offline_since:
-            return
-
-        now = time.monotonic()
-        timed_out_players = []
-        for user_id, disconnected_at in list(self._offline_since.items()):
-            if now - disconnected_at < self.auto_remove_offline_seconds:
-                continue
-            player = self._players_by_user_id.get(user_id)
-            if player is None or player.is_eliminated or player.chips <= 0:
-                self._offline_since.pop(user_id, None)
-                continue
-            timed_out_players.append(player)
-
-        if not timed_out_players:
-            return
-
-        remaining_count = self._active_player_count()
-        for player in sorted(timed_out_players, key=lambda item: (item._table_number, item._seat, item._tp_id)):
-            player.chips = 0
-            player.is_eliminated = True
-            player.finish_position = remaining_count
-            remaining_count -= 1
-            self._standings.append(player)
-            self._offline_since.pop(player._user_id, None)
-            await self._broadcast_to_table(
-                player._table_number,
-                "player_eliminated",
-                {
-                    "seat": player._seat,
-                    "name": player.name,
-                    "finish_position": player.finish_position,
-                    "reason": "offline_timeout",
-                },
-            )
-
-        await self.persist_player_states(list(self._players_by_id.values()))

@@ -1,8 +1,6 @@
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from asgiref.sync import async_to_sync
-from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .serializers import (
     TournamentListSerializer,
@@ -15,18 +13,6 @@ from .serializers import (
 from game.consumers import _tournament_runners
 
 
-def _start_due_scheduled_tournaments():
-    due_tournaments = Tournament.objects.filter(
-        status="lobby",
-        scheduled_start_at__isnull=False,
-        scheduled_start_at__lte=timezone.now(),
-    )
-    for tournament in due_tournaments:
-        if tournament.players.count() >= 2:
-            tournament.status = "running"
-            tournament.save(update_fields=["status"])
-
-
 def _get_table_assignment(tournament, global_seat):
     table_number = (global_seat // tournament.players_per_table) + 1
     seat_at_table = global_seat % tournament.players_per_table
@@ -37,10 +23,6 @@ def _get_table_assignment(tournament, global_seat):
 class TournamentListCreateView(generics.ListCreateAPIView):
     queryset = Tournament.objects.all().order_by("-created_at")
 
-    def get_queryset(self):
-        _start_due_scheduled_tournaments()
-        return super().get_queryset()
-
     def get_serializer_class(self):
         if self.request.method == "POST":
             return TournamentCreateSerializer
@@ -50,10 +32,6 @@ class TournamentListCreateView(generics.ListCreateAPIView):
 class TournamentDetailView(generics.RetrieveAPIView):
     queryset = Tournament.objects.all()
     serializer_class = TournamentDetailSerializer
-
-    def get_queryset(self):
-        _start_due_scheduled_tournaments()
-        return super().get_queryset()
 
 
 @api_view(["POST"])
@@ -73,7 +51,7 @@ def join_tournament(request, pk):
     if tournament.status == "lobby":
         # Normal pre-start join
         pass
-    elif tournament.status in ("running", "paused") and tournament.late_reg_level > 0:
+    elif tournament.status == "running" and tournament.late_reg_level > 0:
         # Late registration — check current level from runner
         runner = _tournament_runners.get(pk)
         if runner is None:
@@ -90,9 +68,7 @@ def join_tournament(request, pk):
     tp = TournamentPlayer.objects.create(
         tournament=tournament, user=request.user,
         table=table, seat=next_seat, seat_at_table=seat_at_table, chips=tournament.starting_chips,
-        time_bank_seconds_remaining=tournament.time_bank_seconds,
     )
-    _start_due_scheduled_tournaments()
     return Response(
         {
             "seat": tp.seat,
@@ -119,78 +95,9 @@ def start_tournament(request, pk):
     if tournament.players.count() < 2:
         return Response({"error": "Need at least 2 players"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if tournament.scheduled_start_at and tournament.scheduled_start_at > timezone.now():
-        return Response(
-            {
-                "error": "Tournament is scheduled to start later",
-                "scheduled_start_at": tournament.scheduled_start_at,
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     tournament.status = "running"
     tournament.save()
     return Response({"status": "running"})
-
-
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def pause_tournament(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
-
-    if tournament.status != "running":
-        return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
-
-    runner = _tournament_runners.get(pk)
-    if runner is not None:
-        async_to_sync(runner.pause)()
-
-    tournament.status = "paused"
-    tournament.save(update_fields=["status"])
-    return Response({"status": "paused"})
-
-
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def resume_tournament(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
-
-    if tournament.status != "paused":
-        return Response({"error": "Tournament is not paused"}, status=status.HTTP_400_BAD_REQUEST)
-
-    tournament.status = "running"
-    tournament.save(update_fields=["status"])
-
-    runner = _tournament_runners.get(pk)
-    if runner is not None:
-        async_to_sync(runner.resume)()
-
-    return Response({"status": "running"})
-
-
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def skip_blind_level(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
-
-    if tournament.status not in ("running", "paused"):
-        return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
-
-    runner = _tournament_runners.get(pk)
-    if runner is None:
-        return Response({"error": "Tournament engine not running"}, status=status.HTTP_400_BAD_REQUEST)
-
-    level = async_to_sync(runner.skip_level)()
-    return Response({"status": tournament.status, "level": level})
 
 
 @api_view(["GET", "PUT"])
@@ -237,7 +144,7 @@ def rebuy_tournament(request, pk):
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if tournament.status not in ("running", "paused"):
+    if tournament.status != "running":
         return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
 
     if not tournament.allow_rebuys:

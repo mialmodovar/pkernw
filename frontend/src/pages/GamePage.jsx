@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { connect, disconnect, onMessage, clearListeners, send } from "../api/socket";
-import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
 import PokerTable from "../components/game/PokerTable";
@@ -13,56 +12,19 @@ export default function GamePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const {
-    handleEvent,
-    reset,
-    standings,
-    players,
-    countdown,
-    isPaused,
-    currentTableNumber,
-    tableCount,
-    tableAssignmentNotice,
-    dismissTableAssignmentNotice,
-  } = useGameStore();
-  const [tournament, setTournament] = useState(null);
-  const [adminError, setAdminError] = useState("");
-
-  const loadTournament = useCallback(async () => {
-    const { data } = await api.get(`/tournaments/${id}/`);
-    setTournament(data);
-  }, [id]);
+  const { handleEvent, reset, standings, players, countdown, currentTableNumber, tableCount } = useGameStore();
 
   useEffect(() => {
     reset();
     connect(id);
     const unsub = onMessage(handleEvent);
     return () => { unsub(); clearListeners(); disconnect(); };
-  }, [id, handleEvent, reset]);
-
-  useEffect(() => { loadTournament(); }, [loadTournament]);
-
-  useEffect(() => {
-    if (!tableAssignmentNotice) return undefined;
-    const timeout = setTimeout(dismissTableAssignmentNotice, 7000);
-    return () => clearTimeout(timeout);
-  }, [dismissTableAssignmentNotice, tableAssignmentNotice]);
+  }, [id]);
 
   // Find "my" seat
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
-  const isHost = tournament?.host_name === user?.username;
-  const tournamentStatus = isPaused ? "paused" : tournament?.status;
 
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
-  const handleAdminControl = async (control) => {
-    setAdminError("");
-    try {
-      await api.post(`/tournaments/${id}/${control}/`);
-      await loadTournament();
-    } catch (error) {
-      setAdminError(error.response?.data?.error || "Unable to update tournament.");
-    }
-  };
 
   if (standings) {
     return (
@@ -88,64 +50,6 @@ export default function GamePage() {
     <div className="h-screen flex flex-col">
       <BlindLevelBar />
 
-      {isHost && (
-        <div className="px-4 py-2 bg-gray-900 border-b border-gray-800 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <div>
-            <span className="text-gray-400">Host controls</span>
-            {adminError && <span className="ml-3 text-red-400">{adminError}</span>}
-          </div>
-          <div className="flex gap-2">
-            {tournamentStatus === "paused" ? (
-              <button
-                onClick={() => handleAdminControl("resume")}
-                className="px-3 py-1 bg-green-600 hover:bg-green-700 rounded font-semibold"
-              >
-                Resume
-              </button>
-            ) : (
-              <button
-                onClick={() => handleAdminControl("pause")}
-                className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded font-semibold"
-              >
-                Pause
-              </button>
-            )}
-            <button
-              onClick={() => handleAdminControl("skip-level")}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded font-semibold"
-            >
-              Skip Blind Level
-            </button>
-          </div>
-        </div>
-      )}
-
-      {tableAssignmentNotice && (
-        <div className="fixed top-14 left-1/2 z-30 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-xl border border-yellow-500/40 bg-gray-950/95 px-4 py-3 shadow-2xl shadow-black/40">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-yellow-400">Table move</div>
-              <div className="mt-1 text-sm text-white">
-                You were moved to table {tableAssignmentNotice.tableNumber}, seat {tableAssignmentNotice.seat}.
-              </div>
-              {tableAssignmentNotice.tableCount > 1 && (
-                <div className="mt-1 text-xs text-gray-400">
-                  {tableAssignmentNotice.tableCount} active tables remain in this tournament.
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={dismissTableAssignmentNotice}
-              className="rounded px-2 py-1 text-xs font-semibold text-gray-400 hover:bg-gray-800 hover:text-white"
-              aria-label="Dismiss table move notice"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="px-4 py-2 text-sm text-gray-400 flex justify-between">
         <span>{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
         <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
@@ -158,12 +62,6 @@ export default function GamePage() {
             <div className="text-gray-400 text-lg mb-2">Tournament starting in</div>
             <div className="text-6xl font-bold text-white tabular-nums">{countdown}</div>
             <div className="text-gray-500 text-sm mt-3">Waiting for all players to connect...</div>
-          </div>
-        )}
-        {isPaused && (
-          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
-            <div className="text-4xl font-bold text-white">Tournament Paused</div>
-            <div className="text-gray-400 text-sm mt-3">Waiting for the host to resume.</div>
           </div>
         )}
       </div>

@@ -19,7 +19,8 @@ User = get_user_model()
 
 class TournamentCreationTests(APITestCase):
 	def setUp(self):
-		self.user = User.objects.create_user(username="host", password="secret123")
+		# Creating tournaments is staff-only, so the host here is an organiser.
+		self.user = User.objects.create_user(username="host", password="secret123", is_staff=True)
 		self.client.force_authenticate(self.user)
 
 	def tearDown(self):
@@ -764,3 +765,49 @@ class DeleteTournamentTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())
+
+
+class TournamentPermissionTests(APITestCase):
+	"""Opening a tournament sets stakes for other people, so it is staff-only."""
+
+	def setUp(self):
+		self.player = User.objects.create_user(username="justaplayer", password="secret123")
+		self.staff = User.objects.create_user(username="organiser", password="secret123", is_staff=True)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _create(self):
+		return self.client.post(reverse("tournament-list"), {"name": "Friday Game"}, format="json")
+
+	def test_a_plain_player_cannot_create_a_tournament(self):
+		self.client.force_authenticate(self.player)
+
+		response = self._create()
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		self.assertFalse(Tournament.objects.exists())
+
+	def test_staff_can_create_a_tournament(self):
+		self.client.force_authenticate(self.staff)
+
+		response = self._create()
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertTrue(Tournament.objects.filter(host=self.staff).exists())
+
+	def test_a_plain_player_can_still_browse(self):
+		Tournament.objects.create(host=self.staff, name="Open Game", status="lobby")
+		self.client.force_authenticate(self.player)
+
+		response = self.client.get(reverse("tournament-list"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(len(response.data), 1)
+
+	def test_the_api_reports_staff_so_the_client_can_hide_what_it_must_not_offer(self):
+		self.client.force_authenticate(self.player)
+		self.assertFalse(self.client.get(reverse("me")).data["is_staff"])
+
+		self.client.force_authenticate(self.staff)
+		self.assertTrue(self.client.get(reverse("me")).data["is_staff"])

@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
+from .permissions import StaffCreatesTournaments
 from .serializers import (
     TournamentListSerializer,
     TournamentDetailSerializer,
@@ -38,6 +39,7 @@ def _get_table_assignment(tournament, global_seat):
 
 class TournamentListCreateView(generics.ListCreateAPIView):
     queryset = Tournament.objects.all().order_by("-created_at")
+    permission_classes = [StaffCreatesTournaments]
 
     def get_queryset(self):
         _start_due_scheduled_tournaments()

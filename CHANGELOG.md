@@ -9,6 +9,11 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Only staff can open a tournament.** Any registered account could create one,
+  which sets stakes and a blind structure for other people. Browsing, joining and
+  playing are unchanged for everyone. Staff is granted in the Django admin at
+  `/admin/` by a superuser — that is the permissions UI, and it comes with
+  Django; what was missing was a superuser and the rule itself.
 - **Hand history, recorded and reviewable.** The engine now writes each finished
   hand — the board, every action by street, the showdown hands and the pot
   awards — and a Review button on the table replays the last few. The tables

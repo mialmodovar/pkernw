@@ -32,7 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "username", "profile")
+        fields = ("id", "username", "profile", "is_staff", "is_superuser")
 
     def get_profile(self, user):
         profile, _ = Profile.objects.get_or_create(user=user)

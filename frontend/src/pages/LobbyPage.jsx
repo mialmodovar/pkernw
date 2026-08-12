@@ -8,7 +8,7 @@ import StatsPanel from "../components/lobby/StatsPanel";
 import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
 
 export default function LobbyPage() {
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
 
@@ -52,10 +52,12 @@ export default function LobbyPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex gap-3 items-center">
-            <button onClick={() => navigate("/tournaments/new")}
-              className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
-              Create Tournament
-            </button>
+            {user?.is_staff && (
+              <button onClick={() => navigate("/tournaments/new")}
+                className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
+                Create Tournament
+              </button>
+            )}
             <button onClick={logout}
               className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">
               Logout

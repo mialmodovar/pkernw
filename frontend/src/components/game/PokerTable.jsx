@@ -4,8 +4,7 @@ import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
-import AllInMoment from "./AllInMoment";
-import FlyingChips from "./FlyingChips";
+
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
 // not from the number of players present, so nobody's seat shifts when
@@ -38,7 +37,7 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity }) {
   const {
     players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat, showdown, collectedBets,
+    dealerSeat, sbSeat, bbSeat, showdown,
   } = useGameStore();
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
@@ -61,26 +60,6 @@ export default function PokerTable({ mySeat, capacity }) {
   const offset = mySeat ?? 0;
   const bySeat = new Map(players.map((p) => [p.seat, p]));
 
-  const CENTRE = { left: "50%", top: "50%" };
-  // A seat's screen position depends on the rotation, so resolve it the same
-  // way the seats themselves are placed.
-  const positionOfSeat = (seat) => {
-    const visualIdx = ((seat - offset) % slots + slots) % slots;
-    return slotPosition(visualIdx, slots);
-  };
-  const chipFlights = (potAwards || []).length
-    ? potAwards.map((award, i) => ({
-        id: `award-${i}-${award.seat}-${award.amount}`,
-        from: CENTRE,
-        to: positionOfSeat(award.seat),
-        amount: award.amount,
-      }))
-    : (collectedBets || []).map((bet) => ({
-        id: `collect-${handNumber}-${bet.seat}-${bet.amount}`,
-        from: positionOfSeat(bet.seat),
-        to: CENTRE,
-        amount: bet.amount,
-      }));
 
   return (
     <div className="relative w-full max-w-[820px] aspect-[5/3] mx-auto">
@@ -91,15 +70,15 @@ export default function PokerTable({ mySeat, capacity }) {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
         <CommunityCards winningCards={winningBoardCards} />
         <PotDisplay />
+        {allInEquity?.length > 0 && (
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-[#d9c07a] animate-pulse">
+            All in
+          </span>
+        )}
         {handNumber > 0 && (
           <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
         )}
       </div>
-
-      {/* Bets sweeping into the pot, and the pot going out to the winner. */}
-      <FlyingChips items={chipFlights} />
-
-      <AllInMoment />
 
       {/* Seats — one per slot, occupied or not */}
       {Array.from({ length: slots }, (_, visualIdx) => {

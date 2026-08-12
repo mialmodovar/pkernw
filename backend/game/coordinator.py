@@ -223,6 +223,11 @@ class MultiTableTournamentCoordinator:
             await self._rebalance_tables()
             table = self._tables.get(player._table_number)
         if table is None:
+            # An eliminated player holds no seat, so they had no table and got
+            # no snapshot at all — a blank screen. Show them a live table
+            # instead, so they can keep watching.
+            table = next(iter(sorted(self._tables.values(), key=lambda t: t.table_number)), None)
+        if table is None:
             return None
 
         state = self._table_states.get(table.table_number, {})

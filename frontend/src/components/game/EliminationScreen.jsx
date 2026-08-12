@@ -12,7 +12,7 @@ const ordinal = (n) => {
  * page reload would otherwise leave them staring at an empty table.
  */
 export default function EliminationScreen({
-  tournamentId, tournament, finishPosition, reason, onRebought, onLeave,
+  tournamentId, tournament, finishPosition, reason, onRebought, onSpectate, onLeave,
 }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -77,6 +77,14 @@ export default function EliminationScreen({
               className="btn-accent px-4 py-2.5 rounded font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? "Rebuying..." : `Rebuy — ${tournament.starting_chips.toLocaleString()} chips (${rebuysLeft} left)`}
+            </button>
+          )}
+          {onSpectate && (
+            <button
+              onClick={onSpectate}
+              className="btn-secondary px-4 py-2.5 rounded font-semibold transition-colors"
+            >
+              Keep watching
             </button>
           )}
           <button

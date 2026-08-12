@@ -39,6 +39,10 @@ export default function GamePage() {
   } = useGameStore();
   const [tournament, setTournament] = useState(null);
   const [adminError, setAdminError] = useState("");
+  // Busting out shouldn't yank the table away mid-river; and once told, a
+  // player may want to stay and watch.
+  const [eliminationReady, setEliminationReady] = useState(false);
+  const [spectating, setSpectating] = useState(false);
 
   const loadTournament = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -66,6 +70,25 @@ export default function GamePage() {
     const timeout = setTimeout(dismissTableAssignmentNotice, 7000);
     return () => clearTimeout(timeout);
   }, [dismissTableAssignmentNotice, tableAssignmentNotice]);
+
+  // Sourced from REST rather than only the websocket event: an eliminated
+  // player gets no snapshot on reconnect, so this has to survive a reload.
+  const mySeatRecord = tournament?.players?.find((p) => p.username === user?.username);
+  const myFinish = mySeatRecord?.is_eliminated ? mySeatRecord.finish_position : null;
+  const eliminatedByEvent = lastElimination?.name === user?.username;
+  const myEliminationFinish = myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
+
+  // Let the hand finish playing out — the river, the showdown, the pot — before
+  // taking the screen over.
+  useEffect(() => {
+    if (!myEliminationFinish) {
+      setEliminationReady(false);
+      setSpectating(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setEliminationReady(true), 6000);
+    return () => clearTimeout(timer);
+  }, [myEliminationFinish]);
 
   // Find "my" seat
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
@@ -97,21 +120,15 @@ export default function GamePage() {
     }
   };
 
-  // Sourced from REST rather than only the websocket event: an eliminated
-  // player gets no snapshot on reconnect, so this has to survive a reload.
-  const mySeatRecord = tournament?.players?.find((p) => p.username === user?.username);
-  const myFinish = mySeatRecord?.is_eliminated ? mySeatRecord.finish_position : null;
-  const eliminatedByEvent = lastElimination?.name === user?.username;
-  const myEliminationFinish = myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
-
-  if (myEliminationFinish && !standings) {
+  if (myEliminationFinish && !standings && eliminationReady && !spectating) {
     return (
       <EliminationScreen
         tournamentId={id}
         tournament={tournament}
         finishPosition={myEliminationFinish}
         reason={eliminatedByEvent ? lastElimination.reason : null}
-        onRebought={loadTournament}
+        onRebought={() => { setSpectating(false); setEliminationReady(false); loadTournament(); }}
+        onSpectate={() => setSpectating(true)}
         onLeave={() => navigate("/")}
       />
     );
@@ -140,6 +157,18 @@ export default function GamePage() {
   return (
     <div className="h-screen flex flex-col">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
+      {myEliminationFinish && spectating && (
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
+                        bg-[#3a1016] border-[rgba(196,178,165,0.25)] text-[#e3cdd1]">
+          <span>You are out — spectating.</span>
+          <button
+            onClick={() => setSpectating(false)}
+            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            Show result
+          </button>
+        </div>
+      )}
       <BlindLevelBar />
 
       {isHost && (

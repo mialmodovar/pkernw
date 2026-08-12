@@ -5,6 +5,7 @@ import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
 import AllInMoment from "./AllInMoment";
+import FlyingChips from "./FlyingChips";
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
 // not from the number of players present, so nobody's seat shifts when
@@ -37,7 +38,7 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity }) {
   const {
     players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat, showdown,
+    dealerSeat, sbSeat, bbSeat, showdown, collectedBets,
   } = useGameStore();
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
@@ -55,6 +56,27 @@ export default function PokerTable({ mySeat, capacity }) {
   const offset = mySeat ?? 0;
   const bySeat = new Map(players.map((p) => [p.seat, p]));
 
+  const CENTRE = { left: "50%", top: "50%" };
+  // A seat's screen position depends on the rotation, so resolve it the same
+  // way the seats themselves are placed.
+  const positionOfSeat = (seat) => {
+    const visualIdx = ((seat - offset) % slots + slots) % slots;
+    return slotPosition(visualIdx, slots);
+  };
+  const chipFlights = (potAwards || []).length
+    ? potAwards.map((award, i) => ({
+        id: `award-${i}-${award.seat}-${award.amount}`,
+        from: CENTRE,
+        to: positionOfSeat(award.seat),
+        amount: award.amount,
+      }))
+    : (collectedBets || []).map((bet) => ({
+        id: `collect-${handNumber}-${bet.seat}-${bet.amount}`,
+        from: positionOfSeat(bet.seat),
+        to: CENTRE,
+        amount: bet.amount,
+      }));
+
   return (
     <div className="relative w-full max-w-[820px] aspect-[5/3] mx-auto">
       {/* Felt */}
@@ -68,6 +90,9 @@ export default function PokerTable({ mySeat, capacity }) {
           <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
         )}
       </div>
+
+      {/* Bets sweeping into the pot, and the pot going out to the winner. */}
+      <FlyingChips items={chipFlights} />
 
       <AllInMoment />
 

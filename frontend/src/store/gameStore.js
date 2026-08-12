@@ -65,6 +65,7 @@ const useGameStore = create((set) => ({
   isPaused: false,
   standings: null, // final standings when tournament finishes
   lastElimination: null, // { seat, name, finish_position, reason }
+  collectedBets: [],     // bets swept into the pot on the last street
   connectionStatus: "connecting", // connecting | open | reconnecting | failed
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   messages: [],    // action log
@@ -144,6 +145,7 @@ const useGameStore = create((set) => ({
           showdown: null,
           potAwards: null,
           rabbitCards: null,
+          collectedBets: [],
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
@@ -261,6 +263,9 @@ const useGameStore = create((set) => ({
           street: data.street,
           communityCards: data.cards || [],
           pot: data.pot || 0,
+          // Captured before the bets are zeroed, so the table can show them
+          // travelling into the pot.
+          collectedBets: s.players.filter((p) => p.bet > 0).map((p) => ({ seat: p.seat, amount: p.bet })),
           players: s.players.map((p) => ({ ...p, bet: 0 })),
           allInEquity: null,
           messages: appendLog(s, entry(s, "street", (data.cards || []).join(" "), { street: data.street })),
@@ -487,7 +492,7 @@ const useGameStore = create((set) => ({
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, level: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
-      standings: null, lastElimination: null, messages: [],
+      standings: null, lastElimination: null, collectedBets: [], messages: [],
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
     }),

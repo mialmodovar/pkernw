@@ -8,6 +8,7 @@ import LobbyPage from "./pages/LobbyPage";
 import CreateTournamentPage from "./pages/CreateTournamentPage";
 import TournamentSetupPage from "./pages/TournamentSetupPage";
 import GamePage from "./pages/GamePage";
+import BuildStamp from "./components/BuildStamp";
 
 export default function App() {
   const { init, loading } = useAuthStore();
@@ -23,14 +24,17 @@ export default function App() {
   }
 
   return (
-    <Routes>
+    <>
+      <BuildStamp />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/" element={<ProtectedRoute><LobbyPage /></ProtectedRoute>} />
       <Route path="/tournaments/new" element={<ProtectedRoute><CreateTournamentPage /></ProtectedRoute>} />
       <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
       <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </>
   );
 }

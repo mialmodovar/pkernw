@@ -9,6 +9,30 @@ remembering.
 ## Unreleased
 
 ### Added
+- **The build is stamped on the page.** Bottom right, in small grey type: the
+  time the bundle was built and, when built from a checkout, the commit. Telling
+  a stale cached page from a fresh deploy had been guesswork, and that guesswork
+  already cost a round of chasing a bug that was no longer there.
+
+### Changed
+- **The hand history is a button.** It used to be a live log that grew a line per
+  action, and every line changed the height of the whole bottom row — the betting
+  panel and the waiting message moved under the mouse while a hand played out.
+  The history itself reads better in the review panel, where hands are laid out
+  whole.
+- **The camera and microphone toggles moved into the chat header.** Both are
+  talking to the table, and stacking them above the chat cost a hundred pixels
+  the felt wanted.
+
+### Fixed
+- **The table no longer needs scrolling.** On a laptop screen the page ran past
+  the bottom of the window while you played. Everything now fits one screen: the
+  table keeps its full size whenever there is room and only shrinks on a short
+  window, which is the one case where something has to give. Measured at five
+  window sizes down to 1280×700 — no scrolling at any of them.
+- **Names fit on the nameplate again.** Moving the seats onto the table's own
+  measurements had shrunk them by a quarter, leaving room for about two
+  characters of a nickname.
 - **Table chat.** Bottom left of the table, with the betting panel in the middle
   and the hand history on the right. Messages go to your own table and nowhere
   else, and nothing is stored — what is said at a friendly game belongs to the

@@ -126,9 +126,9 @@ export default function PlayerSeat({
   const plate = (
     <button key="plate" type="button" onClick={onInspect}
       title={`${p.name} — tap for stats`}
-      className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg pl-1.5 pr-2 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
-                     flex items-center gap-1.5 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
-      <span className="text-base leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
+      className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+                     flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
+      <span className="text-xs leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
       {/* A microphone with no camera changes nothing about the layout. */}
       {media?.audio && media.status === "connected" && (
         <span className="text-[10px] leading-none shrink-0" title={`${p.name} has their microphone on`}>
@@ -149,7 +149,7 @@ export default function PlayerSeat({
       </div>
       {/* The one number worth carrying on the table itself. */}
       {stats?.hands > 0 && (
-        <span className="shrink-0 text-[10px] font-semibold text-[#d9c07a] leading-none"
+        <span className="hidden @[640px]:inline shrink-0 text-[10px] font-semibold text-[#d9c07a] leading-none"
           title={`VPIP ${stats.vpip_pct}% over ${stats.hands} hands`}>
           {Math.round(stats.vpip_pct)}
         </span>
@@ -166,7 +166,7 @@ export default function PlayerSeat({
     : [badges, cards, markers, plate, video, ring];
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4rem,10.5cqw,7rem)] transition-opacity duration-500 ${
+    <div className={`relative flex flex-col items-center gap-1 w-[clamp(6rem,13.5cqw,7.5rem)] transition-opacity duration-500 ${
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}

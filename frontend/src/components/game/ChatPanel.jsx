@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { send } from "../../api/socket";
+import MediaControls from "./MediaControls";
 
 const MAX_CHARS = 240;
 
@@ -29,9 +30,10 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="w-full lg:w-72 shrink-0 panel rounded-lg flex flex-col max-h-64">
-      <div className="px-3 py-2 border-b border-(--color-border)">
+    <div className="w-full lg:w-72 shrink-0 panel rounded-lg flex flex-col h-40">
+      <div className="px-3 py-1.5 border-b border-(--color-border) flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">Table chat</h2>
+        <MediaControls />
       </div>
 
       <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-2 text-xs space-y-1.5">

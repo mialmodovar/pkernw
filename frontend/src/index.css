@@ -103,9 +103,22 @@ button:disabled {
   text-decoration: underline;
 }
 
-/* The light falls from above and the rim stays dark, which is what stops a
-   larger table reading as one flat sheet of red. The stops are tighter than the
-   ellipse so the fall-off happens well inside the edge. */
+/* The table area measures itself, so the felt can be told to fit inside it.
+   The table stays exactly 820px wide whenever there is room — the common case,
+   and stable — and only starts shrinking when the window is too short to hold
+   it. That is what keeps the game on one screen without scrolling, without the
+   table resizing every time the window height twitches. */
+.table-area {
+  container-type: size;
+}
+
+.table-frame {
+  width: min(820px, 100%, calc(100cqh * 5 / 3));
+  aspect-ratio: 5 / 3;
+}
+
+/* The light falls from above and the rim stays dark, which is what stops the
+   felt reading as one flat sheet of red. */
 .felt {
   background:
     radial-gradient(ellipse 62% 62% at 50% 34%,

@@ -10,7 +10,7 @@ function ToggleButton({ on, label, icon, onClick }) {
       title={label}
       aria-label={label}
       aria-pressed={on}
-      className={`w-9 h-9 rounded-full border text-sm flex items-center justify-center transition-colors ${
+      className={`w-7 h-7 rounded-full border text-xs flex items-center justify-center transition-colors ${
         on
           ? "border-[#c9a227] bg-[#3d2f0b] text-[#e6d9a8]"
           : "border-(--color-border) bg-black/40 opacity-45 grayscale hover:opacity-80 hover:border-(--color-border-strong)"
@@ -44,15 +44,15 @@ export default function MediaControls() {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       {cameraOn && (
-        <div className="w-20 aspect-[4/3] rounded-md overflow-hidden border border-(--color-border) bg-black/60">
+        <div className="w-12 aspect-video rounded overflow-hidden border border-(--color-border) bg-black/60">
           {/* Mirrored, because a self view that moves the wrong way is
               disorienting, and muted, or the room howls. */}
           <video ref={preview} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
         </div>
       )}
-      <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
         {/* The same glyph either way, dimmed when off: two different symbols
             made it a puzzle which state you were looking at. */}
         <ToggleButton on={cameraOn} label={cameraOn ? "Turn camera off" : "Turn camera on"}
@@ -61,7 +61,7 @@ export default function MediaControls() {
           icon={"\u{1F3A4}"} onClick={() => toggle({ audio: !micOn })} />
       </div>
       {permissionError && (
-        <p className="text-[11px] text-[#c76b7a] max-w-[10rem] leading-tight">{permissionError}</p>
+        <p className="text-[10px] text-[#c76b7a] max-w-[7rem] leading-tight">{permissionError}</p>
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import EliminationScreen from "../components/game/EliminationScreen";
 import BreakOverlay from "../components/game/BreakOverlay";
 import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
 import HandReview from "../components/game/HandReview";
+import PlayerStatsCard from "../components/game/PlayerStatsCard";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 
 export default function GamePage() {
@@ -47,6 +48,8 @@ export default function GamePage() {
   const [eliminationReady, setEliminationReady] = useState(false);
   const [spectating, setSpectating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [playerStats, setPlayerStats] = useState({});
+  const [inspecting, setInspecting] = useState(null);
 
   const loadTournament = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -68,6 +71,21 @@ export default function GamePage() {
     const id = setInterval(loadTournament, 8000);
     return () => clearInterval(id);
   }, [loadTournament]);
+
+  // Reads on the other players. Lifetime figures, so they only move slowly —
+  // the tournament poll is often enough.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => api.get(`/tournaments/${id}/player-stats/`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setPlayerStats(Object.fromEntries(data.map((row) => [row.username, row])));
+      })
+      .catch(() => {});
+    load();
+    const timer = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [id]);
 
   // An elimination changes all of those at once. Without this the panel showed
   // a live "players left" beside a stale "your rank 4 of 4".
@@ -258,7 +276,9 @@ export default function GamePage() {
         isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
       }`}>
         <TournamentInfoPanel tournament={tournament} username={user?.username} />
-        <PokerTable mySeat={mySeat} capacity={capacity} />
+        <PokerTable mySeat={mySeat} capacity={capacity}
+          statsByName={playerStats}
+          onInspectPlayer={setInspecting} />
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
             <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
@@ -276,6 +296,9 @@ export default function GamePage() {
       </div>
 
       {reviewOpen && <HandReview tournamentId={id} onClose={() => setReviewOpen(false)} />}
+      {inspecting && (
+        <PlayerStatsCard player={inspecting} stats={playerStats[inspecting.name]} onClose={() => setInspecting(null)} />
+      )}
 
       <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
         <div className="flex-1 min-w-0">

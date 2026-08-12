@@ -47,7 +47,7 @@ function EmptySeat() {
   );
 }
 
-export default function PokerTable({ mySeat, capacity }) {
+export default function PokerTable({ mySeat, capacity, statsByName, onInspectPlayer }) {
   const {
     players, actionOnSeat, holeCards, winnerSeats, potAwards, allInEquity,
     dealerSeat, sbSeat, bbSeat, showdown,
@@ -120,6 +120,8 @@ export default function PokerTable({ mySeat, capacity }) {
                 isBB={bbSeat === p.seat}
                 timerPct={isActive ? countdown.pct : 100}
                 topHalf={parseFloat(pos.top) < 50}
+                stats={statsByName?.[p.name]}
+                onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
               />
             ) : (
               <EmptySeat />

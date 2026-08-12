@@ -4,6 +4,7 @@ from rest_framework.response import Response
 
 from tournaments.models import Tournament
 
+from .hand_stats import compute_player_stats
 from .models import Hand
 from .serializers import HandSerializer
 
@@ -28,3 +29,26 @@ def tournament_hands(request, pk):
         .order_by("-hand_number", "-id")[:limit]
     )
     return Response(HandSerializer(hands, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def tournament_player_stats(request, pk):
+    """Lifetime preflop stats for everyone in this tournament.
+
+    Lifetime rather than this tournament alone: a read on someone is only worth
+    anything with a sample behind it, and a single tournament rarely has one.
+    """
+    if not Tournament.objects.filter(pk=pk).exists():
+        return Response({"error": "Not found"}, status=404)
+
+    players = list(
+        Tournament.objects.get(pk=pk)
+        .players.select_related("user")
+        .values_list("user_id", "user__username")
+    )
+    stats = compute_player_stats([user_id for user_id, _ in players])
+    return Response([
+        {"username": username, **stats.get(user_id, {})}
+        for user_id, username in players
+    ])

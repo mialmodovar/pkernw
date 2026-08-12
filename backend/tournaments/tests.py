@@ -811,3 +811,73 @@ class TournamentPermissionTests(APITestCase):
 
 		self.client.force_authenticate(self.staff)
 		self.assertTrue(self.client.get(reverse("me")).data["is_staff"])
+
+
+class PreflopStatsTests(TestCase):
+	"""The definitions are what make these numbers comparable, so they are
+	pinned here rather than left to whoever reads the query next."""
+
+	def setUp(self):
+		from game.models import Hand, HandAction
+		self.Hand, self.HandAction = Hand, HandAction
+		self.host = User.objects.create_user(username="s_host", password="x")
+		self.tournament = Tournament.objects.create(host=self.host, name="Stats", status="running")
+		self.players = {}
+		for seat, name in enumerate(["hero", "villain", "third"]):
+			user = User.objects.create_user(username=name, password="x")
+			self.players[name] = TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user, seat=seat, seat_at_table=seat, chips=1000,
+			)
+
+	def _hand(self, number, dealer_seat, actions):
+		hand = self.Hand.objects.create(
+			tournament=self.tournament, hand_number=number, level_index=0,
+			dealer_seat=dealer_seat, status="complete",
+		)
+		for name, action in actions:
+			player = self.players[name]
+			self.HandAction.objects.create(
+				hand=hand, player=player, seat=player.seat_at_table, street="preflop", action=action,
+			)
+		return hand
+
+	def _stats(self, name):
+		from game.hand_stats import compute_player_stats
+		user_id = self.players[name].user_id
+		return compute_player_stats([user_id])[user_id]
+
+	def test_blinds_are_not_voluntary(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "fold"), ("hero", "fold")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["hands"], 1)
+		self.assertEqual(hero["vpip_pct"], 0.0)
+
+	def test_a_call_counts_as_voluntary_and_a_raise_as_pfr(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "raise"), ("hero", "call")])
+
+		self.assertEqual(self._stats("hero")["vpip_pct"], 100.0)
+		self.assertEqual(self._stats("third")["pfr_pct"], 100.0)
+
+	def test_three_bet_is_raising_over_a_raise(self):
+		# third opens, hero raises over it: a 3-bet for hero, not for third.
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "raise"), ("hero", "raise")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["three_bet_chances"], 1)
+		self.assertEqual(hero["three_bet_pct"], 100.0)
+		self.assertEqual(self._stats("third")["three_bet_chances"], 0)
+
+	def test_a_steal_is_only_counted_when_first_in_from_a_steal_seat(self):
+		# Seat 0 is the button with three players, so it is a steal seat, and
+		# nobody has entered before it.
+		self._hand(1, 0, [("villain", "blind"), ("third", "blind"), ("hero", "raise")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["ats_chances"], 1)
+		self.assertEqual(hero["ats_pct"], 100.0)
+
+	def test_no_steal_credit_once_somebody_has_entered(self):
+		self._hand(1, 0, [("villain", "blind"), ("third", "blind"), ("third", "raise"), ("hero", "raise")])
+
+		self.assertEqual(self._stats("hero")["ats_chances"], 0)

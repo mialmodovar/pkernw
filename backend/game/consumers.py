@@ -92,6 +92,7 @@ def _db_save_hand(tournament_id, data):
         HandAction(
             hand=hand,
             player_id=action["tp_id"],
+            seat=action.get("seat"),
             street=action["street"],
             action=action["action"],
             amount=action["amount"] or 0,

@@ -47,6 +47,7 @@ function TimerRing({ pct }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
+  stats, onInspect,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
@@ -113,10 +114,12 @@ export default function PlayerSeat({
   const markers = <PositionMarker key="markers" isDealer={isDealer} isSB={isSB} isBB={isBB} />;
 
   const plate = (
-    <div key="plate" className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg pl-1.5 pr-2 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
-                     flex items-center gap-1.5`}>
+    <button key="plate" type="button" onClick={onInspect}
+      title={`${p.name} — tap for stats`}
+      className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg pl-1.5 pr-2 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+                     flex items-center gap-1.5 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       <span className="text-base leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
-      <div className="min-w-0 text-left leading-tight">
+      <div className="min-w-0 flex-1 leading-tight">
         <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
         <div className="text-[11px] text-(--color-text-muted)">
           {p.is_eliminated ? (
@@ -128,7 +131,14 @@ export default function PlayerSeat({
           )}
         </div>
       </div>
-    </div>
+      {/* The one number worth carrying on the table itself. */}
+      {stats?.hands > 0 && (
+        <span className="shrink-0 text-[10px] font-semibold text-[#d9c07a] leading-none"
+          title={`VPIP ${stats.vpip_pct}% over ${stats.hands} hands`}>
+          {Math.round(stats.vpip_pct)}
+        </span>
+      )}
+    </button>
   );
 
   const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} /> : null;

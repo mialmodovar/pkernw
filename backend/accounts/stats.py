@@ -3,11 +3,8 @@ from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from game.models import HandAction
+from game.hand_stats import compute_player_stats
 from tournaments.models import TournamentPlayer
-
-NON_VOLUNTARY_PREFLOP_ACTIONS = ["fold", "blind", "ante", "check"]
-
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
@@ -23,25 +20,18 @@ def my_stats(request):
         and tp.finish_position <= len(tp.tournament.payout_structure)
     )
 
-    tp_ids = tps.values_list("id", flat=True)
-    actions = HandAction.objects.filter(player_id__in=tp_ids)
-    hands_played = actions.values("hand_id").distinct().count()
-    vpip_hands = (
-        actions.filter(street="preflop")
-        .exclude(action__in=NON_VOLUNTARY_PREFLOP_ACTIONS)
-        .values("hand_id").distinct().count()
-    )
-    pfr_hands = (
-        actions.filter(street="preflop", action="raise")
-        .values("hand_id").distinct().count()
-    )
+    # Preflop reads come from the shared miner, so the lobby and the table can
+    # never disagree about what VPIP means.
+    preflop = compute_player_stats([request.user.id]).get(request.user.id, {})
 
     return Response({
         "tournaments_played": tournaments_played,
         "best_finish": best_finish,
         "cashes": cashes,
         "total_rebuys": total_rebuys,
-        "hands_played": hands_played,
-        "vpip_pct": round(vpip_hands / hands_played * 100, 1) if hands_played else 0,
-        "pfr_pct": round(pfr_hands / hands_played * 100, 1) if hands_played else 0,
+        "hands_played": preflop.get("hands", 0),
+        "vpip_pct": preflop.get("vpip_pct", 0),
+        "pfr_pct": preflop.get("pfr_pct", 0),
+        "three_bet_pct": preflop.get("three_bet_pct", 0),
+        "ats_pct": preflop.get("ats_pct", 0),
     })

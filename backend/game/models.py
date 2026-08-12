@@ -46,6 +46,9 @@ class HandAction(models.Model):
 
     hand       = models.ForeignKey(Hand, on_delete=models.CASCADE, related_name="actions")
     player     = models.ForeignKey(TournamentPlayer, on_delete=models.CASCADE)
+    # The seat as it was for THIS hand. A player's seat_at_table changes when
+    # tables rebalance, so position-based stats can't be derived from it later.
+    seat       = models.IntegerField(null=True, blank=True)
     street     = models.CharField(max_length=10, choices=STREET_CHOICES)
     action     = models.CharField(max_length=10, choices=ACTION_CHOICES)
     amount     = models.IntegerField(default=0)

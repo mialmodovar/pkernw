@@ -397,12 +397,33 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         if self.tournament_id in _game_tasks:
             return
 
+        # Claim the slot before the first await. Clients connect together (a
+        # table full of players, and StrictMode mounting twice), and every await
+        # below is a chance for another connect to pass the check above and boot
+        # a SECOND engine for the same tournament. Two coordinators then run the
+        # same players from separate in-memory copies and persist over each
+        # other, which showed up as chips reverting and players flickering in
+        # and out of being eliminated.
+        _game_tasks[self.tournament_id] = None
+        try:
+            await self._boot_game()
+        except Exception:
+            _game_tasks.pop(self.tournament_id, None)
+            raise
+
+    async def _boot_game(self):
+        def release():
+            if _game_tasks.get(self.tournament_id) is None:
+                _game_tasks.pop(self.tournament_id, None)
+
         tournament = await _db_get_tournament(self.tournament_id)
         if tournament is None or tournament.status not in ("running", "paused"):
+            release()
             return
 
         player_records = await _db_get_player_records(self.tournament_id)
         if len(player_records) < 2:
+            release()
             return
 
         levels = await _db_get_levels(self.tournament_id)

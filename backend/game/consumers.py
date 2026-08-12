@@ -367,7 +367,14 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, code):
-        _player_channels.pop((self.tournament_id, self.user.id), None)
+        key = (self.tournament_id, self.user.id)
+        # A reconnect (or React StrictMode's double mount) can register the new
+        # socket before this one tears down. If we have already been superseded,
+        # touching the shared state would unregister the LIVE channel — which
+        # silently drops unicast hole cards — and announce a disconnect the
+        # player never had.
+        superseded = _player_channels.get(key) != self.channel_name
+
         await self.channel_layer.group_discard(self.tournament_group, self.channel_name)
         if self.current_table_number is not None:
             await self.channel_layer.group_discard(
@@ -375,6 +382,10 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 self.channel_name,
             )
 
+        if superseded:
+            return
+
+        _player_channels.pop(key, None)
         coordinator = _tournament_runners.get(self.tournament_id)
         if coordinator is not None:
             runtime_player = coordinator.get_runtime_player(self.user.id)

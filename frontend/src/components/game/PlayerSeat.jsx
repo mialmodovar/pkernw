@@ -98,6 +98,7 @@ export default function PlayerSeat({
         cards={isMe ? myCards : p.cards}
         folded={p.is_folded}
         eliminated={p.is_eliminated}
+        isMe={isMe}
       />
       <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
       <div className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-3 py-1 border-2 ${borderColor} text-center w-full shadow-lg shadow-black/50`}>

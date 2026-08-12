@@ -220,7 +220,10 @@ const useGameStore = create((set) => ({
           players: s.players.map((p) => {
             if (p.seat !== data.seat) return p;
             const act = data.action;
-            if (act === "fold" || act === "check") return p;
+            // Marking the fold here is what makes the mucked hand leave the
+            // table: no game_state follows an action, so nothing else would.
+            if (act === "fold") return { ...p, is_folded: true };
+            if (act === "check") return p;
             if (act === "bet" || act === "raise") {
               const oldBet = p.bet || 0;
               const cost = data.amount - oldBet;

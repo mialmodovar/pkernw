@@ -64,6 +64,14 @@ def _db_set_tournament_status(tournament_id, status):
 
 
 @database_sync_to_async
+def _db_settle_tournament(tournament_id):
+    """Work out who owes whom, now that the results are final."""
+    from tournaments.ledger import settle_finished
+
+    return settle_finished(tournament_id)
+
+
+@database_sync_to_async
 def _db_get_tournament(tournament_id):
     try:
         return Tournament.objects.get(id=tournament_id)
@@ -340,6 +348,7 @@ async def _run_tournament(tournament_id: int, coordinator: MultiTableTournamentC
         _tournament_runners.pop(tournament_id, None)
         if not cancelled:
             await _db_set_tournament_status(tournament_id, "finished")
+            await _db_settle_tournament(tournament_id)
 
 
 class TournamentConsumer(AsyncWebsocketConsumer):

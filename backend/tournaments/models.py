@@ -20,6 +20,9 @@ class Tournament(models.Model):
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")
     scheduled_start_at = models.DateTimeField(null=True, blank=True)
     starting_chips = models.IntegerField(default=10_000)
+    # In cents. The app never handles money; it only records what was agreed,
+    # and a rounding error here is somebody's actual euro.
+    buy_in_cents   = models.IntegerField(default=0)
     max_players    = models.IntegerField(default=9)
     players_per_table = models.IntegerField(default=9)
     late_reg_level = models.IntegerField(default=4)    # late registration open through this level (0 = disabled)
@@ -115,3 +118,38 @@ class TournamentPlayer(models.Model):
         if self.table_id is not None and self.seat_at_table is not None:
             return f"{self.user.username} @ table {self.table.table_number}, seat {self.seat_at_table}"
         return f"{self.user.username} @ seat {self.seat}"
+
+
+class LedgerEntry(models.Model):
+    """What one player put in and took out of one finished tournament."""
+
+    tournament  = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name="ledger_entries")
+    user        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ledger_entries")
+    stake_cents = models.IntegerField(default=0)   # buy-in plus rebuys
+    prize_cents = models.IntegerField(default=0)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("tournament", "user")]
+
+    @property
+    def net_cents(self):
+        return self.prize_cents - self.stake_cents
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.tournament.name}: {self.net_cents}c"
+
+
+class Settlement(models.Model):
+    """A debt paid off, recorded by whoever received the money."""
+
+    from_user  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="settlements_paid")
+    to_user    = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="settlements_received")
+    amount_cents = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.from_user.username} paid {self.to_user.username} {self.amount_cents}c"

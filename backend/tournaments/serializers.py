@@ -187,7 +187,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "host_name", "status", "starting_chips", "is_joined",
+        fields = ("id", "name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
                   "is_host",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
@@ -206,7 +206,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "host_name", "status", "starting_chips",
+        fields = ("id", "name", "host_name", "status", "starting_chips", "buy_in_cents",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
@@ -220,7 +220,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "starting_chips", "max_players", "players_per_table",
+        fields = ("id", "name", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",

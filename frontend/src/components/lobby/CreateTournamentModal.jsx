@@ -25,6 +25,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [timeBankRefillEveryHands, setTimeBankRefillEveryHands] = useState(10);
   const [timeBankRefillLevel, setTimeBankRefillLevel] = useState(4);
   const [payoutEnabled, setPayoutEnabled] = useState(false);
+  const [buyInEuros, setBuyInEuros] = useState(0);
   const [payoutRows, setPayoutRows] = useState([
     { place: 1, label: "1st", percentage: 50 },
     { place: 2, label: "2nd", percentage: 30 },
@@ -42,6 +43,9 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const normalizedRebuyLevel = Math.min(Math.max(rebuyLevel, 1), blindLevelCount || 1);
   const normalizedTimeBankRefillLevel = Math.min(Math.max(timeBankRefillLevel, 1), blindLevelCount || 1);
   const payoutTotal = payoutRows.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
+  // Cents, so the euro shares below match what the ledger will record to the cent.
+  const buyInCents = payoutEnabled ? Math.max(0, Math.round(Number(buyInEuros || 0) * 100)) : 0;
+  const potCents = buyInCents * maxPlayers;
 
   const updatePayoutRow = (index, field, value) => {
     setPayoutRows((rows) => rows.map((row, rowIndex) => (
@@ -119,6 +123,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         label: row.label,
         percentage: row.percentage,
       })) : [],
+      buy_in_cents: buyInCents,
       rabbit_hunting_enabled: rabbitHuntingEnabled,
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
@@ -322,14 +327,27 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
             <input type="checkbox" checked={payoutEnabled} onChange={(e) => setPayoutEnabled(e.target.checked)} />
           </label>
           <p className="text-xs text-(--color-text-muted)">
-            Reference only. This does not process or track real-money payments.
+            Set a buy-in and the app tracks who owes whom afterwards. It never handles money.
           </p>
+
+          <label className="flex items-center justify-between text-sm gap-3">
+            <span className="text-(--color-text-muted) text-xs">Buy-in (€)</span>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              className="input-field px-2 py-1 rounded w-28 text-right transition-colors disabled:opacity-50"
+              value={buyInEuros}
+              disabled={!payoutEnabled}
+              onChange={(e) => setBuyInEuros(e.target.value)}
+            />
+          </label>
 
           <div className="space-y-2">
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-(--color-text-muted)">
               <span>Place</span>
               <span>Label</span>
-              <span>Percent</span>
+              <span>{buyInCents > 0 ? "Percent / €" : "Percent"}</span>
               <span></span>
             </div>
             {payoutRows.map((row, index) => (
@@ -348,16 +366,23 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
                   disabled={!payoutEnabled}
                   onChange={(e) => updatePayoutRow(index, "label", e.target.value)}
                 />
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step="0.01"
-                  className="input-field px-2 py-1 rounded transition-colors disabled:opacity-50"
-                  value={row.percentage}
-                  disabled={!payoutEnabled}
-                  onChange={(e) => updatePayoutRow(index, "percentage", e.target.value)}
-                />
+                <div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    className="input-field px-2 py-1 rounded w-full transition-colors disabled:opacity-50"
+                    value={row.percentage}
+                    disabled={!payoutEnabled}
+                    onChange={(e) => updatePayoutRow(index, "percentage", e.target.value)}
+                  />
+                  {buyInCents > 0 && (
+                    <span className="block text-[11px] text-(--color-text-muted) text-right pr-1">
+                      {(potCents * Number(row.percentage || 0) / 10000).toFixed(2)}€
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="text-[#c76b7a] hover:text-[#e3cdd1] transition-colors disabled:opacity-30"
@@ -374,6 +399,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
               </button>
               <span className={`text-xs ${payoutEnabled && Math.round(payoutTotal * 100) / 100 !== 100 ? "text-[#c76b7a]" : "text-(--color-text-muted)"}`}>
                 Total {payoutTotal.toFixed(2)}%
+                {buyInCents > 0 && ` · pot up to ${(potCents / 100).toFixed(2)}€`}
               </span>
             </div>
           </div>

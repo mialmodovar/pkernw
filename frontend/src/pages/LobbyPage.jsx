@@ -6,6 +6,7 @@ import TournamentList from "../components/lobby/TournamentList";
 import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
+import CalotesPanel from "../components/lobby/CalotesPanel";
 
 export default function LobbyPage() {
   const { user, logout } = useAuthStore();
@@ -45,6 +46,7 @@ export default function LobbyPage() {
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <StatsPanel />
+        <CalotesPanel />
         <LeaguePlaceholder />
       </aside>
 

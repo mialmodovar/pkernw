@@ -881,3 +881,189 @@ class PreflopStatsTests(TestCase):
 		self._hand(1, 0, [("villain", "blind"), ("third", "blind"), ("third", "raise"), ("hero", "raise")])
 
 		self.assertEqual(self._stats("hero")["ats_chances"], 0)
+
+
+class LedgerTests(TestCase):
+	"""The money arithmetic. Everything here is in cents on purpose."""
+
+	def setUp(self):
+		from tournaments.models import LedgerEntry, Settlement
+		self.LedgerEntry, self.Settlement = LedgerEntry, Settlement
+		self.host = User.objects.create_user(username="l_host", password="x")
+		self.users = {n: User.objects.create_user(username=n, password="x") for n in ["ana", "bea", "caio"]}
+
+	def _tournament(self, buy_in=1000, payouts=None):
+		return Tournament.objects.create(
+			host=self.host, name="Money", status="finished",
+			buy_in_cents=buy_in,
+			payout_structure=payouts if payouts is not None else [
+				{"place": 1, "label": "1st", "percentage": 70},
+				{"place": 2, "label": "2nd", "percentage": 30},
+			],
+		)
+
+	def _seat(self, tournament, name, seat, finish, rebuys=0):
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=self.users[name], seat=seat, chips=0,
+			finish_position=finish, rebuy_count=rebuys, is_eliminated=finish != 1,
+		)
+
+	def _settle(self, tournament):
+		from tournaments.ledger import settle_tournament
+		return settle_tournament(tournament)
+
+	def test_the_pot_is_paid_out_in_full(self):
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._seat(t, "caio", 2, 3)
+
+		self._settle(t)
+
+		entries = self.LedgerEntry.objects.filter(tournament=t)
+		self.assertEqual(sum(e.stake_cents for e in entries), 3000)
+		self.assertEqual(sum(e.prize_cents for e in entries), 3000)
+
+	def test_a_rebuy_is_another_buy_in(self):
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2, rebuys=2)
+
+		self._settle(t)
+
+		bea = self.LedgerEntry.objects.get(tournament=t, user=self.users["bea"])
+		self.assertEqual(bea.stake_cents, 3000)
+		# Their rebuys grew the pot, so first place takes 70% of 4000.
+		ana = self.LedgerEntry.objects.get(tournament=t, user=self.users["ana"])
+		self.assertEqual(ana.prize_cents, 2800)
+
+	def test_the_rounding_remainder_goes_to_first_place(self):
+		# Three equal stakes of 3.33 split 70/30 does not divide cleanly.
+		t = self._tournament(buy_in=333)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._seat(t, "caio", 2, 3)
+
+		self._settle(t)
+
+		entries = self.LedgerEntry.objects.filter(tournament=t)
+		self.assertEqual(sum(e.prize_cents for e in entries), 999)
+		ana = self.LedgerEntry.objects.get(tournament=t, user=self.users["ana"])
+		self.assertEqual(ana.prize_cents, 999 - int(999 * 30 / 100))
+
+	def test_balances_across_everyone_net_to_zero(self):
+		from tournaments.ledger import balances
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._seat(t, "caio", 2, 3)
+
+		self._settle(t)
+
+		self.assertEqual(sum(balances().values()), 0)
+
+	def test_settling_twice_changes_nothing(self):
+		t = self._tournament()
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+
+		self.assertTrue(self._settle(t))
+		self.assertFalse(self._settle(t))
+		self.assertEqual(self.LedgerEntry.objects.filter(tournament=t).count(), 2)
+
+	def test_a_tournament_with_no_buy_in_records_nothing(self):
+		t = self._tournament(buy_in=0)
+		self._seat(t, "ana", 0, 1)
+
+		self.assertFalse(self._settle(t))
+		self.assertFalse(self.LedgerEntry.objects.exists())
+
+	def test_a_tournament_that_took_money_but_named_no_winners_is_left_alone(self):
+		t = self._tournament(buy_in=1000, payouts=[])
+		self._seat(t, "ana", 0, 1)
+
+		self.assertFalse(self._settle(t))
+		self.assertFalse(self.LedgerEntry.objects.exists())
+
+	def test_a_payment_moves_both_sides(self):
+		from tournaments.ledger import balances
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._settle(t)
+
+		before = balances()
+		self.Settlement.objects.create(
+			from_user=self.users["bea"], to_user=self.users["ana"], amount_cents=400,
+		)
+		after = balances()
+
+		self.assertEqual(after.get(self.users["ana"].id, 0), before[self.users["ana"].id] - 400)
+		self.assertEqual(after.get(self.users["bea"].id, 0), before[self.users["bea"].id] + 400)
+
+	def test_the_suggestion_clears_everyone(self):
+		from tournaments.ledger import balances, suggested_transfers
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._seat(t, "caio", 2, 3)
+		self._settle(t)
+
+		current = balances()
+		for transfer in suggested_transfers(current):
+			current[transfer["from_user_id"]] += transfer["amount_cents"]
+			current[transfer["to_user_id"]] -= transfer["amount_cents"]
+
+		self.assertEqual({user: cents for user, cents in current.items() if cents}, {})
+
+
+class SettlementEndpointTests(APITestCase):
+	def setUp(self):
+		self.ana = User.objects.create_user(username="e_ana", password="x")
+		self.bea = User.objects.create_user(username="e_bea", password="x")
+		host = User.objects.create_user(username="e_host", password="x")
+		t = Tournament.objects.create(
+			host=host, name="Owed", status="finished", buy_in_cents=1000,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		TournamentPlayer.objects.create(tournament=t, user=self.ana, seat=0, chips=0, finish_position=1)
+		TournamentPlayer.objects.create(tournament=t, user=self.bea, seat=1, chips=0, finish_position=2, is_eliminated=True)
+		from tournaments.ledger import settle_tournament
+		settle_tournament(t)
+		# bea staked 10 and won nothing; ana is owed 10.
+
+	def test_the_receiver_can_record_a_payment(self):
+		self.client.force_authenticate(self.ana)
+
+		response = self.client.post(reverse("ledger-settle"), {"from_username": "e_bea", "amount_eur": 10}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(response.data["balance_cents"], 0)
+
+	def test_more_than_is_owed_is_refused(self):
+		from tournaments.models import Settlement
+		self.client.force_authenticate(self.ana)
+
+		response = self.client.post(reverse("ledger-settle"), {"from_username": "e_bea", "amount_eur": 25}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(Settlement.objects.exists())
+
+	def test_the_payer_cannot_clear_their_own_debt(self):
+		from tournaments.models import Settlement
+		# bea owes ana, so bea claiming to have received from ana is not a debt.
+		self.client.force_authenticate(self.bea)
+
+		response = self.client.post(reverse("ledger-settle"), {"from_username": "e_ana", "amount_eur": 10}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(Settlement.objects.exists())
+
+	def test_my_ledger_shows_only_what_involves_me(self):
+		self.client.force_authenticate(self.ana)
+
+		data = self.client.get(reverse("ledger-me")).data
+
+		self.assertEqual(data["balance_cents"], 1000)
+		self.assertEqual([row["username"] for row in data["owed_to_me"]], ["e_bea"])
+		self.assertEqual(data["i_owe"], [])

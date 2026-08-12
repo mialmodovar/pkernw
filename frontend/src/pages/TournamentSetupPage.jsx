@@ -111,6 +111,9 @@ export default function TournamentSetupPage() {
   const stacks = alive.map((p) => p.chips);
   const payouts = tournament.payout_structure || [];
   const started = tournament.status !== "lobby";
+  const buyInCents = tournament.buy_in_cents || 0;
+  // What the pot would be if everyone registered turns up — rebuys grow it further.
+  const potCents = buyInCents * tournament.players.length;
 
   const visible = filter
     ? ranked.filter((p) => p.username.toLowerCase().includes(filter.toLowerCase()))
@@ -136,6 +139,7 @@ export default function TournamentSetupPage() {
         <div className="flex items-center gap-6">
           <Headline label="Entrants" value={`${tournament.players.length}/${tournament.max_players}`} />
           <Headline label="Start stack" value={tournament.starting_chips.toLocaleString()} />
+          {buyInCents > 0 && <Headline label="Buy-in" value={`${(buyInCents / 100).toFixed(2)}€`} />}
           <Headline label="Places paid" value={payouts.length || "—"} />
         </div>
 
@@ -206,7 +210,14 @@ export default function TournamentSetupPage() {
               {payouts.map((row) => (
                 <li key={row.place} className="flex justify-between px-3 py-1.5 text-sm">
                   <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
-                  <span className="text-[#d9c07a] font-semibold">{row.percentage}%</span>
+                  <span className="text-[#d9c07a] font-semibold">
+                    {row.percentage}%
+                    {potCents > 0 && (
+                      <span className="text-(--color-text-muted) font-normal ml-2">
+                        {(potCents * row.percentage / 10000).toFixed(2)}€
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -214,7 +225,9 @@ export default function TournamentSetupPage() {
             <p className="px-3 py-3 text-sm text-(--color-text-muted)">No payout structure configured.</p>
           )}
           <p className="px-3 py-2 border-t border-(--color-border) text-[11px] text-(--color-text-muted)">
-            Percentages only — payments happen outside this app.
+            {potCents > 0
+              ? `Prize pool ${(potCents / 100).toFixed(2)}€ so far · settle up in Calotes, payments happen outside this app.`
+              : "Percentages only — payments happen outside this app."}
           </p>
         </Panel>
 

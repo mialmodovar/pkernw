@@ -9,6 +9,23 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Calotes — who owes whom.** A tournament can now carry a buy-in in euros. When
+  it finishes, the app works out each player's stake and prize and keeps a running
+  balance, then suggests the fewest payments that would clear everyone — nobody
+  has to act as the bank. Each rebuy counts as another buy-in, so it grows both
+  the pot and what you owe.
+
+  Only the person who **received** money can mark it settled; a payer clearing
+  their own debt is exactly the claim the other side would dispute. Amounts above
+  what is actually owed are refused. Everyone sees only the debts they are part
+  of.
+
+  The app never handles money. It records what the tournament decided and who has
+  since been paid. All arithmetic is in integer cents — the one place in this
+  codebase where a rounding error is somebody's actual euro — and the rounding
+  remainder on a split goes to first place rather than vanishing. Tournaments
+  with no buy-in, which is every tournament that already existed, produce no
+  ledger at all.
 - **What you hold, next to your cards.** "Pair of Aces", "Two pair, Kings and
   Sevens", "Ace high" — updated as each street lands, and sent only to you.
   Computed by the engine rather than a second implementation of the hand rules

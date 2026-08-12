@@ -47,7 +47,7 @@ function TimerRing({ pct }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect,
+  stats, onInspect, handStrength,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
@@ -101,6 +101,13 @@ export default function PlayerSeat({
         faceDown={faceDownAtShowdown}
         winningCards={isWinner ? showdownEntry?.best_cards : null}
       />
+      {/* Your own read on what you hold, next to your cards. */}
+      {isMe && handStrength && !p.is_folded && !showdownEntry && (
+        <div className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
+                        bg-black/60 border border-(--color-border) text-[#d9c07a] whitespace-nowrap">
+          {handStrength}
+        </div>
+      )}
       {showdownEntry && !faceDownAtShowdown && (
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center ${
           isWinner ? "text-[#d9c07a]" : "text-(--color-text-muted)"

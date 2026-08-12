@@ -8,6 +8,7 @@ from typing import Any, Callable, Coroutine, List, Optional, Tuple
 
 from .card import Card, Deck, Rank, Suit, cards_str
 from .player import Player
+from .describe import describe
 from .evaluator import best_five, evaluate, hand_name
 
 
@@ -194,6 +195,7 @@ class HandEngine:
                 "cards": cards_to_list(self.community_cards),
                 "pot": self._pot_total(),
             })
+            await self._broadcast_hand_strengths()
 
             if all_in_runout:
                 # No betting round needed — just show the cards
@@ -255,8 +257,21 @@ class HandEngine:
                 for p in self.players
             ],
         })
+        await self._broadcast_hand_strengths()
 
     # ── betting round ────────────────────────────────────────────────────
+
+
+    async def _broadcast_hand_strengths(self):
+        """Tell each player what they currently hold, privately."""
+        await self.broadcast("hand_strength_dealt", {
+            "players": [
+                {"user_id": getattr(p, "_user_id", None),
+                 "text": describe(p.hole_cards, self.community_cards)}
+                for p in self.players
+                if p.hole_cards and not p.is_folded
+            ],
+        })
 
     async def _betting_round(self, start_pos: int, preflop: bool):
         n = len(self.players)

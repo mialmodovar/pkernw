@@ -50,6 +50,7 @@ const useGameStore = create((set) => ({
   street: null,
   handNumber: 0,
   holeCards: [],
+  handStrength: null, // what you currently hold, e.g. "Pair of Aces"
   actionOnSeat: null,
   actionContext: null, // { seat, to_call, min_raise, max_raise, valid_actions, timer_sec }
   dealerSeat: null,
@@ -148,6 +149,7 @@ const useGameStore = create((set) => ({
           allInEquity: null,
           countdown: null,
           holeCards: [],
+          handStrength: null,
           actionOnSeat: null,
           actionContext: null,
         });
@@ -166,6 +168,10 @@ const useGameStore = create((set) => ({
 
       case "hole_cards":
         set({ holeCards: data.cards || [] });
+        break;
+
+      case "hand_strength":
+        set({ handStrength: data.text || null });
         break;
 
       case "blinds_posted":
@@ -483,7 +489,7 @@ const useGameStore = create((set) => ({
   reset: () =>
     set({
       players: [], communityCards: [], pot: 0, street: null,
-      handNumber: 0, holeCards: [], actionOnSeat: null,
+      handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, level: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,

@@ -9,6 +9,10 @@ remembering.
 ## Unreleased
 
 ### Added
+- **What you hold, next to your cards.** "Pair of Aces", "Two pair, Kings and
+  Sevens", "Ace high" — updated as each street lands, and sent only to you.
+  Computed by the engine rather than a second implementation of the hand rules
+  in the browser.
 - **Reads on the other players.** Each seat carries that player's VPIP, and
   tapping a nameplate opens VPIP, PFR, 3-bet and attempt-to-steal, mined from
   recorded hand history. Every figure shows the sample behind it, and a

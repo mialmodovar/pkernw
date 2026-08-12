@@ -50,7 +50,7 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity, statsByName, onInspectPlayer }) {
   const {
     players, actionOnSeat, holeCards, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat, showdown,
+    dealerSeat, sbSeat, bbSeat, showdown, handStrength,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
@@ -122,6 +122,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 topHalf={parseFloat(pos.top) < 50}
                 stats={statsByName?.[p.name]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
+                handStrength={isMe ? handStrength : null}
               />
             ) : (
               <EmptySeat />

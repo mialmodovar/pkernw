@@ -581,6 +581,17 @@ class MultiTableTournamentCoordinator:
             state["sb_seat"] = None
             state["bb_seat"] = None
 
+        if event_type == "hand_strength_dealt":
+            for player_data in payload.get("players", []):
+                user_id = player_data.get("user_id")
+                if user_id is None:
+                    continue
+                await self.notify_user(
+                    user_id,
+                    {"type": "hand_strength", "text": player_data["text"]},
+                )
+            return
+
         if event_type == "hole_cards_dealt":
             for player_data in payload.get("players", []):
                 user_id = player_data.get("user_id")

@@ -9,6 +9,12 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Reads on the other players.** Each seat carries that player's VPIP, and
+  tapping a nameplate opens VPIP, PFR, 3-bet and attempt-to-steal, mined from
+  recorded hand history. Every figure shows the sample behind it, and a
+  statistic with no opportunities yet shows a dash rather than a misleading 0%.
+  The definitions live in one module that the lobby stats read from too, so the
+  two cannot drift apart.
 - **Only staff can open a tournament.** Any registered account could create one,
   which sets stakes and a blind structure for other people. Browsing, joining and
   playing are unchanged for everyone. Staff is granted in the Django admin at

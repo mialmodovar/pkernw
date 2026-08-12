@@ -116,6 +116,8 @@ export function send(data) {
   return false;
 }
 
+// Each subscriber removes its own listener and only its own: the media layer
+// subscribes here too, and a blanket clear would silence it for good.
 export function onMessage(fn) {
   listeners.push(fn);
   return () => {
@@ -131,7 +133,3 @@ export function onStatus(fn) {
   };
 }
 
-export function clearListeners() {
-  listeners = [];
-  statusListeners = [];
-}

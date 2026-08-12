@@ -1,4 +1,6 @@
 import HoleCards from "./HoleCards";
+import useMediaStore from "../../store/mediaStore";
+import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 
@@ -50,6 +52,7 @@ export default function PlayerSeat({
   stats, onInspect, handStrength,
 }) {
   const showBB = useGameStore((s) => s.showBB);
+  const media = useMediaStore((s) => s.peers[player.user_id]);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
   const borderColor = p.is_disconnected
@@ -126,6 +129,12 @@ export default function PlayerSeat({
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg pl-1.5 pr-2 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1.5 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       <span className="text-base leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
+      {/* A microphone with no camera changes nothing about the layout. */}
+      {media?.audio && media.status === "connected" && (
+        <span className="text-[10px] leading-none shrink-0" title={`${p.name} has their microphone on`}>
+          {"\u{1F3A4}"}
+        </span>
+      )}
       <div className="min-w-0 flex-1 leading-tight">
         <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
         <div className="text-[11px] text-(--color-text-muted)">
@@ -149,9 +158,12 @@ export default function PlayerSeat({
   );
 
   const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} /> : null;
+  // On the outer edge, against the nameplate, and only when there is a picture
+  // to show — nobody's seat moves because someone else turned a camera on.
+  const video = media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
   const stack = topHalf
-    ? [ring, plate, markers, cards, badges]
-    : [badges, cards, markers, plate, ring];
+    ? [ring, video, plate, markers, cards, badges]
+    : [badges, cards, markers, plate, video, ring];
 
   return (
     <div className={`relative flex flex-col items-center gap-1 w-[clamp(5rem,11vw,7rem)] transition-opacity duration-500 ${

@@ -9,6 +9,27 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Camera and microphone at the table.** Each player can turn on their camera
+  and microphone independently and see and hear whoever is sitting at the same
+  table. The video sits on the outer edge of each seat and only appears when
+  there is a picture to show, so a table where nobody uses a camera looks
+  exactly as it did.
+
+  Browsers connect directly to each other; the server only carries the messages
+  they use to find one another, and refuses to pass a signal between players who
+  are not at the same table. There is no relay server, so a small share of pairs
+  behind restrictive networks will not connect — that is shown on the seat it
+  affects and never interrupts the game.
+
+  You take part or you do not: nothing is received without also transmitting,
+  which keeps invisible spectators out of the table. Both devices start off on
+  every visit and nothing is remembered between sessions — a microphone you had
+  forgotten about leaks more at a poker table than a bad tell. Turning a device
+  off releases it, so the camera light goes out rather than being politely muted.
+
+- **What a tournament costs and pays, in the lobby list.** Entrants, buy-in,
+  prize pool and places paid now sit on each card. The list previously led with
+  the name and buried the numbers a player actually scans for.
 - **Calotes — who owes whom.** A tournament can now carry a buy-in in euros. When
   it finishes, the app works out each player's stake and prize and keeps a running
   balance, then suggests the fewest payments that would clear everyone — nobody

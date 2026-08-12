@@ -12,7 +12,7 @@ db.sqlite3-journal
 *.bak
 *.log
 staticfiles/
-media/
+backend/media/
 
 # Node / frontend
 node_modules/

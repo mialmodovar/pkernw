@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { connect, disconnect, onMessage, onStatus, clearListeners, send, retry } from "../api/socket";
+import { connect, disconnect, onMessage, onStatus, send, retry } from "../api/socket";
+import useTableMedia from "../media/useTableMedia";
+import MediaControls from "../components/game/MediaControls";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
@@ -56,12 +58,16 @@ export default function GamePage() {
     setTournament(data);
   }, [id]);
 
+  // Cameras and microphones, kept in step with the table. Entirely separate
+  // from the game: it reads the table, never writes to it.
+  useTableMedia();
+
   useEffect(() => {
     reset();
     connect(id);
     const unsub = onMessage(handleEvent);
     const unsubStatus = onStatus(setConnectionStatus);
-    return () => { unsub(); unsubStatus(); clearListeners(); disconnect(); };
+    return () => { unsub(); unsubStatus(); disconnect(); };
   }, [id, handleEvent, reset, setConnectionStatus]);
 
   // Chip counts drive the rank, average stack and chip leader, and they only
@@ -310,7 +316,10 @@ export default function GamePage() {
             onSitIn={() => send({ type: "sit_out", value: false })}
           />
         </div>
-        <ActionHistory onReview={() => setReviewOpen(true)} />
+        <div className="flex flex-col gap-3">
+          <MediaControls />
+          <ActionHistory onReview={() => setReviewOpen(true)} />
+        </div>
       </div>
     </div>
   );

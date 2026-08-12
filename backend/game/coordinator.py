@@ -726,6 +726,9 @@ class MultiTableTournamentCoordinator:
 
     def _player_payload(self, player: EnginePlayer) -> dict:
         return {
+            # Stable identity. The username is what a player reads, but it can
+            # change, and every server-side map is keyed by user id.
+            "user_id": getattr(player, "_user_id", None),
             "seat": player._seat,
             "global_seat": player._global_seat,
             "table_number": player._table_number,

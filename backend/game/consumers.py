@@ -29,6 +29,23 @@ _tournament_runners: Dict[int, MultiTableTournamentCoordinator] = {}
 # The decision a player currently owes, so a reconnect can be handed it back
 # instead of silently timing out into a fold.
 _pending_actions: Dict[Tuple[int, int], dict] = {}
+# Who has a camera or microphone running, so a player arriving at a table knows
+# who to call. Module state like _player_channels above: one process, one
+# replica, which is what entrypoint.sh deliberately runs.
+_media_presence: Dict[Tuple[int, int], dict] = {}
+
+MEDIA_WINDOW_SECONDS = 10.0
+MEDIA_MESSAGE_BUDGET = 120
+MEDIA_SIGNAL_MAX_BYTES = 32_000
+
+
+def _media_peers_at(tournament_id: int, table_number: int, exclude_user_id: int) -> list:
+    """Who at this table currently has a camera or microphone running."""
+    return [
+        {"user_id": user_id, "audio": presence["audio"], "video": presence["video"]}
+        for (tid, user_id), presence in _media_presence.items()
+        if tid == tournament_id and presence["table"] == table_number and user_id != exclude_user_id
+    ]
 
 
 def late_registration_open(tournament) -> bool:
@@ -437,6 +454,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             return
 
         _player_channels.pop(key, None)
+        # Only once we know this socket was not superseded — otherwise a
+        # reconnect would tear down the presence the live socket just announced.
+        await self._forget_media_presence(self.current_table_number)
         coordinator = _tournament_runners.get(self.tournament_id)
         if coordinator is not None:
             runtime_player = coordinator.get_runtime_player(self.user.id)
@@ -465,6 +485,114 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             coordinator = _tournament_runners.get(self.tournament_id)
             if coordinator is not None:
                 await coordinator.set_sitting_out(self.user.id, bool(data.get("value")))
+        elif message_type in ("media_signal", "media_presence"):
+            if not self._media_budget_allows():
+                return
+            if message_type == "media_signal":
+                await self._relay_media_signal(data)
+            else:
+                await self._announce_media_presence(data)
+
+    # ------------------------------------------------------------------
+    # Camera and microphone.
+    #
+    # The server never touches the media itself: peers connect directly to each
+    # other, and this is only the postbox they use to find one another. It stays
+    # deliberately ignorant of what a signal contains.
+    # ------------------------------------------------------------------
+
+    def _media_budget_allows(self) -> bool:
+        """Keep a flood of signalling from delaying somebody's fold.
+
+        This socket carries game actions too, so media traffic gets a budget.
+        Without a TURN server the ICE exchange is short — a couple of dozen
+        messages per peer — so this only ever catches abuse.
+        """
+        now = time.monotonic()
+        window_start, count = getattr(self, "_media_window", (0.0, 0))
+        if now - window_start > MEDIA_WINDOW_SECONDS:
+            window_start, count = now, 0
+        count += 1
+        self._media_window = (window_start, count)
+        return count <= MEDIA_MESSAGE_BUDGET
+
+    async def _media_table_of(self, user_id: int):
+        """Which table a player is at, according to the server.
+
+        Derived from the live engine, never from anything the client sent, since
+        this is what decides who is allowed to call whom.
+        """
+        coordinator = _tournament_runners.get(self.tournament_id)
+        if coordinator is not None:
+            runtime_player = coordinator.get_runtime_player(user_id)
+            if runtime_player is not None:
+                return runtime_player._table_number
+
+        record = await _db_get_user_table_record(self.tournament_id, user_id)
+        return record["table__table_number"] if record else None
+
+    async def _relay_media_signal(self, data):
+        """Pass one peer's offer, answer or ICE candidate to another.
+
+        The signal is opaque here. Forwarding it blindly is the point: the two
+        browsers negotiate, and the server only has to make sure they are
+        actually sitting at the same table.
+        """
+        try:
+            target_id = int(data.get("to_user_id"))
+        except (TypeError, ValueError):
+            return
+        if target_id == self.user.id:
+            return
+
+        signal = data.get("signal")
+        if not isinstance(signal, dict) or len(json.dumps(signal)) > MEDIA_SIGNAL_MAX_BYTES:
+            return
+
+        my_table = await self._media_table_of(self.user.id)
+        if my_table is None or my_table != await self._media_table_of(target_id):
+            return
+
+        await _notify_user(self.tournament_id, target_id, {
+            "type": "media_signal",
+            "from_user_id": self.user.id,
+            "signal": signal,
+        })
+
+    async def _announce_media_presence(self, data):
+        """Say that this player turned a camera or microphone on, or off."""
+        audio, video = bool(data.get("audio")), bool(data.get("video"))
+        table = await self._media_table_of(self.user.id)
+        if table is None:
+            return
+
+        key = (self.tournament_id, self.user.id)
+        if not audio and not video:
+            _media_presence.pop(key, None)
+            await _broadcast_table(self.tournament_id, table, "media_left", {"user_id": self.user.id})
+            return
+
+        _media_presence[key] = {"audio": audio, "video": video, "table": table}
+        await _broadcast_table(self.tournament_id, table, "media_presence", {
+            "user_id": self.user.id,
+            "name": self.user.username,
+            "audio": audio,
+            "video": video,
+        })
+        # The roster is the reply to the announcement, so arriving takes one
+        # round trip rather than an announce-then-ask pair.
+        await self.send(text_data=json.dumps({
+            "type": "media_roster",
+            "table_number": table,
+            "peers": _media_peers_at(self.tournament_id, table, exclude_user_id=self.user.id),
+        }))
+
+    async def _forget_media_presence(self, table_number):
+        """Drop this player's media presence and tell their table."""
+        if _media_presence.pop((self.tournament_id, self.user.id), None) is None:
+            return
+        if table_number is not None:
+            await _broadcast_table(self.tournament_id, table_number, "media_left", {"user_id": self.user.id})
 
     async def _maybe_boot_game(self):
         if self.tournament_id in _game_tasks:
@@ -559,6 +687,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
     async def table_assignment(self, event):
         data = event["data"]
         next_table_number = data.get("table_number")
+        # The old table loses this player entirely, media included. They
+        # re-announce once they land, so their new neighbours call them instead.
+        await self._forget_media_presence(self.current_table_number)
         if self.current_table_number is not None:
             await self.channel_layer.group_discard(
                 _table_group_name(self.tournament_id, self.current_table_number),

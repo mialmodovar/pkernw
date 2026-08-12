@@ -16,6 +16,20 @@ const ordinal = (n) => {
   return `${n}${suffix}`;
 };
 
+const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
+
+/** The numbers a player scans a list for: cost, turnout, and what is at stake. */
+function Headline({ label, value, accent }) {
+  return (
+    <div className="panel-raised rounded px-2 py-1 leading-tight">
+      <span className="block text-[10px] uppercase tracking-wide text-(--color-text-muted)">{label}</span>
+      <span className={`block text-sm font-semibold ${accent ? "text-[#d9c07a]" : "text-(--color-silver)"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete }) {
   const statusColor = {
     lobby: "bg-amber-900/50 text-amber-200 border border-amber-700/40",
@@ -26,15 +40,27 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
   const scheduledStart = formatScheduledStart(t.scheduled_start_at);
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
+  const buyInCents = t.buy_in_cents || 0;
+  // Entrants so far, since rebuys are not in the list payload and would only
+  // make this number look more certain than it is.
+  const potCents = buyInCents * t.player_count;
 
   return (
     <div className="panel p-4 rounded-lg flex items-center justify-between gap-4 hover:border-(--color-border-strong) transition-colors">
       <div className="min-w-0">
         <h3 className="font-semibold text-(--color-silver) truncate">{t.name}</h3>
         <p className="text-sm text-(--color-text-muted)">
-          Host: {t.host_name} &middot; {t.player_count}/{t.max_players} players &middot; {t.players_per_table}/table &middot;{" "}
-          {t.starting_chips.toLocaleString()} chips
+          Host: {t.host_name} &middot; {t.players_per_table}/table &middot; {t.starting_chips.toLocaleString()} chips
         </p>
+
+        <div className="flex flex-wrap gap-2 mt-2">
+          <Headline label="Entrants" value={`${t.player_count}/${t.max_players}`} />
+          {buyInCents > 0 && <Headline label="Buy-in" value={euros(buyInCents)} />}
+          {potCents > 0 && <Headline label="Prize pool" value={euros(potCents)} accent />}
+          {t.payout_structure?.length > 0 && (
+            <Headline label="Places paid" value={t.payout_structure.length} />
+          )}
+        </div>
 
         {/* Finished tournaments lead with the result, which is the only thing
             still worth knowing about them. */}
@@ -61,9 +87,6 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
             )}
             {t.time_bank_seconds > 0 && (
               <p className="text-sm text-(--color-text-muted)">Time bank: {t.time_bank_seconds}s</p>
-            )}
-            {t.payout_structure?.length > 0 && (
-              <p className="text-sm text-(--color-text-muted)">Payouts: {t.payout_structure.length} places</p>
             )}
           </>
         )}

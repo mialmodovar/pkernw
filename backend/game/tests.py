@@ -1,11 +1,19 @@
 import asyncio
 import time
 
-from asgiref.sync import async_to_sync
-from django.test import TestCase
+from asgiref.sync import async_to_sync, sync_to_async
+from channels.testing import WebsocketCommunicator
+from django.contrib.auth import get_user_model
+from django.test import TestCase, TransactionTestCase
+
+from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 
 from .coordinator import MultiTableTournamentCoordinator
-from .consumers import _action_queues, _request_action
+from .consumers import (
+    MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues, _media_presence, _request_action,
+)
+
+User = get_user_model()
 from .engine.hand import HandEngine
 from .engine.player import Player
 
@@ -449,3 +457,255 @@ class TournamentActionRequestTests(TestCase):
                 _action_queues.pop(key, None)
 
         async_to_sync(run_scenario)()
+
+
+class MediaSignallingTests(TransactionTestCase):
+    """The postbox players use to find each other's cameras.
+
+    A tournament left in "lobby" boots no engine, so these exercise the consumer
+    on its own: who may signal whom, and what survives a disconnect.
+    """
+
+    def setUp(self):
+        _media_presence.clear()
+        self.tournament = Tournament.objects.create(
+            host=self._user("host"), name="Media", status="lobby", players_per_table=6,
+        )
+        self.table_one = TournamentTable.objects.create(tournament=self.tournament, table_number=1, max_seats=6)
+        self.table_two = TournamentTable.objects.create(tournament=self.tournament, table_number=2, max_seats=6)
+
+    def tearDown(self):
+        _media_presence.clear()
+
+    def _user(self, name):
+        return User.objects.create_user(username=name, password="x")
+
+    def _seat(self, name, table, seat):
+        """Seat a player. `seat` is per-table; the tournament-wide seat is unique."""
+        user = self._user(name)
+        self._next_global_seat = getattr(self, "_next_global_seat", 0)
+        TournamentPlayer.objects.create(
+            tournament=self.tournament, user=user, table=table,
+            seat=self._next_global_seat, seat_at_table=seat, chips=1000,
+        )
+        self._next_global_seat += 1
+        return user
+
+    def _communicator(self, user):
+        communicator = WebsocketCommunicator(
+            TournamentConsumer.as_asgi(), f"/ws/tournament/{self.tournament.id}/",
+        )
+        communicator.scope["user"] = user
+        communicator.scope["url_route"] = {"kwargs": {"tournament_id": str(self.tournament.id)}}
+        return communicator
+
+    async def _drain(self, communicator):
+        """Swallow the snapshot and anything else already queued.
+
+        Never let a receive time out: asgiref cancels the application when it
+        does, which would kill the very consumer under test.
+        """
+        while not await communicator.receive_nothing(timeout=0.2):
+            await communicator.receive_json_from()
+
+    async def _next_of_type(self, communicator, message_type, timeout=1):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if await communicator.receive_nothing(timeout=0.1):
+                continue
+            message = await communicator.receive_json_from()
+            if message.get("type") == message_type:
+                return message
+        raise AssertionError(f"no {message_type} arrived")
+
+    def test_a_signal_reaches_the_player_it_names(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("m_bea", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            await ana_socket.connect()
+            await bea_socket.connect()
+            await self._drain(ana_socket)
+            await self._drain(bea_socket)
+
+            await ana_socket.send_json_to({
+                "type": "media_signal", "to_user_id": bea.id,
+                "signal": {"kind": "offer", "sdp": "v=0"},
+            })
+
+            delivered = await self._next_of_type(bea_socket, "media_signal")
+            self.assertEqual(delivered["from_user_id"], ana.id)
+            self.assertEqual(delivered["signal"], {"kind": "offer", "sdp": "v=0"})
+
+            await ana_socket.disconnect()
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_signal_to_another_table_is_dropped(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana2", self.table_one, 0)
+        far = async_to_sync(sync_to_async(self._seat))("m_far", self.table_two, 0)
+
+        async def scenario():
+            ana_socket, far_socket = self._communicator(ana), self._communicator(far)
+            await ana_socket.connect()
+            await far_socket.connect()
+            await self._drain(ana_socket)
+            await self._drain(far_socket)
+
+            await ana_socket.send_json_to({
+                "type": "media_signal", "to_user_id": far.id, "signal": {"kind": "offer"},
+            })
+
+            self.assertTrue(await far_socket.receive_nothing(timeout=0.4))
+
+            await ana_socket.disconnect()
+            await far_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_announcing_returns_the_roster_and_tells_the_table(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana3", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("m_bea3", self.table_one, 1)
+        far = async_to_sync(sync_to_async(self._seat))("m_far3", self.table_two, 0)
+
+        async def scenario():
+            ana_socket = self._communicator(ana)
+            bea_socket = self._communicator(bea)
+            far_socket = self._communicator(far)
+            for socket in (ana_socket, bea_socket, far_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            # Ana is first in, so her roster is empty.
+            await ana_socket.send_json_to({"type": "media_presence", "audio": True, "video": False})
+            first_roster = await self._next_of_type(ana_socket, "media_roster")
+            self.assertEqual(first_roster["peers"], [])
+            # She is in the table group, so she also hears her own announcement.
+            await self._drain(ana_socket)
+
+            # Bea arrives and is told Ana is already there.
+            await bea_socket.send_json_to({"type": "media_presence", "audio": True, "video": True})
+            second_roster = await self._next_of_type(bea_socket, "media_roster")
+            self.assertEqual(
+                second_roster["peers"], [{"user_id": ana.id, "audio": True, "video": False}],
+            )
+
+            # Ana hears about Bea; the other table hears nothing at all.
+            announced = await self._next_of_type(ana_socket, "media_presence")
+            self.assertEqual((announced["user_id"], announced["video"]), (bea.id, True))
+            self.assertTrue(await far_socket.receive_nothing(timeout=0.4))
+
+            for socket in (ana_socket, bea_socket, far_socket):
+                await socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_turning_everything_off_leaves_the_table(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana4", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("m_bea4", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            for socket in (ana_socket, bea_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            await ana_socket.send_json_to({"type": "media_presence", "audio": True, "video": True})
+            await self._next_of_type(ana_socket, "media_roster")
+            await self._drain(bea_socket)
+
+            await ana_socket.send_json_to({"type": "media_presence", "audio": False, "video": False})
+
+            left = await self._next_of_type(bea_socket, "media_left")
+            self.assertEqual(left["user_id"], ana.id)
+            self.assertEqual(_media_presence, {})
+
+            await ana_socket.disconnect()
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_disconnect_takes_the_presence_with_it(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana5", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("m_bea5", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            for socket in (ana_socket, bea_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            await ana_socket.send_json_to({"type": "media_presence", "audio": True, "video": True})
+            await self._next_of_type(ana_socket, "media_roster")
+            await self._drain(bea_socket)
+
+            await ana_socket.disconnect()
+
+            left = await self._next_of_type(bea_socket, "media_left")
+            self.assertEqual(left["user_id"], ana.id)
+            self.assertEqual(_media_presence, {})
+
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_superseded_socket_does_not_clear_the_live_one(self):
+        """A reconnect must not tear down the presence the new socket announced.
+
+        This is the same trap the hole-card unicast fell into: the old socket
+        tears down after the new one registered, and would clear shared state
+        belonging to the live connection.
+        """
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana6", self.table_one, 0)
+
+        async def scenario():
+            first = self._communicator(ana)
+            await first.connect()
+            await self._drain(first)
+
+            second = self._communicator(ana)
+            await second.connect()
+            await self._drain(second)
+
+            await second.send_json_to({"type": "media_presence", "audio": True, "video": False})
+            await self._next_of_type(second, "media_roster")
+
+            # The superseded socket goes away afterwards, as a real reconnect does.
+            await first.disconnect()
+            await asyncio.sleep(0.2)
+
+            self.assertIn((self.tournament.id, ana.id), _media_presence)
+
+            await second.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_flood_of_signalling_is_cut_off(self):
+        ana = async_to_sync(sync_to_async(self._seat))("m_ana7", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("m_bea7", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            for socket in (ana_socket, bea_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            for _ in range(MEDIA_MESSAGE_BUDGET + 20):
+                await ana_socket.send_json_to({
+                    "type": "media_signal", "to_user_id": bea.id, "signal": {"kind": "ice"},
+                })
+
+            received = 0
+            while not await bea_socket.receive_nothing(timeout=0.4):
+                message = await bea_socket.receive_json_from()
+                if message.get("type") == "media_signal":
+                    received += 1
+
+            self.assertEqual(received, MEDIA_MESSAGE_BUDGET)
+
+            await ana_socket.disconnect()
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()

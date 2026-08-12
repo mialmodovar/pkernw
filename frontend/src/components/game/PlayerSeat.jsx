@@ -47,7 +47,7 @@ function TimerRing({ pct }) {
 
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
-  isDealer, isSB, isBB, timerPct,
+  isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
@@ -61,7 +61,9 @@ export default function PlayerSeat({
     : "border-[rgba(196,178,165,0.18)]";
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(5rem,11vw,7rem)] ${p.is_disconnected ? "opacity-60" : ""}`}>
+    <div className={`relative flex flex-col items-center gap-1 w-[clamp(5rem,11vw,7rem)] transition-opacity duration-500 ${
+      p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
+    }`}>
       {p.is_sitting_out && !p.is_eliminated && (
         <div className="bg-[#3d2f0b] text-[#e6d9a8] text-[10px] font-bold px-1.5 py-0.5 rounded border border-[rgba(224,198,107,0.4)] text-center">
           SITTING OUT
@@ -99,7 +101,16 @@ export default function PlayerSeat({
         folded={p.is_folded}
         eliminated={p.is_eliminated}
         isMe={isMe}
+        faceDown={faceDownAtShowdown}
+        winningCards={isWinner ? showdownEntry?.best_cards : null}
       />
+      {showdownEntry && !faceDownAtShowdown && (
+        <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center ${
+          isWinner ? "text-[#d9c07a]" : "text-(--color-text-muted)"
+        }`}>
+          {showdownEntry.hand_name}
+        </div>
+      )}
       <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
       <div className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-3 py-1 border-2 ${borderColor} text-center w-full shadow-lg shadow-black/50`}>
         <div className="flex items-center justify-center gap-1 min-w-0">

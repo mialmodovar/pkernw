@@ -31,6 +31,20 @@ def evaluate(cards: List[Card]) -> Tuple:
     return max(_score_five(combo) for combo in combinations(cards, 5))
 
 
+def best_five(cards: List[Card]) -> Tuple[Tuple, List[Card]]:
+    """Return the best score AND the five cards that make it.
+
+    `evaluate` only returns the score, which is all the pot maths needs — but
+    the table wants to show which cards won.
+    """
+    if len(cards) < 5:
+        raise ValueError("Need at least 5 cards to evaluate")
+    return max(
+        ((_score_five(list(combo)), list(combo)) for combo in combinations(cards, 5)),
+        key=lambda scored: scored[0],
+    )
+
+
 def hand_name(score: Tuple) -> str:
     names = {
         HIGH_CARD:       "High Card",

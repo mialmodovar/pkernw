@@ -1,4 +1,4 @@
-import { SUIT_COLOR, SUIT_CHAR, CARD_FACE, CARD_BACK } from "./cardStyles";
+import { SUIT_COLOR, SUIT_CHAR, CARD_FACE, CARD_BACK, CARD_WINNING } from "./cardStyles";
 
 function parseCard(str) {
   if (!str || str === "??") return null;
@@ -8,7 +8,7 @@ function parseCard(str) {
   return { rank, suit };
 }
 
-function CardFace({ card }) {
+function CardFace({ card, winning }) {
   if (!card) {
     return (
       <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex items-center justify-center text-xs ${CARD_BACK}`}>
@@ -17,7 +17,7 @@ function CardFace({ card }) {
     );
   }
   return (
-    <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE}`}
+    <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
       style={{ color: SUIT_COLOR[card.suit] || "#161616" }}>
       <span>{card.rank}</span>
       <span className="text-[10px]">{card.suit}</span>
@@ -25,8 +25,17 @@ function CardFace({ card }) {
   );
 }
 
-export default function HoleCards({ cards, folded, eliminated, isMe }) {
+export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, faceDown }) {
   if (eliminated) return null;
+  // Held face down until this seat's turn in the staged showdown reveal.
+  if (faceDown) {
+    return (
+      <div className="flex gap-0.5">
+        <CardFace card={null} />
+        <CardFace card={null} />
+      </div>
+    );
+  }
   if (folded) {
     // A mucked hand leaves the table. You can still peek at your own by
     // hovering, which is only ever a reminder of what you just let go.
@@ -50,10 +59,11 @@ export default function HoleCards({ cards, folded, eliminated, isMe }) {
       </div>
     );
   }
+  const winners = new Set(winningCards || []);
   return (
     <div className="flex gap-0.5">
       {cards.map((c, i) => (
-        <CardFace key={i} card={parseCard(c)} />
+        <CardFace key={i} card={parseCard(c)} winning={winners.has(c)} />
       ))}
     </div>
   );

@@ -3,6 +3,7 @@ import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
+import { useShowdownReveal } from "./useShowdownReveal";
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
 // not from the number of players present, so nobody's seat shifts when
@@ -35,9 +36,15 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity }) {
   const {
     players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat,
+    dealerSeat, sbSeat, bbSeat, showdown,
   } = useGameStore();
   const countdown = useActionCountdown();
+  const revealedSeats = useShowdownReveal(showdown);
+
+  // Winners are known from pot_awarded; their best five get the gold ring, and
+  // the losing hands dim so the eye goes to what actually won.
+  const showdownBySeat = new Map((showdown || []).map((entry) => [entry.seat, entry]));
+  const winningBoardCards = winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || []);
 
   // Fall back to what the seat numbers imply until capacity is known.
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
@@ -54,7 +61,7 @@ export default function PokerTable({ mySeat, capacity }) {
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
-        <CommunityCards />
+        <CommunityCards winningCards={winningBoardCards} />
         <PotDisplay />
         {handNumber > 0 && (
           <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
@@ -81,6 +88,9 @@ export default function PokerTable({ mySeat, capacity }) {
                 isWinner={winnerSeats.includes(p.seat)}
                 winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
                 equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
+                showdownEntry={showdownBySeat.get(p.seat)}
+                faceDownAtShowdown={revealedSeats != null && !revealedSeats.has(p.seat) && !isMe}
+                dimmed={winnerSeats.length > 0 && showdown != null && !winnerSeats.includes(p.seat)}
                 isDealer={dealerSeat === p.seat}
                 isSB={sbSeat === p.seat}
                 isBB={bbSeat === p.seat}

@@ -15,3 +15,7 @@ export const CARD_FACE =
 // Face-down / unknown card — dark burgundy back.
 export const CARD_BACK =
   "bg-[linear-gradient(140deg,#5a1420,#2a0d12)] border border-[rgba(196,178,165,0.35)] text-[rgba(214,199,190,0.8)]";
+
+// Ring on the five cards that made the winning hand at showdown.
+export const CARD_WINNING =
+  "ring-2 ring-[#d4af37] ring-offset-1 ring-offset-black/50 shadow-[0_0_12px_rgba(212,175,55,0.5)]";

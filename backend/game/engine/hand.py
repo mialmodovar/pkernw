@@ -8,7 +8,7 @@ from typing import Any, Callable, Coroutine, List, Optional, Tuple
 
 from .card import Card, Deck, Rank, Suit, cards_str
 from .player import Player
-from .evaluator import evaluate, hand_name
+from .evaluator import best_five, evaluate, hand_name
 
 
 # ── Equity estimation ────────────────────────────────────────────────────
@@ -427,11 +427,13 @@ class HandEngine:
         else:
             showdown_data = []
             for p in active:
-                score = evaluate(p.hole_cards + self.community_cards)
+                score, best = best_five(p.hole_cards + self.community_cards)
                 showdown_data.append({
                     "seat":      _seat_of(p),
                     "cards":     cards_to_list(p.hole_cards),
                     "hand_name": hand_name(score),
+                    # So the table can pick out the five cards that made it.
+                    "best_cards": cards_to_list(best),
                 })
             await self.broadcast("showdown", showdown_data)
 

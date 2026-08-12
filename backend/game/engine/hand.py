@@ -217,9 +217,9 @@ class HandEngine:
                 self._dead_money += paid
                 if p.chips == 0:
                     p.is_all_in = True
-                entries.append({"seat": _seat_of(p), "amount": paid})
+                entries.append({"seat": _seat_of(p), "amount": paid, "chips": p.chips})
         if entries:
-            await self.broadcast("antes_posted", entries)
+            await self.broadcast("antes_posted", {"entries": entries, "pot": self._pot_total()})
 
     async def _post_blinds(self) -> int:
         n = len(self.players)
@@ -237,8 +237,9 @@ class HandEngine:
         self._min_raise  = self.big_blind
 
         await self.broadcast("blinds_posted", {
-            "sb": {"seat": _seat_of(sb_p), "amount": sb_paid},
-            "bb": {"seat": _seat_of(bb_p), "amount": bb_paid},
+            "sb": {"seat": _seat_of(sb_p), "amount": sb_paid, "chips": sb_p.chips, "bet": sb_p.current_bet},
+            "bb": {"seat": _seat_of(bb_p), "amount": bb_paid, "chips": bb_p.chips, "bet": bb_p.current_bet},
+            "pot": self._pot_total(),
         })
         return bb_idx
 
@@ -349,6 +350,12 @@ class HandEngine:
                     if not pl.is_folded and not pl.is_all_in and j != idx:
                         queue.append(j)
 
+            # Carry the resulting state, so clients apply it rather than
+            # duplicating the engine's chip arithmetic and drifting from it.
+            event["chips"] = p.chips
+            event["bet"] = p.current_bet
+            event["is_all_in"] = p.is_all_in
+            event["pot"] = self._pot_total()
             await self.broadcast("action_taken", event)
 
             if self._active_count() <= 1:

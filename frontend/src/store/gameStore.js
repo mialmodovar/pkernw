@@ -173,12 +173,11 @@ const useGameStore = create((set) => ({
           sbSeat: data.sb.seat,
           bbSeat: data.bb.seat,
           players: s.players.map((p) => {
-            if (p.seat === data.sb.seat) return { ...p, chips: p.chips - data.sb.amount, bet: (p.bet || 0) + data.sb.amount };
-            if (p.seat === data.bb.seat) return { ...p, chips: p.chips - data.bb.amount, bet: (p.bet || 0) + data.bb.amount };
+            if (p.seat === data.sb.seat) return { ...p, chips: data.sb.chips, bet: data.sb.bet };
+            if (p.seat === data.bb.seat) return { ...p, chips: data.bb.chips, bet: data.bb.bet };
             return p;
           }),
-          // Blinds are live money — without this the pot reads 0 for all of preflop.
-          pot: s.pot + data.sb.amount + data.bb.amount,
+          pot: data.pot ?? s.pot,
           messages: appendLog(s, entry(s, "blinds",
             `${nameFor(s, data.sb.seat)} posts SB ${data.sb.amount} · ${nameFor(s, data.bb.seat)} posts BB ${data.bb.amount}`,
             { street: "preflop" })),
@@ -186,14 +185,15 @@ const useGameStore = create((set) => ({
         break;
 
       case "antes_posted": {
-        const entries = data.data || [];
+        const payload = data.data || data;
+        const entries = payload.entries || [];
         const totalAnte = entries.reduce((sum, e) => sum + e.amount, 0);
         set((s) => ({
           players: s.players.map((p) => {
-            const entry = entries.find((e) => e.seat === p.seat);
-            return entry ? { ...p, chips: p.chips - entry.amount } : p;
+            const paid = entries.find((e) => e.seat === p.seat);
+            return paid ? { ...p, chips: paid.chips } : p;
           }),
-          pot: s.pot + totalAnte,
+          pot: payload.pot ?? s.pot,
           messages: appendLog(s, entry(s, "blinds", `Antes posted (${totalAnte})`, { street: "preflop" })),
         }));
         break;
@@ -217,23 +217,21 @@ const useGameStore = create((set) => ({
         set((s) => ({
           actionOnSeat: null,
           actionContext: null,
+          // The engine sends the resulting stack, street bet and all-in state,
+          // so this applies them instead of re-deriving them and drifting.
           players: s.players.map((p) => {
             if (p.seat !== data.seat) return p;
-            const act = data.action;
-            // Marking the fold here is what makes the mucked hand leave the
-            // table: no game_state follows an action, so nothing else would.
-            if (act === "fold") return { ...p, is_folded: true };
-            if (act === "check") return p;
-            if (act === "bet" || act === "raise") {
-              const oldBet = p.bet || 0;
-              const cost = data.amount - oldBet;
-              return { ...p, chips: p.chips - cost, bet: data.amount };
-            }
-            if (act === "call") {
-              return { ...p, chips: p.chips - data.amount, bet: (p.bet || 0) + data.amount };
-            }
-            return p;
+            return {
+              ...p,
+              chips: data.chips ?? p.chips,
+              bet: data.bet ?? p.bet,
+              is_all_in: data.is_all_in ?? p.is_all_in,
+              // Marking the fold here is what makes the mucked hand leave the
+              // table: no game_state follows an action, so nothing else would.
+              is_folded: data.action === "fold" ? true : p.is_folded,
+            };
           }),
+          pot: data.pot ?? s.pot,
           messages: appendLog(s, entry(s, "action",
             `${nameFor(s, data.seat)} ${verb}${data.amount ? ` ${data.amount.toLocaleString()}` : ""}`)),
         }));

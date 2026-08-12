@@ -9,6 +9,7 @@ from .views import (
     skip_blind_level,
     blind_levels,
     rebuy_tournament,
+    quit_tournament,
 )
 
 urlpatterns = [
@@ -21,4 +22,5 @@ urlpatterns = [
     path("<int:pk>/skip-level/",   skip_blind_level,                   name="tournament-skip-level"),
     path("<int:pk>/levels/",       blind_levels,                       name="tournament-levels"),
     path("<int:pk>/rebuy/",        rebuy_tournament,                   name="tournament-rebuy"),
+    path("<int:pk>/quit/",         quit_tournament,                    name="tournament-quit"),
 ]

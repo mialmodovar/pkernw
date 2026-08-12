@@ -19,7 +19,10 @@ export default function LobbyPage() {
     navigate(`/tournament/${id}`);
   };
   const onOpen = (id) => navigate(`/tournament/${id}`);
-
+  const onQuit = async (id) => {
+    if (!window.confirm("Unregister from this tournament? Your seat is freed for someone else.")) return;
+    await useLobbyStore.getState().quitTournament(id);
+  };
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
@@ -61,6 +64,7 @@ export default function LobbyPage() {
               emptyMessage="No tournaments open right now. Create one!"
               onJoin={onJoin}
               onOpen={onOpen}
+              onQuit={onQuit}
             />
             <TournamentList
               title="Past Tournaments"

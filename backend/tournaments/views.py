@@ -308,3 +308,36 @@ def rebuy_tournament(request, pk):
     tp.refresh_from_db()
 
     return Response({"seat": tp.seat, "chips": tp.chips, "rebuy_count": tp.rebuy_count})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def quit_tournament(request, pk):
+    try:
+        tournament = Tournament.objects.get(pk=pk)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Once cards are in the air a seat carries chips that belong to the prize
+    # pool, so it can only be given up before the tournament starts.
+    if tournament.status != "lobby":
+        return Response(
+            {"error": "Cannot leave a tournament that has already started"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # The host owns the tournament and is the only one who can start it, so
+    # leaving would strand everyone else in a lobby nobody can open.
+    if tournament.host_id == request.user.id:
+        return Response(
+            {"error": "The host cannot leave their own tournament"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        tp = TournamentPlayer.objects.get(tournament=tournament, user=request.user)
+    except TournamentPlayer.DoesNotExist:
+        return Response({"error": "You are not in this tournament"}, status=status.HTTP_400_BAD_REQUEST)
+
+    tp.delete()
+    return Response({"status": "unregistered"})

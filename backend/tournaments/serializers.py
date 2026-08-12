@@ -154,6 +154,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
     player_count = serializers.IntegerField(source="players.count", read_only=True)
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
+    is_host      = serializers.SerializerMethodField()
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
     late_registration_open = serializers.SerializerMethodField()
@@ -166,6 +167,12 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     def get_is_joined(self, tournament):
         return self._my_seat(tournament) is not None
+
+    def get_is_host(self, tournament):
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        return tournament.host_id == request.user.id
 
     def get_late_registration_open(self, tournament):
         return _late_registration_open(tournament)
@@ -181,6 +188,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tournament
         fields = ("id", "name", "host_name", "status", "starting_chips", "is_joined",
+                  "is_host",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
                   "late_registration_open",

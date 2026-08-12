@@ -548,3 +548,105 @@ class CoordinatorRebuyTests(TestCase):
 		self.assertFalse(coordinator._player_payload(player)["is_sitting_out"])
 		async_to_sync(coordinator.set_sitting_out)(11, True)
 		self.assertTrue(coordinator._player_payload(player)["is_sitting_out"])
+
+
+class QuitTests(APITestCase):
+	def setUp(self):
+		self.host = User.objects.create_user(username="quit-host", password="secret123")
+		self.user = User.objects.create_user(username="leaver", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def _seated(self, **tournament_kwargs):
+		tournament = Tournament.objects.create(
+			host=self.host,
+			name="Quitters",
+			starting_chips=10_000,
+			max_players=9,
+			**tournament_kwargs,
+		)
+		table = tournament.ensure_table(1)
+		tournament.players.create(
+			user=self.host, table=table, seat=0, seat_at_table=0, chips=10_000,
+		)
+		seat = tournament.players.create(
+			user=self.user, table=table, seat=1, seat_at_table=1, chips=10_000,
+		)
+		return tournament, seat
+
+	def test_quit_before_start_frees_the_seat(self):
+		tournament, _seat = self._seated()
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["status"], "unregistered")
+		self.assertEqual(tournament.players.count(), 1)
+		self.assertFalse(tournament.players.filter(user=self.user).exists())
+
+	def test_freed_seat_can_be_taken_by_someone_else(self):
+		tournament, _seat = self._seated()
+		table = tournament.ensure_table(1)
+		for filler in range(2, 9):
+			user = User.objects.create_user(username=f"filler{filler}", password="secret123")
+			tournament.players.create(
+				user=user, table=table, seat=filler, seat_at_table=filler, chips=10_000,
+			)
+
+		self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		joiner = User.objects.create_user(username="joiner", password="secret123")
+		self.client.force_authenticate(joiner)
+		response = self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(response.data["seat"], 1)
+
+	def test_host_cannot_leave_their_own_tournament(self):
+		tournament, _seat = self._seated()
+		self.client.force_authenticate(self.host)
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(response.data["error"], "The host cannot leave their own tournament")
+		self.assertTrue(tournament.players.filter(user=self.host).exists())
+
+	def test_is_host_flag_is_in_the_lobby_payload(self):
+		"""The lobby hides the Leave button with it, so it has to ride the list."""
+		self._seated()
+
+		as_player = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+		self.client.force_authenticate(self.host)
+		as_host = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertFalse(as_player.data[0]["is_host"])
+		self.assertTrue(as_host.data[0]["is_host"])
+
+	def test_quit_refused_once_the_tournament_is_running(self):
+		tournament, _seat = self._seated(status="running")
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(
+			response.data["error"], "Cannot leave a tournament that has already started"
+		)
+		self.assertEqual(tournament.players.count(), 2)
+
+	def test_quit_refused_once_the_tournament_is_paused(self):
+		tournament, _seat = self._seated(status="paused")
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(tournament.players.count(), 2)
+
+	def test_quit_refused_for_a_player_without_a_seat(self):
+		tournament, _seat = self._seated()
+		outsider = User.objects.create_user(username="no-seat", password="secret123")
+		self.client.force_authenticate(outsider)
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(response.data["error"], "You are not in this tournament")

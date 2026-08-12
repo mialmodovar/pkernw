@@ -16,7 +16,7 @@ const ordinal = (n) => {
   return `${n}${suffix}`;
 };
 
-export default function TournamentCard({ tournament: t, onJoin, onOpen }) {
+export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit }) {
   const statusColor = {
     lobby: "bg-amber-900/50 text-amber-200 border border-amber-700/40",
     running: "bg-(--color-accent-soft) text-red-200 border border-(--color-border-strong)",
@@ -77,6 +77,13 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen }) {
         )}
         {t.is_joined && !isFinished && (
           <span className="text-xs text-(--color-text-muted)">Joined</span>
+        )}
+        {t.is_joined && !t.is_host && t.status === "lobby" && onQuit && (
+          <button onClick={() => onQuit(t.id)}
+            title="Give up your seat and free it for someone else"
+            className="px-3 py-1 panel-raised hover:border-(--color-border-strong) rounded text-sm transition-colors text-(--color-silver)">
+            Leave
+          </button>
         )}
         {(t.status === "lobby" || t.late_registration_open) && !t.is_joined && (
           <button onClick={() => onJoin(t.id)}

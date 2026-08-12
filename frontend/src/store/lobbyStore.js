@@ -34,6 +34,12 @@ const useLobbyStore = create((set, get) => ({
     return data;
   },
 
+  quitTournament: async (id) => {
+    const { data } = await api.post(`/tournaments/${id}/quit/`);
+    await get().fetchLobbyData();
+    return data;
+  },
+
   startTournament: async (id) => {
     const { data } = await api.post(`/tournaments/${id}/start/`);
     await get().fetchLobbyData();

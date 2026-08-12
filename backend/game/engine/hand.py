@@ -289,8 +289,10 @@ class HandEngine:
             # cover is only ever calling their own chips, so that is what they
             # are offered — and it is all they can be shown.
             to_call   = min(self._street_bet - p.current_bet, p.chips)
-            min_raise = self._street_bet + self._min_raise
             max_raise = p.current_bet + p.chips
+            # A stack too short for a full min-raise can still shove, so the
+            # offer collapses to all-in instead of asking for chips it hasn't got.
+            min_raise = min(self._street_bet + self._min_raise, max_raise)
 
             valid = ["fold"]
             if can_check:
@@ -332,8 +334,11 @@ class HandEngine:
                 p.bet(extra)
                 actual_total     = p.current_bet
                 increment        = actual_total - self._street_bet
-                self._min_raise  = max(increment, self.big_blind)
-                self._street_bet = actual_total
+                # An all-in that falls short of a full raise must not shrink
+                # what the next player has to raise by.
+                if increment >= self._min_raise:
+                    self._min_raise = increment
+                self._street_bet = max(self._street_bet, actual_total)
                 event["amount"]  = actual_total
                 event["action"]  = "bet" if self._street_bet == actual_total and not preflop else "raise"
 

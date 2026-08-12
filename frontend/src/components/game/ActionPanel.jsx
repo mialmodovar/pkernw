@@ -34,10 +34,11 @@ export default function ActionPanel({ mySeat, onAction, disabled = false }) {
       fold: valid.includes("fold") && !valid.includes("check"),
       check: valid.includes("check"),
       call: valid.includes("call"),
-      raise: valid.includes("raise"),
+      // Nothing to size when the only raise left is the whole stack.
+      raise: valid.includes("raise") && maxRaise > minRaise,
       allin: valid.includes("raise") && maxRaise > 0,
     };
-  }, [ctx.valid_actions, maxRaise]);
+  }, [ctx.valid_actions, minRaise, maxRaise]);
 
   // A fresh action_required means a new decision: clear any armed key and
   // re-enable the buttons.

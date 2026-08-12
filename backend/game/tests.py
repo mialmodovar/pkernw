@@ -347,6 +347,39 @@ class HandEngineUncalledBetTests(TestCase):
         self.assertEqual(facing_the_shove["pot"], 9_685)      # 10,335 on the table, 650 of it uncallable
         self.assertNotIn("raise", facing_the_shove["valid_actions"])
 
+    def test_raise_offer_collapses_to_all_in_when_a_full_raise_is_out_of_reach(self):
+        contexts = []
+        players = [Player("shover", 9_712), Player("small blind", 9_950), Player("big blind", 10_288)]
+        for seat, player in enumerate(players):
+            player._seat = seat
+
+        actions = [("raise", 9_712), ("call", 0), ("call", 0)]
+
+        async def broadcast(event_type, payload):
+            return None
+
+        async def request_action(player, context):
+            contexts.append(context)
+            return actions.pop(0) if actions else ("check", 0)
+
+        engine = HandEngine(
+            players=players,
+            dealer_pos=0,
+            small_blind=25,
+            big_blind=50,
+            ante=0,
+            hand_number=1,
+            broadcast=broadcast,
+            request_action=request_action,
+        )
+        async_to_sync(engine.run)()
+
+        facing_the_shove = contexts[1]
+        self.assertIn("raise", facing_the_shove["valid_actions"])
+        # A full raise would be 19,374 — more than the stack can ever put in.
+        self.assertEqual(facing_the_shove["min_raise"], 9_950)
+        self.assertEqual(facing_the_shove["max_raise"], 9_950)
+
 
 class HandEngineRabbitHuntTests(TestCase):
     def test_rabbit_hunt_broadcasts_unused_board_cards_after_early_finish(self):

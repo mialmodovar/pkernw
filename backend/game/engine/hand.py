@@ -346,6 +346,43 @@ class HandEngine:
             if self._active_count() <= 1:
                 break
 
+        await self._return_uncalled_bet()
+
+    async def _return_uncalled_bet(self):
+        """Give back the part of a bet no opponent could cover.
+
+        Shoving over a shorter stack (or everyone folding) leaves chips nobody
+        is playing for; without this they sit in the pot for the rest of the
+        hand and are only handed back as a one-man side pot at showdown.
+        """
+        committed = sorted(
+            (p for p in self.players if p.current_bet > 0),
+            key=lambda p: p.current_bet,
+            reverse=True,
+        )
+        if not committed:
+            return
+
+        top = committed[0]
+        covered = committed[1].current_bet if len(committed) > 1 else 0
+        excess = top.current_bet - covered
+        if excess <= 0:
+            return
+
+        top.chips += excess
+        top.current_bet -= excess
+        top.total_invested -= excess
+        if top.chips > 0:
+            top.is_all_in = False
+        self._street_bet = min(self._street_bet, top.current_bet)
+
+        await self.broadcast("uncalled_bet_returned", {
+            "seat": _seat_of(top),
+            "amount": excess,
+            "chips": top.chips,
+            "pot": self._pot_total(),
+        })
+
     # ── resolve ──────────────────────────────────────────────────────────
 
     async def _resolve(self) -> HandResult:

@@ -417,6 +417,16 @@ class MultiTableTournamentCoordinator:
             {"table_count": len(self._tables), "tables": self.table_summaries()},
         )
 
+        # Seats only reach a client through its own snapshot, so without this
+        # everyone else keeps the previous roster — a rebuy or an arriving
+        # player stays invisible at the table until a reload.
+        for table in self._tables.values():
+            await self._broadcast_to_table(
+                table.table_number,
+                "table_players",
+                {"players": [self._player_payload(player) for player in sorted(table.players, key=lambda item: item._seat)]},
+            )
+
     async def _run_table_hand(self, table: RuntimeTable, level: Dict[str, int]) -> List[EnginePlayer]:
         players = sorted(table.players, key=lambda item: item._seat)
         if len(players) < 2:
@@ -499,6 +509,9 @@ class MultiTableTournamentCoordinator:
                 state["bets"][seat] = state["bets"].get(seat, 0) + amount
             elif action in ("bet", "raise"):
                 state["bets"][seat] = amount  # total street bet, not an increment
+        elif event_type == "uncalled_bet_returned":
+            seat = payload.get("seat")
+            state["bets"][seat] = max(0, state["bets"].get(seat, 0) - payload.get("amount", 0))
         elif event_type == "street_dealt":
             state["community_cards"] = payload.get("cards", [])
             state["pot"] = payload.get("pot", state["pot"])

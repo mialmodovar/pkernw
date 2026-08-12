@@ -240,6 +240,24 @@ const useGameStore = create((set) => ({
         break;
       }
 
+      case "uncalled_bet_returned":
+        set((s) => ({
+          players: s.players.map((p) => {
+            if (p.seat !== data.seat) return p;
+            const chips = data.chips ?? p.chips + data.amount;
+            return {
+              ...p,
+              chips,
+              bet: Math.max(0, (p.bet || 0) - data.amount),
+              is_all_in: chips > 0 ? false : p.is_all_in,
+            };
+          }),
+          pot: data.pot ?? Math.max(0, s.pot - data.amount),
+          messages: appendLog(s, entry(s, "pot",
+            `Uncalled bet ${data.amount?.toLocaleString()} returned to ${nameFor(s, data.seat)}`)),
+        }));
+        break;
+
       case "street_dealt":
         set((s) => ({
           street: data.street,
@@ -334,6 +352,30 @@ const useGameStore = create((set) => ({
           messages: appendLog(s, entry(s, "info",
             `${data.name} ${data.sitting_out ? "is sitting out" : "is back"}`)),
         }));
+        break;
+
+      // Sent to everyone at a table after a rebalance, so a rebought or
+      // newly moved player shows up without a reload.
+      case "table_players":
+        set((s) => {
+          if (
+            s.currentTableNumber != null &&
+            data.table_number != null &&
+            data.table_number !== s.currentTableNumber
+          ) {
+            return {};
+          }
+          const previous = new Map(s.players.map((p) => [p.name, p]));
+          return {
+            currentTableNumber: data.table_number ?? s.currentTableNumber,
+            currentTableId: data.table_id ?? s.currentTableId,
+            players: (data.players || []).map((p) => ({
+              ...p,
+              bet: 0,
+              is_disconnected: previous.get(p.name)?.is_disconnected ?? false,
+            })),
+          };
+        });
         break;
 
       case "player_rebuy":

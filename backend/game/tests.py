@@ -262,6 +262,82 @@ class MultiTableTournamentCoordinatorTests(TestCase):
         )
 
 
+    def test_rebalance_broadcasts_table_rosters(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            players_per_table=3,
+        )
+        self.records[1]["chips"] = 0
+        self.records[1]["is_eliminated"] = True
+        self._sync_and_rebalance(coordinator)
+        self.table_events.clear()
+
+        # The rebuy the runner would have applied before the next hand.
+        self.records[1]["chips"] = 1000
+        self.records[1]["is_eliminated"] = False
+        self._sync_and_rebalance(coordinator)
+
+        roster = next(
+            payload for _table_number, event_type, payload in self.table_events
+            if event_type == "table_players"
+        )
+        self.assertEqual(
+            sorted(player["name"] for player in roster["players"]),
+            ["player1", "player2", "player3"],
+        )
+
+
+class HandEngineUncalledBetTests(TestCase):
+    def _run_hand(self, chips, actions):
+        events = []
+        players = [Player("button", chips[0]), Player("big blind", chips[1])]
+        for seat, player in enumerate(players):
+            player._seat = seat
+
+        async def broadcast(event_type, payload):
+            events.append((event_type, payload))
+
+        async def request_action(player, context):
+            return actions.pop(0) if actions else ("fold", 0)
+
+        engine = HandEngine(
+            players=players,
+            dealer_pos=0,
+            small_blind=5,
+            big_blind=10,
+            ante=0,
+            hand_number=1,
+            broadcast=broadcast,
+            request_action=request_action,
+        )
+        async_to_sync(engine.run)()
+        return players, events
+
+    def test_all_in_over_a_shorter_stack_returns_the_uncovered_chips(self):
+        players, events = self._run_hand([1000, 300], [("raise", 1000), ("call", 0)])
+
+        returned = next(payload for event_type, payload in events if event_type == "uncalled_bet_returned")
+        self.assertEqual(returned["seat"], 0)
+        self.assertEqual(returned["amount"], 700)
+        self.assertEqual(returned["pot"], 600)
+
+        flop = next(payload for event_type, payload in events if event_type == "street_dealt")
+        self.assertEqual(flop["pot"], 600)
+
+        awarded = sum(
+            award["amount"]
+            for event_type, payload in events if event_type == "pot_awarded"
+            for award in payload
+        )
+        self.assertEqual(awarded, 600)
+        self.assertEqual(sum(player.chips for player in players), 1300)
+
+    def test_a_call_that_covers_the_bet_returns_nothing(self):
+        _players, events = self._run_hand([1000, 1000], [("raise", 200), ("call", 0)] + [("check", 0)] * 6)
+
+        self.assertNotIn("uncalled_bet_returned", [event_type for event_type, _payload in events])
+
+
 class HandEngineRabbitHuntTests(TestCase):
     def test_rabbit_hunt_broadcasts_unused_board_cards_after_early_finish(self):
         events = []

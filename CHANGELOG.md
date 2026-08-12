@@ -54,9 +54,12 @@ remembering.
   stack, your rank, payouts.
 - **Lobby**: emoji avatar profile, per-user stats including VPIP and PFR mined
   from hand history, and tournaments split into upcoming, active and past.
-- **Docker stack** for deployment — Postgres, Redis, Daphne and an
-  nginx-served frontend build. The backend must stay at one instance; see the
-  note in `docker-compose.yml`.
+- **Docker stack** for deployment — one service that builds the frontend and
+  serves it from Daphne alongside the API, plus Postgres. Same origin, so the
+  client's relative calls and its websocket work with no CORS and no proxy, and
+  it matches the constraint that the engine must run as exactly one process.
+  Refuses to start with no database configured when debug is off, rather than
+  falling back to a SQLite file the next deploy would discard.
 
 ### Changed
 - **Time bank on by default** (30 seconds). Without one, a moment's hesitation

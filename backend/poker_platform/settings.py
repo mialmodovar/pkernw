@@ -2,6 +2,8 @@
 
 import os
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,6 +25,16 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", ["*"])
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
+
+# Railway (and similar) publish the public hostname, so the deployment works
+# without having to remember to set it by hand.
+_platform_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+if _platform_domain:
+    if _platform_domain not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_platform_domain)
+    origin = f"https://{_platform_domain}"
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
 
 # ── Apps ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -78,7 +91,25 @@ ASGI_APPLICATION = "poker_platform.asgi.application"
 
 # ── Database ──────────────────────────────────────────────────────────────
 
-if os.environ.get("POSTGRES_DB"):
+def _database_from_url(url):
+    """Parse the single connection URL that managed Postgres add-ons provide."""
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(url)
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": parsed.path.lstrip("/"),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or 5432),
+        "CONN_MAX_AGE": 60,
+    }
+
+
+if os.environ.get("DATABASE_URL"):
+    DATABASES = {"default": _database_from_url(os.environ["DATABASE_URL"])}
+elif os.environ.get("POSTGRES_DB"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -90,13 +121,22 @@ if os.environ.get("POSTGRES_DB"):
             "CONN_MAX_AGE": 60,
         }
     }
-else:
+elif DEBUG:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+else:
+    # Refuse rather than fall back. A container's SQLite file is wiped on every
+    # deploy, and losing tournament results and balances silently is worse than
+    # failing to boot.
+    raise ImproperlyConfigured(
+        "No database configured. Set DATABASE_URL (or the POSTGRES_* variables) "
+        "when DJANGO_DEBUG is false — a SQLite file inside the container would "
+        "be discarded on the next deploy."
+    )
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -152,4 +192,12 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# The compiled frontend, copied in by the Docker build. Served from this same
+# origin so the client's relative /api calls and same-host websocket keep
+# working with no CORS and no proxy in front.
+FRONTEND_DIST = Path(os.environ.get("FRONTEND_DIST", BASE_DIR / "frontend_dist"))
+if FRONTEND_DIST.exists():
+    WHITENOISE_ROOT = FRONTEND_DIST
+    WHITENOISE_INDEX_FILE = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

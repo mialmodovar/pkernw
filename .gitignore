@@ -29,3 +29,6 @@ dist-ssr/
 
 # Docker
 .env
+
+# Built frontend copied in for the single-service image
+backend/frontend_dist/

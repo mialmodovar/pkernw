@@ -4,6 +4,8 @@ import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
+import ChipStack from "./ChipStack";
+import { formatChips } from "./formatChips";
 
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
@@ -15,14 +17,25 @@ import { useShowdownReveal } from "./useShowdownReveal";
 const RADIUS_X = 42; // % of container, from the centre
 const RADIUS_Y = 32;
 
+function pointAt(index, capacity, scale) {
+  const angle = (index / capacity) * 2 * Math.PI;
+  return {
+    left: `${50 - RADIUS_X * scale * Math.sin(angle)}%`,
+    top: `${50 + RADIUS_Y * scale * Math.cos(angle)}%`,
+  };
+}
+
 function slotPosition(index, capacity) {
   if (capacity <= 0) return { top: "50%", left: "50%" };
   // index 0 sits bottom-centre; the rest run around the table towards the left.
-  const angle = (index / capacity) * 2 * Math.PI;
-  return {
-    left: `${50 - RADIUS_X * Math.sin(angle)}%`,
-    top: `${50 + RADIUS_Y * Math.cos(angle)}%`,
-  };
+  return pointAt(index, capacity, 1);
+}
+
+// Part way in from the seat towards the pot: on the felt, clear of the cards,
+// and unambiguous about whose bet it is.
+function betPosition(index, capacity) {
+  if (capacity <= 0) return { top: "50%", left: "50%" };
+  return pointAt(index, capacity, 0.46);
 }
 
 function EmptySeat() {
@@ -36,9 +49,11 @@ function EmptySeat() {
 
 export default function PokerTable({ mySeat, capacity }) {
   const {
-    players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity,
+    players, actionOnSeat, holeCards, winnerSeats, potAwards, allInEquity,
     dealerSeat, sbSeat, bbSeat, showdown,
   } = useGameStore();
+  const showBB = useGameStore((s) => s.showBB);
+  const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
 
@@ -64,7 +79,7 @@ export default function PokerTable({ mySeat, capacity }) {
   return (
     <div className="relative w-full max-w-[820px] aspect-[5/3] mx-auto">
       {/* Felt */}
-      <div className="felt absolute inset-[7%] rounded-[50%]" />
+      <div className="felt absolute inset-x-[9%] inset-y-[19%] rounded-[50%]" />
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
@@ -74,9 +89,6 @@ export default function PokerTable({ mySeat, capacity }) {
           <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-[#d9c07a] animate-pulse">
             All in
           </span>
-        )}
-        {handNumber > 0 && (
-          <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
         )}
       </div>
 
@@ -107,10 +119,31 @@ export default function PokerTable({ mySeat, capacity }) {
                 isSB={sbSeat === p.seat}
                 isBB={bbSeat === p.seat}
                 timerPct={isActive ? countdown.pct : 100}
+                topHalf={parseFloat(pos.top) < 50}
               />
             ) : (
               <EmptySeat />
             )}
+          </div>
+        );
+      })}
+
+      {/* Bets, on the line between each seat and the pot */}
+      {Array.from({ length: slots }, (_, visualIdx) => {
+        const seat = (offset + visualIdx) % slots;
+        const p = bySeat.get(seat);
+        if (!p || !p.bet) return null;
+        const pos = betPosition(visualIdx, slots);
+        return (
+          <div key={`bet-${seat}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1
+                       px-1.5 py-0.5 rounded-full bg-black/70 border border-[rgba(224,198,107,0.35)]
+                       shadow-lg shadow-black/60 animate-chip-in"
+            style={{ top: pos.top, left: pos.left }}>
+            <ChipStack amount={p.bet} size={10} />
+            <span className="text-[11px] font-bold text-[#d9c07a] leading-none">
+              {formatChips(p.bet, showBB, bb)}
+            </span>
           </div>
         );
       })}

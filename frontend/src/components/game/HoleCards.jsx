@@ -11,16 +11,16 @@ function parseCard(str) {
 function CardFace({ card, winning }) {
   if (!card) {
     return (
-      <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex items-center justify-center text-xs ${CARD_BACK}`}>
-        ?
+      <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] flex items-center justify-center ${CARD_BACK}`}>
+        <span className="text-[0.7rem]">♠</span>
       </div>
     );
   }
   return (
-    <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
+    <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] flex flex-col items-center justify-center leading-none ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
       style={{ color: SUIT_COLOR[card.suit] || "#161616" }}>
-      <span>{card.rank}</span>
-      <span className="text-[10px]">{card.suit}</span>
+      <span className="text-[0.78rem] font-extrabold tracking-tight">{card.rank}</span>
+      <span className="text-[0.65rem] mt-0.5">{card.suit}</span>
     </div>
   );
 }

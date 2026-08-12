@@ -137,9 +137,10 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   };
 
   const inputValue = raiseText !== null ? raiseText : String(fromChips(raiseAmount));
-  const sliderStep = useBBControls
-    ? 0.1
-    : Math.max(1, Math.floor((maxRaise - minRaise) / 20) || 1);
+  // One chip per step. It used to be a twentieth of the whole range, which gave
+  // a short slider twenty positions — small drags changed nothing at all, so the
+  // amount on the Raise button looked stuck.
+  const sliderStep = useBBControls ? 0.1 : 1;
 
   const presets = ctx.street === "preflop"
     ? [2, 2.5, 3, 4].map((m) => ({ label: `${m}x`, chips: clampChips(Math.round(minRaise * m)) }))
@@ -151,7 +152,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
     <div className="panel rounded-lg overflow-hidden">
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && (
-        <div className="px-3 pt-3 flex flex-wrap items-center gap-2">
+        <div className="px-3 pt-3 flex flex-wrap items-center gap-x-2 gap-y-2">
           <span className="text-xs text-(--color-text-muted) whitespace-nowrap">
             {ctx.street === "preflop" ? "Raise to" : "Pot %"}
           </span>
@@ -168,7 +169,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
             step={sliderStep}
             value={fromChips(raiseAmount)}
             onChange={(e) => setRaiseFromControl(e.target.value)}
-            className="flex-1 min-w-24"
+            className="flex-1 min-w-40 accent-[#d4af37] cursor-pointer"
           />
           <div className="relative">
             <input type="number"

@@ -8,13 +8,19 @@ export const SUIT_COLOR = {
 
 export const SUIT_CHAR = { h: "♥", d: "♦", c: "♣", s: "♠", "♥": "♥", "♦": "♦", "♣": "♣", "♠": "♠" };
 
-// Warm off-white face with a silver edge, rather than flat pure white.
+// A card, not a rectangle: warm ivory with a soft top-light, a fine edge and a
+// grounded shadow, so it reads as an object lying on the felt.
 export const CARD_FACE =
-  "bg-[#efe9e3] border border-[#b9b0a7] shadow-[0_2px_6px_rgba(0,0,0,0.5)]";
+  "rounded-[4px] bg-[linear-gradient(163deg,#fdfbf7_0%,#f2ece2_55%,#e4dbcd_100%)] " +
+  "border border-[#c9bfae] " +
+  "shadow-[0_2px_5px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.95)]";
 
-// Face-down / unknown card — dark burgundy back.
+// Face-down — a woven burgundy back with a silver edge, so a covered hand still
+// looks like a card rather than a dark gap.
 export const CARD_BACK =
-  "bg-[linear-gradient(140deg,#5a1420,#2a0d12)] border border-[rgba(196,178,165,0.35)] text-[rgba(214,199,190,0.8)]";
+  "rounded-[4px] border border-[rgba(214,199,190,0.45)] text-[rgba(224,210,200,0.55)] " +
+  "bg-[repeating-linear-gradient(45deg,#5e1523_0_3px,#4a1019_3px_6px)] " +
+  "shadow-[0_2px_5px_rgba(0,0,0,0.55),inset_0_0_0_1px_rgba(0,0,0,0.35)]";
 
 // Ring on the five cards that made the winning hand at showdown.
 export const CARD_WINNING =

@@ -67,6 +67,18 @@ remembering.
   falling back to a SQLite file the next deploy would discard.
 
 ### Changed
+- **The table reads more clearly.** Cards look like cards — ivory face, rounded
+  corners, a fine edge and a shadow — and a covered hand shows a woven burgundy
+  back instead of a question mark. Bets are placed on the line between a seat
+  and the pot, so they no longer land on the player's own cards wherever they
+  sit. Nameplates carry the avatar, name and stack in one row and sit outside
+  the felt: seats above the centre put the plate on their outer edge, since a
+  single order left it pointing into the middle of the table for half the seats.
+  The hand number left the centre of the felt.
+- **The raise slider is usable.** Its step was a twentieth of the whole range,
+  which gave a short slider twenty positions — small drags changed nothing and
+  the amount on the Raise button looked frozen. It is one chip per step now, on
+  a much wider track.
 - **Time bank on by default** (30 seconds). Without one, a moment's hesitation
   on a big decision timed you out into a fold.
 - **The engine owns the chip arithmetic.** The client used to recompute stacks,

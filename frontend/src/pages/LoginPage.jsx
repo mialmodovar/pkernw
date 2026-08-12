@@ -22,24 +22,24 @@ export default function LoginPage() {
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <form onSubmit={handleSubmit} className="bg-gray-800 p-8 rounded-xl w-80 space-y-4">
-        <h1 className="text-2xl font-bold text-center">Poker Login</h1>
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+      <form onSubmit={handleSubmit} className="panel p-8 rounded-xl w-80 space-y-4 shadow-2xl shadow-black/60">
+        <h1 className="text-2xl font-bold text-center text-(--color-silver) tracking-wide">Poker Login</h1>
+        {error && <p className="text-red-300 text-sm">{error}</p>}
         <input
-          className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="input-field w-full px-3 py-2 rounded transition-colors"
           placeholder="Username" value={username}
           onChange={(e) => setUsername(e.target.value)} required
         />
         <input
-          className="w-full px-3 py-2 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="input-field w-full px-3 py-2 rounded transition-colors"
           type="password" placeholder="Password" value={password}
           onChange={(e) => setPassword(e.target.value)} required
         />
-        <button className="w-full py-2 bg-green-600 hover:bg-green-700 rounded font-semibold">
+        <button className="btn-accent w-full py-2 rounded font-semibold transition-colors">
           Log In
         </button>
-        <p className="text-center text-sm text-gray-400">
-          No account? <Link to="/register" className="text-green-400 hover:underline">Register</Link>
+        <p className="text-center text-sm text-(--color-text-muted)">
+          No account? <Link to="/register" className="link-accent">Register</Link>
         </p>
       </form>
     </div>

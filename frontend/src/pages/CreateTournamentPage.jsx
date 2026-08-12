@@ -16,7 +16,7 @@ export default function CreateTournamentPage() {
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="text-sm text-gray-400 hover:text-white"
+          className="text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
         >
           Back to tournaments
         </button>

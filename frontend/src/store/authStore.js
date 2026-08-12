@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import api from "../api/http";
 
-const useAuthStore = create((set) => ({
+const useAuthStore = create((set, get) => ({
   user: null,
   loading: true,
 
@@ -26,6 +26,14 @@ const useAuthStore = create((set) => ({
 
   register: async (username, password) => {
     await api.post("/auth/register/", { username, password });
+  },
+
+  updateAvatar: async (emoji) => {
+    const { data } = await api.patch("/auth/me/avatar/", { avatar_emoji: emoji });
+    const user = get().user;
+    if (user) {
+      set({ user: { ...user, profile: { ...user.profile, avatar_emoji: data.avatar_emoji } } });
+    }
   },
 
   logout: () => {

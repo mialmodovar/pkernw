@@ -1,26 +1,5 @@
 import { useState } from "react";
-
-export const DEFAULT_HANDS = [
-  { small_blind: 25, big_blind: 50, ante: 0, duration_hands: 8 },
-  { small_blind: 50, big_blind: 100, ante: 10, duration_hands: 8 },
-  { small_blind: 75, big_blind: 150, ante: 25, duration_hands: 8 },
-  { small_blind: 100, big_blind: 200, ante: 25, duration_hands: 8 },
-  { small_blind: 150, big_blind: 300, ante: 50, duration_hands: 6 },
-  { small_blind: 200, big_blind: 400, ante: 50, duration_hands: 6 },
-  { small_blind: 300, big_blind: 600, ante: 75, duration_hands: 6 },
-  { small_blind: 400, big_blind: 800, ante: 100, duration_hands: 6 },
-];
-
-export const DEFAULT_TIMED = [
-  { small_blind: 25, big_blind: 50, ante: 0, duration_minutes: 10 },
-  { small_blind: 50, big_blind: 100, ante: 10, duration_minutes: 10 },
-  { small_blind: 75, big_blind: 150, ante: 25, duration_minutes: 10 },
-  { small_blind: 100, big_blind: 200, ante: 25, duration_minutes: 10 },
-  { small_blind: 150, big_blind: 300, ante: 50, duration_minutes: 8 },
-  { small_blind: 200, big_blind: 400, ante: 50, duration_minutes: 8 },
-  { small_blind: 300, big_blind: 600, ante: 75, duration_minutes: 8 },
-  { small_blind: 400, big_blind: 800, ante: 100, duration_minutes: 8 },
-];
+import { DEFAULT_HANDS, DEFAULT_TIMED } from "./blindStructureDefaults";
 
 const normalizeBlindRow = (row, mode) => {
   const base = {
@@ -125,9 +104,9 @@ export default function BlindStructureEditor({ levels, onChange }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="block text-sm text-gray-400">Blind Structure</label>
+        <label className="block text-sm text-(--color-text-muted)">Blind Structure</label>
         <button type="button" onClick={() => { setEditing(!editing); if (!levels) onChange([...defaults]); }}
-          className="text-xs text-green-400 hover:underline">
+          className="text-xs link-accent hover:underline transition-colors">
           {editing ? "Collapse" : "Customize"}
         </button>
       </div>
@@ -136,21 +115,21 @@ export default function BlindStructureEditor({ levels, onChange }) {
         <div className="flex gap-2 mb-2">
           <button type="button"
             onClick={() => switchMode("hands")}
-            className={`text-xs px-3 py-1 rounded ${mode === "hands" ? "bg-green-600 text-white" : "bg-gray-700 text-gray-400"}`}>
+            className={`text-xs px-3 py-1 rounded ${mode === "hands" ? "btn-accent" : "btn-secondary"}`}>
             By Hands
           </button>
           <button type="button"
             onClick={() => switchMode("time")}
-            className={`text-xs px-3 py-1 rounded ${mode === "time" ? "bg-green-600 text-white" : "bg-gray-700 text-gray-400"}`}>
+            className={`text-xs px-3 py-1 rounded ${mode === "time" ? "btn-accent" : "btn-secondary"}`}>
             By Time
           </button>
         </div>
       )}
 
-      <div className="text-xs bg-gray-900 rounded overflow-hidden">
+      <div className="text-xs panel rounded overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="text-gray-500">
+            <tr className="text-(--color-text-muted)">
               <th className="px-2 py-1 text-left">Lvl</th>
               {editing && <th className="px-2 py-1 text-left">Type</th>}
               <th className="px-2 py-1">SB</th>
@@ -162,13 +141,13 @@ export default function BlindStructureEditor({ levels, onChange }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i} className="border-t border-gray-800">
-                <td className="px-2 py-1 text-gray-500">{i + 1}</td>
+              <tr key={i} className="border-t border-(--color-border)">
+                <td className="px-2 py-1 text-(--color-text-muted)">{i + 1}</td>
                 {editing ? (
                   <>
                     <td className="px-2 py-1">
                       <select
-                        className="bg-gray-800 rounded px-2 py-1"
+                        className="input-field rounded px-2 py-1"
                         value={r.is_break ? "break" : "blind"}
                         onChange={(e) => updateRow(i, "is_break", e.target.value === "break")}
                       >
@@ -178,37 +157,37 @@ export default function BlindStructureEditor({ levels, onChange }) {
                     </td>
                     <td>
                       {r.is_break ? (
-                        <span className="text-gray-500">-</span>
+                        <span className="text-(--color-text-muted)">-</span>
                       ) : (
-                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.small_blind} onChange={(e) => updateRow(i, "small_blind", e.target.value)} />
+                        <input type="number" className="input-field w-16 px-1 text-center rounded" value={r.small_blind} onChange={(e) => updateRow(i, "small_blind", e.target.value)} />
                       )}
                     </td>
                     <td>
                       {r.is_break ? (
-                        <span className="text-gray-500">-</span>
+                        <span className="text-(--color-text-muted)">-</span>
                       ) : (
-                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.big_blind} onChange={(e) => updateRow(i, "big_blind", e.target.value)} />
+                        <input type="number" className="input-field w-16 px-1 text-center rounded" value={r.big_blind} onChange={(e) => updateRow(i, "big_blind", e.target.value)} />
                       )}
                     </td>
                     <td>
                       {r.is_break ? (
-                        <span className="text-gray-500">-</span>
+                        <span className="text-(--color-text-muted)">-</span>
                       ) : (
-                        <input type="number" className="w-16 px-1 bg-gray-800 text-center rounded" value={r.ante} onChange={(e) => updateRow(i, "ante", e.target.value)} />
+                        <input type="number" className="input-field w-16 px-1 text-center rounded" value={r.ante} onChange={(e) => updateRow(i, "ante", e.target.value)} />
                       )}
                     </td>
                     <td>
                       <div className="flex items-center justify-center gap-2">
                         <input
                           type="number"
-                          className="w-14 px-1 bg-gray-800 text-center rounded"
+                          className="input-field w-14 px-1 text-center rounded"
                           value={r.is_break ? r.duration_minutes : (r[durationKey] ?? "")}
                           onChange={(e) => updateRow(i, r.is_break ? "duration_minutes" : durationKey, e.target.value)}
                         />
-                        <span className="text-gray-500">{r.is_break ? "min" : mode === "time" ? "min" : "hands"}</span>
+                        <span className="text-(--color-text-muted)">{r.is_break ? "min" : mode === "time" ? "min" : "hands"}</span>
                       </div>
                     </td>
-                    <td><button type="button" onClick={() => removeRow(i)} className="text-red-500 hover:text-red-400 px-1">x</button></td>
+                    <td><button type="button" onClick={() => removeRow(i)} className="text-[#c76b7a] hover:text-[#e3cdd1] px-1 transition-colors">x</button></td>
                   </>
                 ) : (
                   <>
@@ -225,9 +204,9 @@ export default function BlindStructureEditor({ levels, onChange }) {
           </tbody>
         </table>
         {editing && (
-          <div className="grid grid-cols-2 border-t border-gray-800">
-            <button type="button" onClick={addBlindRow} className="py-1 text-green-400 hover:bg-gray-800 text-xs border-r border-gray-800">+ Add Blind Level</button>
-            <button type="button" onClick={addBreakRow} className="py-1 text-blue-400 hover:bg-gray-800 text-xs">+ Add Break</button>
+          <div className="grid grid-cols-2 border-t border-(--color-border)">
+            <button type="button" onClick={addBlindRow} className="py-1 text-[#d9c07a] hover:bg-black/30 text-xs border-r border-(--color-border) transition-colors">+ Add Blind Level</button>
+            <button type="button" onClick={addBreakRow} className="py-1 text-(--color-silver) hover:bg-black/30 text-xs transition-colors">+ Add Break</button>
           </div>
         )}
       </div>

@@ -3,41 +3,75 @@ import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
 import TournamentList from "../components/lobby/TournamentList";
+import ProfileCard from "../components/lobby/ProfileCard";
+import StatsPanel from "../components/lobby/StatsPanel";
+import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
 
 export default function LobbyPage() {
-  const { user, logout } = useAuthStore();
-  const { tournaments, fetchTournaments, loading } = useLobbyStore();
+  const { logout } = useAuthStore();
+  const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
 
-  useEffect(() => { fetchTournaments(); }, [fetchTournaments]);
+  useEffect(() => { fetchLobbyData(); }, [fetchLobbyData]);
+
+  const onJoin = async (id) => {
+    await useLobbyStore.getState().joinTournament(id);
+    navigate(`/tournament/${id}`);
+  };
+  const onOpen = (id) => navigate(`/tournament/${id}`);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Tournaments</h1>
-        <div className="flex gap-3 items-center">
-          <span className="text-sm text-gray-400">{user?.username}</span>
-          <button onClick={() => navigate("/tournaments/new")}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded font-semibold text-sm">
-            Create Tournament
-          </button>
-          <button onClick={logout}
-            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm">
-            Logout
-          </button>
+    <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
+      <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
+        <ProfileCard />
+        <StatsPanel />
+        <LeaguePlaceholder />
+      </aside>
+
+      <main className="flex-1 space-y-8">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
+          <div className="flex gap-3 items-center">
+            <button onClick={() => navigate("/tournaments/new")}
+              className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
+              Create Tournament
+            </button>
+            <button onClick={logout}
+              className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">
+              Logout
+            </button>
+          </div>
         </div>
-      </div>
 
-      {loading ? (
-        <p className="text-gray-400">Loading tournaments...</p>
-      ) : (
-        <TournamentList
-          tournaments={tournaments}
-          onJoin={async (id) => { await useLobbyStore.getState().joinTournament(id); navigate(`/tournament/${id}`); }}
-          onOpen={(id) => navigate(`/tournament/${id}`)}
-        />
-      )}
-
+        {loading ? (
+          <p className="text-(--color-text-muted)">Loading...</p>
+        ) : (
+          <>
+            {mineActive.length > 0 && (
+              <TournamentList
+                title="Your Active Games"
+                tournaments={mineActive}
+                onJoin={onJoin}
+                onOpen={onOpen}
+              />
+            )}
+            <TournamentList
+              title="Upcoming Tournaments"
+              tournaments={upcoming}
+              emptyMessage="No tournaments open right now. Create one!"
+              onJoin={onJoin}
+              onOpen={onOpen}
+            />
+            <TournamentList
+              title="Past Tournaments"
+              tournaments={past}
+              emptyMessage="You haven't finished any tournaments yet."
+              onJoin={onJoin}
+              onOpen={onOpen}
+            />
+          </>
+        )}
+      </main>
     </div>
   );
 }

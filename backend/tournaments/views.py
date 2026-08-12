@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from asgiref.sync import async_to_sync
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .serializers import (
@@ -14,7 +14,7 @@ from .serializers import (
 )
 
 # Import shared runner reference from consumers (will be populated at runtime)
-from game.consumers import _tournament_runners
+from game.consumers import _tournament_runners, late_registration_open
 
 
 def _start_due_scheduled_tournaments():
@@ -45,7 +45,18 @@ class TournamentListCreateView(generics.ListCreateAPIView):
         user = self.request.user
 
         if scope == "upcoming":
-            return Tournament.objects.filter(status="lobby").order_by(
+            # A tournament in late registration is still joinable, so it belongs
+            # here too — otherwise players who are not in it never see it.
+            open_late_reg_ids = [
+                tournament.id
+                for tournament in Tournament.objects.filter(
+                    status__in=["running", "paused"], late_reg_level__gt=0
+                ).exclude(players__user=user)
+                if late_registration_open(tournament)
+            ]
+            return Tournament.objects.filter(
+                Q(status="lobby") | Q(id__in=open_late_reg_ids)
+            ).order_by(
                 F("scheduled_start_at").asc(nulls_last=True), "-created_at"
             )
         if scope == "mine_active":

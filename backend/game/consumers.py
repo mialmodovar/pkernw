@@ -29,6 +29,17 @@ _tournament_runners: Dict[int, MultiTableTournamentCoordinator] = {}
 _pending_actions: Dict[Tuple[int, int], dict] = {}
 
 
+def late_registration_open(tournament) -> bool:
+    # Only the live runner knows the current blind level, so a tournament whose
+    # engine is not booted counts as closed — join_tournament rejects it anyway.
+    if tournament.late_reg_level <= 0 or tournament.status not in ("running", "paused"):
+        return False
+    runner = _tournament_runners.get(tournament.id)
+    if runner is None:
+        return False
+    return runner.current_blind_level_number <= tournament.late_reg_level
+
+
 def _tournament_group_name(tournament_id: int) -> str:
     return f"tournament_{tournament_id}"
 

@@ -324,6 +324,67 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(response.data["level"]["blind_level_number"], 2)
 		self.assertTrue(response.data["level"]["skipped"])
 
+	def test_upcoming_lists_running_tournament_while_late_registration_is_open(self):
+		class FakeRunner:
+			current_blind_level_number = 1
+
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Late Reg Open",
+			status="running",
+			late_reg_level=4,
+		)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		outsider = User.objects.create_user(username="outsider", password="secret123")
+		self.client.force_authenticate(outsider)
+
+		response = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		listed = {row["id"]: row for row in response.data}
+		self.assertIn(tournament.id, listed)
+		self.assertTrue(listed[tournament.id]["late_registration_open"])
+
+	def test_upcoming_hides_running_tournament_once_late_registration_closes(self):
+		class FakeRunner:
+			current_blind_level_number = 5
+
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Late Reg Closed",
+			status="running",
+			late_reg_level=4,
+		)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		outsider = User.objects.create_user(username="latecomer", password="secret123")
+		self.client.force_authenticate(outsider)
+
+		response = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertNotIn(tournament.id, [row["id"] for row in response.data])
+
+	def test_upcoming_excludes_late_registration_tournament_already_joined(self):
+		class FakeRunner:
+			current_blind_level_number = 1
+
+		tournament = Tournament.objects.create(
+			host=self.user,
+			name="Already In",
+			status="running",
+			late_reg_level=4,
+		)
+		table = tournament.ensure_table(1)
+		tournament.players.create(user=self.user, table=table, seat=0, seat_at_table=0, chips=10000)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		response = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertNotIn(tournament.id, [row["id"] for row in response.data])
+
 
 class RebuyTests(APITestCase):
 	def setUp(self):

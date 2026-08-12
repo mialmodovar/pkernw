@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from django.utils import timezone
+
+from game.consumers import late_registration_open as _late_registration_open
+
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
 
@@ -153,6 +156,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
     is_joined    = serializers.SerializerMethodField()
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
+    late_registration_open = serializers.SerializerMethodField()
 
     def _my_seat(self, tournament):
         request = self.context.get("request")
@@ -162,6 +166,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     def get_is_joined(self, tournament):
         return self._my_seat(tournament) is not None
+
+    def get_late_registration_open(self, tournament):
+        return _late_registration_open(tournament)
 
     def get_winner_name(self, tournament):
         winner = tournament.players.filter(finish_position=1).select_related("user").first()
@@ -176,6 +183,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "host_name", "status", "starting_chips", "is_joined",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
+                  "late_registration_open",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",

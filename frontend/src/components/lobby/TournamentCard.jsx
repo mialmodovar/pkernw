@@ -70,10 +70,15 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen }) {
       </div>
       <div className="flex items-center gap-3 shrink-0">
         <span className={`text-xs px-2 py-1 rounded ${statusColor}`}>{t.status}</span>
+        {t.late_registration_open && (
+          <span className="text-xs px-2 py-1 rounded bg-emerald-900/40 text-emerald-200 border border-emerald-700/40">
+            late reg
+          </span>
+        )}
         {t.is_joined && !isFinished && (
           <span className="text-xs text-(--color-text-muted)">Joined</span>
         )}
-        {t.status === "lobby" && !t.is_joined && (
+        {(t.status === "lobby" || t.late_registration_open) && !t.is_joined && (
           <button onClick={() => onJoin(t.id)}
             className="btn-accent px-3 py-1 rounded text-sm transition-colors">
             Join

@@ -30,7 +30,7 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="w-full lg:w-72 shrink-0 panel rounded-lg flex flex-col h-40">
+    <div className="w-56 panel rounded-lg flex flex-col h-32 shadow-lg shadow-black/50">
       <div className="px-3 py-1.5 border-b border-(--color-border) flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">Table chat</h2>
         <MediaControls />

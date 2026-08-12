@@ -1,4 +1,3 @@
-import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 
@@ -19,7 +18,6 @@ function Row({ label, children }) {
  * fetched and thrown away.
  */
 export default function TournamentInfoPanel({ tournament, username }) {
-  const [open, setOpen] = useState(true);
   const level = useGameStore((s) => s.level);
   const tableSummaries = useGameStore((s) => s.tableSummaries);
   const currentTableNumber = useGameStore((s) => s.currentTableNumber);
@@ -55,18 +53,24 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const onTheBubble = paidPlaces > 0 && remaining === paidPlaces + 1;
 
   return (
-    <div className="absolute top-2 left-2 z-10 w-60 panel rounded-lg text-xs shadow-lg shadow-black/50">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 text-(--color-silver)
-                   font-semibold uppercase tracking-wide text-[10px] hover:bg-white/5 transition-colors"
-      >
-        <span>{tournament?.name || "Tournament"}</span>
-        <span className="text-(--color-text-muted)">{open ? "−" : "+"}</span>
-      </button>
+    // Two numbers you glance at between hands, and the rest a hover away. The
+    // panel used to hold the whole lot open, taking a corner of the felt to say
+    // things nobody reads every hand.
+    <div className="group absolute top-2 right-2 z-10 w-52 hover:w-60 panel rounded-lg text-xs
+                    shadow-lg shadow-black/50 transition-[width]">
+      <div className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
+                      font-semibold uppercase tracking-wide text-(--color-silver)">
+        <span className="truncate">{tournament?.name || "Tournament"}</span>
+        <span className="text-(--color-text-muted) shrink-0 group-hover:hidden">{remaining} left</span>
+      </div>
+      <div className="px-3 pb-1.5 flex items-center justify-between gap-2 group-hover:hidden">
+        <span className="text-(--color-text-muted)">Blinds</span>
+        <span className="text-(--color-silver)">
+          {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}
+        </span>
+      </div>
 
-      {open && (
-        <div className="px-3 pb-3 space-y-2">
+      <div className="hidden group-hover:block px-3 pb-3 space-y-2">
           <div className="space-y-1">
             <Row label="Blinds">
               {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}
@@ -134,8 +138,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
               ))}
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

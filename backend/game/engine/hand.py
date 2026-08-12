@@ -330,6 +330,19 @@ class HandEngine:
             }
 
             action, amount = await self.request_action(p, context)
+            # Whatever arrives here came off a socket, so none of it is trusted:
+            # an action that is not on offer becomes the safest one that is, and
+            # a raise is forced back inside the legal range. Believing the
+            # client's number let a raise below a player's own street bet run
+            # the chip arithmetic backwards and create chips.
+            if action not in valid:
+                action = "check" if can_check else "fold"
+            if action in ("bet", "raise"):
+                try:
+                    amount = int(amount)
+                except (TypeError, ValueError):
+                    amount = min_raise
+                amount = max(min_raise, min(amount, max_raise))
 
             event = {"seat": seat, "action": action, "amount": 0}
 

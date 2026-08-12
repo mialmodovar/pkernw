@@ -1,4 +1,5 @@
 import asyncio
+import random
 import time
 
 from asgiref.sync import async_to_sync, sync_to_async
@@ -831,3 +832,115 @@ class TableChatTests(ConsumerTestBase):
             await bea_socket.disconnect()
 
         async_to_sync(scenario)()
+
+
+class ChipConservationTests(TestCase):
+    """Chips are conserved. A hand moves them; it never makes them.
+
+    This is the invariant the whole tournament rests on: if a hand can create a
+    chip, the final stack stops meaning anything.
+    """
+
+    def _play(self, stacks, *, ante, small_blind, big_blind, seed):
+        random.seed(seed)
+        players = [Player(f"p{i}", chips) for i, chips in enumerate(stacks)]
+        for seat, player in enumerate(players):
+            player._seat = seat
+
+        async def broadcast(event_type, payload):
+            return None
+
+        async def request_action(player, context):
+            valid = context["valid_actions"]
+            choice = random.choice(valid)
+            if choice == "raise":
+                low, high = context["min_raise"], context["max_raise"]
+                return "raise", random.randint(low, high) if high > low else low
+            return choice, 0
+
+        engine = HandEngine(
+            players=players, dealer_pos=seed % len(players),
+            small_blind=small_blind, big_blind=big_blind, ante=ante,
+            hand_number=1, broadcast=broadcast, request_action=request_action,
+        )
+        async_to_sync(engine.run)()
+        return players
+
+    def test_a_hand_never_creates_or_destroys_a_chip(self):
+        # Deliberately awkward shapes: stacks too short to cover a blind, antes
+        # bigger than a stack, and uneven stacks that force side pots. Kept to a
+        # handful of seeds because an all-in run-out pauses three seconds a
+        # street to show the cards.
+        shapes = [
+            [1000, 1000],
+            [1000, 300],
+            [10000, 4321, 250, 75],
+            [500, 500, 500],
+        ]
+        for shape in shapes:
+            for ante in (0, 25):
+                for seed in range(3):
+                    before = sum(shape)
+                    players = self._play(shape, ante=ante, small_blind=50, big_blind=100, seed=seed)
+                    after = sum(p.chips for p in players)
+                    self.assertEqual(
+                        after, before,
+                        f"stacks {shape}, ante {ante}, seed {seed}: {before} chips went in, {after} came out",
+                    )
+
+
+class UntrustedActionTests(TestCase):
+    """What arrives from a client is a suggestion, not an instruction."""
+
+    def _hand(self, stacks, responder):
+        players = [Player(f"p{i}", chips) for i, chips in enumerate(stacks)]
+        for seat, player in enumerate(players):
+            player._seat = seat
+
+        async def broadcast(event_type, payload):
+            return None
+
+        engine = HandEngine(
+            players=players, dealer_pos=0, small_blind=50, big_blind=100, ante=0,
+            hand_number=1, broadcast=broadcast, request_action=responder,
+        )
+        async_to_sync(engine.run)()
+        return players
+
+    def test_a_raise_below_your_own_bet_cannot_pull_chips_back(self):
+        """The bug that let a player take their blind back off the table.
+
+        `raise to 10` while already holding 100 in front of you used to compute a
+        negative commitment, and the chip arithmetic ran backwards.
+        """
+        seen = []
+
+        async def responder(player, context):
+            seen.append(player.chips)
+            if "raise" in context["valid_actions"] and player.current_bet > 10:
+                return "raise", 10
+            return ("check" if "check" in context["valid_actions"] else "fold"), 0
+
+        players = self._hand([10000, 10000], responder)
+
+        # Nobody ever ends a hand with more than they started, having only bet.
+        self.assertLessEqual(max(p.chips for p in players), 20000)
+        self.assertEqual(sum(p.chips for p in players), 20000)
+
+    def test_an_action_that_was_not_offered_is_not_obeyed(self):
+        async def responder(player, context):
+            return "check", 0   # even when facing a bet, where checking is illegal
+
+        players = self._hand([10000, 300], responder)
+
+        self.assertEqual(sum(p.chips for p in players), 10300)
+
+    def test_a_nonsense_raise_amount_is_pulled_into_range(self):
+        async def responder(player, context):
+            if "raise" in context["valid_actions"]:
+                return "raise", "not a number"
+            return ("check" if "check" in context["valid_actions"] else "fold"), 0
+
+        players = self._hand([10000, 10000], responder)
+
+        self.assertEqual(sum(p.chips for p in players), 20000)

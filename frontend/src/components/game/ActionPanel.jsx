@@ -7,7 +7,7 @@ import { useActionCountdown } from "./useActionCountdown";
 // stray keystroke can't fold your hand. The mouse commits immediately.
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
-const BTN = "px-3 py-2 rounded font-semibold text-sm transition-colors min-w-[5.5rem]";
+const BTN = "px-2.5 py-1.5 rounded font-semibold text-xs transition-colors min-w-[4.75rem]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
 
 // What you can commit to before the action reaches you. Each one names the
@@ -138,7 +138,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
     }
     const inHand = players.find((p) => p.seat === mySeat && !p.is_folded && !p.is_eliminated);
     return (
-      <div className="panel rounded-lg p-3 flex items-center justify-center gap-4 text-sm">
+      <div className="panel rounded-lg p-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs shadow-lg shadow-black/50">
         <span className="text-(--color-text-muted)">
           {actionOnSeat !== null
             ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
@@ -146,7 +146,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
         </span>
         {/* Deciding early only makes sense while you still hold cards. */}
         {inHand && actionOnSeat !== null && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {PRESELECTS.map((option) => (
               <label key={option.key}
                 className="flex items-center gap-1.5 text-xs text-(--color-silver) cursor-pointer select-none">
@@ -198,12 +198,12 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 
   return (
-    // Capped and centred: full width made the slider enormous and left the
-    // sizing controls a long way from the buttons they feed.
-    <div className="panel rounded-lg overflow-hidden w-full max-w-[46rem] mx-auto">
+    // It lives in the corner of the felt now, so it is sized to be read at a
+    // glance rather than to fill a row.
+    <div className="panel rounded-lg overflow-hidden w-full shadow-lg shadow-black/50">
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && maxRaise > minRaise && (
-        <div className="px-3 pt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2">
+        <div className="px-2 pt-2 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5">
           <span className="mr-auto text-xs text-(--color-text-muted) whitespace-nowrap">
             min {fmt(minRaise)} · max {fmt(maxRaise)}
           </span>
@@ -224,7 +224,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
             step={sliderStep}
             value={fromChips(raiseAmount)}
             onChange={(e) => setRaiseFromControl(e.target.value)}
-            className="w-40 accent-[#d4af37] cursor-pointer"
+            className="w-24 accent-[#d4af37] cursor-pointer"
           />
           <div className="relative">
             <input type="number"
@@ -257,9 +257,9 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
         />
       </div>
 
-      <div className="p-3 flex items-center gap-3">
+      <div className="p-2 flex items-center gap-2">
         {/* Clock */}
-        <div className="flex flex-col items-center w-14 shrink-0">
+        <div className="flex flex-col items-center w-10 shrink-0">
           <span className={`text-lg font-bold font-mono ${
             countdown.inTimeBank ? "text-[#c76b7a]" : "text-(--color-silver)"
           }`}>
@@ -277,7 +277,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
         )}
 
         {/* Commit cluster — the choices sit together, under the mouse */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {can.fold && (
             <button onClick={() => commit("fold")} disabled={locked}
               className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]

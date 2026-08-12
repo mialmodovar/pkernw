@@ -104,7 +104,7 @@ button:disabled {
 }
 
 /* The table area measures itself, so the felt can be told to fit inside it.
-   The table stays exactly 820px wide whenever there is room — the common case,
+   The table stays exactly 900px wide whenever there is room — the common case,
    and stable — and only starts shrinking when the window is too short to hold
    it. That is what keeps the game on one screen without scrolling, without the
    table resizing every time the window height twitches. */
@@ -113,7 +113,9 @@ button:disabled {
 }
 
 .table-frame {
-  width: min(820px, 100%, calc(100cqh * 5 / 3));
+  /* The 0.82 is the seats: they hang off the rim, above the top of the felt and
+     below the bottom of it, so the felt cannot have the whole height to itself. */
+  width: min(900px, 100%, calc(100cqh * 5 / 3 * 0.82));
   aspect-ratio: 5 / 3;
 }
 

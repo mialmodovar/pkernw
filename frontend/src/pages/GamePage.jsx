@@ -288,6 +288,19 @@ export default function GamePage() {
         <PokerTable mySeat={mySeat} capacity={capacity}
           statsByName={playerStats}
           onInspectPlayer={setInspecting} />
+
+        <div className="absolute bottom-2 left-2 z-10">
+          <ChatPanel />
+        </div>
+        <div className="absolute bottom-2 right-2 z-10 w-[min(32rem,60%)]">
+          <ActionPanel
+            mySeat={mySeat}
+            onAction={handleAction}
+            disabled={connectionStatus !== "open"}
+            amSittingOut={amSittingOut}
+            onSitIn={() => send({ type: "sit_out", value: false })}
+          />
+        </div>
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
             <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
@@ -309,18 +322,6 @@ export default function GamePage() {
         <PlayerStatsCard player={inspecting} stats={playerStats[inspecting.name]} onClose={() => setInspecting(null)} />
       )}
 
-      <div className="flex flex-col lg:flex-row gap-4 px-4 pb-3 shrink-0">
-        <ChatPanel />
-        <div className="flex-1 min-w-0 flex items-end">
-          <ActionPanel
-            mySeat={mySeat}
-            onAction={handleAction}
-            disabled={connectionStatus !== "open"}
-            amSittingOut={amSittingOut}
-            onSitIn={() => send({ type: "sit_out", value: false })}
-          />
-        </div>
-      </div>
     </div>
   );
 }

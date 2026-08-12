@@ -134,7 +134,7 @@ export default function PlayerSeat({
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       {liveStream ? (
-        <span className="w-6 h-6 rounded-full overflow-hidden shrink-0 border border-(--color-border)">
+        <span className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-(--color-border)">
           <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
             name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
         </span>
@@ -183,7 +183,7 @@ export default function PlayerSeat({
     : [badges, cards, markers, plate, video, ring];
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4.75rem,13.5cqw,7.5rem)] transition-opacity duration-500 ${
+    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4.75rem,15cqw,8.5rem)] transition-opacity duration-500 ${
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}

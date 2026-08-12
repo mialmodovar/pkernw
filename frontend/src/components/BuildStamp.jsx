@@ -8,7 +8,7 @@ export default function BuildStamp() {
   return (
     <span
       title="Build this page was served from"
-      className="fixed bottom-1 right-2 z-50 pointer-events-none select-none
+      className="fixed bottom-0.5 left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none
                  text-[10px] font-mono text-(--color-text-muted) opacity-40"
     >
       {__BUILD_STAMP__}

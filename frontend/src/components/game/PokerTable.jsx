@@ -15,7 +15,7 @@ import { formatChips } from "./formatChips";
 // stack still fits inside the table area instead of being covered by the
 // action panel below.
 const RADIUS_X = 42; // % of container, from the centre
-const RADIUS_Y = 35;
+const RADIUS_Y = 38;
 
 function pointAt(index, capacity, scale) {
   const angle = (index / capacity) * 2 * Math.PI;
@@ -40,7 +40,7 @@ function betPosition(index, capacity) {
 
 function EmptySeat() {
   return (
-    <div className="w-[clamp(4.75rem,13.5cqw,7.5rem)] rounded-lg px-3 py-2 text-center
+    <div className="w-[clamp(4.75rem,15cqw,8.5rem)] rounded-lg px-3 py-2 text-center
                     border border-dashed border-(--color-border) bg-black/25">
       <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Empty</div>
     </div>

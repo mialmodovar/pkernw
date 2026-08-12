@@ -8,6 +8,25 @@ remembering.
 
 ## Unreleased
 
+### Security
+- **The engine no longer believes what a client sends.** A raise amount went
+  straight into the chip arithmetic without a bounds check, so a raise *below*
+  your own bet for that street computed a negative commitment and ran the sums
+  backwards — pulling chips back out of the pot, blinds included. A non-numeric
+  amount crashed the hand outright. An action that was not on offer is now
+  replaced by the safest one that is, and a raise is forced inside the legal
+  range before anything is committed.
+
+### Changed
+- **The table fills the screen.** The betting panel moved into the bottom-right
+  corner of the felt and the chat into the bottom-left, both smaller; the
+  tournament panel moved to the top right and now shows the blinds and how many
+  players are left, opening on hover for the rest. That freed the whole row that
+  used to sit below the table, and the table grew into it.
+- **Bigger cameras.** Roughly double the area at a table of six or fewer, and at
+  a fuller table the picture on the nameplate went from a dot to something you
+  can read a face in.
+
 ### Changed
 - **Your own camera shows at your own seat**, under your name, where everyone
   else's is, instead of as a preview parked beside the controls.

@@ -47,7 +47,10 @@ class Player:
         Returns the actual amount committed so callers can handle
         short-calls / all-in situations transparently.
         """
-        actual           = min(amount, self.chips)
+        # Never negative. A negative commit would run `chips -= amount` the
+        # wrong way and mint chips out of nothing, which is exactly what an
+        # unvalidated raise below a player's own street bet used to do.
+        actual           = min(max(amount, 0), self.chips)
         self.chips      -= actual
         self.current_bet += actual
         self.total_invested += actual

@@ -53,7 +53,7 @@ export default function SeatVideo({ peer, name, mirrored = false, muted = false,
   }
 
   return (
-    <div className="w-[62%] mx-auto aspect-video rounded-lg overflow-hidden border border-(--color-border)
+    <div className="w-full aspect-video max-h-[7.2cqw] mx-auto rounded-lg overflow-hidden border border-(--color-border)
                     bg-black/60 relative">
       <video ref={attach} autoPlay playsInline muted={muted}
         className={`w-full h-full object-cover ${mirrored ? "scale-x-[-1]" : ""}`} />
@@ -76,7 +76,7 @@ export default function SeatVideo({ peer, name, mirrored = false, muted = false,
 
 function Notice({ children }) {
   return (
-    <div className="w-[62%] mx-auto aspect-video rounded-lg border border-(--color-border) bg-black/50
+    <div className="w-full aspect-video rounded-lg border border-(--color-border) bg-black/50
                     flex items-center justify-center px-1">
       <span className="text-[10px] text-(--color-text-muted) text-center leading-tight">
         {children}

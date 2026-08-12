@@ -151,16 +151,30 @@ class TournamentListSerializer(serializers.ModelSerializer):
     player_count = serializers.IntegerField(source="players.count", read_only=True)
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
+    winner_name  = serializers.SerializerMethodField()
+    my_finish_position = serializers.SerializerMethodField()
 
-    def get_is_joined(self, tournament):
+    def _my_seat(self, tournament):
         request = self.context.get("request")
         if request is None or not request.user.is_authenticated:
-            return False
-        return tournament.players.filter(user=request.user).exists()
+            return None
+        return tournament.players.filter(user=request.user).first()
+
+    def get_is_joined(self, tournament):
+        return self._my_seat(tournament) is not None
+
+    def get_winner_name(self, tournament):
+        winner = tournament.players.filter(finish_position=1).select_related("user").first()
+        return winner.user.username if winner else None
+
+    def get_my_finish_position(self, tournament):
+        seat = self._my_seat(tournament)
+        return seat.finish_position if seat else None
 
     class Meta:
         model = Tournament
         fields = ("id", "name", "host_name", "status", "starting_chips", "is_joined",
+                  "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",

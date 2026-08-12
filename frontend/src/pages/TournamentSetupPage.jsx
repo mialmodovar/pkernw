@@ -59,15 +59,40 @@ export default function TournamentSetupPage() {
 
   const playableLevels = tournament.levels.filter((level) => !level.is_break).length;
 
-  return (
-    <div className="max-w-lg mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-2 text-(--color-silver)">{tournament.name}</h1>
-      <p className="text-(--color-text-muted) mb-6">
-        Host: {tournament.host_name} &middot; {tournament.starting_chips.toLocaleString()} chips &middot;{" "}
-        <span className="text-[#d9c07a]">{tournament.status}</span>
-      </p>
+  const finished = tournament.status === "finished";
+  const ranked = [...tournament.players]
+    .filter((p) => p.finish_position)
+    .sort((a, b) => a.finish_position - b.finish_position);
 
-      <div className="grid gap-3 sm:grid-cols-2 mb-6">
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Header carries the actions, so they're reachable without scrolling */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-(--color-silver)">{tournament.name}</h1>
+          <p className="text-(--color-text-muted) mt-1">
+            Host: {tournament.host_name} &middot; {tournament.starting_chips.toLocaleString()} chips &middot;{" "}
+            <span className="text-[#d9c07a]">{tournament.status}</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <TournamentActions
+            tournament={tournament} joined={joined} isHost={isHost}
+            scheduledStartPending={scheduledStartPending} id={id} navigate={navigate}
+            handleJoin={handleJoin} handleStart={handleStart} handleResume={handleResume}
+          />
+        </div>
+      </div>
+
+      {error && <p className="text-[#c76b7a] text-sm mb-4">{error}</p>}
+      {playableLevels === 0 && (
+        <p className="text-sm text-[#c76b7a] mb-4">Tournament needs at least one playable blind level.</p>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <main className="flex-1 min-w-0 space-y-6">
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="panel rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-(--color-text-muted) mb-1">Seating</p>
           <p className="text-sm text-(--color-silver)">{tournament.max_players} total players</p>
@@ -84,7 +109,7 @@ export default function TournamentSetupPage() {
               : "Rebuys disabled"}
           </p>
         </div>
-        <div className="panel rounded-lg p-4 sm:col-span-2">
+        <div className="panel rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-(--color-text-muted) mb-1">Scheduled Start</p>
           <p className="text-sm text-(--color-silver)">
             {formattedScheduledStart || "Manual host-controlled start"}
@@ -93,7 +118,7 @@ export default function TournamentSetupPage() {
             <p className="text-sm text-(--color-silver) mt-1">This tournament starts automatically once the scheduled time arrives and enough players are seated.</p>
           )}
         </div>
-        <div className="panel rounded-lg p-4 sm:col-span-2">
+        <div className="panel rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-(--color-text-muted) mb-1">Time Bank</p>
           <p className="text-sm text-(--color-silver)">
             {tournament.time_bank_seconds
@@ -102,9 +127,8 @@ export default function TournamentSetupPage() {
           </p>
           <p className="text-sm text-(--color-text-muted)">{formatTimeBankRefill(tournament)}</p>
         </div>
-        <div className="panel rounded-lg p-4 sm:col-span-2">
+        <div className="panel rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-(--color-text-muted) mb-1">Prize Pool Reference</p>
-          <p className="text-xs text-(--color-text-muted) mt-1">Reference only. Payments are handled outside this app.</p>
           {tournament.payout_structure?.length > 0 && (
             <ul className="mt-3 divide-y divide-[rgba(196,178,165,0.14)] rounded panel-raised text-sm">
               {tournament.payout_structure.map((row) => (
@@ -116,10 +140,11 @@ export default function TournamentSetupPage() {
             </ul>
           )}
           {!tournament.payout_structure?.length && (
-            <p className="text-sm text-(--color-text-muted) mt-2">No payout structure configured.</p>
+            <p className="text-sm text-(--color-silver)">No payout structure configured.</p>
           )}
+          <p className="text-xs text-(--color-text-muted) mt-2">Reference only — payments happen outside this app.</p>
         </div>
-        <div className="panel rounded-lg p-4 sm:col-span-2">
+        <div className="panel rounded-lg p-4">
           <p className="text-xs uppercase tracking-wide text-(--color-text-muted) mb-1">Table Rules</p>
           <p className="text-sm text-(--color-silver)">
             Rabbit hunting {tournament.rabbit_hunting_enabled ? "enabled" : "disabled"}
@@ -132,21 +157,52 @@ export default function TournamentSetupPage() {
         </div>
       </div>
 
-      <h2 className="font-semibold mb-2 text-(--color-silver)">Players ({tournament.players.length}/{tournament.max_players})</h2>
-      <ul className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)] mb-6">
-        {tournament.players.map((p) => (
-          <li key={p.id} className="px-4 py-2 flex justify-between">
-            <span>{p.username}</span>
-            <span className="text-(--color-text-muted)">
-              Seat {p.seat}
-              {tournament.time_bank_seconds > 0 && ` | Bank ${p.time_bank_seconds_remaining}s`}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {finished && ranked.length > 0 && (
+        <section>
+          <h2 className="font-semibold mb-2 text-(--color-silver)">Final Standings</h2>
+          <ol className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)]">
+            {ranked.map((p) => (
+              <li key={p.id} className="px-4 py-2 flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <span className={`font-mono text-sm w-6 ${p.finish_position === 1 ? "text-[#d9c07a]" : "text-(--color-text-muted)"}`}>
+                    {p.finish_position}
+                  </span>
+                  <span className={p.finish_position === 1 ? "text-[#d9c07a] font-semibold" : "text-(--color-silver)"}>
+                    {p.finish_position === 1 && "🏆 "}{p.username}
+                  </span>
+                </span>
+                <span className="text-(--color-text-muted) text-sm">
+                  {p.rebuy_count > 0 && `${p.rebuy_count} rebuy${p.rebuy_count === 1 ? "" : "s"}`}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
-      <h2 className="font-semibold mb-2 text-(--color-silver)">Blind Schedule</h2>
-      <ul className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)] mb-6 text-sm">
+      <section>
+        <h2 className="font-semibold mb-2 text-(--color-silver)">
+          Players ({tournament.players.length}/{tournament.max_players})
+        </h2>
+        <ul className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)] grid sm:grid-cols-2 sm:divide-y-0">
+          {tournament.players.map((p) => (
+            <li key={p.id} className="px-4 py-2 flex justify-between gap-2 border-b border-[rgba(196,178,165,0.14)] sm:border-b-0">
+              <span className="text-(--color-silver) truncate">{p.username}</span>
+              <span className="text-(--color-text-muted) text-sm shrink-0">
+                {p.chips?.toLocaleString()} &middot; seat {p.seat}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+        </main>
+
+        {/* The blind schedule is long, so it gets its own scrollable rail
+            rather than pushing everything else down the page. */}
+        <aside className="w-full lg:w-80 shrink-0 lg:sticky lg:top-8">
+          <h2 className="font-semibold mb-2 text-(--color-silver)">Blind Schedule</h2>
+          <ul className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)] text-sm max-h-[32rem] overflow-y-auto">
         {tournament.levels.map((level, index) => (
           <li key={level.id} className="px-4 py-3 flex items-center justify-between gap-3">
             <div>
@@ -168,13 +224,19 @@ export default function TournamentSetupPage() {
             </span>
           </li>
         ))}
-      </ul>
+          </ul>
+        </aside>
+      </div>
+    </div>
+  );
+}
 
-      {playableLevels === 0 && <p className="text-sm text-[#c76b7a] mb-4">Tournament needs at least one playable blind level.</p>}
-
-      {error && <p className="text-[#c76b7a] text-sm mb-3">{error}</p>}
-
-      <div className="flex gap-3">
+function TournamentActions({
+  tournament, joined, isHost, scheduledStartPending, id, navigate,
+  handleJoin, handleStart, handleResume,
+}) {
+  return (
+    <>
         {!joined && tournament.status === "lobby" && (
           <button onClick={handleJoin} className="btn-accent px-4 py-2 rounded font-semibold transition-colors">Join</button>
         )}
@@ -197,8 +259,7 @@ export default function TournamentSetupPage() {
             Open Table
           </button>
         )}
-        <button onClick={() => navigate("/")} className="btn-secondary px-4 py-2 rounded transition-colors">Back</button>
-      </div>
-    </div>
+        <button onClick={() => navigate("/")} className="btn-secondary px-4 py-2 rounded transition-colors">Back to Lobby</button>
+    </>
   );
 }

@@ -178,6 +178,9 @@ class MultiTableTournamentCoordinator:
         winner = next(
             player for player in self._players_by_id.values() if not player.is_eliminated and player.chips > 0
         )
+        # Busted players get a finish position as they go out, but the winner
+        # never did — so finished tournaments had no recorded first place.
+        winner.finish_position = 1
         standings = [winner] + list(reversed(self._standings))
         await self.persist_player_states(list(self._players_by_id.values()))
         await self.broadcast_tournament(

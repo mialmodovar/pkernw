@@ -16,7 +16,7 @@ const ordinal = (n) => {
   return `${n}${suffix}`;
 };
 
-export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit }) {
+export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete }) {
   const statusColor = {
     lobby: "bg-amber-900/50 text-amber-200 border border-amber-700/40",
     running: "bg-(--color-accent-soft) text-red-200 border border-(--color-border-strong)",
@@ -83,6 +83,14 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit }
             title="Give up your seat and free it for someone else"
             className="px-3 py-1 panel-raised hover:border-(--color-border-strong) rounded text-sm transition-colors text-(--color-silver)">
             Leave
+          </button>
+        )}
+        {t.is_host && t.status === "lobby" && onDelete && (
+          <button onClick={() => onDelete(t)}
+            title="Delete this tournament — only possible before it starts"
+            className="px-3 py-1 rounded text-sm transition-colors
+                       bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]">
+            Delete
           </button>
         )}
         {(t.status === "lobby" || t.late_registration_open) && !t.is_joined && (

@@ -32,6 +32,14 @@ export default function LobbyPage() {
     if (!window.confirm("Unregister from this tournament? Your seat is freed for someone else.")) return;
     await useLobbyStore.getState().quitTournament(id);
   };
+  const onDelete = async (tournament) => {
+    const seated = tournament.player_count || 0;
+    const warning = seated > 1
+      ? `Delete "${tournament.name}"? ${seated} players are registered and will lose their seats.`
+      : `Delete "${tournament.name}"? This cannot be undone.`;
+    if (!window.confirm(warning)) return;
+    await useLobbyStore.getState().deleteTournament(tournament.id);
+  };
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
@@ -74,6 +82,7 @@ export default function LobbyPage() {
               onJoin={onJoin}
               onOpen={onOpen}
               onQuit={onQuit}
+              onDelete={onDelete}
             />
             <TournamentList
               title="Past Tournaments"

@@ -341,3 +341,34 @@ def quit_tournament(request, pk):
 
     tp.delete()
     return Response({"status": "unregistered"})
+
+
+@api_view(["DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def delete_tournament(request, pk):
+    """Let the host discard a tournament that never started.
+
+    Only before the first hand: once play begins the tournament owns results
+    and hand history that other players have a claim on.
+    """
+    try:
+        tournament = Tournament.objects.get(pk=pk, host=request.user)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.status != "lobby":
+        return Response(
+            {"error": "Cannot delete a tournament that has already started"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # An engine should never be running for a lobby tournament, but if one is,
+    # deleting the rows from under it would leave it writing to nothing.
+    if pk in _tournament_runners:
+        return Response(
+            {"error": "Tournament is still running"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    tournament.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)

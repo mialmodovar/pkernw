@@ -706,3 +706,61 @@ class TournamentProgressTests(TestCase):
 		)
 
 		self.assertEqual(progress, [(1, 3)])
+
+
+class DeleteTournamentTests(APITestCase):
+	def setUp(self):
+		self.host = User.objects.create_user(username="deleter", password="secret123")
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _tournament(self, **kwargs):
+		defaults = dict(host=self.host, name="Scrap Me", status="lobby")
+		defaults.update(kwargs)
+		return Tournament.objects.create(**defaults)
+
+	def test_host_can_delete_a_tournament_that_never_started(self):
+		tournament = self._tournament()
+
+		response = self.client.delete(reverse("tournament-delete", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		self.assertFalse(Tournament.objects.filter(id=tournament.id).exists())
+
+	def test_deleting_takes_the_registered_seats_with_it(self):
+		tournament = self._tournament()
+		other = User.objects.create_user(username="seated", password="secret123")
+		TournamentPlayer.objects.create(tournament=tournament, user=other, seat=0, chips=1000)
+
+		self.client.delete(reverse("tournament-delete", kwargs={"pk": tournament.id}))
+
+		self.assertFalse(TournamentPlayer.objects.filter(tournament_id=tournament.id).exists())
+
+	def test_a_started_tournament_cannot_be_deleted(self):
+		"""Once play begins it owns results other players have a claim on."""
+		tournament = self._tournament(status="running")
+
+		response = self.client.delete(reverse("tournament-delete", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())
+
+	def test_only_the_host_can_delete(self):
+		tournament = self._tournament()
+		self.client.force_authenticate(User.objects.create_user(username="nosy", password="secret123"))
+
+		response = self.client.delete(reverse("tournament-delete", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())
+
+	def test_a_lobby_tournament_with_a_live_engine_is_refused(self):
+		tournament = self._tournament()
+		_tournament_runners[tournament.id] = object()
+
+		response = self.client.delete(reverse("tournament-delete", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())

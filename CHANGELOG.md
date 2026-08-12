@@ -9,6 +9,18 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Hand history, recorded and reviewable.** The engine now writes each finished
+  hand — the board, every action by street, the showdown hands and the pot
+  awards — and a Review button on the table replays the last few. The tables
+  existed from the start and nothing had ever written to them, which is also why
+  the VPIP and PFR figures in the lobby could only read zero.
+- **Multi-table view.** The info panel lists every table with its seats filled
+  and marks your own, names the chip leader, and says where the money line is —
+  how many places pay, "On the bubble" one bust away, "In the money" once
+  inside. Per-table counts had been in the client all along and were never shown.
+- **Hosts can delete a tournament that never started.** Only before the first
+  hand: once play begins the tournament owns results and hand history that other
+  players have a claim on.
 - **End-of-tournament results.** Finishing a tournament led with your own
   result — whether you won or where you placed, out of how many entrants, and
   the share of the prize pool that place takes — followed by entrants, hands

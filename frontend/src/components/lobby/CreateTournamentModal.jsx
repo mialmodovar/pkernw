@@ -19,7 +19,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [allowRebuys, setAllowRebuys] = useState(true);
   const [maxRebuys, setMaxRebuys] = useState(2);
   const [rebuyLevel, setRebuyLevel] = useState(4);
-  const [timeBankEnabled, setTimeBankEnabled] = useState(false);
+  const [timeBankEnabled, setTimeBankEnabled] = useState(true);
   const [timeBankSeconds, setTimeBankSeconds] = useState(30);
   const [timeBankRefillRule, setTimeBankRefillRule] = useState("hands");
   const [timeBankRefillEveryHands, setTimeBankRefillEveryHands] = useState(10);

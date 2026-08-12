@@ -26,7 +26,10 @@ class Tournament(models.Model):
     allow_rebuys   = models.BooleanField(default=True)
     max_rebuys     = models.IntegerField(default=2)    # per player
     rebuy_level    = models.IntegerField(default=4)    # rebuys allowed through this level (0 = disabled)
-    time_bank_seconds = models.IntegerField(default=0)
+    # On by default: without a bank, a moment's hesitation on a big decision
+    # times you out into a fold. A fixed bank with no refill unless the creator
+    # asks for one — the create form offers the refill rules.
+    time_bank_seconds = models.IntegerField(default=30)
     time_bank_refill_rule = models.CharField(max_length=20, choices=TIME_BANK_REFILL_CHOICES, default="none")
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)

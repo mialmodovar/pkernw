@@ -1,15 +1,28 @@
 """Django settings for poker_platform project."""
 
+import os
 from pathlib import Path
 from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-u!rm*@fajrlno_f%2+7_fq9m79(6#$jgxd*7_v14-b_dr!%eyj'
 
-DEBUG = True
+def _env_list(name, default):
+    raw = os.environ.get(name)
+    return [item.strip() for item in raw.split(",") if item.strip()] if raw else default
 
-ALLOWED_HOSTS = ["*"]
+
+# Everything below falls back to the old development values, so running the
+# project locally needs no environment at all. A deployment sets these.
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-u!rm*@fajrlno_f%2+7_fq9m79(6#$jgxd*7_v14-b_dr!%eyj",
+)
+
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
+
+ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", ["*"])
+CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 
 # ── Apps ──────────────────────────────────────────────────────────────────
 
@@ -65,12 +78,25 @@ ASGI_APPLICATION = "poker_platform.asgi.application"
 
 # ── Database ──────────────────────────────────────────────────────────────
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+if os.environ.get("POSTGRES_DB"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ["POSTGRES_DB"],
+            "USER": os.environ.get("POSTGRES_USER", "poker"),
+            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
+            "HOST": os.environ.get("POSTGRES_HOST", "db"),
+            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+            "CONN_MAX_AGE": 60,
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -96,15 +122,26 @@ SIMPLE_JWT = {
 
 # ── Channels ──────────────────────────────────────────────────────────────
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    },
-}
+if os.environ.get("REDIS_URL"):
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [os.environ["REDIS_URL"]]},
+        },
+    }
+else:
+    # Single process only — the tournament engine also keeps per-tournament
+    # state in memory, so this project must run as ONE web process for now.
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 # ── CORS (dev) ────────────────────────────────────────────────────────────
 
-CORS_ALLOW_ALL_ORIGINS = True  # tighten for production
+CORS_ALLOWED_ORIGINS = _env_list("DJANGO_CORS_ORIGINS", [])
+CORS_ALLOW_ALL_ORIGINS = not CORS_ALLOWED_ORIGINS
 
 # ── i18n / static ────────────────────────────────────────────────────────
 
@@ -114,4 +151,5 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

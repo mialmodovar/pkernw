@@ -6,3 +6,4 @@ channels-redis>=4.2
 daphne>=4.1
 django-cors-headers>=4.4
 redis>=5.0
+psycopg[binary]>=3.2

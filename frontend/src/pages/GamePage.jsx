@@ -9,6 +9,7 @@ import ActionPanel from "../components/game/ActionPanel";
 import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
+import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 
 export default function GamePage() {
   const { id } = useParams();
@@ -44,7 +45,13 @@ export default function GamePage() {
     return () => { unsub(); clearListeners(); disconnect(); };
   }, [id, handleEvent, reset]);
 
-  useEffect(() => { loadTournament(); }, [loadTournament]);
+  // Chip counts drive the rank and average stack in the info panel, and they
+  // only live in the DB, so refresh them periodically rather than once on mount.
+  useEffect(() => {
+    loadTournament();
+    const id = setInterval(loadTournament, 20000);
+    return () => clearInterval(id);
+  }, [loadTournament]);
 
   useEffect(() => {
     if (!tableAssignmentNotice) return undefined;
@@ -158,14 +165,24 @@ export default function GamePage() {
         </div>
       )}
 
-      <div className="px-4 py-2 text-sm text-(--color-text-muted) flex justify-between">
+      <div className="px-4 py-2 text-sm text-(--color-text-muted) flex items-center justify-between gap-3">
         <span>{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
-        <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
+        <div className="flex items-center gap-3">
+          <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
+          <button
+            onClick={() => navigate("/")}
+            title="Your seat is kept — you can come back to the table"
+            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            Back to Lobby
+          </button>
+        </div>
       </div>
 
       <div className={`flex-1 flex items-center justify-center relative px-4 transition-shadow duration-300 ${
         isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
       }`}>
+        <TournamentInfoPanel tournament={tournament} username={user?.username} />
         <PokerTable mySeat={mySeat} capacity={capacity} />
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">

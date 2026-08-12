@@ -1,6 +1,7 @@
 import HoleCards from "./HoleCards";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import ChipStack from "./ChipStack";
 
 // Sits in normal flow between the cards and the nameplate: absolute placement
 // put the button on top of the hole cards, and stacked the dealer disc over the
@@ -83,9 +84,9 @@ export default function PlayerSeat({
       )}
       {/* Bet chip — shown between cards and table center */}
       {p.bet > 0 && (
-        <div className="flex items-center gap-1 mb-0.5 animate-chip-in">
-          <span className="w-3 h-3 rounded-full bg-[linear-gradient(135deg,#d4af37,#8a6c18)] border border-[#e0c66b] inline-block shadow" />
-          <span className="text-xs font-bold text-[#d9c07a]">{formatChips(p.bet, showBB, bb)}</span>
+        <div className="flex items-end gap-1 mb-0.5 animate-chip-in">
+          <ChipStack amount={p.bet} size={11} />
+          <span className="text-xs font-bold text-[#d9c07a] leading-none pb-0.5">{formatChips(p.bet, showBB, bb)}</span>
         </div>
       )}
       <HoleCards

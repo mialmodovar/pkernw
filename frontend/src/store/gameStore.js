@@ -21,6 +21,27 @@ const writeStoredFlag = (key, value) => {
   }
 };
 
+
+// The action log holds structured entries rather than flat strings, so the
+// history panel can group by hand and street and name players instead of
+// printing seat indices.
+let logSequence = 0;
+const LOG_LIMIT = 200;
+
+const nameFor = (state, seat) =>
+  state.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
+
+const entry = (state, kind, text, overrides = {}) => ({
+  id: ++logSequence,
+  hand: state.handNumber,
+  street: state.street,
+  kind,
+  text,
+  ...overrides,
+});
+
+const appendLog = (state, ...entries) => [...state.messages, ...entries].slice(-LOG_LIMIT);
+
 const useGameStore = create((set) => ({
   // Game state
   players: [],
@@ -128,6 +149,7 @@ const useGameStore = create((set) => ({
         });
         // Reset per-hand player state
         set((s) => ({
+          messages: appendLog(s, entry(s, "hand", `Hand #${data.hand_number}`, { street: "preflop" })),
           players: s.players.map((p) => ({
             ...p,
             is_folded: false,
@@ -153,7 +175,9 @@ const useGameStore = create((set) => ({
           }),
           // Blinds are live money — without this the pot reads 0 for all of preflop.
           pot: s.pot + data.sb.amount + data.bb.amount,
-          messages: [...s.messages, `Blinds: SB ${data.sb.amount}, BB ${data.bb.amount}`],
+          messages: appendLog(s, entry(s, "blinds",
+            `${nameFor(s, data.sb.seat)} posts SB ${data.sb.amount} · ${nameFor(s, data.bb.seat)} posts BB ${data.bb.amount}`,
+            { street: "preflop" })),
         }));
         break;
 
@@ -166,7 +190,7 @@ const useGameStore = create((set) => ({
             return entry ? { ...p, chips: p.chips - entry.amount } : p;
           }),
           pot: s.pot + totalAnte,
-          messages: [...s.messages, `Antes posted`],
+          messages: appendLog(s, entry(s, "blinds", `Antes posted (${totalAnte})`, { street: "preflop" })),
         }));
         break;
       }
@@ -182,7 +206,10 @@ const useGameStore = create((set) => ({
         break;
 
       case "action_taken": {
-        const label = `Seat ${data.seat}: ${data.action}${data.amount ? " " + data.amount : ""}`;
+        const verb = {
+          fold: "folds", check: "checks", call: "calls",
+          bet: "bets", raise: "raises to", blind: "posts", ante: "antes",
+        }[data.action] || data.action;
         set((s) => ({
           actionOnSeat: null,
           actionContext: null,
@@ -200,7 +227,8 @@ const useGameStore = create((set) => ({
             }
             return p;
           }),
-          messages: [...s.messages.slice(-30), label],
+          messages: appendLog(s, entry(s, "action",
+            `${nameFor(s, data.seat)} ${verb}${data.amount ? ` ${data.amount.toLocaleString()}` : ""}`)),
         }));
         break;
       }
@@ -211,6 +239,7 @@ const useGameStore = create((set) => ({
           communityCards: data.cards || [],
           pot: data.pot || 0,
           players: s.players.map((p) => ({ ...p, bet: 0 })),
+          messages: appendLog(s, entry(s, "street", (data.cards || []).join(" "), { street: data.street })),
         }));
         break;
 
@@ -230,6 +259,8 @@ const useGameStore = create((set) => ({
         const sdList = data.data || data;
         set((s) => ({
           showdown: sdList,
+          messages: appendLog(s, ...(Array.isArray(sdList) ? sdList : []).map((sd) =>
+            entry(s, "showdown", `${nameFor(s, sd.seat)} shows ${sd.cards?.join(" ")} — ${sd.hand_name}`))),
           players: s.players.map((p) => {
             const sd = Array.isArray(sdList) ? sdList.find((e) => e.seat === p.seat) : null;
             return sd ? { ...p, cards: sd.cards } : p;
@@ -241,7 +272,12 @@ const useGameStore = create((set) => ({
       case "pot_awarded": {
         const awards = data.data || data;
         const seats = [...new Set(awards.map((a) => a.seat))];
-        set({ potAwards: awards, winnerSeats: seats });
+        set((s) => ({
+          potAwards: awards,
+          winnerSeats: seats,
+          messages: appendLog(s, ...awards.map((a) =>
+            entry(s, "pot", `${nameFor(s, a.seat)} wins ${a.amount?.toLocaleString()} (${a.description})`))),
+        }));
         break;
       }
 
@@ -260,7 +296,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           rabbitCards: data.cards || [],
           messages: data.cards?.length
-            ? [...s.messages.slice(-30), `Rabbit hunt: ${data.cards.join(" ")}`]
+            ? appendLog(s, entry(s, "info", `Rabbit hunt: ${data.cards.join(" ")}`))
             : s.messages,
         }));
         break;
@@ -270,7 +306,10 @@ const useGameStore = create((set) => ({
           players: s.players.map((p) =>
             p.seat === data.seat ? { ...p, is_eliminated: true } : p
           ),
-          messages: [...s.messages.slice(-30), `${data.name} eliminated (${data.finish_position})`],
+          messages: appendLog(s, entry(s, "elim",
+            data.reason === "offline_timeout"
+              ? `${data.name} removed for being offline (${data.finish_position})`
+              : `${data.name} eliminated in ${data.finish_position}`)),
         }));
         break;
 
@@ -279,7 +318,7 @@ const useGameStore = create((set) => ({
           players: s.players.map((p) =>
             p.seat === data.seat ? { ...p, is_disconnected: true } : p
           ),
-          messages: [...s.messages.slice(-30), `${data.name} disconnected`],
+          messages: appendLog(s, entry(s, "info", `${data.name} disconnected`)),
         }));
         break;
 
@@ -288,7 +327,7 @@ const useGameStore = create((set) => ({
           players: s.players.map((p) =>
             p.seat === data.seat ? { ...p, is_disconnected: false } : p
           ),
-          messages: [...s.messages.slice(-30), `${data.name} reconnected`],
+          messages: appendLog(s, entry(s, "info", `${data.name} reconnected`)),
         }));
         break;
 
@@ -304,7 +343,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           isPaused: true,
           level: data.level || s.level,
-          messages: [...s.messages.slice(-30), "Tournament paused"],
+          messages: appendLog(s, entry(s, "info", "Tournament paused")),
         }));
         break;
 
@@ -312,7 +351,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           isPaused: false,
           level: data.level || s.level,
-          messages: [...s.messages.slice(-30), "Tournament resumed"],
+          messages: appendLog(s, entry(s, "info", "Tournament resumed")),
         }));
         break;
 
@@ -327,10 +366,7 @@ const useGameStore = create((set) => ({
             seat: data.seat,
             tableCount: data.table_count ?? s.tableCount,
           },
-          messages: [
-            ...s.messages.slice(-29),
-            `Moved to table ${data.table_number}, seat ${data.seat}`,
-          ],
+          messages: appendLog(s, entry(s, "info", `Moved to table ${data.table_number}, seat ${data.seat}`)),
         }));
         break;
 
@@ -346,7 +382,7 @@ const useGameStore = create((set) => ({
           level: data,
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.tables || s.tableSummaries,
-          messages: [...s.messages.slice(-30), `Break started (${data.duration_minutes} min)`],
+          messages: appendLog(s, entry(s, "info", `Break started (${data.duration_minutes} min)`)),
         }));
         break;
 
@@ -363,7 +399,7 @@ const useGameStore = create((set) => ({
       case "error":
         console.error("[Game Error]", data.message);
         set((s) => ({
-          messages: [...s.messages.slice(-30), `Error: ${data.message}`],
+          messages: appendLog(s, entry(s, "error", data.message)),
         }));
         break;
 

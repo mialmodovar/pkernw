@@ -17,6 +17,8 @@ from django.contrib.auth.models import AnonymousUser
 
 from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 
+from .models import Hand, HandAction
+
 from .coordinator import MultiTableTournamentCoordinator
 
 
@@ -67,6 +69,37 @@ def _db_get_tournament(tournament_id):
         return Tournament.objects.get(id=tournament_id)
     except Tournament.DoesNotExist:
         return None
+
+
+@database_sync_to_async
+def _db_save_hand(tournament_id, data):
+    """Write a finished hand and its actions.
+
+    Nothing wrote these tables before, so there was no hand history to review
+    and the VPIP/PFR stats mined from them could only ever read zero.
+    """
+    hand = Hand.objects.create(
+        tournament_id=tournament_id,
+        hand_number=data["hand_number"],
+        level_index=data["level_index"],
+        dealer_seat=data["dealer_seat"],
+        community_cards=data["community_cards"],
+        pot_total=data["pot_total"],
+        result=data["result"],
+        status="complete",
+    )
+    HandAction.objects.bulk_create([
+        HandAction(
+            hand=hand,
+            player_id=action["tp_id"],
+            street=action["street"],
+            action=action["action"],
+            amount=action["amount"] or 0,
+        )
+        for action in data["actions"]
+        # A player moved off the table mid-hand has no row to attach to.
+        if action.get("tp_id") is not None
+    ])
 
 
 @database_sync_to_async
@@ -490,6 +523,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             ),
             persist_player_states=lambda players: self._persist_player_states(players),
             persist_progress=lambda level_index, hands: _db_set_progress(self.tournament_id, level_index, hands),
+            persist_hand=lambda payload: _db_save_hand(self.tournament_id, payload),
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
         )

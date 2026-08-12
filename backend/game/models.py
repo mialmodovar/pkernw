@@ -17,6 +17,9 @@ class Hand(models.Model):
     dealer_seat     = models.IntegerField()
     community_cards = models.JSONField(default=list)
     pot_total       = models.IntegerField(default=0)
+    # Showdown hands and pot awards, so a finished hand can be replayed without
+    # having to re-derive who won what.
+    result          = models.JSONField(default=dict, blank=True)
     status          = models.CharField(max_length=10, choices=STATUS_CHOICES, default="preflop")
     started_at      = models.DateTimeField(auto_now_add=True)
 

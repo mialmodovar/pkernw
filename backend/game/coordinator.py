@@ -44,6 +44,7 @@ class MultiTableTournamentCoordinator:
         persist_assignments: PersistAssignmentsFn,
         persist_player_states: PersistPlayerStatesFn,
         persist_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
+        persist_hand: Optional[Callable[[dict], Awaitable[None]]] = None,
         level_index: int = 0,
         hands_in_level: int = 0,
         time_bank_seconds: int = 0,
@@ -70,6 +71,7 @@ class MultiTableTournamentCoordinator:
         self.persist_assignments = persist_assignments
         self.persist_player_states = persist_player_states
         self.persist_progress = persist_progress
+        self.persist_hand = persist_hand
 
         self._players_by_id: Dict[int, EnginePlayer] = {}
         self._players_by_user_id: Dict[int, EnginePlayer] = {}
@@ -506,16 +508,34 @@ class MultiTableTournamentCoordinator:
             state["sb_seat"] = None
             state["bb_seat"] = None
             state["bets"] = {}
+            state["history"] = []
+            state["result"] = {}
+            state["level_index"] = self._level_index
         elif event_type == "blinds_posted":
             # Blinds sit in front of the players as street bets, not yet in the pot.
             state["sb_seat"] = payload["sb"]["seat"]
             state["bb_seat"] = payload["bb"]["seat"]
             state["bets"][payload["sb"]["seat"]] = payload["sb"]["amount"]
             state["bets"][payload["bb"]["seat"]] = payload["bb"]["amount"]
+            state.setdefault("history", []).extend([
+                {"street": "preflop", "seat": payload["sb"]["seat"], "action": "blind", "amount": payload["sb"]["amount"]},
+                {"street": "preflop", "seat": payload["bb"]["seat"], "action": "blind", "amount": payload["bb"]["amount"]},
+            ])
         elif event_type == "antes_posted":
             # Antes go straight to the pot.
-            state["pot"] += sum(entry.get("amount", 0) for entry in (payload or []))
+            ante_payload = payload if isinstance(payload, list) else (payload or {}).get("entries", [])
+            state["pot"] += sum(entry.get("amount", 0) for entry in ante_payload)
+            state.setdefault("history", []).extend(
+                {"street": "preflop", "seat": e.get("seat"), "action": "ante", "amount": e.get("amount", 0)}
+                for e in ante_payload
+            )
         elif event_type == "action_taken":
+            state.setdefault("history", []).append({
+                "street": state.get("street") or "preflop",
+                "seat": payload.get("seat"),
+                "action": payload.get("action"),
+                "amount": payload.get("amount", 0),
+            })
             seat = payload.get("seat")
             action = payload.get("action")
             amount = payload.get("amount", 0)
@@ -531,7 +551,30 @@ class MultiTableTournamentCoordinator:
             state["pot"] = payload.get("pot", state["pot"])
             state["street"] = payload.get("street", state["street"])
             state["bets"] = {}  # collected into the pot
+        elif event_type == "showdown":
+            state.setdefault("result", {})["showdown"] = payload if isinstance(payload, list) else payload
+        elif event_type == "pot_awarded":
+            state.setdefault("result", {})["awards"] = payload if isinstance(payload, list) else payload
         elif event_type == "hand_complete":
+            # One write per hand rather than per action.
+            if self.persist_hand is not None and state.get("history"):
+                table_for_hand = self._tables.get(table_number)
+                seat_to_tp = {
+                    player._seat: player._tp_id
+                    for player in (table_for_hand.players if table_for_hand else [])
+                }
+                await self.persist_hand({
+                    "hand_number": state.get("hand_number", 0),
+                    "level_index": state.get("level_index", self._level_index),
+                    "dealer_seat": state.get("dealer_seat") or 0,
+                    "community_cards": state.get("community_cards", []),
+                    "pot_total": state.get("pot", 0) + sum(state.get("bets", {}).values()),
+                    "result": state.get("result", {}),
+                    "actions": [
+                        {**item, "tp_id": seat_to_tp.get(item.get("seat"))}
+                        for item in state.get("history", [])
+                    ],
+                })
             state["pot"] = 0
             state["bets"] = {}
             state["dealer_seat"] = None

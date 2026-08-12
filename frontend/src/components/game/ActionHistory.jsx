@@ -39,7 +39,7 @@ function groupByHand(entries) {
   return hands;
 }
 
-export default function ActionHistory() {
+export default function ActionHistory({ onReview }) {
   const messages = useGameStore((s) => s.messages);
   const scroller = useRef(null);
 
@@ -53,8 +53,19 @@ export default function ActionHistory() {
 
   return (
     <div className="w-full lg:w-72 shrink-0 panel rounded-lg flex flex-col max-h-64">
-      <div className="px-3 py-2 border-b border-(--color-border) text-xs font-semibold uppercase tracking-wide text-(--color-silver)">
-        Hand history
+      <div className="px-3 py-2 border-b border-(--color-border) flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">
+          Hand history
+        </span>
+        {onReview && (
+          <button
+            onClick={onReview}
+            title="Replay the last few completed hands"
+            className="btn-secondary px-2 py-0.5 rounded text-[10px] font-semibold transition-colors"
+          >
+            Review
+          </button>
+        )}
       </div>
       <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-2 text-xs space-y-2">
         {hands.length === 0 && (

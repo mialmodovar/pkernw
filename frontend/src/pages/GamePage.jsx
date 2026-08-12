@@ -13,6 +13,7 @@ import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
 import BreakOverlay from "../components/game/BreakOverlay";
 import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
+import HandReview from "../components/game/HandReview";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 
 export default function GamePage() {
@@ -45,6 +46,7 @@ export default function GamePage() {
   // player may want to stay and watch.
   const [eliminationReady, setEliminationReady] = useState(false);
   const [spectating, setSpectating] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const loadTournament = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -273,6 +275,8 @@ export default function GamePage() {
         )}
       </div>
 
+      {reviewOpen && <HandReview tournamentId={id} onClose={() => setReviewOpen(false)} />}
+
       <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
         <div className="flex-1 min-w-0">
           <ActionPanel
@@ -283,7 +287,7 @@ export default function GamePage() {
             onSitIn={() => send({ type: "sit_out", value: false })}
           />
         </div>
-        <ActionHistory />
+        <ActionHistory onReview={() => setReviewOpen(true)} />
       </div>
     </div>
   );

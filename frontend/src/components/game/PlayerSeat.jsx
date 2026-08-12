@@ -62,6 +62,11 @@ export default function PlayerSeat({
 
   return (
     <div className={`relative flex flex-col items-center gap-1 w-[clamp(5rem,11vw,7rem)] ${p.is_disconnected ? "opacity-60" : ""}`}>
+      {p.is_sitting_out && !p.is_eliminated && (
+        <div className="bg-black/60 text-(--color-text-muted) text-[10px] font-bold px-1.5 py-0.5 rounded border border-(--color-border) text-center">
+          SITTING OUT
+        </div>
+      )}
       {/* Disconnected indicator */}
       {p.is_disconnected && !p.is_eliminated && (
         <div className="bg-[#5a1420] text-[#e8d5d8] text-[10px] font-bold px-1.5 py-0.5 rounded border border-[rgba(196,178,165,0.25)] text-center">

@@ -5,8 +5,13 @@ from datetime import timedelta
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Tournament
+from asgiref.sync import async_to_sync
+from django.test import TestCase
+
+from .models import Tournament, TournamentPlayer
 from game.consumers import _tournament_runners
+from game.coordinator import MultiTableTournamentCoordinator
+from game.engine.player import Player as EnginePlayer
 
 
 User = get_user_model()
@@ -318,3 +323,167 @@ class TournamentCreationTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual(response.data["level"]["blind_level_number"], 2)
 		self.assertTrue(response.data["level"]["skipped"])
+
+
+class RebuyTests(APITestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(username="rebuyer", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _tournament(self, **kwargs):
+		defaults = dict(
+			host=self.user,
+			name="Rebuy Me",
+			status="running",
+			allow_rebuys=True,
+			max_rebuys=2,
+			rebuy_level=4,
+			starting_chips=10_000,
+		)
+		defaults.update(kwargs)
+		return Tournament.objects.create(**defaults)
+
+	def _seat(self, tournament, **kwargs):
+		defaults = dict(
+			tournament=tournament,
+			user=self.user,
+			seat=0,
+			chips=0,
+			is_eliminated=True,
+			finish_position=3,
+		)
+		defaults.update(kwargs)
+		return TournamentPlayer.objects.create(**defaults)
+
+	def test_rebuy_goes_through_the_running_engine(self):
+		"""A DB-only rebuy is undone by the engine, so the view must reach it."""
+		calls = []
+
+		class FakeRunner:
+			current_blind_level_number = 1
+
+			async def apply_rebuy(self, user_id, chips):
+				calls.append((user_id, chips))
+				return ""
+
+		tournament = self._tournament()
+		seat = self._seat(tournament)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		response = self.client.post(reverse("tournament-rebuy", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(calls, [(self.user.id, 10_000)])
+		seat.refresh_from_db()
+		# Chips and is_eliminated are the coordinator's to persist (covered by
+		# CoordinatorRebuyTests); the view owns only this bookkeeping.
+		self.assertEqual(seat.rebuy_count, 1)
+		self.assertIsNone(seat.finish_position)
+
+	def test_rebuy_is_refused_once_the_tournament_is_resolving(self):
+		class FinishingRunner:
+			current_blind_level_number = 1
+
+			async def apply_rebuy(self, user_id, chips):
+				return "Tournament has ended"
+
+		tournament = self._tournament()
+		seat = self._seat(tournament)
+		_tournament_runners[tournament.id] = FinishingRunner()
+
+		response = self.client.post(reverse("tournament-rebuy", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		seat.refresh_from_db()
+		# The rebuy must not be spent when the engine refuses it.
+		self.assertTrue(seat.is_eliminated)
+		self.assertEqual(seat.rebuy_count, 0)
+
+
+class CoordinatorRebuyTests(TestCase):
+	"""The regression that motivated this: the run loop writes its in-memory
+	players over the DB after every hand, so a rebuy that only touched the DB
+	was silently reverted."""
+
+	def _coordinator(self, persisted):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(players):
+			persisted.extend(
+				{"tp_id": p._tp_id, "chips": p.chips, "is_eliminated": p.is_eliminated}
+				for p in players
+			)
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=capture,
+		)
+
+	def _add_player(self, coordinator, tp_id, user_id, **kwargs):
+		player = EnginePlayer(name=f"p{tp_id}", chips=kwargs.get("chips", 0))
+		player._tp_id = tp_id
+		player._user_id = user_id
+		player._seat = 0
+		player._global_seat = 0
+		player._table_number = 1
+		player.is_eliminated = kwargs.get("is_eliminated", False)
+		player.finish_position = kwargs.get("finish_position", 0)
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[user_id] = player
+		return player
+
+	def test_rebuy_survives_the_next_persist(self):
+		persisted = []
+		coordinator = self._coordinator(persisted)
+		busted = self._add_player(coordinator, 1, 11, chips=0, is_eliminated=True, finish_position=2)
+		self._add_player(coordinator, 2, 22, chips=5000)
+		coordinator._standings.append(busted)
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "")
+
+		self.assertEqual(busted.chips, 10_000)
+		self.assertFalse(busted.is_eliminated)
+		self.assertEqual(busted.finish_position, 0)
+		# Removed from standings, or the final results would list them twice.
+		self.assertEqual(coordinator._standings, [])
+		# What the loop would write to the DB now reflects the rebuy.
+		self.assertIn({"tp_id": 1, "chips": 10_000, "is_eliminated": False}, persisted)
+
+	def test_rebuy_applies_even_when_memory_lags_the_db(self):
+		"""Eligibility is decided by the caller from the locked DB row; the
+		in-memory copy only refreshes between hands, so it must not veto."""
+		persisted = []
+		coordinator = self._coordinator(persisted)
+		lagging = self._add_player(coordinator, 1, 11, chips=0, is_eliminated=False)
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "")
+		self.assertEqual(lagging.chips, 10_000)
+		self.assertFalse(lagging.is_eliminated)
+
+	def test_rebuy_refused_once_finishing(self):
+		coordinator = self._coordinator([])
+		self._add_player(coordinator, 1, 11, chips=0, is_eliminated=True, finish_position=1)
+		coordinator._finishing = True
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "Tournament has ended")
+
+	def test_sitting_out_flag_is_in_the_player_payload(self):
+		"""It must ride the snapshot, unlike the client-only disconnected flag."""
+		coordinator = self._coordinator([])
+		player = self._add_player(coordinator, 1, 11, chips=5000)
+
+		self.assertFalse(coordinator._player_payload(player)["is_sitting_out"])
+		async_to_sync(coordinator.set_sitting_out)(11, True)
+		self.assertTrue(coordinator._player_payload(player)["is_sitting_out"])

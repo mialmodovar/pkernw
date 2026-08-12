@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { connect, disconnect, onMessage, clearListeners, send } from "../api/socket";
+import { connect, disconnect, onMessage, onStatus, clearListeners, send, retry } from "../api/socket";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
@@ -10,6 +10,8 @@ import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
+import EliminationScreen from "../components/game/EliminationScreen";
+import ConnectionBanner from "../components/game/ConnectionBanner";
 
 export default function GamePage() {
   const { id } = useParams();
@@ -27,6 +29,9 @@ export default function GamePage() {
     tableSummaries,
     actionOnSeat,
     soundEnabled,
+    lastElimination,
+    connectionStatus,
+    setConnectionStatus,
     tableAssignmentNotice,
     dismissTableAssignmentNotice,
   } = useGameStore();
@@ -42,8 +47,9 @@ export default function GamePage() {
     reset();
     connect(id);
     const unsub = onMessage(handleEvent);
-    return () => { unsub(); clearListeners(); disconnect(); };
-  }, [id, handleEvent, reset]);
+    const unsubStatus = onStatus(setConnectionStatus);
+    return () => { unsub(); unsubStatus(); clearListeners(); disconnect(); };
+  }, [id, handleEvent, reset, setConnectionStatus]);
 
   // Chip counts drive the rank and average stack in the info panel, and they
   // only live in the DB, so refresh them periodically rather than once on mount.
@@ -72,6 +78,7 @@ export default function GamePage() {
   const isHost = tournament?.host_name === user?.username;
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
 
+  const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
   const handleAdminControl = async (control) => {
     setAdminError("");
@@ -82,6 +89,26 @@ export default function GamePage() {
       setAdminError(error.response?.data?.error || "Unable to update tournament.");
     }
   };
+
+  // Sourced from REST rather than only the websocket event: an eliminated
+  // player gets no snapshot on reconnect, so this has to survive a reload.
+  const mySeatRecord = tournament?.players?.find((p) => p.username === user?.username);
+  const myFinish = mySeatRecord?.is_eliminated ? mySeatRecord.finish_position : null;
+  const eliminatedByEvent = lastElimination?.name === user?.username;
+  const myEliminationFinish = myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
+
+  if (myEliminationFinish && !standings) {
+    return (
+      <EliminationScreen
+        tournamentId={id}
+        tournament={tournament}
+        finishPosition={myEliminationFinish}
+        reason={eliminatedByEvent ? lastElimination.reason : null}
+        onRebought={loadTournament}
+        onLeave={() => navigate("/")}
+      />
+    );
+  }
 
   if (standings) {
     return (
@@ -105,6 +132,7 @@ export default function GamePage() {
 
   return (
     <div className="h-screen flex flex-col">
+      <ConnectionBanner status={connectionStatus} onRetry={retry} />
       <BlindLevelBar />
 
       {isHost && (
@@ -170,6 +198,13 @@ export default function GamePage() {
         <div className="flex items-center gap-3">
           <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
           <button
+            onClick={() => send({ type: "sit_out", value: !amSittingOut })}
+            title="You keep your seat and keep paying blinds; your turns pass automatically"
+            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            {amSittingOut ? "Sit back in" : "Sit out"}
+          </button>
+          <button
             onClick={() => navigate("/")}
             title="Your seat is kept — you can come back to the table"
             className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
@@ -201,7 +236,7 @@ export default function GamePage() {
 
       <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
         <div className="flex-1 min-w-0">
-          <ActionPanel mySeat={mySeat} onAction={handleAction} />
+          <ActionPanel mySeat={mySeat} onAction={handleAction} disabled={connectionStatus !== "open"} />
         </div>
         <ActionHistory />
       </div>

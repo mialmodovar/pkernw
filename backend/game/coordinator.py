@@ -80,6 +80,9 @@ class MultiTableTournamentCoordinator:
         self._offline_since: Dict[int, float] = {}
         self.is_paused = False
         self._paused_at: Optional[float] = None
+        # Set once the winner is being decided, so a rebuy can't slip in after
+        # the tournament has effectively ended.
+        self._finishing = False
 
     @property
     def current_blind_level_number(self) -> int:
@@ -175,6 +178,7 @@ class MultiTableTournamentCoordinator:
             await self.persist_player_states(list(self._players_by_id.values()))
             await asyncio.sleep(3)
 
+        self._finishing = True
         winner = next(
             player for player in self._players_by_id.values() if not player.is_eliminated and player.chips > 0
         )
@@ -251,6 +255,52 @@ class MultiTableTournamentCoordinator:
 
     async def mark_player_reconnected(self, user_id: int):
         self._offline_since.pop(user_id, None)
+
+    async def set_sitting_out(self, user_id: int, value: bool) -> bool:
+        player = self._players_by_user_id.get(user_id)
+        if player is None:
+            return False
+        player.is_sitting_out = bool(value)
+        await self._broadcast_to_table(
+            player._table_number,
+            "player_sitting_out",
+            {"seat": player._seat, "name": player.name, "sitting_out": player.is_sitting_out},
+        )
+        return True
+
+    async def apply_rebuy(self, user_id: int, chips: int) -> str:
+        """Bring an eliminated player back with a fresh stack.
+
+        Returns an empty string on success, or the reason it was refused.
+
+        This has to go through the coordinator rather than the DB alone: the
+        run loop writes its in-memory players over the DB after every hand
+        (`persist_player_states`), so a DB-only rebuy is silently reverted.
+        """
+        if self._finishing:
+            return "Tournament has ended"
+        player = self._players_by_user_id.get(user_id)
+        if player is None:
+            return "The engine does not know this player"
+
+        # Deliberately not re-checking is_eliminated here. The caller has
+        # already decided eligibility from the DB row under select_for_update,
+        # which is the single source of truth; the in-memory copy lags it (it is
+        # only refreshed between hands) and re-checking it here just races the
+        # caller and refuses valid rebuys.
+
+        player.chips = chips
+        player.is_eliminated = False
+        player.finish_position = 0
+        # A stale standings entry would list them twice in the final results.
+        self._standings = [p for p in self._standings if p._tp_id != player._tp_id]
+
+        await self.persist_player_states(list(self._players_by_id.values()))
+        await self.broadcast_tournament(
+            "player_rebuy",
+            {"name": player.name, "chips": chips},
+        )
+        return ""
 
     def table_summaries(self) -> List[dict]:
         return [
@@ -604,6 +654,9 @@ class MultiTableTournamentCoordinator:
             "is_eliminated": player.is_eliminated,
             "is_folded": player.is_folded,
             "is_all_in": player.is_all_in,
+            # In the payload so it survives a game_state snapshot, unlike the
+            # client-only is_disconnected flag.
+            "is_sitting_out": player.is_sitting_out,
         }
 
     def _refill_time_banks_after_hand(self):

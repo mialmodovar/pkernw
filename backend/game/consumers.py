@@ -10,6 +10,7 @@ import traceback
 from typing import Callable, Dict, Tuple
 
 from channels.db import database_sync_to_async
+from django.db import transaction
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser
@@ -99,6 +100,7 @@ def _db_get_user_table_record(tournament_id, user_id):
 
 
 @database_sync_to_async
+@transaction.atomic
 def _db_apply_table_layout(tournament_id, players_per_table, layout, active_table_numbers):
     tournament = Tournament.objects.get(id=tournament_id)
     tournament.tables.exclude(table_number__in=active_table_numbers).update(is_active=False)
@@ -120,12 +122,30 @@ def _db_apply_table_layout(tournament_id, players_per_table, layout, active_tabl
             table.save(update_fields=updates)
         table_map[table_number] = table
 
+    # Both (tournament, seat) and (table, seat_at_table) are unique, so applying
+    # a layout row by row collides as soon as players shift places. Eliminated
+    # players keep their old seat and are NOT in the layout, so compacting the
+    # survivors down lands straight on top of them — which crashed the whole
+    # coordinator right after the first bust. Park every row of the tournament
+    # out of the way first, then assign.
+    all_ids = list(
+        TournamentPlayer.objects.filter(tournament_id=tournament_id).values_list("id", flat=True)
+    )
+    for index, tp_id in enumerate(all_ids):
+        TournamentPlayer.objects.filter(id=tp_id).update(seat=-(index + 1), seat_at_table=None)
+
     for assignment in layout:
         TournamentPlayer.objects.filter(id=assignment["tp_id"]).update(
             table=table_map[assignment["table_number"]],
             seat=assignment["seat"],
             seat_at_table=assignment["seat_at_table"],
         )
+
+    # Anyone not in the layout (eliminated) gets a seat above the active range,
+    # so they stay unique and don't hold a seat a survivor needs.
+    seated = {assignment["tp_id"] for assignment in layout}
+    for offset, tp_id in enumerate(tp_id for tp_id in all_ids if tp_id not in seated):
+        TournamentPlayer.objects.filter(id=tp_id).update(seat=len(layout) + offset)
 
     return {
         number: {"id": table.id, "max_seats": table.max_seats}
@@ -139,7 +159,9 @@ def _db_update_player_states(tournament_id, states):
         TournamentPlayer.objects.filter(id=state["tp_id"], tournament_id=tournament_id).update(
             chips=state["chips"],
             is_eliminated=state["is_eliminated"],
-            finish_position=state["finish_position"] if state["is_eliminated"] else None,
+            # Not gated on is_eliminated: the winner finishes 1st while still
+            # alive, and that was being written away as NULL.
+            finish_position=state["finish_position"] or None,
             time_bank_seconds_remaining=state["time_bank_seconds_remaining"],
         )
 
@@ -186,6 +208,16 @@ async def _request_action(
         "deadline": time.monotonic() + total_timeout,
         "bank": bank_remaining,
     }
+
+    if getattr(player, "is_sitting_out", False):
+        # Sitting out still posts blinds and antes; the turn just passes.
+        action = "check" if "check" in valid else "fold"
+        await _broadcast_table(
+            tournament_id, table_number, "action_taken",
+            {"seat": player._seat, "action": action, "amount": 0},
+        )
+        _pending_actions.pop(key, None)
+        return action, 0
 
     queue = _action_queues.get(key)
     if queue:
@@ -345,22 +377,53 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 )
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        if data.get("type") == "player_action":
+        try:
+            data = json.loads(text_data)
+        except ValueError:
+            return
+        message_type = data.get("type")
+
+        if message_type == "player_action":
             queue = _action_queues.get((self.tournament_id, self.user.id))
             if queue:
                 await queue.put((data.get("action", "fold"), data.get("amount", 0)))
+        elif message_type == "sit_out":
+            # A player can only ever change their own sit-out state.
+            coordinator = _tournament_runners.get(self.tournament_id)
+            if coordinator is not None:
+                await coordinator.set_sitting_out(self.user.id, bool(data.get("value")))
 
     async def _maybe_boot_game(self):
         if self.tournament_id in _game_tasks:
             return
 
+        # Claim the slot before the first await. Clients connect together (a
+        # table full of players, and StrictMode mounting twice), and every await
+        # below is a chance for another connect to pass the check above and boot
+        # a SECOND engine for the same tournament. Two coordinators then run the
+        # same players from separate in-memory copies and persist over each
+        # other, which showed up as chips reverting and players flickering in
+        # and out of being eliminated.
+        _game_tasks[self.tournament_id] = None
+        try:
+            await self._boot_game()
+        except Exception:
+            _game_tasks.pop(self.tournament_id, None)
+            raise
+
+    async def _boot_game(self):
+        def release():
+            if _game_tasks.get(self.tournament_id) is None:
+                _game_tasks.pop(self.tournament_id, None)
+
         tournament = await _db_get_tournament(self.tournament_id)
         if tournament is None or tournament.status not in ("running", "paused"):
+            release()
             return
 
         player_records = await _db_get_player_records(self.tournament_id)
         if len(player_records) < 2:
+            release()
             return
 
         levels = await _db_get_levels(self.tournament_id)

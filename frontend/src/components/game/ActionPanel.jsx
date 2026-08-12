@@ -10,7 +10,7 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R", allin: "A"
 const BTN = "px-4 py-2.5 rounded font-semibold text-sm transition-colors min-w-[6.5rem]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
 
-export default function ActionPanel({ mySeat, onAction }) {
+export default function ActionPanel({ mySeat, onAction, disabled = false }) {
   const { actionOnSeat, actionContext, showBB, level, players } = useGameStore();
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [raiseText, setRaiseText] = useState(null); // non-null only while typing
@@ -23,6 +23,7 @@ export default function ActionPanel({ mySeat, onAction }) {
   const useBBControls = showBB && bb > 0;
 
   const isMyTurn = actionOnSeat === mySeat && actionContext;
+  const locked = submitted || disabled;
   const ctx = actionContext || {};
   const minRaise = ctx.min_raise || 0;
   const maxRaise = ctx.max_raise || 0;
@@ -51,16 +52,16 @@ export default function ActionPanel({ mySeat, onAction }) {
   }, [isMyTurn, minRaise]);
 
   const commit = useCallback((action) => {
-    if (submitted) return;
+    if (submitted || disabled) return;
     setArmed(null);
     setSubmitted(true);
     if (action === "raise") onAction("raise", raiseAmount);
     else if (action === "allin") onAction("raise", maxRaise);
     else onAction(action, 0);
-  }, [submitted, onAction, raiseAmount, maxRaise]);
+  }, [submitted, disabled, onAction, raiseAmount, maxRaise]);
 
   useEffect(() => {
-    if (!isMyTurn || submitted) return undefined;
+    if (!isMyTurn || submitted || disabled) return undefined;
     const onKey = (e) => {
       const tag = e.target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return; // don't fight the raise field
@@ -82,7 +83,7 @@ export default function ActionPanel({ mySeat, onAction }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isMyTurn, submitted, armed, can, commit]);
+  }, [isMyTurn, submitted, disabled, armed, can, commit]);
 
   if (!isMyTurn) {
     const waitingOn = players.find((p) => p.seat === actionOnSeat);
@@ -204,26 +205,26 @@ export default function ActionPanel({ mySeat, onAction }) {
         {/* Commit cluster — the choices sit together, under the mouse */}
         <div className="ml-auto flex items-center gap-2">
           {can.fold && (
-            <button onClick={() => commit("fold")} disabled={submitted}
+            <button onClick={() => commit("fold")} disabled={locked}
               className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
               Fold
             </button>
           )}
           {can.check && (
-            <button onClick={() => commit("check")} disabled={submitted}
+            <button onClick={() => commit("check")} disabled={locked}
               className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
               Check
             </button>
           )}
           {can.call && (
-            <button onClick={() => commit("call")} disabled={submitted}
+            <button onClick={() => commit("call")} disabled={locked}
               className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
               Call {fmt(ctx.to_call)}
             </button>
           )}
           {can.raise && (
-            <button onClick={() => commit("raise")} disabled={submitted}
+            <button onClick={() => commit("raise")} disabled={locked}
               className={`${BTN} bg-[linear-gradient(135deg,#d4af37,#8a6c18)] hover:bg-[linear-gradient(135deg,#e3c250,#a17c1e)]
                           border border-[#e0c66b] text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
@@ -231,7 +232,7 @@ export default function ActionPanel({ mySeat, onAction }) {
             </button>
           )}
           {can.allin && (
-            <button onClick={() => commit("allin")} disabled={submitted}
+            <button onClick={() => commit("allin")} disabled={locked}
               className={`${BTN} bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "allin" ? ARMED_RING : ""}`}>
               All-in

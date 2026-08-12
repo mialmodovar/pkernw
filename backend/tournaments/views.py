@@ -2,6 +2,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from asgiref.sync import async_to_sync
+from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 from .models import Tournament, TournamentPlayer, BlindLevel
@@ -278,9 +279,21 @@ def rebuy_tournament(request, pk):
     if tp.rebuy_count >= tournament.max_rebuys:
         return Response({"error": "No rebuys remaining"}, status=status.HTTP_400_BAD_REQUEST)
 
-    tp.is_eliminated = False
-    tp.chips = tournament.starting_chips
-    tp.rebuy_count += 1
-    tp.save()
+    # The engine holds its players in memory and writes them over the DB after
+    # every hand, so the rebuy has to land there or it is silently undone. This
+    # call must stay outside any atomic block: it bridges into async and opens
+    # its own connections, which closes the one the transaction is holding.
+    # apply_rebuy persists chips and is_eliminated itself.
+    refusal = async_to_sync(runner.apply_rebuy)(request.user.id, tournament.starting_chips)
+    if refusal:
+        return Response({"error": refusal}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Only the bookkeeping the engine doesn't own is left to write here.
+    with transaction.atomic():
+        TournamentPlayer.objects.filter(pk=tp.pk).update(
+            finish_position=None,
+            rebuy_count=F("rebuy_count") + 1,
+        )
+    tp.refresh_from_db()
 
     return Response({"seat": tp.seat, "chips": tp.chips, "rebuy_count": tp.rebuy_count})

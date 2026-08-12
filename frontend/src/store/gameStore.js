@@ -64,6 +64,9 @@ const useGameStore = create((set) => ({
   countdown: null,    // seconds remaining before tournament starts
   isPaused: false,
   standings: null, // final standings when tournament finishes
+  lastElimination: null, // { seat, name, finish_position, reason }
+  connectionStatus: "connecting", // connecting | open | reconnecting | failed
+  setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   messages: [],    // action log
   currentTableNumber: null,
   currentTableId: null,
@@ -115,6 +118,7 @@ const useGameStore = create((set) => ({
         set({
           level: data.level || null,
           standings: null,
+          lastElimination: null,
           isPaused: false,
           showdown: null,
           potAwards: null,
@@ -303,6 +307,12 @@ const useGameStore = create((set) => ({
 
       case "player_eliminated":
         set((s) => ({
+          lastElimination: {
+            seat: data.seat,
+            name: data.name,
+            finish_position: data.finish_position,
+            reason: data.reason || null,
+          },
           players: s.players.map((p) =>
             p.seat === data.seat ? { ...p, is_eliminated: true } : p
           ),
@@ -310,6 +320,24 @@ const useGameStore = create((set) => ({
             data.reason === "offline_timeout"
               ? `${data.name} removed for being offline (${data.finish_position})`
               : `${data.name} eliminated in ${data.finish_position}`)),
+        }));
+        break;
+
+      case "player_sitting_out":
+        set((s) => ({
+          players: s.players.map((p) =>
+            p.seat === data.seat ? { ...p, is_sitting_out: data.sitting_out } : p
+          ),
+          messages: appendLog(s, entry(s, "info",
+            `${data.name} ${data.sitting_out ? "is sitting out" : "is back"}`)),
+        }));
+        break;
+
+      case "player_rebuy":
+        set((s) => ({
+          lastElimination: null,
+          messages: appendLog(s, entry(s, "info",
+            `${data.name} rebought for ${data.chips?.toLocaleString()}`)),
         }));
         break;
 
@@ -414,7 +442,8 @@ const useGameStore = create((set) => ({
       handNumber: 0, holeCards: [], actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, level: null, showdown: null,
-      potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false, standings: null, messages: [],
+      potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
+      standings: null, lastElimination: null, messages: [],
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
     }),

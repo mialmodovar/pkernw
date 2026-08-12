@@ -77,6 +77,13 @@ remembering.
   falling back to a SQLite file the next deploy would discard.
 
 ### Changed
+- **The tournament page reads like a tournament lobby.** A banner carries the
+  name, state and the headline numbers — entrants, starting stack, places paid —
+  with the actions beside them. Below it: what is happening now (players left,
+  current and next level, largest, average and smallest stack), what it pays,
+  and a ranked, searchable player list where busted players keep their place
+  greyed out with where they finished. The blind structure is a table rather
+  than a long list, with the current level marked.
 - **The table reads more clearly.** Cards look like cards — ivory face, rounded
   corners, a fine edge and a shadow — and a covered hand shows a woven burgundy
   back instead of a question mark. Bets are placed on the line between a seat

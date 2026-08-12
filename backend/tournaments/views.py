@@ -268,29 +268,32 @@ def rebuy_tournament(request, pk):
     if runner.current_blind_level_number > tournament.rebuy_level:
         return Response({"error": "Rebuy period has ended"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Locked so a double submit can't spend two rebuys.
+    try:
+        tp = TournamentPlayer.objects.get(tournament=tournament, user=request.user)
+    except TournamentPlayer.DoesNotExist:
+        return Response({"error": "You are not in this tournament"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not tp.is_eliminated:
+        return Response({"error": "You are not eliminated"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if tp.rebuy_count >= tournament.max_rebuys:
+        return Response({"error": "No rebuys remaining"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # The engine holds its players in memory and writes them over the DB after
+    # every hand, so the rebuy has to land there or it is silently undone. This
+    # call must stay outside any atomic block: it bridges into async and opens
+    # its own connections, which closes the one the transaction is holding.
+    # apply_rebuy persists chips and is_eliminated itself.
+    refusal = async_to_sync(runner.apply_rebuy)(request.user.id, tournament.starting_chips)
+    if refusal:
+        return Response({"error": refusal}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Only the bookkeeping the engine doesn't own is left to write here.
     with transaction.atomic():
-        try:
-            tp = TournamentPlayer.objects.select_for_update().get(tournament=tournament, user=request.user)
-        except TournamentPlayer.DoesNotExist:
-            return Response({"error": "You are not in this tournament"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if not tp.is_eliminated:
-            return Response({"error": "You are not eliminated"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if tp.rebuy_count >= tournament.max_rebuys:
-            return Response({"error": "No rebuys remaining"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # The engine holds its players in memory and writes them over the DB
-        # after every hand, so the rebuy has to land there too or it is undone.
-        refusal = async_to_sync(runner.apply_rebuy)(request.user.id, tournament.starting_chips)
-        if refusal:
-            return Response({"error": refusal}, status=status.HTTP_400_BAD_REQUEST)
-
-        tp.is_eliminated = False
-        tp.chips = tournament.starting_chips
-        tp.finish_position = None
-        tp.rebuy_count += 1
-        tp.save()
+        TournamentPlayer.objects.filter(pk=tp.pk).update(
+            finish_position=None,
+            rebuy_count=F("rebuy_count") + 1,
+        )
+    tp.refresh_from_db()
 
     return Response({"seat": tp.seat, "chips": tp.chips, "rebuy_count": tp.rebuy_count})

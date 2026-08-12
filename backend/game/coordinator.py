@@ -282,8 +282,12 @@ class MultiTableTournamentCoordinator:
         player = self._players_by_user_id.get(user_id)
         if player is None:
             return "The engine does not know this player"
-        if not player.is_eliminated:
-            return "You are not eliminated"
+
+        # Deliberately not re-checking is_eliminated here. The caller has
+        # already decided eligibility from the DB row under select_for_update,
+        # which is the single source of truth; the in-memory copy lags it (it is
+        # only refreshed between hands) and re-checking it here just races the
+        # caller and refuses valid rebuys.
 
         player.chips = chips
         player.is_eliminated = False

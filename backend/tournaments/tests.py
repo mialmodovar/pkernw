@@ -378,8 +378,8 @@ class RebuyTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual(calls, [(self.user.id, 10_000)])
 		seat.refresh_from_db()
-		self.assertFalse(seat.is_eliminated)
-		self.assertEqual(seat.chips, 10_000)
+		# Chips and is_eliminated are the coordinator's to persist (covered by
+		# CoordinatorRebuyTests); the view owns only this bookkeeping.
 		self.assertEqual(seat.rebuy_count, 1)
 		self.assertIsNone(seat.finish_position)
 
@@ -460,6 +460,17 @@ class CoordinatorRebuyTests(TestCase):
 		self.assertEqual(coordinator._standings, [])
 		# What the loop would write to the DB now reflects the rebuy.
 		self.assertIn({"tp_id": 1, "chips": 10_000, "is_eliminated": False}, persisted)
+
+	def test_rebuy_applies_even_when_memory_lags_the_db(self):
+		"""Eligibility is decided by the caller from the locked DB row; the
+		in-memory copy only refreshes between hands, so it must not veto."""
+		persisted = []
+		coordinator = self._coordinator(persisted)
+		lagging = self._add_player(coordinator, 1, 11, chips=0, is_eliminated=False)
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "")
+		self.assertEqual(lagging.chips, 10_000)
+		self.assertFalse(lagging.is_eliminated)
 
 	def test_rebuy_refused_once_finishing(self):
 		coordinator = self._coordinator([])

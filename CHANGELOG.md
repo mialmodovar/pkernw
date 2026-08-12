@@ -75,6 +75,14 @@ remembering.
   the felt: seats above the centre put the plate on their outer edge, since a
   single order left it pointing into the middle of the table for half the seats.
   The hand number left the centre of the felt.
+- **Bet sizing sits above the slider, and the shove is one of the sizes.** The
+  separate All-in button is gone and Raise is the rightmost button. Sizes are
+  the ones players think in: 2bb, 2.5bb and 3.5bb before the flop, 25%, 40% and
+  75% of the pot after it, with All in alongside them. `A` still shoves — it
+  sizes the bet and arms Raise, so it confirms like every other shortcut.
+- **A proper four-colour deck.** The copper diamonds and muted green clubs read
+  as near-black at table size, which defeats the point of four colours. Red,
+  blue, green and black now, with a larger and heavier rank and suit.
 - **The raise slider is usable.** Its step was a twentieth of the whole range,
   which gave a short slider twenty positions — small drags changed nothing and
   the amount on the Raise button looked frozen. It is one chip per step now, on

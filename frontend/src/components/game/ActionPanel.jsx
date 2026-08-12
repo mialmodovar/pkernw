@@ -5,7 +5,7 @@ import { useActionCountdown } from "./useActionCountdown";
 
 // Keyboard shortcuts arm on the first press and commit on the second, so a
 // stray keystroke can't fold your hand. The mouse commits immediately.
-const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R", allin: "A" };
+const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
 const BTN = "px-4 py-2.5 rounded font-semibold text-sm transition-colors min-w-[6.5rem]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
@@ -34,11 +34,9 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
       fold: valid.includes("fold") && !valid.includes("check"),
       check: valid.includes("check"),
       call: valid.includes("call"),
-      // Nothing to size when the only raise left is the whole stack.
-      raise: valid.includes("raise") && maxRaise > minRaise,
-      allin: valid.includes("raise") && maxRaise > 0,
+      raise: valid.includes("raise"),
     };
-  }, [ctx.valid_actions, minRaise, maxRaise]);
+  }, [ctx.valid_actions]);
 
   // A fresh action_required means a new decision: clear any armed key and
   // re-enable the buttons.
@@ -69,22 +67,20 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
       if (e.key === "Escape") { setArmed(null); return; }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      const action = {
-        f: "fold",
-        c: can.check ? "check" : "call",
-        r: "raise",
-        a: "allin",
-      }[e.key.toLowerCase()];
+      const key = e.key.toLowerCase();
+      const action = { f: "fold", c: can.check ? "check" : "call", r: "raise" }[key]
+        || (key === "a" && can.raise ? "raise" : undefined);
 
       if (!action || !can[action]) { setArmed(null); return; }
       e.preventDefault();
+      if (key === "a") setRaiseAmount(maxRaise);
       // First press arms, second press of the same key commits.
       if (armed === action) commit(action);
       else setArmed(action);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isMyTurn, submitted, disabled, armed, can, commit]);
+  }, [isMyTurn, submitted, disabled, armed, can, commit, maxRaise]);
 
   if (!isMyTurn) {
     const waitingOn = players.find((p) => p.seat === actionOnSeat);
@@ -142,16 +138,19 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   // amount on the Raise button looked stuck.
   const sliderStep = useBBControls ? 0.1 : 1;
 
-  const presets = ctx.street === "preflop"
-    ? [2, 2.5, 3, 4].map((m) => ({ label: `${m}x`, chips: clampChips(Math.round(minRaise * m)) }))
-    : [25, 33, 75, 100].map((pct) => ({ label: `${pct}%`, chips: clampChips(Math.round((ctx.pot || 0) * pct / 100)) }));
+  const presets = [
+    ...(ctx.street === "preflop"
+      ? [2, 2.5, 3.5].map((bbs) => ({ label: `${bbs}bb`, chips: clampChips(Math.round(bbs * bb)) }))
+      : [25, 40, 75].map((pct) => ({ label: `${pct}%`, chips: clampChips(Math.round((ctx.pot || 0) * pct / 100)) }))),
+    { label: "All in", chips: maxRaise, emphasis: true },
+  ];
 
-  const armedLabel = armed && (armed === "allin" ? "All-in" : armed[0].toUpperCase() + armed.slice(1));
+  const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 
   return (
     <div className="panel rounded-lg overflow-hidden">
       {/* Sizing row — kept clear of the commit buttons */}
-      {can.raise && (
+      {can.raise && maxRaise > minRaise && (
         <div className="px-3 pt-3 flex flex-wrap items-center gap-x-2 gap-y-2">
           <span className="text-xs text-(--color-text-muted) whitespace-nowrap">
             {ctx.street === "preflop" ? "Raise to" : "Pot %"}
@@ -159,7 +158,11 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
           {presets.map((preset) => (
             <button key={preset.label}
               onClick={() => { setRaiseText(null); setRaiseAmount(preset.chips); }}
-              className="btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors">
+              className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
+                preset.emphasis
+                  ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]"
+                  : "btn-secondary"
+              }`}>
               {preset.label}
             </button>
           ))}
@@ -251,13 +254,6 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
                           border border-[#e0c66b] text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
               Raise {fmt(raiseAmount)}
-            </button>
-          )}
-          {can.allin && (
-            <button onClick={() => commit("allin")} disabled={locked}
-              className={`${BTN} bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]
-                          disabled:opacity-40 disabled:cursor-not-allowed ${armed === "allin" ? ARMED_RING : ""}`}>
-              All-in
             </button>
           )}
         </div>

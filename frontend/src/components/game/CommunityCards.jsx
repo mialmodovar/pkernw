@@ -8,8 +8,8 @@ function CardView({ card: str, delay, winning }) {
   return (
     <div className={`w-[clamp(2rem,4.5vw,2.75rem)] h-[clamp(2.9rem,6.5vw,4rem)] flex flex-col items-center justify-center leading-none animate-card-deal ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
       style={{ color: SUIT_COLOR[suit] || "#141414", animationDelay: `${delay}ms` }}>
-      <span className="text-[0.95rem] font-extrabold tracking-tight">{rank}</span>
-      <span className="text-[0.8rem] mt-0.5">{suit}</span>
+      <span className="text-[1.15rem] font-black tracking-tight">{rank}</span>
+      <span className="text-[1.05rem] leading-none -mt-0.5">{suit}</span>
     </div>
   );
 }

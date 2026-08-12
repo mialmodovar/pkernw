@@ -19,8 +19,8 @@ function CardFace({ card, winning }) {
   return (
     <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] flex flex-col items-center justify-center leading-none ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
       style={{ color: SUIT_COLOR[card.suit] || "#161616" }}>
-      <span className="text-[0.78rem] font-extrabold tracking-tight">{card.rank}</span>
-      <span className="text-[0.65rem] mt-0.5">{card.suit}</span>
+      <span className="text-[0.95rem] font-black tracking-tight">{card.rank}</span>
+      <span className="text-[0.85rem] leading-none -mt-0.5">{card.suit}</span>
     </div>
   );
 }

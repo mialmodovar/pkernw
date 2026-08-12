@@ -1,9 +1,12 @@
-// Shared card styling — muted 4-colour deck that fits the dark red / black / silver theme.
+// The standard four-colour deck. The previous copper and muted green read as
+// near-black at table size, which is the whole point of a four-colour deck —
+// telling the suits apart at a glance. These are dialled down from primaries so
+// they still sit on an ivory card without shouting.
 export const SUIT_COLOR = {
-  "♥": "#b3243a", // red
-  "♦": "#a8632c", // copper
-  "♣": "#2f5d4a", // deep muted green
-  "♠": "#161616", // black
+  "♥": "#c1121f", // red
+  "♦": "#1f4fd8", // blue
+  "♣": "#12813f", // green
+  "♠": "#14161a", // black
 };
 
 export const SUIT_CHAR = { h: "♥", d: "♦", c: "♣", s: "♠", "♥": "♥", "♦": "♦", "♣": "♣", "♠": "♠" };

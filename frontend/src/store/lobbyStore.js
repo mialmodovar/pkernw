@@ -7,19 +7,24 @@ const useLobbyStore = create((set, get) => ({
   past: [],
   loading: false,
 
-  fetchLobbyData: async () => {
-    set({ loading: true });
-    const [upcoming, mineActive, past] = await Promise.all([
-      api.get("/tournaments/", { params: { scope: "upcoming" } }),
-      api.get("/tournaments/", { params: { scope: "mine_active" } }),
-      api.get("/tournaments/", { params: { scope: "past" } }),
-    ]);
-    set({
-      upcoming: upcoming.data,
-      mineActive: mineActive.data,
-      past: past.data,
-      loading: false,
-    });
+  // Background refreshes pass silent so the lists are not replaced by the
+  // loading placeholder on every tick.
+  fetchLobbyData: async ({ silent = false } = {}) => {
+    if (!silent) set({ loading: true });
+    try {
+      const [upcoming, mineActive, past] = await Promise.all([
+        api.get("/tournaments/", { params: { scope: "upcoming" } }),
+        api.get("/tournaments/", { params: { scope: "mine_active" } }),
+        api.get("/tournaments/", { params: { scope: "past" } }),
+      ]);
+      set({
+        upcoming: upcoming.data,
+        mineActive: mineActive.data,
+        past: past.data,
+      });
+    } finally {
+      if (!silent) set({ loading: false });
+    }
   },
 
   createTournament: async (payload) => {

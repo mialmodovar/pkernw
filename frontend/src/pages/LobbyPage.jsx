@@ -12,7 +12,16 @@ export default function LobbyPage() {
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
 
-  useEffect(() => { fetchLobbyData(); }, [fetchLobbyData]);
+  useEffect(() => {
+    fetchLobbyData();
+    // Tournaments opening for late registration and seats freed by other
+    // players both happen with no action of your own, so keep the lists live.
+    // A failed tick is ignored because the next one recovers.
+    const id = setInterval(() => {
+      fetchLobbyData({ silent: true }).catch(() => {});
+    }, 20000);
+    return () => clearInterval(id);
+  }, [fetchLobbyData]);
 
   const onJoin = async (id) => {
     await useLobbyStore.getState().joinTournament(id);

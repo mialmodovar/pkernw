@@ -10,7 +10,8 @@ from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 
 from .coordinator import MultiTableTournamentCoordinator
 from .consumers import (
-    MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues, _media_presence, _request_action,
+    CHAT_MESSAGE_BUDGET, MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues,
+    _media_presence, _request_action,
 )
 
 User = get_user_model()
@@ -459,11 +460,11 @@ class TournamentActionRequestTests(TestCase):
         async_to_sync(run_scenario)()
 
 
-class MediaSignallingTests(TransactionTestCase):
-    """The postbox players use to find each other's cameras.
+class ConsumerTestBase(TransactionTestCase):
+    """Harness for the socket tests: a tournament with two tables and no engine.
 
     A tournament left in "lobby" boots no engine, so these exercise the consumer
-    on its own: who may signal whom, and what survives a disconnect.
+    on its own. Holds no tests of its own — subclasses bring those.
     """
 
     def setUp(self):
@@ -517,6 +518,9 @@ class MediaSignallingTests(TransactionTestCase):
             if message.get("type") == message_type:
                 return message
         raise AssertionError(f"no {message_type} arrived")
+
+class MediaSignallingTests(ConsumerTestBase):
+    """The postbox players use to find each other's cameras."""
 
     def test_a_signal_reaches_the_player_it_names(self):
         ana = async_to_sync(sync_to_async(self._seat))("m_ana", self.table_one, 0)
@@ -757,3 +761,73 @@ class FinalBlindLevelTests(TestCase):
         coordinator = self._coordinator([{"is_break": True, "duration_minutes": 5}])
 
         self.assertIsNone(coordinator._last_playable_level_index())
+
+
+class TableChatTests(ConsumerTestBase):
+    """Chat rides the same socket, and stays at your own table."""
+
+    def test_a_message_reaches_your_table_and_no_other(self):
+        ana = async_to_sync(sync_to_async(self._seat))("c_ana", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("c_bea", self.table_one, 1)
+        far = async_to_sync(sync_to_async(self._seat))("c_far", self.table_two, 0)
+
+        async def scenario():
+            sockets = [self._communicator(user) for user in (ana, bea, far)]
+            for socket in sockets:
+                await socket.connect()
+                await self._drain(socket)
+
+            await sockets[0].send_json_to({"type": "chat_message", "text": "  boa sorte  "})
+
+            heard = await self._next_of_type(sockets[1], "chat_message")
+            self.assertEqual((heard["name"], heard["text"]), ("c_ana", "boa sorte"))
+            self.assertTrue(await sockets[2].receive_nothing(timeout=0.4))
+
+            for socket in sockets:
+                await socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_an_empty_message_is_not_sent(self):
+        ana = async_to_sync(sync_to_async(self._seat))("c_ana2", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("c_bea2", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            for socket in (ana_socket, bea_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            await ana_socket.send_json_to({"type": "chat_message", "text": "   "})
+
+            self.assertTrue(await bea_socket.receive_nothing(timeout=0.4))
+
+            await ana_socket.disconnect()
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_flood_is_cut_off(self):
+        ana = async_to_sync(sync_to_async(self._seat))("c_ana3", self.table_one, 0)
+        bea = async_to_sync(sync_to_async(self._seat))("c_bea3", self.table_one, 1)
+
+        async def scenario():
+            ana_socket, bea_socket = self._communicator(ana), self._communicator(bea)
+            for socket in (ana_socket, bea_socket):
+                await socket.connect()
+                await self._drain(socket)
+
+            for index in range(CHAT_MESSAGE_BUDGET + 5):
+                await ana_socket.send_json_to({"type": "chat_message", "text": f"spam {index}"})
+
+            received = 0
+            while not await bea_socket.receive_nothing(timeout=0.4):
+                if (await bea_socket.receive_json_from()).get("type") == "chat_message":
+                    received += 1
+
+            self.assertEqual(received, CHAT_MESSAGE_BUDGET)
+
+            await ana_socket.disconnect()
+            await bea_socket.disconnect()
+
+        async_to_sync(scenario)()

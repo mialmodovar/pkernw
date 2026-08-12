@@ -198,9 +198,9 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 
   return (
-    // Capped and pushed right: full width made the slider enormous and left the
+    // Capped and centred: full width made the slider enormous and left the
     // sizing controls a long way from the buttons they feed.
-    <div className="panel rounded-lg overflow-hidden max-w-[46rem] ml-auto">
+    <div className="panel rounded-lg overflow-hidden w-full max-w-[46rem] mx-auto">
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && maxRaise > minRaise && (
         <div className="px-3 pt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2">

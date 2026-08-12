@@ -34,6 +34,10 @@ _pending_actions: Dict[Tuple[int, int], dict] = {}
 # replica, which is what entrypoint.sh deliberately runs.
 _media_presence: Dict[Tuple[int, int], dict] = {}
 
+CHAT_MAX_CHARS = 240
+CHAT_WINDOW_SECONDS = 10.0
+CHAT_MESSAGE_BUDGET = 8
+
 MEDIA_WINDOW_SECONDS = 10.0
 MEDIA_MESSAGE_BUDGET = 120
 MEDIA_SIGNAL_MAX_BYTES = 32_000
@@ -485,6 +489,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             coordinator = _tournament_runners.get(self.tournament_id)
             if coordinator is not None:
                 await coordinator.set_sitting_out(self.user.id, bool(data.get("value")))
+        elif message_type == "chat_message":
+            await self._send_chat(data)
         elif message_type in ("media_signal", "media_presence"):
             if not self._media_budget_allows():
                 return
@@ -492,6 +498,35 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 await self._relay_media_signal(data)
             else:
                 await self._announce_media_presence(data)
+
+    async def _send_chat(self, data):
+        """Say something to the rest of your table.
+
+        Not stored: the table talk belongs to the session it happened in, and
+        keeping a transcript of a friendly game is a promise nobody asked for.
+        """
+        text = str(data.get("text") or "").strip()[:CHAT_MAX_CHARS]
+        if not text:
+            return
+
+        # A flood would push the game's own messages down the same socket.
+        now = time.monotonic()
+        window_start, count = getattr(self, "_chat_window", (0.0, 0))
+        if now - window_start > CHAT_WINDOW_SECONDS:
+            window_start, count = now, 0
+        self._chat_window = (window_start, count + 1)
+        if count + 1 > CHAT_MESSAGE_BUDGET:
+            return
+
+        table = await self._media_table_of(self.user.id)
+        if table is None:
+            return
+
+        await _broadcast_table(self.tournament_id, table, "chat_message", {
+            "user_id": self.user.id,
+            "name": self.user.username,
+            "text": text,
+        })
 
     # ------------------------------------------------------------------
     # Camera and microphone.

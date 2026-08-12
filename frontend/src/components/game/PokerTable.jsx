@@ -40,7 +40,7 @@ function betPosition(index, capacity) {
 
 function EmptySeat() {
   return (
-    <div className="w-[clamp(5rem,11vw,7rem)] rounded-lg px-3 py-2 text-center
+    <div className="w-[clamp(4rem,10.5cqw,7rem)] rounded-lg px-3 py-2 text-center
                     border border-dashed border-(--color-border) bg-black/25">
       <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Empty</div>
     </div>
@@ -76,11 +76,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const bySeat = new Map(players.map((p) => [p.seat, p]));
 
 
-  // Sized from the height it is given rather than the width: the seats hang off
-  // the rim, so a table that filled the width would push the bottom one off the
-  // screen. The 86% leaves that overhang somewhere to live.
+  // A fixed width and a fixed aspect: the table is the same size whatever the
+  // window does around it. It is also a size container, so everything sitting on
+  // it is measured against the table rather than against the window.
   return (
-    <div className="relative h-[86%] aspect-[5/3] w-auto max-w-full mx-auto">
+    <div className="@container relative w-full max-w-[820px] aspect-[5/3] mx-auto">
       {/* Felt */}
       <div className="felt absolute inset-x-[9%] inset-y-[19%] rounded-[50%]" />
 

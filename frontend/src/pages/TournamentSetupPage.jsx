@@ -112,6 +112,9 @@ export default function TournamentSetupPage() {
   const payouts = tournament.payout_structure || [];
   const started = tournament.status !== "lobby";
   const buyInCents = tournament.buy_in_cents || 0;
+  // The column only exists once there is money to show, so a friendly game
+  // never grows an empty euro column.
+  const anyPrizes = tournament.players.some((player) => player.prize_cents > 0);
   // What the pot would be if everyone registered turns up — rebuys grow it further.
   const potCents = buyInCents * tournament.players.length;
 
@@ -250,6 +253,7 @@ export default function TournamentSetupPage() {
                 <tr className="border-b border-(--color-border)">
                   <th className="text-left font-normal px-3 py-1.5 w-10">#</th>
                   <th className="text-left font-normal px-1 py-1.5">Player</th>
+                  {anyPrizes && <th className="text-right font-normal px-3 py-1.5">Won</th>}
                   <th className="text-right font-normal px-3 py-1.5">Chips</th>
                 </tr>
               </thead>
@@ -270,6 +274,11 @@ export default function TournamentSetupPage() {
                           <span className="text-[10px] text-(--color-text-muted)"> · {player.rebuy_count}R</span>
                         )}
                       </td>
+                      {anyPrizes && (
+                        <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
+                          {player.prize_cents > 0 ? `${(player.prize_cents / 100).toFixed(2)}€` : ""}
+                        </td>
+                      )}
                       <td className={`px-3 py-1.5 text-right font-mono ${out ? "text-(--color-text-muted)" : "text-[#d9c07a]"}`}>
                         {out ? "out" : player.chips.toLocaleString()}
                       </td>
@@ -277,7 +286,7 @@ export default function TournamentSetupPage() {
                   );
                 })}
                 {visible.length === 0 && (
-                  <tr><td colSpan={3} className="px-3 py-3 text-(--color-text-muted)">No players match.</td></tr>
+                  <tr><td colSpan={anyPrizes ? 4 : 3} className="px-3 py-3 text-(--color-text-muted)">No players match.</td></tr>
                 )}
               </tbody>
             </table>

@@ -166,7 +166,7 @@ export default function PlayerSeat({
     : [badges, cards, markers, plate, video, ring];
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(5rem,11vw,7rem)] transition-opacity duration-500 ${
+    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4rem,10.5cqw,7rem)] transition-opacity duration-500 ${
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}

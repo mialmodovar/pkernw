@@ -81,6 +81,9 @@ const useGameStore = create((set) => ({
     return { showBB };
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
+  // What has been said at this table since the page opened. Nothing is stored
+  // server-side, so this is the whole of it.
+  chat: [],
   toggleSound: () => set((s) => {
     const soundEnabled = !s.soundEnabled;
     writeStoredFlag(SOUND_KEY, soundEnabled);
@@ -391,6 +394,18 @@ const useGameStore = create((set) => ({
         }));
         break;
 
+      case "chat_message":
+        set((s) => ({
+          chat: [...s.chat, {
+            // The server does not number these, and two identical messages a
+            // second apart still need distinct keys.
+            id: `${data.user_id}-${s.chat.length}-${data.text.length}`,
+            name: data.name,
+            text: data.text,
+          }].slice(-100),
+        }));
+        break;
+
       case "player_disconnected":
         set((s) => ({
           players: s.players.map((p) =>
@@ -493,7 +508,7 @@ const useGameStore = create((set) => ({
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, level: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
-      standings: null, lastElimination: null, messages: [],
+      standings: null, lastElimination: null, messages: [], chat: [],
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
     }),

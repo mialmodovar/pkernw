@@ -121,6 +121,7 @@ class BlindLevelSerializer(serializers.ModelSerializer):
 
 class TournamentPlayerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
+    prize_cents = serializers.SerializerMethodField()
     table_id = serializers.IntegerField(source="table.id", read_only=True)
     table_number = serializers.IntegerField(source="table.table_number", read_only=True)
 
@@ -138,7 +139,16 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "is_eliminated",
             "rebuy_count",
             "time_bank_seconds_remaining",
+            "prize_cents",
         )
+
+    def get_prize_cents(self, player):
+        """What this player took home, once the tournament settled.
+
+        Read from the map the parent serializer builds, so a full table costs
+        one query rather than one per seat.
+        """
+        return self.context.get("prizes_by_user", {}).get(player.user_id, 0)
 
 
 class TournamentTableSerializer(serializers.ModelSerializer):
@@ -200,7 +210,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
     host_name = serializers.CharField(source="host.username", read_only=True)
-    players   = TournamentPlayerSerializer(many=True, read_only=True)
+    players   = serializers.SerializerMethodField()
     tables    = TournamentTableSerializer(many=True, read_only=True)
     levels    = BlindLevelSerializer(many=True, read_only=True)
 
@@ -213,6 +223,18 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "created_at")
+
+    def get_players(self, tournament):
+        from .models import LedgerEntry
+
+        prizes = dict(
+            LedgerEntry.objects.filter(tournament=tournament)
+            .values_list("user_id", "prize_cents")
+        )
+        return TournamentPlayerSerializer(
+            tournament.players.all(), many=True,
+            context={**self.context, "prizes_by_user": prizes},
+        ).data
 
 
 class TournamentCreateSerializer(serializers.ModelSerializer):

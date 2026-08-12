@@ -9,6 +9,24 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Table chat.** Bottom left of the table, with the betting panel in the middle
+  and the hand history on the right. Messages go to your own table and nowhere
+  else, and nothing is stored — what is said at a friendly game belongs to the
+  night it was said in, so reloading starts an empty room.
+- **What each player won.** A finished tournament's standings now carry the prize
+  beside the player, in euros, for tournaments that had a buy-in. The column only
+  appears when there is money to show.
+
+### Fixed
+- **The table changed size whenever the window did.** It had been sized from the
+  leftover vertical space, so any change in window height — or the browser's own
+  zoom — rescaled the whole table at once. It is back to a fixed width and a
+  fixed aspect: the same size whatever happens around it.
+- **Seats overlapped at a six-handed table.** The seats were measured against the
+  window while the table was measured against something else, so on a short
+  screen they kept their full size on a table that had shrunk and the two on the
+  left ran into each other. Everything on the felt is now measured against the
+  felt.
 - **Decide before it is your turn.** Fold, Check, Check/Fold and Call any can be
   ticked while somebody else is thinking, and fire the moment the action reaches
   you. A pre-selection only survives while it still means what it meant: someone

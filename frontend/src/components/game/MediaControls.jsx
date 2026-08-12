@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import useMediaStore from "../../store/mediaStore";
 import { disable, enable } from "../../media/peerConnections";
 
@@ -21,21 +20,14 @@ function ToggleButton({ on, label, icon, onClick }) {
   );
 }
 
-/** Turning your own camera and microphone on, and seeing what you are sending.
+/** Turning your own camera and microphone on.
  *
- * Both start off on every visit and nothing is remembered between sessions: at
- * a poker table, a microphone you forgot was on leaks more than a bad tell.
+ * What you are sending shows at your own seat, with everyone else's. Both start
+ * off on every visit and nothing is remembered between sessions: at a poker
+ * table, a microphone you forgot was on leaks more than a bad tell.
  */
 export default function MediaControls() {
-  const { cameraOn, micOn, localStream, permissionError } = useMediaStore();
-  const preview = useRef(null);
-
-  useEffect(() => {
-    const element = preview.current;
-    if (!element || element.srcObject === localStream) return;
-    element.srcObject = localStream;
-    if (localStream) element.play().catch(() => {});
-  }, [localStream, cameraOn]);
+  const { cameraOn, micOn, permissionError } = useMediaStore();
 
   const toggle = (patch) => {
     const next = { audio: micOn, video: cameraOn, ...patch };
@@ -45,13 +37,6 @@ export default function MediaControls() {
 
   return (
     <div className="flex items-center gap-1.5">
-      {cameraOn && (
-        <div className="w-12 aspect-video rounded overflow-hidden border border-(--color-border) bg-black/60">
-          {/* Mirrored, because a self view that moves the wrong way is
-              disorienting, and muted, or the room howls. */}
-          <video ref={preview} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-        </div>
-      )}
       <div className="flex items-center gap-1.5">
         {/* The same glyph either way, dimmed when off: two different symbols
             made it a puzzle which state you were looking at. */}

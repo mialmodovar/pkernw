@@ -49,10 +49,15 @@ function TimerRing({ pct }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength,
+  stats, onInspect, handStrength, compactVideo,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
+  const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
+  // Only used when the table is too crowded for a tile of its own.
+  const liveStream = compactVideo
+    ? (myStream || (media?.video && media.videoFlowing !== false ? media.stream : null))
+    : null;
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
   const borderColor = p.is_disconnected
@@ -128,7 +133,14 @@ export default function PlayerSeat({
       title={`${p.name} — tap for stats`}
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
-      <span className="text-xs leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
+      {liveStream ? (
+        <span className="w-6 h-6 rounded-full overflow-hidden shrink-0 border border-(--color-border)">
+          <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
+            name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
+        </span>
+      ) : (
+        <span className="text-xs leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
+      )}
       {/* A microphone with no camera changes nothing about the layout. */}
       {media?.audio && media.status === "connected" && (
         <span className="text-[10px] leading-none shrink-0" title={`${p.name} has their microphone on`}>
@@ -160,13 +172,18 @@ export default function PlayerSeat({
   const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} /> : null;
   // On the outer edge, against the nameplate, and only when there is a picture
   // to show — nobody's seat moves because someone else turned a camera on.
-  const video = media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
+  // On a crowded table the picture rides on the nameplate (see liveStream
+  // above); everywhere else it gets its own tile on the outer edge.
+  const video = compactVideo ? null
+    : myStream
+      ? <SeatVideo key="video" peer={{ stream: myStream, video: true, status: "connected", videoFlowing: true }} name={p.name} mirrored muted />
+      : media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
   const stack = topHalf
     ? [ring, video, plate, markers, cards, badges]
     : [badges, cards, markers, plate, video, ring];
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(6rem,13.5cqw,7.5rem)] transition-opacity duration-500 ${
+    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4.75rem,13.5cqw,7.5rem)] transition-opacity duration-500 ${
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}

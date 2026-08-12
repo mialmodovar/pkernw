@@ -8,7 +8,33 @@ remembering.
 
 ## Unreleased
 
-### Added
+### Changed
+- **Your own camera shows at your own seat**, under your name, where everyone
+  else's is, instead of as a preview parked beside the controls.
+- **At a table of seven or more the picture rides on the nameplate.** Nine tiles
+  of their own do not fit around the ring, and trying made the seats overlap.
+
+### Fixed
+- **Some players appeared as a black rectangle while seeing everyone else fine.**
+  Three separate causes, all found by reproducing it: everyone pressing the
+  camera button at the same moment.
+  - Both sides opened the connection at once, so each declared its own audio and
+    video up front. Resolving the collision left the exchange carrying two of
+    each — one live pair and one dead pair — and a video element plays the first
+    video track it is handed, which was the dead one. Only one side opens the
+    call now; the other takes the shape from the offer.
+  - While the browser was asking for camera permission the app still believed
+    both devices were off, so it tore down the connections it had just made and
+    threw away the offers arriving from whoever pressed first. Whoever's camera
+    opened slower ended up with one-way media.
+  - The seat swaps between an audio element, a video element and a notice as a
+    peer's state changes, and the code that hands the stream to the element only
+    ran when the stream changed — not when the element did. A freshly mounted
+    video element was left with no source at all: black, forever.
+- **A picture that stops arriving now says so** instead of showing black, which
+  everyone reasonably reads as the other person's camera being broken.
+- **Seats no longer overlap at six or nine handed with cameras on.** Measured at
+  six window sizes with every seat transmitting.
 - **The build is stamped on the page.** Bottom right, in small grey type: the
   time the bundle was built and, when built from a checkout, the commit. Telling
   a stale cached page from a fresh deploy had been guesswork, and that guesswork

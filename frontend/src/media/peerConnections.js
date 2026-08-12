@@ -34,7 +34,7 @@ export async function enable({ audio, video }) {
   if (!audio && !video) return disable();
 
   const store = useMediaStore.getState();
-  store.setLocal({ permissionError: null });
+  store.setLocal({ permissionError: null, cameraOn: video, micOn: audio });
   localStream = localStream || new MediaStream();
 
   try {
@@ -136,7 +136,15 @@ export function reconcile(desired) {
   });
 
   desired.forEach((peer) => {
-    if (!peers.has(peer.userId)) createPeer(peer.userId);
+    // Only one side opens the connection. When both did, both declared their own
+    // audio and video up front, and resolving the collision left the exchange
+    // carrying two of each: one live pair and one dead pair. A video element
+    // plays the first video track it is given, which was the dead one — the
+    // black rectangle people were seeing while being seen perfectly well
+    // themselves. The other side waits for the offer instead.
+    if (!peers.has(peer.userId) && !isPolite(myUserId, peer.userId)) {
+      createPeer(peer.userId, { opensTheCall: true });
+    }
     useMediaStore.getState().setPeer(peer.userId, { audio: peer.audio, video: peer.video });
   });
 
@@ -146,7 +154,7 @@ export function reconcile(desired) {
   peers.forEach((peer) => applyBitrate(peer, tier));
 }
 
-function createPeer(userId) {
+function createPeer(userId, { opensTheCall } = {}) {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   const peer = {
     pc,
@@ -159,16 +167,17 @@ function createPeer(userId) {
   peers.set(userId, peer);
   useMediaStore.getState().setPeer(userId, { status: "connecting", stream: null });
 
-  // Both directions declared once, in a fixed order, so switching a camera on
-  // later is a track swap rather than a fresh negotiation with every peer.
-  peer.audioSender = pc.addTransceiver("audio", { direction: "sendrecv" }).sender;
-  peer.videoSender = pc.addTransceiver("video", { direction: "sendrecv" }).sender;
-  attachLocalTracks(peer);
+  // The side that opens the call declares both directions once, in a fixed
+  // order, so switching a camera on later is a track swap rather than a fresh
+  // negotiation. The side that answers takes the shape from the offer, which is
+  // what keeps the exchange to exactly one audio and one video track.
+  if (opensTheCall) {
+    peer.audioSender = pc.addTransceiver("audio", { direction: "sendrecv" }).sender;
+    peer.videoSender = pc.addTransceiver("video", { direction: "sendrecv" }).sender;
+    attachLocalTracks(peer);
+  }
 
   pc.onnegotiationneeded = async () => {
-    // Chrome fires this again after an implicit rollback, when the exchange it
-    // is asking about has already been settled by the answer.
-    if (pc.signalingState !== "stable") return;
     try {
       peer.makingOffer = true;
       await pc.setLocalDescription();
@@ -185,13 +194,24 @@ function createPeer(userId) {
     if (candidate) signal(userId, { kind: "candidate", candidate: candidate.toJSON() });
   };
 
-  pc.ontrack = ({ track, streams }) => {
+  pc.ontrack = ({ track }) => {
+    if (track.kind === "video") {
+      const report = () => useMediaStore.getState().setPeer(userId, { videoFlowing: !track.muted });
+      track.addEventListener("mute", report);
+      track.addEventListener("unmute", report);
+      report();
+    }
     // Tracks put in place with replaceTrack belong to no stream of their own,
     // so the event carries none and we have to collect them ourselves. Keeping
     // one stream per peer means the video element is attached once and the
     // second track simply joins it.
-    if (!peer.remoteStream) peer.remoteStream = streams[0] || new MediaStream();
-    if (!streams[0]) peer.remoteStream.addTrack(track);
+    if (!peer.remoteStream) peer.remoteStream = new MediaStream();
+    // Replace rather than accumulate: a renegotiation can hand us a second
+    // track of the same kind, and the element would play whichever came first.
+    peer.remoteStream.getTracks()
+      .filter((existing) => existing.kind === track.kind)
+      .forEach((existing) => peer.remoteStream.removeTrack(existing));
+    peer.remoteStream.addTrack(track);
     useMediaStore.getState().setPeer(userId, { stream: peer.remoteStream });
   };
 
@@ -215,6 +235,18 @@ function createPeer(userId) {
   };
 
   return peer;
+}
+
+/** Take the senders the remote offer created and point them at our devices. */
+function adoptTransceivers(peer) {
+  peer.pc.getTransceivers().forEach((transceiver) => {
+    const kind = transceiver.receiver?.track?.kind;
+    if (kind === "audio") peer.audioSender = transceiver.sender;
+    if (kind === "video") peer.videoSender = transceiver.sender;
+    // The offer may only ask to receive; we want to be seen as well as to see.
+    if (transceiver.direction === "recvonly") transceiver.direction = "sendrecv";
+  });
+  attachLocalTracks(peer);
 }
 
 function attachLocalTracks(peer) {
@@ -276,6 +308,9 @@ export async function handleSignal(fromUserId, payload) {
 
       await pc.setRemoteDescription(description);
       if (description.type === "offer") {
+        // The offer created our transceivers; adopt them so our own camera and
+        // microphone travel back over the same pair.
+        adoptTransceivers(peer);
         await pc.setLocalDescription();
         signal(fromUserId, { kind: "description", description: pc.localDescription });
       }

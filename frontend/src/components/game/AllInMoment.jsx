@@ -15,10 +15,11 @@ export default function AllInMoment() {
   const nameFor = (seat) => players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
   const leader = Math.max(...allInEquity.map((e) => e.equity ?? 0));
 
+  // Sits below the board and pot rather than over them, which overprinted both.
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20
-                    w-[min(22rem,80%)] panel-raised rounded-xl px-4 py-3
-                    shadow-2xl shadow-black/70 animate-fade-in">
+    <div className="absolute top-[64%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30
+                    w-[min(20rem,72%)] panel-raised rounded-xl px-4 py-2.5
+                    shadow-2xl shadow-black/80 animate-fade-in">
       <p className="text-center text-xs font-extrabold uppercase tracking-[0.35em] text-[#d9c07a] animate-pulse">
         All in
       </p>

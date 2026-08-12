@@ -46,7 +46,12 @@ export default function PokerTable({ mySeat, capacity }) {
   // Winners are known from pot_awarded; their best five get the gold ring, and
   // the losing hands dim so the eye goes to what actually won.
   const showdownBySeat = new Map((showdown || []).map((entry) => [entry.seat, entry]));
-  const winningBoardCards = winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || []);
+  // Hold the result back until every hand has turned over — otherwise the
+  // winner banner and the gold rings give it away mid-reveal.
+  const resultRevealed = revealedSeats == null || revealedSeats.size >= (showdown?.length ?? 0);
+  const winningBoardCards = resultRevealed
+    ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
+    : [];
 
   // Fall back to what the seat numbers imply until capacity is known.
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
@@ -113,12 +118,12 @@ export default function PokerTable({ mySeat, capacity }) {
                 isMe={isMe}
                 isActive={isActive}
                 myCards={isMe ? holeCards : null}
-                isWinner={winnerSeats.includes(p.seat)}
+                isWinner={resultRevealed && winnerSeats.includes(p.seat)}
                 winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
                 equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
                 showdownEntry={showdownBySeat.get(p.seat)}
                 faceDownAtShowdown={revealedSeats != null && !revealedSeats.has(p.seat) && !isMe}
-                dimmed={winnerSeats.length > 0 && showdown != null && !winnerSeats.includes(p.seat)}
+                dimmed={resultRevealed && winnerSeats.length > 0 && showdown != null && !winnerSeats.includes(p.seat)}
                 isDealer={dealerSeat === p.seat}
                 isSB={sbSeat === p.seat}
                 isBB={bbSeat === p.seat}

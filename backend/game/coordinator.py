@@ -91,6 +91,10 @@ class MultiTableTournamentCoordinator:
         # Set once the winner is being decided, so a rebuy can't slip in after
         # the tournament has effectively ended.
         self._finishing = False
+        # What the tournament should hold in total, adjusted whenever chips
+        # legitimately enter or leave. See _check_chip_total.
+        self._expected_chip_total = 0
+        self._chip_total_known = False
 
     @property
     def current_blind_level_number(self) -> int:
@@ -187,6 +191,7 @@ class MultiTableTournamentCoordinator:
                     },
                 )
 
+            self._check_chip_total(f"after hand {self._hands_played + 1}")
             self._hands_in_level += 1
             self._hands_played += 1
             self._refill_time_banks_after_hand()
@@ -312,6 +317,7 @@ class MultiTableTournamentCoordinator:
         # only refreshed between hands) and re-checking it here just races the
         # caller and refuses valid rebuys.
 
+        self._expected_chip_total += chips - player.chips
         player.chips = chips
         player.is_eliminated = False
         player.finish_position = 0
@@ -340,6 +346,7 @@ class MultiTableTournamentCoordinator:
         records = await self.load_players()
         for record in records:
             runtime_player = self._players_by_id.get(record["id"])
+            is_new = runtime_player is None
             if runtime_player is None:
                 runtime_player = EnginePlayer(name=record["username"], chips=record["chips"], is_human=True)
                 runtime_player._tp_id = record["id"]
@@ -358,6 +365,16 @@ class MultiTableTournamentCoordinator:
             runtime_player._seat = record["seat_at_table"] if record["seat_at_table"] is not None else record["seat"]
 
             self._players_by_user_id[runtime_player._user_id] = runtime_player
+            # Somebody registering late brings their own stack with them.
+            if is_new and self._chip_total_known:
+                self._expected_chip_total += record["chips"]
+
+        # Only the first sync sets the baseline. This runs before every hand, so
+        # taking the total from it each time would define away the very drift it
+        # is here to catch.
+        if not self._chip_total_known:
+            self._expected_chip_total = self._chip_total()
+            self._chip_total_known = True
 
     async def _rebalance_tables(self):
         active_players = [
@@ -648,6 +665,31 @@ class MultiTableTournamentCoordinator:
         await self.broadcast_tournament("break_tick", {"remaining_seconds": 0})
         self._set_next_level()
 
+    def _chip_total(self) -> int:
+        return sum(player.chips for player in self._players_by_id.values())
+
+    def _check_chip_total(self, when: str):
+        """Shout if the tournament has more or fewer chips than it should.
+
+        Chips are the whole ledger of a tournament: if they can drift, a final
+        standing means nothing. Every legitimate change to the total — a rebuy
+        adding a stack, an absent player being removed — records itself in
+        `_expected_chip_total`, so anything else is a defect and says so here
+        rather than quietly settling into someone's stack.
+        """
+        actual = self._chip_total()
+        if actual == self._expected_chip_total:
+            return
+        drift = actual - self._expected_chip_total
+        print(
+            f"CHIP DRIFT in tournament {self.tournament_id} {when}: "
+            f"expected {self._expected_chip_total}, found {actual} ({drift:+d})",
+            flush=True,
+        )
+        # Report once per divergence, then track from the new total, so a single
+        # defect does not bury the log in repeats of itself.
+        self._expected_chip_total = actual
+
     def _active_player_count(self) -> int:
         return sum(1 for player in self._players_by_id.values() if not player.is_eliminated and player.chips > 0)
 
@@ -810,6 +852,8 @@ class MultiTableTournamentCoordinator:
 
         remaining_count = self._active_player_count()
         for player in sorted(timed_out_players, key=lambda item: (item._table_number, item._seat, item._tp_id)):
+            # Their stack leaves the tournament with them.
+            self._expected_chip_total -= player.chips
             player.chips = 0
             player.is_eliminated = True
             player.finish_position = remaining_count

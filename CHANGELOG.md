@@ -8,6 +8,15 @@ remembering.
 
 ## Unreleased
 
+### Added
+- **The tournament checks its own chip total after every hand.** Chips are the
+  whole ledger: if the total can drift, a final standing means nothing. Every
+  legitimate change — a rebuy adding a stack, an absent player being removed
+  with theirs, somebody registering late — is accounted for, and anything else
+  is reported to the log with the hand it happened on and the exact amount. A
+  tournament that finished with 250 chips more than went into it took a database
+  dig and a lot of guessing to even notice; the next one will name itself.
+
 ### Security
 - **The engine no longer believes what a client sends.** A raise amount went
   straight into the chip arithmetic without a bounds check, so a raise *below*

@@ -1,6 +1,7 @@
 import asyncio
 import random
 import time
+from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -944,3 +945,63 @@ class UntrustedActionTests(TestCase):
         players = self._hand([10000, 10000], responder)
 
         self.assertEqual(sum(p.chips for p in players), 20000)
+
+
+class ChipDriftDetectionTests(TestCase):
+    """The tournament notices when its own chip total moves under it."""
+
+    def _coordinator(self):
+        async def noop(*args, **kwargs):
+            return None
+
+        coordinator = MultiTableTournamentCoordinator(
+            tournament_id=7, players_per_table=6,
+            levels=[{"small_blind": 10, "big_blind": 20, "ante": 0, "duration_hands": 8}],
+            broadcast_tournament=noop, broadcast_table=noop, request_action=noop,
+            notify_user=noop, load_players=noop, persist_assignments=noop,
+            persist_player_states=noop,
+        )
+        for index, chips in enumerate([1000, 1000, 1000]):
+            player = Player(f"p{index}", chips)
+            player._tp_id = index
+            player._user_id = 100 + index
+            player._table_number = 1
+            player._seat = index
+            coordinator._players_by_id[index] = player
+            coordinator._players_by_user_id[player._user_id] = player
+        coordinator._expected_chip_total = coordinator._chip_total()
+        coordinator._chip_total_known = True
+        return coordinator
+
+    def test_a_stack_growing_out_of_nowhere_is_reported(self):
+        coordinator = self._coordinator()
+        coordinator._players_by_id[0].chips += 250
+
+        with patch("builtins.print") as printed:
+            coordinator._check_chip_total("in a test")
+
+        self.assertTrue(printed.called)
+        self.assertIn("+250", printed.call_args[0][0])
+
+    def test_an_honest_hand_says_nothing(self):
+        coordinator = self._coordinator()
+        # Chips moving between players is the whole point of a hand.
+        coordinator._players_by_id[0].chips -= 400
+        coordinator._players_by_id[1].chips += 400
+
+        with patch("builtins.print") as printed:
+            coordinator._check_chip_total("in a test")
+
+        self.assertFalse(printed.called)
+
+    def test_a_rebuy_is_expected_to_add_chips(self):
+        coordinator = self._coordinator()
+        player = coordinator._players_by_id[2]
+        player.chips = 0
+        coordinator._expected_chip_total -= 1000   # they busted
+        async_to_sync(coordinator.apply_rebuy)(player._user_id, 1000)
+
+        with patch("builtins.print") as printed:
+            coordinator._check_chip_total("in a test")
+
+        self.assertFalse(printed.called)

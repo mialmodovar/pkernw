@@ -22,6 +22,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const [open, setOpen] = useState(true);
   const level = useGameStore((s) => s.level);
   const tableSummaries = useGameStore((s) => s.tableSummaries);
+  const currentTableNumber = useGameStore((s) => s.currentTableNumber);
   const showBB = useGameStore((s) => s.showBB);
   const bb = level?.big_blind || 0;
 
@@ -45,9 +46,16 @@ export default function TournamentInfoPanel({ tournament, username }) {
     : 0;
 
   const payouts = tournament?.payout_structure || [];
+  const chipLeader = stacks[0] || null;
+
+  // The bubble is the place just outside the money: bust here and you get
+  // nothing, survive one more and you are paid.
+  const paidPlaces = payouts.length;
+  const inTheMoney = paidPlaces > 0 && remaining <= paidPlaces;
+  const onTheBubble = paidPlaces > 0 && remaining === paidPlaces + 1;
 
   return (
-    <div className="absolute top-2 left-2 z-10 w-56 panel rounded-lg text-xs shadow-lg shadow-black/50">
+    <div className="absolute top-2 left-2 z-10 w-60 panel rounded-lg text-xs shadow-lg shadow-black/50">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 text-(--color-silver)
@@ -76,8 +84,45 @@ export default function TournamentInfoPanel({ tournament, username }) {
             <Row label="Players left">{remaining}</Row>
             <Row label="Avg stack">{formatChips(averageStack, showBB, bb)}</Row>
             {myRank > 0 && <Row label="Your rank">{`${myRank} of ${stacks.length}`}</Row>}
-            {tableSummaries.length > 1 && <Row label="Tables">{tableSummaries.length}</Row>}
+            {chipLeader && (
+              <Row label="Chip leader">
+                <span className={chipLeader.username === username ? "text-[#d9c07a]" : ""}>
+                  {chipLeader.username} · {formatChips(chipLeader.chips, showBB, bb)}
+                </span>
+              </Row>
+            )}
+            {paidPlaces > 0 && (
+              <Row label="Money">
+                {inTheMoney ? (
+                  <span className="text-[#d9c07a]">In the money</span>
+                ) : onTheBubble ? (
+                  <span className="text-[#c76b7a]">On the bubble</span>
+                ) : (
+                  <span>{paidPlaces} paid</span>
+                )}
+              </Row>
+            )}
           </div>
+
+          {/* Other tables. tableSummaries was already in the store and had
+              never been rendered anywhere. */}
+          {tableSummaries.length > 1 && (
+            <div className="pt-2 border-t border-(--color-border) space-y-1">
+              <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+                Tables ({tableSummaries.length})
+              </div>
+              {tableSummaries.map((table) => {
+                const isMine = table.table_number === currentTableNumber;
+                return (
+                  <Row key={table.table_number} label={`Table ${table.table_number}${isMine ? " (yours)" : ""}`}>
+                    <span className={isMine ? "text-[#d9c07a]" : ""}>
+                      {table.player_count}/{table.max_seats}
+                    </span>
+                  </Row>
+                );
+              })}
+            </div>
+          )}
 
           {payouts.length > 0 && (
             <div className="pt-2 border-t border-(--color-border) space-y-1">

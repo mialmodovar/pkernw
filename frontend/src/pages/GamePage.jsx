@@ -59,13 +59,19 @@ export default function GamePage() {
     return () => { unsub(); unsubStatus(); clearListeners(); disconnect(); };
   }, [id, handleEvent, reset, setConnectionStatus]);
 
-  // Chip counts drive the rank and average stack in the info panel, and they
-  // only live in the DB, so refresh them periodically rather than once on mount.
+  // Chip counts drive the rank, average stack and chip leader, and they only
+  // live in the DB, so refresh them periodically rather than once on mount.
   useEffect(() => {
     loadTournament();
-    const id = setInterval(loadTournament, 20000);
+    const id = setInterval(loadTournament, 8000);
     return () => clearInterval(id);
   }, [loadTournament]);
+
+  // An elimination changes all of those at once. Without this the panel showed
+  // a live "players left" beside a stale "your rank 4 of 4".
+  useEffect(() => {
+    if (lastElimination) loadTournament();
+  }, [lastElimination, loadTournament]);
 
   useEffect(() => {
     if (!tableAssignmentNotice) return undefined;

@@ -263,6 +263,7 @@ export default function GamePage() {
         <span>{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
         <div className="flex items-center gap-3">
           <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
+          <ActionHistory onReview={() => setReviewOpen(true)} />
           <button
             onClick={() => send({ type: "sit_out", value: !amSittingOut })}
             title="You keep your seat and keep paying blinds; your turns pass automatically"
@@ -319,7 +320,6 @@ export default function GamePage() {
             onSitIn={() => send({ type: "sit_out", value: false })}
           />
         </div>
-        <ActionHistory onReview={() => setReviewOpen(true)} />
       </div>
     </div>
   );

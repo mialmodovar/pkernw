@@ -15,10 +15,11 @@ remembering.
   already cost a round of chasing a bug that was no longer there.
 
 ### Changed
-- **The hand history is a button.** It used to be a live log that grew a line per
-  action, and every line changed the height of the whole bottom row — the betting
-  panel and the waiting message moved under the mouse while a hand played out.
-  The history itself reads better in the review panel, where hands are laid out
+- **The hand history is a button, up in the top right.** It used to be a live log
+  that grew a line per action, and every line changed the height of the whole
+  bottom row — the betting panel and the waiting message moved under the mouse
+  while a hand played out. It now sits with the other table controls, and the
+  history itself reads better in the review panel, where hands are laid out
   whole.
 - **The camera and microphone toggles moved into the chat header.** Both are
   talking to the table, and stacking them above the chat cost a hundred pixels

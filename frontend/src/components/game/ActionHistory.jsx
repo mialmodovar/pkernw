@@ -11,7 +11,7 @@ export default function ActionHistory({ onReview }) {
     <button
       onClick={onReview}
       title="Replay the last few completed hands"
-      className="btn-secondary shrink-0 self-end px-4 py-2 rounded font-semibold text-sm transition-colors"
+      className="btn-secondary shrink-0 px-3 py-1 rounded text-xs font-semibold transition-colors"
     >
       Hand history
     </button>

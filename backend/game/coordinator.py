@@ -43,6 +43,9 @@ class MultiTableTournamentCoordinator:
         load_players: LoadPlayersFn,
         persist_assignments: PersistAssignmentsFn,
         persist_player_states: PersistPlayerStatesFn,
+        persist_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
+        level_index: int = 0,
+        hands_in_level: int = 0,
         time_bank_seconds: int = 0,
         time_bank_refill_rule: str = "none",
         time_bank_refill_every_hands: Optional[int] = None,
@@ -66,13 +69,16 @@ class MultiTableTournamentCoordinator:
         self.load_players = load_players
         self.persist_assignments = persist_assignments
         self.persist_player_states = persist_player_states
+        self.persist_progress = persist_progress
 
         self._players_by_id: Dict[int, EnginePlayer] = {}
         self._players_by_user_id: Dict[int, EnginePlayer] = {}
         self._tables: Dict[int, RuntimeTable] = {}
         self._table_states: Dict[int, dict] = {}
-        self._level_index = 0
-        self._hands_in_level = 0
+        # Resumed from the DB, so a restart picks up the blind level and the
+        # hand count that play had actually reached.
+        self._level_index = max(0, min(level_index, max(0, len(levels) - 1)))
+        self._hands_in_level = max(0, hands_in_level)
         self._hands_played = 0
         self._level_start_time = 0.0
         self._standings: List[EnginePlayer] = []
@@ -176,6 +182,8 @@ class MultiTableTournamentCoordinator:
             self._refill_time_banks_after_hand()
             self._advance_level()
             await self.persist_player_states(list(self._players_by_id.values()))
+            if self.persist_progress is not None:
+                await self.persist_progress(self._level_index, self._hands_in_level)
             await asyncio.sleep(3)
 
         self._finishing = True

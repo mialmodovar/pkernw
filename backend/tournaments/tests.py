@@ -650,3 +650,59 @@ class QuitTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertEqual(response.data["error"], "You are not in this tournament")
+
+
+class TournamentProgressTests(TestCase):
+	"""Blind progress must survive a restart: it used to live only in the
+	coordinator's memory, so a restart rewound play to level 1."""
+
+	LEVELS = [
+		{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8},
+		{"small_blind": 50, "big_blind": 100, "ante": 0, "duration_hands": 8},
+		{"small_blind": 75, "big_blind": 150, "ante": 0, "duration_hands": 8},
+	]
+
+	def _coordinator(self, level_index=0, hands_in_level=0, progress=None):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def record(level, hands):
+			progress.append((level, hands))
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=self.LEVELS,
+			broadcast_tournament=noop,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+			persist_progress=record if progress is not None else None,
+			level_index=level_index,
+			hands_in_level=hands_in_level,
+		)
+
+	def test_resumes_at_the_persisted_level(self):
+		coordinator = self._coordinator(level_index=2, hands_in_level=5)
+
+		self.assertEqual(coordinator._level_index, 2)
+		self.assertEqual(coordinator._hands_in_level, 5)
+		# current_blind_level_number counts playable levels up to the index.
+		self.assertEqual(coordinator.current_blind_level_number, 3)
+
+	def test_a_level_index_beyond_the_schedule_is_clamped(self):
+		coordinator = self._coordinator(level_index=99)
+		self.assertEqual(coordinator._level_index, len(self.LEVELS) - 1)
+
+	def test_progress_is_reported_for_persistence(self):
+		progress = []
+		coordinator = self._coordinator(level_index=1, hands_in_level=3, progress=progress)
+
+		async_to_sync(coordinator.persist_progress)(
+			coordinator._level_index, coordinator._hands_in_level,
+		)
+
+		self.assertEqual(progress, [(1, 3)])

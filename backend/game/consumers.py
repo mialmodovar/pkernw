@@ -70,6 +70,13 @@ def _db_get_tournament(tournament_id):
 
 
 @database_sync_to_async
+def _db_set_progress(tournament_id, level_index, hands_in_level):
+    Tournament.objects.filter(id=tournament_id).update(
+        current_level_index=level_index, hands_in_level=hands_in_level,
+    )
+
+
+@database_sync_to_async
 def _db_get_levels(tournament_id):
     return list(
         BlindLevel.objects.filter(tournament_id=tournament_id)
@@ -482,6 +489,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 active_table_numbers,
             ),
             persist_player_states=lambda players: self._persist_player_states(players),
+            persist_progress=lambda level_index, hands: _db_set_progress(self.tournament_id, level_index, hands),
+            level_index=tournament.current_level_index,
+            hands_in_level=tournament.hands_in_level,
         )
         # Booting a paused tournament must not start dealing; run() waits for
         # the host to resume before it announces the start.

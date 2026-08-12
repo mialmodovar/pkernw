@@ -36,6 +36,10 @@ class Tournament(models.Model):
     payout_structure = models.JSONField(default=list, blank=True)
     rabbit_hunting_enabled = models.BooleanField(default=False)
     auto_remove_offline_seconds = models.IntegerField(default=0)
+    # Blind progress, persisted so a restart resumes where play actually was
+    # instead of rewinding the tournament to level 1.
+    current_level_index = models.IntegerField(default=0)
+    hands_in_level = models.IntegerField(default=0)
     created_at     = models.DateTimeField(auto_now_add=True)
 
     def required_table_count(self, player_count=None):

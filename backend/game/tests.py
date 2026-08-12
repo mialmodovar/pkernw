@@ -290,6 +290,7 @@ class MultiTableTournamentCoordinatorTests(TestCase):
 class HandEngineUncalledBetTests(TestCase):
     def _run_hand(self, chips, actions):
         events = []
+        self.contexts = []
         players = [Player("button", chips[0]), Player("big blind", chips[1])]
         for seat, player in enumerate(players):
             player._seat = seat
@@ -298,6 +299,7 @@ class HandEngineUncalledBetTests(TestCase):
             events.append((event_type, payload))
 
         async def request_action(player, context):
+            self.contexts.append(context)
             return actions.pop(0) if actions else ("fold", 0)
 
         engine = HandEngine(
@@ -336,6 +338,14 @@ class HandEngineUncalledBetTests(TestCase):
         _players, events = self._run_hand([1000, 1000], [("raise", 200), ("call", 0)] + [("check", 0)] * 6)
 
         self.assertNotIn("uncalled_bet_returned", [event_type for event_type, _payload in events])
+
+    def test_short_stack_is_only_asked_for_the_chips_it_has(self):
+        self._run_hand([10_325, 9_675], [("raise", 10_325), ("call", 0)])
+
+        facing_the_shove = self.contexts[1]
+        self.assertEqual(facing_the_shove["to_call"], 9_665)  # the whole stack, not the 10,315 shoved
+        self.assertEqual(facing_the_shove["pot"], 9_685)      # 10,335 on the table, 650 of it uncallable
+        self.assertNotIn("raise", facing_the_shove["valid_actions"])
 
 
 class HandEngineRabbitHuntTests(TestCase):

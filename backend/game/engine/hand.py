@@ -285,7 +285,10 @@ class HandEngine:
                 continue
 
             can_check = p.current_bet >= self._street_bet
-            to_call   = self._street_bet - p.current_bet
+            # Capped at the stack: a player facing a bet bigger than they can
+            # cover is only ever calling their own chips, so that is what they
+            # are offered — and it is all they can be shown.
+            to_call   = min(self._street_bet - p.current_bet, p.chips)
             min_raise = self._street_bet + self._min_raise
             max_raise = p.current_bet + p.chips
 
@@ -304,7 +307,7 @@ class HandEngine:
                 "min_raise":     min_raise,
                 "max_raise":     max_raise,
                 "valid_actions": valid,
-                "pot":           self._pot_total(),
+                "pot":           self._pot_total() - self._uncovered_bet(),
                 "street":        self._street_name,
             }
 
@@ -491,3 +494,19 @@ class HandEngine:
 
     def _pot_total(self) -> int:
         return sum(p.total_invested for p in self.players) + self._dead_money
+
+    def _uncovered_bet(self) -> int:
+        """Part of the biggest bet nobody left in the hand can match.
+
+        Those chips are already earmarked for a refund, so they should not be
+        shown as pot anyone is playing for.
+        """
+        if len(self.players) < 2:
+            return 0
+        leader = max(self.players, key=lambda p: p.total_invested)
+        best_reachable = max(
+            p.total_invested + (0 if p.is_folded else p.chips)
+            for p in self.players
+            if p is not leader
+        )
+        return max(0, leader.total_invested - best_reachable)

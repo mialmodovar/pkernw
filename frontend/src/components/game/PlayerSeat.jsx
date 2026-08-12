@@ -102,7 +102,10 @@ export default function PlayerSeat({
       />
       <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
       <div className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-3 py-1 border-2 ${borderColor} text-center w-full shadow-lg shadow-black/50`}>
-        <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
+        <div className="flex items-center justify-center gap-1 min-w-0">
+          <span className="text-sm leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
+          <span className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</span>
+        </div>
         <div className="text-xs text-(--color-text-muted)">
           {p.is_eliminated ? (
             <span className="text-[#c76b7a]">Out</span>

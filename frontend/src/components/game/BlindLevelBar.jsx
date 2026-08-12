@@ -1,7 +1,19 @@
 import { useState, useEffect } from "react";
 import useGameStore from "../../store/gameStore";
+import useAuthStore from "../../store/authStore";
 
 // Chips/BB display and the turn-cue sound switch. Both preferences persist.
+function UserChip() {
+  const user = useAuthStore((s) => s.user);
+  if (!user) return null;
+  return (
+    <span className="flex items-center gap-1.5 pr-2 mr-1 border-r border-(--color-border)">
+      <span className="text-base leading-none">{user.profile?.avatar_emoji || "\u{1F0CF}"}</span>
+      <span className="text-xs font-semibold text-(--color-silver)">{user.username}</span>
+    </span>
+  );
+}
+
 function DisplayToggles() {
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
@@ -10,6 +22,7 @@ function DisplayToggles() {
 
   return (
     <div className="flex items-center gap-2">
+      <UserChip />
       <span className="text-xs text-(--color-text-muted)">Show</span>
       <div className="flex rounded overflow-hidden border border-(--color-border)">
         {[["Chips", false], ["BB", true]].map(([label, value]) => (

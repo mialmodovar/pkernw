@@ -323,6 +323,7 @@ class MultiTableTournamentCoordinator:
                 self._players_by_id[record["id"]] = runtime_player
 
             runtime_player.name = record["username"]
+            runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
             runtime_player.chips = record["chips"]
             runtime_player.is_eliminated = record["is_eliminated"]
             runtime_player.finish_position = record["finish_position"] or 0
@@ -662,6 +663,7 @@ class MultiTableTournamentCoordinator:
             "global_seat": player._global_seat,
             "table_number": player._table_number,
             "name": player.name,
+            "avatar": getattr(player, "_avatar", "\U0001F0CF"),
             "chips": player.chips,
             "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
             "is_eliminated": player.is_eliminated,

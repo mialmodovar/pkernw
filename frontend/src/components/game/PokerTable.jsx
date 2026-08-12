@@ -4,6 +4,7 @@ import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
+import AllInMoment from "./AllInMoment";
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
 // not from the number of players present, so nobody's seat shifts when
@@ -67,6 +68,8 @@ export default function PokerTable({ mySeat, capacity }) {
           <span className="text-xs text-(--color-text-muted)">Hand #{handNumber}</span>
         )}
       </div>
+
+      <AllInMoment />
 
       {/* Seats — one per slot, occupied or not */}
       {Array.from({ length: slots }, (_, visualIdx) => {

@@ -262,6 +262,7 @@ const useGameStore = create((set) => ({
           communityCards: data.cards || [],
           pot: data.pot || 0,
           players: s.players.map((p) => ({ ...p, bet: 0 })),
+          allInEquity: null,
           messages: appendLog(s, entry(s, "street", (data.cards || []).join(" "), { street: data.street })),
         }));
         break;

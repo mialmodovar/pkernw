@@ -2,38 +2,55 @@ import useGameStore from "../../store/gameStore";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
+import { useActionCountdown } from "./useActionCountdown";
 
-// Seats are spread evenly around the felt ellipse, so a short-handed table
-// spaces its players out instead of bunching them at the bottom.
+// Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
+// not from the number of players present, so nobody's seat shifts when
+// someone busts.
+// Kept short of the container edges so a seat's full card/marker/nameplate
+// stack still fits inside the table area instead of being covered by the
+// action panel below.
 const RADIUS_X = 42; // % of container, from the centre
-const RADIUS_Y = 38;
+const RADIUS_Y = 32;
 
-function seatPosition(index, total) {
-  if (total <= 0) return { top: "50%", left: "50%" };
+function slotPosition(index, capacity) {
+  if (capacity <= 0) return { top: "50%", left: "50%" };
   // index 0 sits bottom-centre; the rest run around the table towards the left.
-  const angle = (index / total) * 2 * Math.PI;
+  const angle = (index / capacity) * 2 * Math.PI;
   return {
     left: `${50 - RADIUS_X * Math.sin(angle)}%`,
     top: `${50 + RADIUS_Y * Math.cos(angle)}%`,
   };
 }
 
-export default function PokerTable({ mySeat }) {
-  const { players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity } = useGameStore();
+function EmptySeat() {
+  return (
+    <div className="w-[clamp(5rem,11vw,7rem)] rounded-lg px-3 py-2 text-center
+                    border border-dashed border-(--color-border) bg-black/25">
+      <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Empty</div>
+    </div>
+  );
+}
 
-  // Rotate seats so 'mySeat' is at position 0 (bottom center), keeping the
-  // real going-round-the-table order of the remaining players.
-  const rotatedPlayers = [...players];
-  if (mySeat !== null && players.length > 0) {
-    const seatSlots = Math.max(...players.map((p) => p.seat)) + 1;
-    const relativeSeat = (seat) => (((seat - mySeat) % seatSlots) + seatSlots) % seatSlots;
-    rotatedPlayers.sort((a, b) => relativeSeat(a.seat) - relativeSeat(b.seat));
-  }
+export default function PokerTable({ mySeat, capacity }) {
+  const {
+    players, actionOnSeat, holeCards, handNumber, winnerSeats, potAwards, allInEquity,
+    dealerSeat, sbSeat, bbSeat,
+  } = useGameStore();
+  const countdown = useActionCountdown();
+
+  // Fall back to what the seat numbers imply until capacity is known.
+  const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
+  const slots = Math.max(capacity || 0, highestSeat, players.length, 1);
+
+  // Rotate slots so the hero's seat lands on the bottom-centre position.
+  const offset = mySeat ?? 0;
+  const bySeat = new Map(players.map((p) => [p.seat, p]));
 
   return (
-    <div className="relative w-[700px] h-[420px]">
+    <div className="relative w-full max-w-[820px] aspect-[5/3] mx-auto">
       {/* Felt */}
-      <div className="felt absolute inset-8 rounded-[50%]" />
+      <div className="felt absolute inset-[7%] rounded-[50%]" />
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
@@ -44,23 +61,34 @@ export default function PokerTable({ mySeat }) {
         )}
       </div>
 
-      {/* Seats */}
-      {rotatedPlayers.map((p, visualIdx) => {
-        const pos = seatPosition(visualIdx, rotatedPlayers.length);
-        const isMe = p.seat === mySeat;
+      {/* Seats — one per slot, occupied or not */}
+      {Array.from({ length: slots }, (_, visualIdx) => {
+        const seat = (offset + visualIdx) % slots;
+        const p = bySeat.get(seat);
+        const pos = slotPosition(visualIdx, slots);
+        const isMe = p != null && p.seat === mySeat;
+        const isActive = p != null && actionOnSeat === p.seat;
         return (
-          <div key={p.seat}
+          <div key={seat}
             className="absolute -translate-x-1/2 -translate-y-1/2"
             style={{ top: pos.top, left: pos.left }}>
-            <PlayerSeat
-              player={p}
-              isMe={isMe}
-              isActive={actionOnSeat === p.seat}
-              myCards={isMe ? holeCards : null}
-              isWinner={winnerSeats.includes(p.seat)}
-              winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
-              equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
-            />
+            {p ? (
+              <PlayerSeat
+                player={p}
+                isMe={isMe}
+                isActive={isActive}
+                myCards={isMe ? holeCards : null}
+                isWinner={winnerSeats.includes(p.seat)}
+                winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
+                equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
+                isDealer={dealerSeat === p.seat}
+                isSB={sbSeat === p.seat}
+                isBB={bbSeat === p.seat}
+                timerPct={isActive ? countdown.pct : 100}
+              />
+            ) : (
+              <EmptySeat />
+            )}
           </div>
         );
       })}

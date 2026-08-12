@@ -8,6 +8,7 @@ import PokerTable from "../components/game/PokerTable";
 import ActionPanel from "../components/game/ActionPanel";
 import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
+import { useTurnAlert } from "../components/game/useTurnAlert";
 
 export default function GamePage() {
   const { id } = useParams();
@@ -22,6 +23,9 @@ export default function GamePage() {
     isPaused,
     currentTableNumber,
     tableCount,
+    tableSummaries,
+    actionOnSeat,
+    soundEnabled,
     tableAssignmentNotice,
     dismissTableAssignmentNotice,
   } = useGameStore();
@@ -50,6 +54,14 @@ export default function GamePage() {
 
   // Find "my" seat
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
+  const isMyTurn = mySeat !== null && actionOnSeat === mySeat;
+  useTurnAlert(isMyTurn, soundEnabled);
+
+  // Seat slots come from the table's capacity so seats don't shift on a bust.
+  const capacity =
+    tableSummaries.find((t) => t.table_number === currentTableNumber)?.max_seats
+    ?? tournament?.players_per_table
+    ?? 9;
   const isHost = tournament?.host_name === user?.username;
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
 
@@ -151,8 +163,10 @@ export default function GamePage() {
         <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
       </div>
 
-      <div className="flex-1 flex items-center justify-center relative">
-        <PokerTable mySeat={mySeat} />
+      <div className={`flex-1 flex items-center justify-center relative px-4 transition-shadow duration-300 ${
+        isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
+      }`}>
+        <PokerTable mySeat={mySeat} capacity={capacity} />
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
             <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
@@ -168,8 +182,8 @@ export default function GamePage() {
         )}
       </div>
 
-      <div className="flex gap-4 px-4 pb-4">
-        <div className="flex-1">
+      <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
+        <div className="flex-1 min-w-0">
           <ActionPanel mySeat={mySeat} onAction={handleAction} />
         </div>
         <ActionHistory />

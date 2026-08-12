@@ -211,13 +211,23 @@ class MultiTableTournamentCoordinator:
             return None
 
         state = self._table_states.get(table.table_number, {})
+        bets = state.get("bets", {})
         return {
             "type": "game_state",
-            "players": [self._player_payload(runtime_player) for runtime_player in table.players],
+            "players": [
+                {**self._player_payload(rp), "bet": bets.get(rp._seat, 0)}
+                for rp in table.players
+            ],
             "community_cards": state.get("community_cards", []),
-            "pot": state.get("pot", 0),
+            # Uncollected street bets are still live money, so the reconnecting
+            # client sees the same pot as everyone else.
+            "pot": state.get("pot", 0) + sum(bets.values()),
             "street": state.get("street"),
             "hand_number": state.get("hand_number", 0),
+            "dealer_seat": state.get("dealer_seat"),
+            "sb_seat": state.get("sb_seat"),
+            "bb_seat": state.get("bb_seat"),
+            "action_on_seat": state.get("action_on_seat"),
             "hole_cards": cards_to_list(player.hole_cards) if player.hole_cards else [],
             "current_table_number": table.table_number,
             "current_table_id": table.table_id,
@@ -367,7 +377,21 @@ class MultiTableTournamentCoordinator:
             ante=level["ante"],
             hand_number=table.hand_number + 1,
             broadcast=lambda event_type, payload: self._broadcast_to_table(table.table_number, event_type, payload),
-            request_action=lambda player, context: self.request_action(
+            request_action=lambda player, context: self._request_action_tracked(table, player, context),
+            rabbit_hunting_enabled=self.rabbit_hunting_enabled,
+        )
+        result = await engine.run()
+        table.hand_number += 1
+        table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))
+        table.players = players
+        return [player for player in result.busted_players if player.chips == 0]
+
+    async def _request_action_tracked(self, table, player, context):
+        """Ask a player to act, remembering whose turn it is for reconnects."""
+        state = self._table_state(table.table_number)
+        state["action_on_seat"] = context.get("seat")
+        try:
+            return await self.request_action(
                 table.table_number,
                 player,
                 {
@@ -377,32 +401,62 @@ class MultiTableTournamentCoordinator:
                     "action_timer_seconds": 20,
                     "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
                 },
-            ),
-            rabbit_hunting_enabled=self.rabbit_hunting_enabled,
+            )
+        finally:
+            state["action_on_seat"] = None
+
+    def _table_state(self, table_number: int) -> dict:
+        return self._table_states.setdefault(
+            table_number,
+            {
+                "community_cards": [], "pot": 0, "street": None, "hand_number": 0,
+                # Tracked so a reconnecting client can be handed a table that
+                # still reads correctly mid-hand.
+                "dealer_seat": None, "sb_seat": None, "bb_seat": None,
+                "bets": {}, "action_on_seat": None,
+            },
         )
-        result = await engine.run()
-        table.hand_number += 1
-        table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))
-        table.players = players
-        return [player for player in result.busted_players if player.chips == 0]
 
     async def _broadcast_to_table(self, table_number: int, event_type: str, payload: Any):
-        state = self._table_states.setdefault(
-            table_number,
-            {"community_cards": [], "pot": 0, "street": None, "hand_number": 0},
-        )
+        state = self._table_state(table_number)
 
         if event_type == "hand_started":
             state["community_cards"] = []
             state["pot"] = 0
             state["street"] = "preflop"
             state["hand_number"] = payload.get("hand_number", state["hand_number"])
+            state["dealer_seat"] = payload.get("dealer_seat")
+            state["sb_seat"] = None
+            state["bb_seat"] = None
+            state["bets"] = {}
+        elif event_type == "blinds_posted":
+            # Blinds sit in front of the players as street bets, not yet in the pot.
+            state["sb_seat"] = payload["sb"]["seat"]
+            state["bb_seat"] = payload["bb"]["seat"]
+            state["bets"][payload["sb"]["seat"]] = payload["sb"]["amount"]
+            state["bets"][payload["bb"]["seat"]] = payload["bb"]["amount"]
+        elif event_type == "antes_posted":
+            # Antes go straight to the pot.
+            state["pot"] += sum(entry.get("amount", 0) for entry in (payload or []))
+        elif event_type == "action_taken":
+            seat = payload.get("seat")
+            action = payload.get("action")
+            amount = payload.get("amount", 0)
+            if action == "call":
+                state["bets"][seat] = state["bets"].get(seat, 0) + amount
+            elif action in ("bet", "raise"):
+                state["bets"][seat] = amount  # total street bet, not an increment
         elif event_type == "street_dealt":
             state["community_cards"] = payload.get("cards", [])
             state["pot"] = payload.get("pot", state["pot"])
             state["street"] = payload.get("street", state["street"])
+            state["bets"] = {}  # collected into the pot
         elif event_type == "hand_complete":
             state["pot"] = 0
+            state["bets"] = {}
+            state["dealer_seat"] = None
+            state["sb_seat"] = None
+            state["bb_seat"] = None
 
         if event_type == "hole_cards_dealt":
             for player_data in payload.get("players", []):

@@ -11,13 +11,13 @@ function parseCard(str) {
 function CardFace({ card }) {
   if (!card) {
     return (
-      <div className={`w-9 h-13 rounded flex items-center justify-center text-xs ${CARD_BACK}`}>
+      <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex items-center justify-center text-xs ${CARD_BACK}`}>
         ?
       </div>
     );
   }
   return (
-    <div className={`w-9 h-13 rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE}`}
+    <div className={`w-[clamp(1.6rem,3.6vw,2.25rem)] h-[clamp(2.3rem,5.2vw,3.25rem)] rounded flex flex-col items-center justify-center text-xs font-bold ${CARD_FACE}`}
       style={{ color: SUIT_COLOR[card.suit] || "#161616" }}>
       <span>{card.rank}</span>
       <span className="text-[10px]">{card.suit}</span>
@@ -28,8 +28,9 @@ function CardFace({ card }) {
 export default function HoleCards({ cards, folded, eliminated }) {
   if (eliminated) return null;
   if (folded) {
+    // Mucked cards slide away instead of just dimming where they sat.
     return (
-      <div className="flex gap-0.5 opacity-30">
+      <div className="flex gap-0.5 animate-fold-out">
         <CardFace card={null} />
         <CardFace card={null} />
       </div>

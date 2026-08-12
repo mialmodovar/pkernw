@@ -1,5 +1,26 @@
 import { create } from "zustand";
 
+const SHOW_BB_KEY = "poker.showBB";
+const SOUND_KEY = "poker.turnSound";
+
+const readStoredFlag = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw === "true";
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStoredFlag = (key, value) => {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Ignore — a missing/blocked localStorage just means the preference is
+    // per-session rather than persisted.
+  }
+};
+
 const useGameStore = create((set) => ({
   // Game state
   players: [],
@@ -10,6 +31,9 @@ const useGameStore = create((set) => ({
   holeCards: [],
   actionOnSeat: null,
   actionContext: null, // { seat, to_call, min_raise, max_raise, valid_actions, timer_sec }
+  dealerSeat: null,
+  sbSeat: null,
+  bbSeat: null,
   level: null,
   showdown: null,
   potAwards: null,
@@ -25,8 +49,18 @@ const useGameStore = create((set) => ({
   tableCount: 0,
   tableSummaries: [],
   tableAssignmentNotice: null,
-  showBB: false,   // display chips as BB count
-  toggleBB: () => set((s) => ({ showBB: !s.showBB })),
+  showBB: readStoredFlag(SHOW_BB_KEY, false),   // display chips as BB count
+  toggleBB: () => set((s) => {
+    const showBB = !s.showBB;
+    writeStoredFlag(SHOW_BB_KEY, showBB);
+    return { showBB };
+  }),
+  soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
+  toggleSound: () => set((s) => {
+    const soundEnabled = !s.soundEnabled;
+    writeStoredFlag(SOUND_KEY, soundEnabled);
+    return { soundEnabled };
+  }),
   dismissTableAssignmentNotice: () => set({ tableAssignmentNotice: null }),
 
   // Incoming event handler
@@ -48,6 +82,11 @@ const useGameStore = create((set) => ({
           tableSummaries: data.table_summaries || s.tableSummaries,
           isPaused: data.is_paused ?? s.isPaused,
           level: data.level || s.level,
+          // Restored on reconnect so the table reads correctly mid-hand.
+          dealerSeat: data.dealer_seat ?? null,
+          sbSeat: data.sb_seat ?? null,
+          bbSeat: data.bb_seat ?? null,
+          actionOnSeat: data.action_on_seat ?? null,
         }));
         break;
 
@@ -71,6 +110,9 @@ const useGameStore = create((set) => ({
       case "hand_started":
         set({
           handNumber: data.hand_number,
+          dealerSeat: data.dealer_seat ?? null,
+          sbSeat: null,
+          bbSeat: null,
           communityCards: [],
           pot: 0,
           street: "preflop",
@@ -102,11 +144,15 @@ const useGameStore = create((set) => ({
 
       case "blinds_posted":
         set((s) => ({
+          sbSeat: data.sb.seat,
+          bbSeat: data.bb.seat,
           players: s.players.map((p) => {
             if (p.seat === data.sb.seat) return { ...p, chips: p.chips - data.sb.amount, bet: (p.bet || 0) + data.sb.amount };
             if (p.seat === data.bb.seat) return { ...p, chips: p.chips - data.bb.amount, bet: (p.bet || 0) + data.bb.amount };
             return p;
           }),
+          // Blinds are live money — without this the pot reads 0 for all of preflop.
+          pot: s.pot + data.sb.amount + data.bb.amount,
           messages: [...s.messages, `Blinds: SB ${data.sb.amount}, BB ${data.bb.amount}`],
         }));
         break;
@@ -126,10 +172,13 @@ const useGameStore = create((set) => ({
       }
 
       case "action_required":
-        set({
+        set((s) => ({
           actionOnSeat: data.seat,
           actionContext: data,
-        });
+          // The server's pot is authoritative; prefer it over the locally
+          // accumulated figure, which can drift mid-hand.
+          pot: data.pot ?? s.pot,
+        }));
         break;
 
       case "action_taken": {
@@ -327,6 +376,7 @@ const useGameStore = create((set) => ({
     set({
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], actionOnSeat: null,
+      dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, level: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false, standings: null, messages: [],
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],

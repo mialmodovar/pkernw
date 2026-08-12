@@ -1,11 +1,46 @@
 import { useState, useEffect } from "react";
 import useGameStore from "../../store/gameStore";
 
+// Chips/BB display and the turn-cue sound switch. Both preferences persist.
+function DisplayToggles() {
+  const showBB = useGameStore((s) => s.showBB);
+  const toggleBB = useGameStore((s) => s.toggleBB);
+  const soundEnabled = useGameStore((s) => s.soundEnabled);
+  const toggleSound = useGameStore((s) => s.toggleSound);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-(--color-text-muted)">Show</span>
+      <div className="flex rounded overflow-hidden border border-(--color-border)">
+        {[["Chips", false], ["BB", true]].map(([label, value]) => (
+          <button
+            key={label}
+            onClick={() => { if (showBB !== value) toggleBB(); }}
+            className={`px-2 py-0.5 text-xs font-semibold transition-colors ${
+              showBB === value
+                ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208]"
+                : "text-(--color-text-muted) hover:text-(--color-silver)"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={toggleSound}
+        title={soundEnabled ? "Turn alert sound on (click to mute)" : "Turn alert sound muted"}
+        aria-label={soundEnabled ? "Mute turn alert" : "Unmute turn alert"}
+        className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+      >
+        {soundEnabled ? "\u{1F509} Sound" : "\u{1F507} Muted"}
+      </button>
+    </div>
+  );
+}
+
 export default function BlindLevelBar() {
   const level = useGameStore((s) => s.level);
   const isPaused = useGameStore((s) => s.isPaused);
-  const showBB = useGameStore((s) => s.showBB);
-  const toggleBB = useGameStore((s) => s.toggleBB);
   const [remaining, setRemaining] = useState(null);
 
   useEffect(() => {
@@ -27,12 +62,7 @@ export default function BlindLevelBar() {
     return (
       <div className="panel px-4 py-2 flex items-center justify-between text-sm">
         <span className="text-(--color-text-muted)">Waiting for level info...</span>
-        <button
-          onClick={toggleBB}
-          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208] border border-[#e0c66b]" : "btn-secondary"}`}
-        >
-          {showBB ? "BB" : "Chips"}
-        </button>
+        <DisplayToggles />
       </div>
     );
   }
@@ -55,12 +85,7 @@ export default function BlindLevelBar() {
         {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
       </span>
       <div className="flex items-center gap-3">
-        <button
-          onClick={toggleBB}
-          className={`px-2 py-0.5 rounded text-xs font-semibold ${showBB ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208] border border-[#e0c66b]" : "btn-secondary"}`}
-        >
-          {showBB ? "BB" : "Chips"}
-        </button>
+        <DisplayToggles />
         <span className="text-(--color-text-muted)">
           {isTimed
             ? remaining != null

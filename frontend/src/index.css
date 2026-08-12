@@ -96,3 +96,36 @@ body {
 .animate-fade-in {
   animation: fade-in 0.12s ease-out;
 }
+
+/* A newly dealt community card flips in. Only new cards mount (they are keyed
+   by rank+suit), so already-dealt cards stay put. */
+@keyframes card-deal {
+  from { opacity: 0; transform: rotateY(90deg) translateY(-10px) scale(0.9); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: rotateY(0) translateY(0) scale(1); }
+}
+
+.animate-card-deal {
+  animation: card-deal 0.34s cubic-bezier(0.2, 0.8, 0.3, 1) backwards;
+  transform-style: preserve-3d;
+}
+
+/* Chips being pushed forward into the bet. */
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.7); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-chip-in {
+  animation: chip-in 0.22s ease-out;
+}
+
+/* Mucked cards slide away and fade rather than just dimming in place. */
+@keyframes fold-out {
+  from { opacity: 0.85; transform: translateY(0) scale(1) rotate(0deg); }
+  to   { opacity: 0.15; transform: translateY(-14px) scale(0.82) rotate(-8deg); }
+}
+
+.animate-fold-out {
+  animation: fold-out 0.4s ease-in forwards;
+}

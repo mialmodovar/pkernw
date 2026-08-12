@@ -2,12 +2,12 @@ import useGameStore from "../../store/gameStore";
 
 import { SUIT_COLOR, SUIT_CHAR, CARD_FACE } from "./cardStyles";
 
-function CardView({ card: str }) {
+function CardView({ card: str, delay }) {
   const rank = str.slice(0, -1);
   const suit = SUIT_CHAR[str.slice(-1)] || str.slice(-1);
   return (
-    <div className={`w-11 h-16 rounded flex flex-col items-center justify-center font-bold ${CARD_FACE}`}
-      style={{ color: SUIT_COLOR[suit] || "#141414" }}>
+    <div className={`w-[clamp(2rem,4.5vw,2.75rem)] h-[clamp(2.9rem,6.5vw,4rem)] rounded flex flex-col items-center justify-center font-bold animate-card-deal ${CARD_FACE}`}
+      style={{ color: SUIT_COLOR[suit] || "#141414", animationDelay: `${delay}ms` }}>
       <span className="text-sm">{rank}</span>
       <span className="text-xs">{suit}</span>
     </div>
@@ -19,7 +19,12 @@ export default function CommunityCards() {
   if (!communityCards || communityCards.length === 0) return null;
   return (
     <div className="flex gap-1">
-      {communityCards.map((c, i) => <CardView key={i} card={c} />)}
+      {communityCards.map((c, i) => (
+        // Keyed by the card itself so only newly dealt cards mount — and so
+        // only they play the deal animation. The flop staggers; turn and river
+        // are single cards and land immediately.
+        <CardView key={c} card={c} delay={i < 3 ? i * 90 : 0} />
+      ))}
     </div>
   );
 }

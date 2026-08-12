@@ -7,7 +7,7 @@ export default function ActionHistory() {
   const rabbitCards = useGameStore((s) => s.rabbitCards);
 
   return (
-    <div className="w-64 panel rounded-lg p-3 text-xs max-h-48 overflow-y-auto space-y-0.5">
+    <div className="w-full lg:w-64 shrink-0 panel rounded-lg p-3 text-xs max-h-48 overflow-y-auto space-y-0.5">
       {messages.map((m, i) => (
         <div key={i} className="text-(--color-text-muted)">{m}</div>
       ))}

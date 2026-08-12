@@ -23,6 +23,9 @@ _game_tasks: Dict[int, asyncio.Task] = {}
 _action_queues: Dict[Tuple[int, int], asyncio.Queue] = {}
 _player_channels: Dict[Tuple[int, int], str] = {}
 _tournament_runners: Dict[int, MultiTableTournamentCoordinator] = {}
+# The decision a player currently owes, so a reconnect can be handed it back
+# instead of silently timing out into a fold.
+_pending_actions: Dict[Tuple[int, int], dict] = {}
 
 
 def _tournament_group_name(tournament_id: int) -> str:
@@ -171,17 +174,18 @@ async def _request_action(
     base_timer = context.get("action_timer_seconds", 20)
     bank_remaining = max(0, getattr(player, "time_bank_seconds_remaining", 0))
     total_timeout = base_timer + bank_remaining
-    await _broadcast_table(
-        tournament_id,
-        table_number,
-        "action_required",
-        {
-            **context,
-            "timer_sec": total_timeout,
-            "action_timer_sec": base_timer,
-            "time_bank_seconds_remaining": bank_remaining,
-        },
-    )
+    action_payload = {
+        **context,
+        "timer_sec": total_timeout,
+        "action_timer_sec": base_timer,
+        "time_bank_seconds_remaining": bank_remaining,
+    }
+    await _broadcast_table(tournament_id, table_number, "action_required", action_payload)
+    _pending_actions[key] = {
+        "payload": action_payload,
+        "deadline": time.monotonic() + total_timeout,
+        "bank": bank_remaining,
+    }
 
     queue = _action_queues.get(key)
     if queue:
@@ -221,6 +225,8 @@ async def _request_action(
         amount = 0
     except Exception:
         action, amount = "fold", 0
+
+    _pending_actions.pop(key, None)
 
     if action not in valid:
         if "check" in valid:
@@ -292,6 +298,30 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         else:
             await self._maybe_boot_game()
             await self._send_snapshot()
+
+        await self._resend_pending_action()
+
+    async def _resend_pending_action(self):
+        """Hand a reconnecting player back the decision they still owe.
+
+        Without this the client has no action context, shows "waiting for next
+        hand" and times out into a fold even though the server is still
+        listening on their action queue.
+        """
+        pending = _pending_actions.get((self.tournament_id, self.user.id))
+        if pending is None:
+            return
+        remaining = int(pending["deadline"] - time.monotonic())
+        if remaining <= 0:
+            return
+        bank = pending["bank"]
+        await self.send(text_data=json.dumps({
+            **pending["payload"],
+            "type": "action_required",
+            "timer_sec": remaining,
+            # Once the regular clock is gone the rest of the countdown is bank.
+            "action_timer_sec": max(0, remaining - bank),
+        }))
 
     async def disconnect(self, code):
         _player_channels.pop((self.tournament_id, self.user.id), None)

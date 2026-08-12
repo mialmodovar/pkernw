@@ -10,7 +10,7 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R", allin: "A"
 const BTN = "px-4 py-2.5 rounded font-semibold text-sm transition-colors min-w-[6.5rem]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
 
-export default function ActionPanel({ mySeat, onAction, disabled = false }) {
+export default function ActionPanel({ mySeat, onAction, disabled = false, amSittingOut = false, onSitIn }) {
   const { actionOnSeat, actionContext, showBB, level, players } = useGameStore();
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [raiseText, setRaiseText] = useState(null); // non-null only while typing
@@ -88,6 +88,26 @@ export default function ActionPanel({ mySeat, onAction, disabled = false }) {
 
   if (!isMyTurn) {
     const waitingOn = players.find((p) => p.seat === actionOnSeat);
+    // Sitting out is otherwise invisible from here: the panel would just say
+    // "waiting", with nothing explaining why your turns keep passing.
+    if (amSittingOut) {
+      return (
+        <div className="panel rounded-lg p-3 text-center text-sm">
+          <p className="text-[#d9c07a] font-semibold">You are sitting out</p>
+          <p className="text-(--color-text-muted) text-xs mt-1">
+            Your turns pass automatically, and you keep paying blinds and antes.
+          </p>
+          {onSitIn && (
+            <button
+              onClick={onSitIn}
+              className="btn-accent px-4 py-1.5 rounded font-semibold text-sm transition-colors mt-3"
+            >
+              Sit back in
+            </button>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="panel rounded-lg p-3 text-center text-sm text-(--color-text-muted)">
         {actionOnSeat !== null

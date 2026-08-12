@@ -11,6 +11,7 @@ import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
+import BreakOverlay from "../components/game/BreakOverlay";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 
 export default function GamePage() {
@@ -30,6 +31,7 @@ export default function GamePage() {
     actionOnSeat,
     soundEnabled,
     lastElimination,
+    level,
     connectionStatus,
     setConnectionStatus,
     tableAssignmentNotice,
@@ -75,6 +77,11 @@ export default function GamePage() {
     tableSummaries.find((t) => t.table_number === currentTableNumber)?.max_seats
     ?? tournament?.players_per_table
     ?? 9;
+  // The blind schedule is already on the fetched detail; level_index counts
+  // breaks too, so it indexes it directly.
+  const nextLevel = level?.level_index != null
+    ? tournament?.levels?.[level.level_index + 1]
+    : null;
   const isHost = tournament?.host_name === user?.username;
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
 
@@ -226,6 +233,7 @@ export default function GamePage() {
             <div className="text-(--color-text-muted) text-sm mt-3">Waiting for all players to connect...</div>
           </div>
         )}
+        <BreakOverlay level={level} nextLevel={nextLevel} />
         {isPaused && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
             <div className="text-4xl font-bold text-(--color-silver)">Tournament Paused</div>
@@ -236,7 +244,13 @@ export default function GamePage() {
 
       <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
         <div className="flex-1 min-w-0">
-          <ActionPanel mySeat={mySeat} onAction={handleAction} disabled={connectionStatus !== "open"} />
+          <ActionPanel
+            mySeat={mySeat}
+            onAction={handleAction}
+            disabled={connectionStatus !== "open"}
+            amSittingOut={amSittingOut}
+            onSitIn={() => send({ type: "sit_out", value: false })}
+          />
         </div>
         <ActionHistory />
       </div>

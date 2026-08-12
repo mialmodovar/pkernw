@@ -24,6 +24,9 @@ class Player:
     is_eliminated:    bool = False
     finish_position:  int  = 0   # filled in when knocked out
     time_bank_seconds_remaining: int = 0
+    # Still seated and dealt in, still posting blinds and antes, but their turns
+    # resolve immediately to check or fold.
+    is_sitting_out:   bool = False
 
     # ── session stats ───────────────────────────────────────────────────────
     hands_played:     int  = 0

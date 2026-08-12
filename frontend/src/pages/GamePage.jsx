@@ -12,6 +12,7 @@ import { useTurnAlert } from "../components/game/useTurnAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
 import BreakOverlay from "../components/game/BreakOverlay";
+import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 
 export default function GamePage() {
@@ -32,6 +33,7 @@ export default function GamePage() {
     soundEnabled,
     lastElimination,
     level,
+    handNumber,
     connectionStatus,
     setConnectionStatus,
     tableAssignmentNotice,
@@ -136,21 +138,15 @@ export default function GamePage() {
 
   if (standings) {
     return (
-      <div className="max-w-md mx-auto mt-16 text-center">
-        <h1 className="text-3xl font-bold mb-6 text-(--color-silver) tracking-wide">Tournament Complete</h1>
-        <ol className="panel rounded-lg divide-y divide-[rgba(196,178,165,0.14)]">
-          {standings.map((s) => (
-            <li key={s.seat} className="px-6 py-3 flex justify-between">
-              <span className="font-mono text-(--color-text-muted)">{s.finish}.</span>
-              <span className="font-semibold text-(--color-silver)">{s.name}</span>
-            </li>
-          ))}
-        </ol>
-        <button onClick={() => navigate("/")}
-          className="btn-secondary mt-6 px-6 py-2 rounded font-semibold transition-colors">
-          Back to Lobby
-        </button>
-      </div>
+      <TournamentCompleteScreen
+        standings={standings}
+        tournament={tournament}
+        username={user?.username}
+        handNumber={handNumber}
+        level={level}
+        onLeave={() => navigate("/")}
+        onViewTournament={() => navigate(`/tournament/${id}`)}
+      />
     );
   }
 

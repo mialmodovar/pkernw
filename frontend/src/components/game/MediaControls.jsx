@@ -13,7 +13,7 @@ function ToggleButton({ on, label, icon, onClick }) {
       className={`w-9 h-9 rounded-full border text-sm flex items-center justify-center transition-colors ${
         on
           ? "border-[#c9a227] bg-[#3d2f0b] text-[#e6d9a8]"
-          : "border-(--color-border) bg-black/40 text-(--color-text-muted) hover:text-(--color-silver)"
+          : "border-(--color-border) bg-black/40 opacity-45 grayscale hover:opacity-80 hover:border-(--color-border-strong)"
       }`}
     >
       {icon}
@@ -53,10 +53,12 @@ export default function MediaControls() {
         </div>
       )}
       <div className="flex flex-col gap-1.5">
+        {/* The same glyph either way, dimmed when off: two different symbols
+            made it a puzzle which state you were looking at. */}
         <ToggleButton on={cameraOn} label={cameraOn ? "Turn camera off" : "Turn camera on"}
-          icon={cameraOn ? "\u{1F4F9}" : "\u{1F6AB}"} onClick={() => toggle({ video: !cameraOn })} />
+          icon={"\u{1F4F9}"} onClick={() => toggle({ video: !cameraOn })} />
         <ToggleButton on={micOn} label={micOn ? "Turn microphone off" : "Turn microphone on"}
-          icon={micOn ? "\u{1F3A4}" : "\u{1F507}"} onClick={() => toggle({ audio: !micOn })} />
+          icon={"\u{1F3A4}"} onClick={() => toggle({ audio: !micOn })} />
       </div>
       {permissionError && (
         <p className="text-[11px] text-[#c76b7a] max-w-[10rem] leading-tight">{permissionError}</p>

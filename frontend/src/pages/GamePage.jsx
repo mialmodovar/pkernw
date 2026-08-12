@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { connect, disconnect, onMessage, onStatus, send, retry } from "../api/socket";
 import useTableMedia from "../media/useTableMedia";
 import MediaControls from "../components/game/MediaControls";
+import useTableSounds from "../components/game/useTableSounds";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
@@ -128,6 +129,7 @@ export default function GamePage() {
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
   const isMyTurn = mySeat !== null && actionOnSeat === mySeat;
   useTurnAlert(isMyTurn, soundEnabled);
+  useTableSounds(soundEnabled);
 
   // Seat slots come from the table's capacity so seats don't shift on a bust.
   const capacity =
@@ -183,7 +185,7 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
       {myEliminationFinish && spectating && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
@@ -278,7 +280,7 @@ export default function GamePage() {
         </div>
       </div>
 
-      <div className={`flex-1 flex items-center justify-center relative px-4 transition-shadow duration-300 ${
+      <div className={`flex-1 min-h-0 flex items-center justify-center relative px-4 transition-shadow duration-300 ${
         isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
       }`}>
         <TournamentInfoPanel tournament={tournament} username={user?.username} />
@@ -306,7 +308,7 @@ export default function GamePage() {
         <PlayerStatsCard player={inspecting} stats={playerStats[inspecting.name]} onClose={() => setInspecting(null)} />
       )}
 
-      <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4">
+      <div className="flex flex-col lg:flex-row gap-4 px-4 pb-4 min-h-0">
         <div className="flex-1 min-w-0">
           <ActionPanel
             mySeat={mySeat}

@@ -7,11 +7,21 @@ import { useActionCountdown } from "./useActionCountdown";
 // stray keystroke can't fold your hand. The mouse commits immediately.
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
-const BTN = "px-4 py-2.5 rounded font-semibold text-sm transition-colors min-w-[6.5rem]";
+const BTN = "px-3 py-2 rounded font-semibold text-sm transition-colors min-w-[5.5rem]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
 
+// What you can commit to before the action reaches you. Each one names the
+// condition it survives: anything else voids it and hands the decision back.
+const PRESELECTS = [
+  { key: "fold", label: "Fold" },
+  { key: "check", label: "Check" },
+  { key: "checkfold", label: "Check/Fold" },
+  { key: "callany", label: "Call any" },
+];
+
 export default function ActionPanel({ mySeat, onAction, disabled = false, amSittingOut = false, onSitIn }) {
-  const { actionOnSeat, actionContext, showBB, level, players } = useGameStore();
+  const { actionOnSeat, actionContext, showBB, level, players, handNumber } = useGameStore();
+  const [preselect, setPreselect] = useState(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [raiseText, setRaiseText] = useState(null); // non-null only while typing
   const [armed, setArmed] = useState(null);
@@ -49,6 +59,28 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   useEffect(() => {
     if (isMyTurn && minRaise) setRaiseAmount(minRaise);
   }, [isMyTurn, minRaise]);
+
+  // A pre-selection belongs to the hand it was made in. Carrying one into the
+  // next hand would act on cards you have not seen.
+  useEffect(() => { setPreselect(null); }, [handNumber]);
+
+  // A pre-selected action fires the moment the turn arrives, but only while it
+  // still means what it meant when it was ticked. Somebody raising behind you
+  // voids a Check and hands you the decision back rather than guessing.
+  useEffect(() => {
+    if (!isMyTurn || !preselect || submitted || disabled) return;
+    const choice = {
+      fold: can.fold ? "fold" : can.check ? "check" : null,
+      check: can.check ? "check" : null,
+      checkfold: can.check ? "check" : "fold",
+      callany: can.call ? "call" : can.check ? "check" : null,
+    }[preselect];
+
+    setPreselect(null);
+    if (!choice) return;   // no longer applies: you decide
+    setSubmitted(true);
+    onAction(choice, 0);
+  }, [isMyTurn, preselect, submitted, disabled, can, onAction]);
 
   const commit = useCallback((action) => {
     if (submitted || disabled) return;
@@ -104,11 +136,29 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
         </div>
       );
     }
+    const inHand = players.find((p) => p.seat === mySeat && !p.is_folded && !p.is_eliminated);
     return (
-      <div className="panel rounded-lg p-3 text-center text-sm text-(--color-text-muted)">
-        {actionOnSeat !== null
-          ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
-          : "Waiting for next hand..."}
+      <div className="panel rounded-lg p-3 flex items-center justify-center gap-4 text-sm">
+        <span className="text-(--color-text-muted)">
+          {actionOnSeat !== null
+            ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
+            : "Waiting for next hand..."}
+        </span>
+        {/* Deciding early only makes sense while you still hold cards. */}
+        {inHand && actionOnSeat !== null && (
+          <div className="flex items-center gap-3">
+            {PRESELECTS.map((option) => (
+              <label key={option.key}
+                className="flex items-center gap-1.5 text-xs text-(--color-silver) cursor-pointer select-none">
+                <input type="checkbox"
+                  checked={preselect === option.key}
+                  onChange={(e) => setPreselect(e.target.checked ? option.key : null)}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -148,12 +198,14 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 
   return (
-    <div className="panel rounded-lg overflow-hidden">
+    // Capped and pushed right: full width made the slider enormous and left the
+    // sizing controls a long way from the buttons they feed.
+    <div className="panel rounded-lg overflow-hidden max-w-[46rem] ml-auto">
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && maxRaise > minRaise && (
-        <div className="px-3 pt-3 flex flex-wrap items-center gap-x-2 gap-y-2">
-          <span className="text-xs text-(--color-text-muted) whitespace-nowrap">
-            {ctx.street === "preflop" ? "Raise to" : "Pot %"}
+        <div className="px-3 pt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2">
+          <span className="mr-auto text-xs text-(--color-text-muted) whitespace-nowrap">
+            min {fmt(minRaise)} · max {fmt(maxRaise)}
           </span>
           {presets.map((preset) => (
             <button key={preset.label}
@@ -172,7 +224,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
             step={sliderStep}
             value={fromChips(raiseAmount)}
             onChange={(e) => setRaiseFromControl(e.target.value)}
-            className="flex-1 min-w-40 accent-[#d4af37] cursor-pointer"
+            className="w-40 accent-[#d4af37] cursor-pointer"
           />
           <div className="relative">
             <input type="number"
@@ -180,7 +232,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
               onChange={(e) => setRaiseText(e.target.value)}
               onBlur={commitRaiseText}
               onKeyDown={(e) => { if (e.key === "Enter") commitRaiseText(); }}
-              className={`input-field text-sm text-right font-mono rounded py-1 ${useBBControls ? "w-24 pr-8 pl-1.5" : "w-24 px-1.5"}`}
+              className={`input-field text-sm text-right font-mono rounded py-1 ${useBBControls ? "w-20 pr-7 pl-1.5" : "w-20 px-1.5"}`}
             />
             {useBBControls && (
               <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-(--color-text-muted)">
@@ -188,9 +240,6 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
               </span>
             )}
           </div>
-          <span className="text-xs text-(--color-text-muted) whitespace-nowrap">
-            min {fmt(minRaise)} · max {fmt(maxRaise)}
-          </span>
         </div>
       )}
 

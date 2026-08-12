@@ -28,3 +28,10 @@ export const CARD_BACK =
 // Ring on the five cards that made the winning hand at showdown.
 export const CARD_WINNING =
   "ring-2 ring-[#d4af37] ring-offset-1 ring-offset-black/50 shadow-[0_0_12px_rgba(212,175,55,0.5)]";
+
+/** Split "As" or "A♠" into its rank and suit. Returns null for a hidden card. */
+export function parseCard(value) {
+  if (!value || value === "??") return null;
+  const raw = value.slice(-1);
+  return { rank: value.slice(0, -1), suit: SUIT_CHAR[raw] || raw };
+}

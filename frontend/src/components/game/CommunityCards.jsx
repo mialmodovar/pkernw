@@ -1,18 +1,5 @@
 import useGameStore from "../../store/gameStore";
-
-import { SUIT_COLOR, SUIT_CHAR, CARD_FACE, CARD_WINNING } from "./cardStyles";
-
-function CardView({ card: str, delay, winning }) {
-  const rank = str.slice(0, -1);
-  const suit = SUIT_CHAR[str.slice(-1)] || str.slice(-1);
-  return (
-    <div className={`w-[clamp(2rem,4.5vw,2.75rem)] h-[clamp(2.9rem,6.5vw,4rem)] flex flex-col items-center justify-center leading-none animate-card-deal ${CARD_FACE} ${winning ? CARD_WINNING : ""}`}
-      style={{ color: SUIT_COLOR[suit] || "#141414", animationDelay: `${delay}ms` }}>
-      <span className="text-[1.15rem] font-black tracking-tight">{rank}</span>
-      <span className="text-[1.05rem] leading-none -mt-0.5">{suit}</span>
-    </div>
-  );
-}
+import PlayingCard from "./PlayingCard";
 
 export default function CommunityCards({ winningCards }) {
   const communityCards = useGameStore((s) => s.communityCards);
@@ -20,11 +7,18 @@ export default function CommunityCards({ winningCards }) {
   if (!communityCards || communityCards.length === 0) return null;
   return (
     <div className="flex gap-1">
-      {communityCards.map((c, i) => (
+      {communityCards.map((card, index) => (
         // Keyed by the card itself so only newly dealt cards mount — and so
         // only they play the deal animation. The flop staggers; turn and river
         // are single cards and land immediately.
-        <CardView key={c} card={c} delay={i < 3 ? i * 90 : 0} winning={winners.has(c)} />
+        <PlayingCard
+          key={card}
+          card={card}
+          size="board"
+          winning={winners.has(card)}
+          className="animate-card-deal"
+          style={{ animationDelay: `${index < 3 ? index * 90 : 0}ms` }}
+        />
       ))}
     </div>
   );

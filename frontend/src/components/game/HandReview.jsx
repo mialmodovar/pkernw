@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "../../api/http";
-import { SUIT_COLOR, SUIT_CHAR, CARD_FACE } from "./cardStyles";
+import { SUIT_COLOR, CARD_FACE, parseCard } from "./cardStyles";
+import { Suit } from "./PlayingCard";
 
 const STREETS = ["preflop", "flop", "turn", "river"];
 const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
@@ -11,15 +12,15 @@ const VERB = {
 };
 
 function MiniCard({ card }) {
-  const rank = card.slice(0, -1);
-  const suit = SUIT_CHAR[card.slice(-1)] || card.slice(-1);
+  const parsed = parseCard(card);
+  if (!parsed) return null;
   return (
     <span
       className={`inline-flex flex-col items-center justify-center w-6 h-8 rounded text-[10px] font-bold ${CARD_FACE}`}
-      style={{ color: SUIT_COLOR[suit] || "#161616" }}
+      style={{ color: SUIT_COLOR[parsed.suit] || "#161616" }}
     >
-      <span>{rank}</span>
-      <span className="text-[8px]">{suit}</span>
+      <span>{parsed.rank}</span>
+      <Suit suit={parsed.suit} className="w-2 h-2" />
     </span>
   );
 }

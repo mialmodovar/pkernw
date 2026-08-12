@@ -9,6 +9,39 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Decide before it is your turn.** Fold, Check, Check/Fold and Call any can be
+  ticked while somebody else is thinking, and fire the moment the action reaches
+  you. A pre-selection only survives while it still means what it meant: someone
+  raising behind you voids a Check and hands the decision back rather than
+  guessing. It is cleared at the end of every hand, so one can never act on cards
+  you have not seen.
+- **Sound for the table, not just for your turn.** Chips for a bet, raise or
+  call, knuckles for a check, a brush for a fold, and a longer clatter for an
+  all-in. All synthesised, so there is no audio to download and nothing to fail
+  on a slow connection. The existing sound toggle covers them.
+
+### Changed
+- **The table is bigger and the betting controls are smaller.** The felt now
+  sizes itself to the height available rather than to the width, so it fills the
+  screen without pushing the bottom seat off it. The betting panel no longer
+  spans the whole width: the slider was enormous and the bet sizes sat a long way
+  from the button they feed.
+- **Cards are drawn rather than typed.** The suits are SVG paths instead of the
+  unicode glyphs, which render thin on Windows, heavy on macOS and sometimes as
+  emoji on Android — at card size that was the difference between reading a hand
+  and squinting at it. Board cards gained a corner index, and the four-colour
+  deck is unchanged.
+- **Every button responds to the mouse.** Raised panels are used as buttons all
+  over the app and had no hover state of their own, so about half the buttons on
+  screen felt dead.
+
+### Fixed
+- **A break left at the end of a blind structure trapped the tournament.** There
+  is nothing to advance to after the last level, so the break ran, ended, and
+  started again — forever, without another hand being dealt. The tournament now
+  falls back to the last playable level, which then runs until somebody wins.
+  Non-break final levels were already correct: the last level has no duration and
+  plays on rather than inventing blinds the host never set.
 - **Camera and microphone at the table.** Each player can turn on their camera
   and microphone independently and see and hear whoever is sitting at the same
   table. The video sits on the outer edge of each seat and only appears when

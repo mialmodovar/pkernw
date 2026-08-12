@@ -709,3 +709,51 @@ class MediaSignallingTests(TransactionTestCase):
             await bea_socket.disconnect()
 
         async_to_sync(scenario)()
+
+
+class FinalBlindLevelTests(TestCase):
+    """What the structure does once it runs out of levels."""
+
+    def _coordinator(self, levels):
+        async def noop(*args, **kwargs):
+            return None
+
+        return MultiTableTournamentCoordinator(
+            tournament_id=1, players_per_table=6, levels=levels,
+            broadcast_tournament=noop, broadcast_table=noop,
+            request_action=noop, notify_user=noop,
+            load_players=noop, persist_assignments=noop, persist_player_states=noop,
+        )
+
+    def test_the_last_level_never_ends(self):
+        levels = [
+            {"small_blind": 10, "big_blind": 20, "ante": 0, "duration_hands": 2},
+            {"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 2},
+        ]
+        coordinator = self._coordinator(levels)
+
+        coordinator._hands_in_level = 99
+        coordinator._advance_level()
+        self.assertEqual(coordinator._level_index, 1)
+
+        # Far past its stated duration, and it stays put: there is nothing after
+        # it, and inventing blinds the host never set would be worse.
+        coordinator._hands_in_level = 999
+        coordinator._advance_level()
+        self.assertEqual(coordinator._level_index, 1)
+        self.assertEqual(coordinator._current_level()["big_blind"], 50)
+
+    def test_a_break_left_at_the_end_falls_back_to_playable_blinds(self):
+        levels = [
+            {"small_blind": 10, "big_blind": 20, "ante": 0, "duration_hands": 2},
+            {"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 2},
+            {"is_break": True, "duration_minutes": 5},
+        ]
+        coordinator = self._coordinator(levels)
+
+        self.assertEqual(coordinator._last_playable_level_index(), 1)
+
+    def test_a_structure_of_nothing_but_breaks_has_no_fallback(self):
+        coordinator = self._coordinator([{"is_break": True, "duration_minutes": 5}])
+
+        self.assertIsNone(coordinator._last_playable_level_index())

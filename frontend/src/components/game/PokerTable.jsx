@@ -76,8 +76,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const bySeat = new Map(players.map((p) => [p.seat, p]));
 
 
+  // Sized from the height it is given rather than the width: the seats hang off
+  // the rim, so a table that filled the width would push the bottom one off the
+  // screen. The 86% leaves that overhang somewhere to live.
   return (
-    <div className="relative w-full max-w-[820px] aspect-[5/3] mx-auto">
+    <div className="relative h-[86%] aspect-[5/3] w-auto max-w-full mx-auto">
       {/* Felt */}
       <div className="felt absolute inset-x-[9%] inset-y-[19%] rounded-[50%]" />
 

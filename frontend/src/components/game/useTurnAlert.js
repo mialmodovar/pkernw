@@ -1,34 +1,5 @@
 import { useEffect, useRef } from "react";
-
-let audioContext = null;
-
-// Two short rising notes, synthesised — no audio asset to ship or load.
-function playChime() {
-  try {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return;
-    if (!audioContext) audioContext = new Ctor();
-    // Browsers suspend the context until a user gesture; resume is a no-op
-    // once the player has clicked anything.
-    if (audioContext.state === "suspended") audioContext.resume();
-
-    const now = audioContext.currentTime;
-    [[880, 0], [1174, 0.12]].forEach(([freq, offset]) => {
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
-      osc.connect(gain).connect(audioContext.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.2);
-    });
-  } catch {
-    // Audio is a nicety — never let it break the table.
-  }
-}
+import { playTurnChime } from "./sounds";
 
 /**
  * Fires when it becomes the hero's turn: a chime (if not muted) and a flashing
@@ -39,7 +10,7 @@ export function useTurnAlert(isMyTurn, soundEnabled) {
   const wasMyTurn = useRef(false);
 
   useEffect(() => {
-    if (isMyTurn && !wasMyTurn.current && soundEnabled) playChime();
+    if (isMyTurn && !wasMyTurn.current && soundEnabled) playTurnChime();
     wasMyTurn.current = isMyTurn;
   }, [isMyTurn, soundEnabled]);
 

@@ -141,6 +141,14 @@ class MultiTableTournamentCoordinator:
             )
 
             if level.get("is_break"):
+                # A break configured as the final level would repeat forever:
+                # nothing follows it, so the loop reads the same level again.
+                # Drop back to the last playable level, which then runs until
+                # somebody wins — the same as any other final level.
+                last_playable = self._last_playable_level_index()
+                if self._level_index >= len(self.levels) - 1 and last_playable is not None:
+                    self._level_index = last_playable
+                    continue
                 await self._run_break(level)
                 continue
 
@@ -646,7 +654,15 @@ class MultiTableTournamentCoordinator:
     def _current_level(self) -> Dict[str, int]:
         return self.levels[min(self._level_index, len(self.levels) - 1)]
 
+    def _last_playable_level_index(self) -> Optional[int]:
+        for index in range(len(self.levels) - 1, -1, -1):
+            if not self.levels[index].get("is_break"):
+                return index
+        return None
+
     def _advance_level(self):
+        # The final level has no duration: it runs until somebody wins. Raising
+        # blinds past the structure would be inventing levels the host never set.
         if self._level_index >= len(self.levels) - 1:
             return
         level = self._current_level()

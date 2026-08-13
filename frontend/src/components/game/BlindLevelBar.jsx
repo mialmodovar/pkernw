@@ -9,7 +9,7 @@ function UserChip() {
   return (
     <span className="flex items-center gap-1.5 pr-2 mr-1 border-r border-(--color-border)">
       <span className="text-base leading-none">{user.profile?.avatar_emoji || "\u{1F0CF}"}</span>
-      <span className="text-xs font-semibold text-(--color-silver)">{user.username}</span>
+      <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">{user.username}</span>
     </span>
   );
 }
@@ -23,7 +23,7 @@ function DisplayToggles() {
   return (
     <div className="flex items-center gap-2">
       <UserChip />
-      <span className="text-xs text-(--color-text-muted)">Show</span>
+      <span className="hidden md:inline text-xs text-(--color-text-muted)">Show</span>
       <div className="flex rounded overflow-hidden border border-(--color-border)">
         {[["Chips", false], ["BB", true]].map(([label, value]) => (
           <button
@@ -45,7 +45,8 @@ function DisplayToggles() {
         aria-label={soundEnabled ? "Mute turn alert" : "Unmute turn alert"}
         className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
       >
-        {soundEnabled ? "\u{1F509} Sound" : "\u{1F507} Muted"}
+        {soundEnabled ? "\u{1F509}" : "\u{1F507}"}
+        <span className="hidden md:inline">{soundEnabled ? " Sound" : " Muted"}</span>
       </button>
     </div>
   );
@@ -73,7 +74,7 @@ export default function BlindLevelBar() {
 
   if (!level) {
     return (
-      <div className="panel px-4 py-2 flex items-center justify-between text-sm">
+      <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
         <span className="text-(--color-text-muted)">Waiting for level info...</span>
         <DisplayToggles />
       </div>
@@ -90,14 +91,14 @@ export default function BlindLevelBar() {
   };
 
   return (
-    <div className="panel px-4 py-2 flex items-center justify-between text-sm">
+    <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
       <span className="text-(--color-silver)">
         {isBreak
           ? `Break after level ${level.blind_level_number || 0}`
           : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
         {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
       </span>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 md:gap-3 ml-auto">
         <DisplayToggles />
         <span className="text-(--color-text-muted)">
           {isTimed

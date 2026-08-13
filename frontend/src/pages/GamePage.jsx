@@ -51,6 +51,7 @@ export default function GamePage() {
   const [eliminationReady, setEliminationReady] = useState(false);
   const [spectating, setSpectating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [playerStats, setPlayerStats] = useState({});
   const [inspecting, setInspecting] = useState(null);
 
@@ -185,7 +186,7 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-[100dvh] flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
       {myEliminationFinish && spectating && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
@@ -202,7 +203,7 @@ export default function GamePage() {
       <BlindLevelBar />
 
       {isHost && (
-        <div className="px-4 py-2 panel border-x-0 border-t-0 flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div className="px-2 md:px-4 py-2 panel border-x-0 border-t-0 flex flex-wrap items-center justify-between gap-2 text-xs md:text-sm">
           <div>
             <span className="text-(--color-text-muted)">Host controls</span>
             {adminError && <span className="ml-3 text-[#c76b7a]">{adminError}</span>}
@@ -259,29 +260,35 @@ export default function GamePage() {
         </div>
       )}
 
-      <div className="px-4 py-2 text-sm text-(--color-text-muted) flex items-center justify-between gap-3">
-        <span>{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
-        <div className="flex items-center gap-3">
-          <span>{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
+      <div className="px-2 md:px-4 py-1.5 md:py-2 text-xs md:text-sm text-(--color-text-muted) flex items-center justify-between gap-2">
+        <span className="truncate">{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
+        <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
+          <span className="hidden md:inline">{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
+          <button
+            onClick={() => setChatOpen(true)}
+            className="md:hidden btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            Chat
+          </button>
           <ActionHistory onReview={() => setReviewOpen(true)} />
           <button
             onClick={() => send({ type: "sit_out", value: !amSittingOut })}
             title="You keep your seat and keep paying blinds; your turns pass automatically"
-            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+            className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
           >
-            {amSittingOut ? "Sit back in" : "Sit out"}
+            {amSittingOut ? "Sit in" : "Sit out"}
           </button>
           <button
             onClick={() => navigate("/")}
             title="Your seat is kept — you can come back to the table"
-            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+            className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
           >
-            Back to Lobby
+            Lobby
           </button>
         </div>
       </div>
 
-      <div className={`table-area flex-1 min-h-0 flex items-center justify-center relative px-4 transition-shadow duration-300 ${
+      <div className={`table-area flex-1 min-h-0 flex items-center justify-center relative px-1 md:px-4 transition-shadow duration-300 ${
         isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
       }`}>
         <TournamentInfoPanel tournament={tournament} username={user?.username} />
@@ -289,10 +296,11 @@ export default function GamePage() {
           statsByName={playerStats}
           onInspectPlayer={setInspecting} />
 
-        <div className="absolute bottom-2 left-2 z-10">
+        <div className="hidden md:block absolute bottom-2 left-2 z-10">
           <ChatPanel />
         </div>
-        <div className="absolute bottom-2 right-2 z-10 w-[min(32rem,60%)]">
+        {/* A phone has no corner to spare, so the panel spans the foot of the table. */}
+        <div className="absolute bottom-0 inset-x-1 z-10 pb-safe md:inset-x-auto md:bottom-2 md:right-2 md:pb-0 md:w-[min(32rem,60%)]">
           <ActionPanel
             mySeat={mySeat}
             onAction={handleAction}
@@ -318,6 +326,22 @@ export default function GamePage() {
       </div>
 
       {reviewOpen && <HandReview tournamentId={id} onClose={() => setReviewOpen(false)} />}
+      {chatOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 flex flex-col justify-end bg-black/70"
+          onClick={() => setChatOpen(false)}
+        >
+          <div className="p-2 pb-safe space-y-2" onClick={(e) => e.stopPropagation()}>
+            <ChatPanel className="w-full h-56" />
+            <button
+              onClick={() => setChatOpen(false)}
+              className="btn-secondary w-full py-2 rounded text-sm font-semibold transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
       {inspecting && (
         <PlayerStatsCard player={inspecting} stats={playerStats[inspecting.name]} onClose={() => setInspecting(null)} />
       )}

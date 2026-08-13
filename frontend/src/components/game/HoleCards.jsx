@@ -1,13 +1,13 @@
 import PlayingCard, { CardBack } from "./PlayingCard";
 
-export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, faceDown }) {
+export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, faceDown, size = "seat" }) {
   if (eliminated) return null;
   // Held face down until this seat's turn in the staged showdown reveal.
   if (faceDown) {
     return (
       <div className="flex gap-0.5">
-        <CardBack />
-        <CardBack />
+        <CardBack size={size} />
+        <CardBack size={size} />
       </div>
     );
   }
@@ -21,16 +21,16 @@ export default function HoleCards({ cards, folded, eliminated, isMe, winningCard
         className="flex gap-0.5 opacity-15 hover:opacity-100 transition-opacity duration-200"
       >
         {(cards || []).length
-          ? cards.map((card, index) => <PlayingCard key={index} card={card} />)
-          : (<><CardBack /><CardBack /></>)}
+          ? cards.map((card, index) => <PlayingCard key={index} card={card} size={size} />)
+          : (<><CardBack size={size} /><CardBack size={size} /></>)}
       </div>
     );
   }
   if (!cards || cards.length === 0) {
     return (
       <div className="flex gap-0.5">
-        <CardBack />
-        <CardBack />
+        <CardBack size={size} />
+        <CardBack size={size} />
       </div>
     );
   }
@@ -38,7 +38,7 @@ export default function HoleCards({ cards, folded, eliminated, isMe, winningCard
   return (
     <div className="flex gap-0.5">
       {cards.map((card, index) => (
-        <PlayingCard key={index} card={card} winning={winners.has(card)} />
+        <PlayingCard key={index} card={card} size={size} winning={winners.has(card)} />
       ))}
     </div>
   );

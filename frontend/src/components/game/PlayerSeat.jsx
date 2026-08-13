@@ -49,7 +49,7 @@ function TimerRing({ pct }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength, compactVideo,
+  stats, onInspect, handStrength, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
@@ -108,6 +108,9 @@ export default function PlayerSeat({
         isMe={isMe}
         faceDown={faceDownAtShowdown}
         winningCards={isWinner ? showdownEntry?.best_cards : null}
+        // On a phone every seat shrinks; the hero keeps board-sized cards,
+        // since that is the one hand you actually have to read.
+        size={compact && isMe ? "board" : "seat"}
       />
       {/* Your own read on what you hold, next to your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
@@ -134,7 +137,7 @@ export default function PlayerSeat({
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       {liveStream ? (
-        <span className="w-11 h-11 rounded-full overflow-hidden shrink-0 border border-(--color-border)">
+        <span className={`${compact ? "w-7 h-7" : "w-11 h-11"} rounded-full overflow-hidden shrink-0 border border-(--color-border)`}>
           <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
             name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
         </span>
@@ -183,7 +186,9 @@ export default function PlayerSeat({
     : [badges, cards, markers, plate, video, ring];
 
   return (
-    <div className={`relative flex flex-col items-center gap-1 w-[clamp(4.75rem,15cqw,8.5rem)] transition-opacity duration-500 ${
+    <div className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
+      compact ? (isMe ? "w-[5.5rem]" : "w-[4.5rem]") : "w-[clamp(4.75rem,15cqw,8.5rem)]"
+    } ${
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}

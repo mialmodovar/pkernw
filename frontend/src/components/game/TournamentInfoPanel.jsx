@@ -56,21 +56,25 @@ export default function TournamentInfoPanel({ tournament, username }) {
     // Two numbers you glance at between hands, and the rest a hover away. The
     // panel used to hold the whole lot open, taking a corner of the felt to say
     // things nobody reads every hand.
-    <div className="group absolute top-2 right-2 z-10 w-52 hover:w-60 panel rounded-lg text-xs
+    // A phone has no hover, so it opens on tap: focus-within matches the
+    // element itself once tabIndex makes it focusable.
+    <div tabIndex={0}
+      className="group absolute top-1 right-1 md:top-2 md:right-2 z-10 w-44 md:w-52
+                    hover:w-60 focus-within:w-60 panel rounded-lg text-xs outline-none
                     shadow-lg shadow-black/50 transition-[width]">
       <div className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
                       font-semibold uppercase tracking-wide text-(--color-silver)">
         <span className="truncate">{tournament?.name || "Tournament"}</span>
-        <span className="text-(--color-text-muted) shrink-0 group-hover:hidden">{remaining} left</span>
+        <span className="text-(--color-text-muted) shrink-0 group-hover:hidden group-focus-within:hidden">{remaining} left</span>
       </div>
-      <div className="px-3 pb-1.5 flex items-center justify-between gap-2 group-hover:hidden">
+      <div className="px-3 pb-1.5 flex items-center justify-between gap-2 group-hover:hidden group-focus-within:hidden">
         <span className="text-(--color-text-muted)">Blinds</span>
         <span className="text-(--color-silver)">
           {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}
         </span>
       </div>
 
-      <div className="hidden group-hover:block px-3 pb-3 space-y-2">
+      <div className="hidden group-hover:block group-focus-within:block px-3 pb-3 space-y-2">
           <div className="space-y-1">
             <Row label="Blinds">
               {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}

@@ -4,6 +4,7 @@ import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
+import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
 
@@ -14,28 +15,37 @@ import { formatChips } from "./formatChips";
 // Kept short of the container edges so a seat's full card/marker/nameplate
 // stack still fits inside the table area instead of being covered by the
 // action panel below.
-const RADIUS_X = 42; // % of container, from the centre
-const RADIUS_Y = 38;
+//
+// `power` bends the ellipse towards a stadium: below 1 it pushes slots off the
+// arc and onto the long sides, which is what makes a tall phone table read as a
+// poker table instead of a ring of nameplates.
+const LANDSCAPE = { radiusX: 42, radiusY: 38, power: 1 };
+const PORTRAIT = { radiusX: 35, radiusY: 39, power: 0.7 };
 
-function pointAt(index, capacity, scale) {
+function bend(value, power) {
+  return power === 1 ? value : Math.sign(value) * Math.abs(value) ** power;
+}
+
+function pointAt(index, capacity, scale, geometry) {
   const angle = (index / capacity) * 2 * Math.PI;
+  const { radiusX, radiusY, power } = geometry;
   return {
-    left: `${50 - RADIUS_X * scale * Math.sin(angle)}%`,
-    top: `${50 + RADIUS_Y * scale * Math.cos(angle)}%`,
+    left: `${50 - radiusX * scale * bend(Math.sin(angle), power)}%`,
+    top: `${50 + radiusY * scale * bend(Math.cos(angle), power)}%`,
   };
 }
 
-function slotPosition(index, capacity) {
+function slotPosition(index, capacity, geometry) {
   if (capacity <= 0) return { top: "50%", left: "50%" };
   // index 0 sits bottom-centre; the rest run around the table towards the left.
-  return pointAt(index, capacity, 1);
+  return pointAt(index, capacity, 1, geometry);
 }
 
 // Part way in from the seat towards the pot: on the felt, clear of the cards,
 // and unambiguous about whose bet it is.
-function betPosition(index, capacity) {
+function betPosition(index, capacity, geometry) {
   if (capacity <= 0) return { top: "50%", left: "50%" };
-  return pointAt(index, capacity, 0.46);
+  return pointAt(index, capacity, 0.46, geometry);
 }
 
 function EmptySeat() {
@@ -56,6 +66,8 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
+  const compact = useCompactLayout();
+  const geometry = compact ? PORTRAIT : LANDSCAPE;
 
   // Winners are known from pot_awarded; their best five get the gold ring, and
   // the losing hands dim so the eye goes to what actually won.
@@ -81,7 +93,9 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   return (
     <div className="@container table-frame relative mx-auto">
       {/* Felt */}
-      <div className="felt absolute inset-x-[9%] inset-y-[19%] rounded-[50%]" />
+      <div className={`felt absolute ${
+        compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]"
+      }`} />
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
@@ -98,7 +112,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       {Array.from({ length: slots }, (_, visualIdx) => {
         const seat = (offset + visualIdx) % slots;
         const p = bySeat.get(seat);
-        const pos = slotPosition(visualIdx, slots);
+        const pos = slotPosition(visualIdx, slots, geometry);
         const isMe = p != null && p.seat === mySeat;
         const isActive = p != null && actionOnSeat === p.seat;
         return (
@@ -122,12 +136,14 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 isBB={bbSeat === p.seat}
                 timerPct={isActive ? countdown.pct : 100}
                 // Past six seats the ring is too tight for a tile of its own,
-                // so the picture moves onto the nameplate instead.
-                compactVideo={slots > 6}
+                // so the picture moves onto the nameplate instead. A phone is
+                // never wide enough for the tile.
+                compactVideo={compact || slots > 6}
                 topHalf={parseFloat(pos.top) < 50}
                 stats={statsByName?.[p.name]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
+                compact={compact}
               />
             ) : (
               <EmptySeat />
@@ -141,7 +157,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const seat = (offset + visualIdx) % slots;
         const p = bySeat.get(seat);
         if (!p || !p.bet) return null;
-        const pos = betPosition(visualIdx, slots);
+        const pos = betPosition(visualIdx, slots, geometry);
         return (
           <div key={`bet-${seat}`}
             className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1

@@ -119,6 +119,22 @@ button:disabled {
   aspect-ratio: 5 / 3;
 }
 
+/* Portrait phones. The table runs down the screen rather than across it, so the
+   frame takes the whole area and PokerTable bends the seat ring onto the long
+   vertical sides. Everything on the felt is sized in cqw, so it follows. */
+@media (max-width: 767px) {
+  .table-frame {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
+}
+
+/* Keeps the bottom row clear of the iOS home indicator. */
+.pb-safe {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
 /* The light falls from above and the rim stays dark, which is what stops the
    felt reading as one flat sheet of red. */
 .felt {

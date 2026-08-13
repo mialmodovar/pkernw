@@ -11,7 +11,7 @@ const MAX_CHARS = 240;
  * it was said in. Reloading the page starts an empty room, which is also why
  * this never pretends to be a history.
  */
-export default function ChatPanel() {
+export default function ChatPanel({ className = "w-56 h-32" }) {
   const chat = useGameStore((s) => s.chat);
   const [draft, setDraft] = useState("");
   const scroller = useRef(null);
@@ -30,7 +30,7 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="w-56 panel rounded-lg flex flex-col h-32 shadow-lg shadow-black/50">
+    <div className={`panel rounded-lg flex flex-col shadow-lg shadow-black/50 ${className}`}>
       <div className="px-3 py-1.5 border-b border-(--color-border) flex items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">Table chat</h2>
         <MediaControls />

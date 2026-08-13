@@ -7,8 +7,9 @@ import { useActionCountdown } from "./useActionCountdown";
 // stray keystroke can't fold your hand. The mouse commits immediately.
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
-const BTN = "px-2.5 py-1.5 rounded font-semibold text-xs transition-colors min-w-[4.75rem]";
+const BTN = "px-2.5 py-3 md:py-1.5 rounded font-semibold text-xs transition-colors min-w-0 md:min-w-[4.75rem] touch-manipulation";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
+const STEPPER = "btn-secondary w-9 shrink-0 rounded text-base font-bold leading-none py-1.5 md:hidden touch-manipulation";
 
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
@@ -172,6 +173,12 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
     setRaiseAmount(clampChips(toChips(Number(value))));
   };
 
+  // Touch targets for the slider: dragging a 4px rail with a thumb is hopeless.
+  const nudge = (direction) => {
+    setRaiseText(null);
+    setRaiseAmount(clampChips(toChips(fromChips(raiseAmount) + direction * sliderStep)));
+  };
+
   // The text field holds raw input while typing and only clamps on commit, so
   // it doesn't fight you mid-entry.
   const commitRaiseText = () => {
@@ -204,41 +211,48 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && maxRaise > minRaise && (
         <div className="px-2 pt-2 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5">
-          <span className="mr-auto text-xs text-(--color-text-muted) whitespace-nowrap">
+          <span className="w-full md:w-auto md:mr-auto text-center md:text-left text-xs text-(--color-text-muted) whitespace-nowrap">
             min {fmt(minRaise)} · max {fmt(maxRaise)}
           </span>
-          {presets.map((preset) => (
-            <button key={preset.label}
-              onClick={() => { setRaiseText(null); setRaiseAmount(preset.chips); }}
-              className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
-                preset.emphasis
-                  ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]"
-                  : "btn-secondary"
-              }`}>
-              {preset.label}
-            </button>
-          ))}
-          <input type="range"
-            min={fromChips(minRaise)}
-            max={fromChips(maxRaise)}
-            step={sliderStep}
-            value={fromChips(raiseAmount)}
-            onChange={(e) => setRaiseFromControl(e.target.value)}
-            className="w-24 accent-[#d4af37] cursor-pointer"
-          />
-          <div className="relative">
-            <input type="number"
-              value={inputValue}
-              onChange={(e) => setRaiseText(e.target.value)}
-              onBlur={commitRaiseText}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRaiseText(); }}
-              className={`input-field text-sm text-right font-mono rounded py-1 ${useBBControls ? "w-20 pr-7 pl-1.5" : "w-20 px-1.5"}`}
+          {/* `md:contents` dissolves the phone grid so the desktop row is unchanged. */}
+          <div className="grid grid-cols-4 gap-1.5 w-full md:contents">
+            {presets.map((preset) => (
+              <button key={preset.label}
+                onClick={() => { setRaiseText(null); setRaiseAmount(preset.chips); }}
+                className={`px-2 py-2 md:py-1 rounded text-xs font-semibold transition-colors touch-manipulation ${
+                  preset.emphasis
+                    ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]"
+                    : "btn-secondary"
+                }`}>
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 w-full md:contents">
+            <div className="relative shrink-0 md:order-2">
+              <input type="number"
+                value={inputValue}
+                onChange={(e) => setRaiseText(e.target.value)}
+                onBlur={commitRaiseText}
+                onKeyDown={(e) => { if (e.key === "Enter") commitRaiseText(); }}
+                className={`input-field text-sm text-right font-mono rounded py-1.5 md:py-1 ${useBBControls ? "w-20 pr-7 pl-1.5" : "w-20 px-1.5"}`}
+              />
+              {useBBControls && (
+                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-(--color-text-muted)">
+                  BB
+                </span>
+              )}
+            </div>
+            <button type="button" onClick={() => nudge(-1)} aria-label="Lower raise" className={STEPPER}>−</button>
+            <input type="range"
+              min={fromChips(minRaise)}
+              max={fromChips(maxRaise)}
+              step={sliderStep}
+              value={fromChips(raiseAmount)}
+              onChange={(e) => setRaiseFromControl(e.target.value)}
+              className="flex-1 h-6 md:h-auto md:flex-none md:w-24 md:order-1 accent-[#d4af37] cursor-pointer touch-manipulation"
             />
-            {useBBControls && (
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-(--color-text-muted)">
-                BB
-              </span>
-            )}
+            <button type="button" onClick={() => nudge(1)} aria-label="Raise more" className={STEPPER}>+</button>
           </div>
         </div>
       )}
@@ -276,30 +290,30 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
           </span>
         )}
 
-        {/* Commit cluster — the choices sit together, under the mouse */}
-        <div className="ml-auto flex items-center gap-1.5">
+        {/* Commit cluster — the choices sit together, under the mouse or thumb */}
+        <div className="ml-auto flex flex-1 md:flex-none items-center gap-1.5">
           {can.fold && (
             <button onClick={() => commit("fold")} disabled={locked}
-              className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
+              className={`${BTN} flex-1 md:flex-none bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
               Fold
             </button>
           )}
           {can.check && (
             <button onClick={() => commit("check")} disabled={locked}
-              className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
+              className={`${BTN} flex-1 md:flex-none btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
               Check
             </button>
           )}
           {can.call && (
             <button onClick={() => commit("call")} disabled={locked}
-              className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
+              className={`${BTN} flex-1 md:flex-none btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
               Call {fmt(ctx.to_call)}
             </button>
           )}
           {can.raise && (
             <button onClick={() => commit("raise")} disabled={locked}
-              className={`${BTN} bg-[linear-gradient(135deg,#d4af37,#8a6c18)] hover:bg-[linear-gradient(135deg,#e3c250,#a17c1e)]
+              className={`${BTN} flex-1 md:flex-none bg-[linear-gradient(135deg,#d4af37,#8a6c18)] hover:bg-[linear-gradient(135deg,#e3c250,#a17c1e)]
                           border border-[#e0c66b] text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
               Raise {fmt(raiseAmount)}

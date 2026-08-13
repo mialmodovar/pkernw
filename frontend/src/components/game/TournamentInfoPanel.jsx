@@ -1,3 +1,4 @@
+import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 
@@ -18,6 +19,7 @@ function Row({ label, children }) {
  * fetched and thrown away.
  */
 export default function TournamentInfoPanel({ tournament, username }) {
+  const [open, setOpen] = useState(false);
   const level = useGameStore((s) => s.level);
   const tableSummaries = useGameStore((s) => s.tableSummaries);
   const currentTableNumber = useGameStore((s) => s.currentTableNumber);
@@ -52,29 +54,44 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const inTheMoney = paidPlaces > 0 && remaining <= paidPlaces;
   const onTheBubble = paidPlaces > 0 && remaining === paidPlaces + 1;
 
+  // Closed it is a single button: this is reference you want between hands, not
+  // something worth a corner of the felt every hand.
+  const corner = "absolute top-1 right-1 md:top-2 md:right-2 z-10";
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Tournament info"
+        aria-label="Show tournament info"
+        className={`${corner} w-8 h-8 rounded-full panel flex items-center justify-center
+                    font-serif italic font-bold text-base leading-none text-(--color-silver)
+                    shadow-lg shadow-black/50 hover:border-(--color-border-strong) transition-colors`}
+      >
+        i
+      </button>
+    );
+  }
+
   return (
-    // Two numbers you glance at between hands, and the rest a hover away. The
-    // panel used to hold the whole lot open, taking a corner of the felt to say
-    // things nobody reads every hand.
-    // A phone has no hover, so it opens on tap: focus-within matches the
-    // element itself once tabIndex makes it focusable.
-    <div tabIndex={0}
-      className="group absolute top-1 right-1 md:top-2 md:right-2 z-10 w-44 md:w-52
-                    hover:w-60 focus-within:w-60 panel rounded-lg text-xs outline-none
-                    shadow-lg shadow-black/50 transition-[width]">
+    <div className={`${corner} w-52 md:w-60 panel rounded-lg text-xs shadow-lg shadow-black/50
+                     max-h-[85%] overflow-y-auto`}>
       <div className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
                       font-semibold uppercase tracking-wide text-(--color-silver)">
         <span className="truncate">{tournament?.name || "Tournament"}</span>
-        <span className="text-(--color-text-muted) shrink-0 group-hover:hidden group-focus-within:hidden">{remaining} left</span>
-      </div>
-      <div className="px-3 pb-1.5 flex items-center justify-between gap-2 group-hover:hidden group-focus-within:hidden">
-        <span className="text-(--color-text-muted)">Blinds</span>
-        <span className="text-(--color-silver)">
-          {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}
-        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Hide tournament info"
+          className="shrink-0 rounded px-1 text-sm leading-none text-(--color-text-muted)
+                     hover:text-(--color-silver) transition-colors"
+        >
+          ×
+        </button>
       </div>
 
-      <div className="hidden group-hover:block group-focus-within:block px-3 pb-3 space-y-2">
+      <div className="px-3 pb-3 space-y-2">
           <div className="space-y-1">
             <Row label="Blinds">
               {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}

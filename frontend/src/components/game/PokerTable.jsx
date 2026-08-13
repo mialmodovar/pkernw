@@ -20,7 +20,7 @@ import { formatChips } from "./formatChips";
 // arc and onto the long sides, which is what makes a tall phone table read as a
 // poker table instead of a ring of nameplates.
 const LANDSCAPE = { radiusX: 42, radiusY: 38, power: 1 };
-const PORTRAIT = { radiusX: 35, radiusY: 39, power: 0.7 };
+const PORTRAIT = { radiusX: 35, radiusY: 36, power: 0.7 };
 
 function bend(value, power) {
   return power === 1 ? value : Math.sign(value) * Math.abs(value) ** power;

@@ -68,7 +68,8 @@ export default function PlayingCard({ card, size = "seat", winning, className = 
       style={{ color: colour, ...style }}
     >
       {s.corner && (
-        <span className={`absolute top-[2px] left-[3px] flex flex-col items-center gap-[1px] font-black ${s.corner}`}>
+        // No room for a corner index on a phone; the centred rank is the index.
+        <span className={`absolute top-[2px] left-[3px] hidden md:flex flex-col items-center gap-[1px] font-black ${s.corner}`}>
           {parsed.rank}
           <Suit suit={parsed.suit} className={s.cornerPip} />
         </span>

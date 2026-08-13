@@ -19,6 +19,7 @@ import TournamentCompleteScreen from "../components/game/TournamentCompleteScree
 import HandReview from "../components/game/HandReview";
 import PlayerStatsCard from "../components/game/PlayerStatsCard";
 import ConnectionBanner from "../components/game/ConnectionBanner";
+import { useCompactLayout } from "../components/game/useCompactLayout";
 
 export default function GamePage() {
   const { id } = useParams();
@@ -54,6 +55,7 @@ export default function GamePage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [playerStats, setPlayerStats] = useState({});
   const [inspecting, setInspecting] = useState(null);
+  const compact = useCompactLayout();
 
   const loadTournament = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -147,6 +149,15 @@ export default function GamePage() {
 
   const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
+  const actionPanel = (
+    <ActionPanel
+      mySeat={mySeat}
+      onAction={handleAction}
+      disabled={connectionStatus !== "open"}
+      amSittingOut={amSittingOut}
+      onSitIn={() => send({ type: "sit_out", value: false })}
+    />
+  );
   const handleAdminControl = async (control) => {
     setAdminError("");
     try {
@@ -299,16 +310,11 @@ export default function GamePage() {
         <div className="hidden md:block absolute bottom-2 left-2 z-10">
           <ChatPanel />
         </div>
-        {/* A phone has no corner to spare, so the panel spans the foot of the table. */}
-        <div className="absolute bottom-0 inset-x-1 z-10 pb-safe md:inset-x-auto md:bottom-2 md:right-2 md:pb-0 md:w-[min(32rem,60%)]">
-          <ActionPanel
-            mySeat={mySeat}
-            onAction={handleAction}
-            disabled={connectionStatus !== "open"}
-            amSittingOut={amSittingOut}
-            onSitIn={() => send({ type: "sit_out", value: false })}
-          />
-        </div>
+        {!compact && (
+          <div className="absolute bottom-2 right-2 z-10 w-[min(32rem,60%)]">
+            {actionPanel}
+          </div>
+        )}
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
             <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
@@ -324,6 +330,14 @@ export default function GamePage() {
           </div>
         )}
       </div>
+
+      {/* A phone gets a band of its own under the felt — an overlay here would
+          sit on top of the hero's own cards. */}
+      {compact && (
+        <div className="shrink-0 px-1 pb-safe">
+          {actionPanel}
+        </div>
+      )}
 
       {reviewOpen && <HandReview tournamentId={id} onClose={() => setReviewOpen(false)} />}
       {chatOpen && (

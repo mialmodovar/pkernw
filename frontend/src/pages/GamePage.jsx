@@ -15,6 +15,7 @@ import ActionPanel, { ActionCountdownBadge } from "../components/game/ActionPane
 import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
+import { useTimeoutAlert } from "../components/game/useTimeoutAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
 import BreakOverlay from "../components/game/BreakOverlay";
@@ -149,6 +150,7 @@ export default function GamePage() {
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
   const isMyTurn = mySeat !== null && actionOnSeat === mySeat;
   useTurnAlert(isMyTurn, soundEnabled);
+  useTimeoutAlert(isMyTurn, soundEnabled);
   useTableSounds(soundEnabled);
 
   // Seat slots come from the table's capacity so seats don't shift on a bust.

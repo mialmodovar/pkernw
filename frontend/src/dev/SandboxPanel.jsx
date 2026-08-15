@@ -307,7 +307,15 @@ export default function SandboxPanel() {
               <Pick value={String(config.actionSeat)} onChange={(v) => patch({ actionSeat: v })}
                 options={seatOptions} />
             </Row>
-            <Row label="Reveal">
+            <Row label="Clock (s)">
+            <Num value={config.actionSeconds} min={1} max={120}
+              onChange={(v) => patch({ actionSeconds: v })} />
+          </Row>
+          <Row label="Time bank (s)">
+            <Num value={config.timeBankSeconds} min={0} max={120}
+              onChange={(v) => patch({ timeBankSeconds: v })} />
+          </Row>
+          <Row label="Reveal">
               <Pick value={config.reveal} onChange={(v) => patch({ reveal: v })}
                 options={[
                   ["none", "Nothing"], ["showdown", "Showdown"],

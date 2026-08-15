@@ -62,7 +62,8 @@ export default function DevTablePage() {
     // would reset the timer, and the sandbox would misreport the one thing you
     // opened it to look at.
     const actionKey = actionOnSeat === null ? null
-      : [actionOnSeat, config.pot, config.bigBlind, config.street, hero?.chips].join("|");
+      : [actionOnSeat, config.pot, config.bigBlind, config.street, hero?.chips,
+         config.actionSeconds, config.timeBankSeconds].join("|");
     const sameAction = actionKey !== null && actionKey === lastAction.current;
     lastAction.current = actionKey;
 
@@ -110,8 +111,8 @@ export default function DevTablePage() {
         min_raise: config.bigBlind * 3,
         max_raise: hero?.chips || config.bigBlind * 50,
         valid_actions: ["fold", "call", "raise"],
-        timer_sec: 30,
-        action_timer_sec: 20,   // the remaining 10s read as time bank
+        timer_sec: config.actionSeconds + config.timeBankSeconds,
+        action_timer_sec: config.actionSeconds,   // the rest reads as time bank
         pot: config.pot,
         street: config.street,
       });

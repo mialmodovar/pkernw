@@ -78,6 +78,45 @@ export function playTurnChime() {
   });
 }
 
+/** Your regular time is gone and the bank has started draining.
+ *
+ * The turn chime inverted — two notes falling where that one rises. Same shape,
+ * opposite direction, so it reads as "something has run out" without having to
+ * be loud about it.
+ */
+export function playTimeBankWarning() {
+  play((ctx, now) => {
+    tone(ctx, { freq: 1174, start: now, duration: 0.16, peak: 0.16, type: "triangle" });
+    tone(ctx, { freq: 740, start: now + 0.14, duration: 0.24, peak: 0.16, type: "triangle" });
+  });
+}
+
+/** One second of the time bank going by.
+ *
+ * A clock escapement, not a beep: a tiny filtered click with a short square
+ * blip inside it. `tic` alternates the pitch between seconds, which is what
+ * turns a row of identical clicks into a tick-tock. Quieter than everything
+ * else here on purpose — this one repeats, and it plays while somebody is
+ * trying to think.
+ */
+export function playTick(tic) {
+  play((ctx, now) => {
+    noise(ctx, { start: now, duration: 0.028, peak: 0.1, frequency: tic ? 3000 : 2100, Q: 2.2 });
+    tone(ctx, {
+      freq: tic ? 1250 : 940, start: now, duration: 0.022, peak: 0.035, type: "square",
+    });
+  });
+}
+
+/** Time is up. Low, flat and falling, with none of the ring the other cues
+ *  have — nothing good happens after this one. */
+export function playTimeExpired() {
+  play((ctx, now) => {
+    tone(ctx, { freq: 300, start: now, duration: 0.45, peak: 0.2, type: "sawtooth", endFreq: 120 });
+    noise(ctx, { start: now, duration: 0.18, peak: 0.07, frequency: 400, Q: 0.6 });
+  });
+}
+
 /** A bet or raise: two chips landing on each other, a beat apart. */
 export function playChips() {
   play((ctx, now) => {

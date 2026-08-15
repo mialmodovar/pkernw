@@ -22,6 +22,8 @@ export const DEFAULT_CONFIG = {
   pot: 4800,
   showBets: true,
   actionSeat: "hero",    // none | hero | <seat number>
+  actionSeconds: 20,     // the regular clock
+  timeBankSeconds: 10,   // 0 = no bank at all, as a tournament may be configured
   heroCards: "As Kd",
   handStrength: "Pair of Aces",
   reveal: "none",        // none | showdown | winner | allin

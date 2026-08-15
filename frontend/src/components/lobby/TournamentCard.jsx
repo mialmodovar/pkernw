@@ -93,9 +93,10 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
     GAME_LABELS[t.game_type] || null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
-    // Only worth saying while you can still act on it.
+    // Only worth saying while you can still act on it. Spelled out rather than
+    // abbreviated: "reg to L4" is a note to yourself, not a sentence.
     !isFinished && t.late_reg_level > 0 && (t.status === "lobby" || t.late_registration_open)
-      ? `reg to L${t.late_reg_level}`
+      ? `registration until level ${t.late_reg_level}`
       : null,
   ].filter(Boolean);
 

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import api from "../../api/http";
 import BlindStructureEditor from "./BlindStructureEditor";
 import { DEFAULT_HANDS } from "./blindStructureDefaults";
 
@@ -47,6 +48,75 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [autoRemoveOfflineSeconds, setAutoRemoveOfflineSeconds] = useState(300);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
   const [error, setError] = useState("");
+  // Tournaments to copy a setup from. Most games in a home league are the same
+  // game every week, and rebuilding a structure, a payout table and a bounty
+  // rule from memory each time is how they end up subtly different.
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
+  const [templateBusy, setTemplateBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get("/tournaments/")
+      .then(({ data }) => { if (!cancelled) setTemplates(data.slice(0, 25)); })
+      // A form that cannot offer templates is still a working form.
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * Take everything from an earlier tournament except what makes it that
+   * tournament: its name and when it was due to start.
+   */
+  const applyTemplate = async (id) => {
+    setTemplateId(id);
+    if (!id) return;
+    setTemplateBusy(true);
+    setError("");
+    try {
+      const { data } = await api.get(`/tournaments/${id}/`);
+      setChips(data.starting_chips);
+      setMaxPlayers(data.max_players);
+      setPlayersPerTable(data.players_per_table);
+      setLateRegEnabled(data.late_reg_level > 0);
+      if (data.late_reg_level > 0) setLateRegLevel(data.late_reg_level);
+      setAllowRebuys(data.allow_rebuys);
+      setMaxRebuys(data.max_rebuys);
+      if (data.rebuy_level > 0) setRebuyLevel(data.rebuy_level);
+      setTimeBankEnabled(data.time_bank_seconds > 0);
+      if (data.time_bank_seconds > 0) setTimeBankSeconds(data.time_bank_seconds);
+      setTimeBankRefillRule(data.time_bank_refill_rule || "none");
+      if (data.time_bank_refill_every_hands) setTimeBankRefillEveryHands(data.time_bank_refill_every_hands);
+      if (data.time_bank_refill_level) setTimeBankRefillLevel(data.time_bank_refill_level);
+      setRabbitHuntingEnabled(data.rabbit_hunting_enabled);
+      setShowdownSeconds(data.showdown_seconds || 5);
+      setAutoRemoveOfflineEnabled(data.auto_remove_offline_seconds > 0);
+      if (data.auto_remove_offline_seconds > 0) setAutoRemoveOfflineSeconds(data.auto_remove_offline_seconds);
+
+      const payouts = data.payout_structure || [];
+      setPayoutEnabled(payouts.length > 0);
+      if (payouts.length > 0) setPayoutRows(payouts);
+      setBuyInEuros((data.buy_in_cents || 0) / 100);
+      setBountyMode(data.bounty_mode || "none");
+      setBountyEuros((data.bounty_cents || 0) / 100);
+      setBountySplit(data.bounty_progressive_split_pct || 50);
+
+      // Stripped of the database's own columns, so these are levels to create
+      // rather than levels that already exist.
+      setCustomLevels((data.levels || []).map((level) => ({
+        is_break: level.is_break,
+        small_blind: level.small_blind,
+        big_blind: level.big_blind,
+        ante: level.ante,
+        duration_hands: level.duration_hands,
+        duration_minutes: level.duration_minutes,
+      })));
+    } catch {
+      setError("Could not read that tournament's setup.");
+    } finally {
+      setTemplateBusy(false);
+    }
+  };
 
   const effectiveLevels = customLevels || DEFAULT_HANDS;
   const blindLevelCount = effectiveLevels.filter((level) => !level.is_break).length;
@@ -191,6 +261,25 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   return (
     <form onSubmit={handleSubmit} className="panel p-6 rounded-xl space-y-4">
       <h2 className="text-xl font-bold text-(--color-silver)">Create Tournament</h2>
+
+      {templates.length > 0 && (
+        <label className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-(--color-text-muted)">Copy setup from</span>
+          <select
+            className="input-field px-2 py-1 rounded flex-1 min-w-40 transition-colors"
+            value={templateId}
+            disabled={templateBusy}
+            onChange={(event) => applyTemplate(event.target.value)}
+          >
+            <option value="">Start from scratch</option>
+            {templates.map((tournament) => (
+              <option key={tournament.id} value={tournament.id}>
+                {tournament.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="space-y-2">
         <label className="block text-sm text-(--color-text-muted)">Name</label>
@@ -558,7 +647,14 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
           </div>
         </div>
 
-        <BlindStructureEditor levels={customLevels} onChange={setCustomLevels} />
+        {/* The builder needs both to size the blinds: a hundred big blinds to
+            start, and enough at the end to finish a table of this many. */}
+        <BlindStructureEditor
+          levels={customLevels}
+          onChange={setCustomLevels}
+          startingChips={chips}
+          players={maxPlayers}
+        />
 
         {error && <p className="text-sm text-[#c76b7a]">{error}</p>}
 

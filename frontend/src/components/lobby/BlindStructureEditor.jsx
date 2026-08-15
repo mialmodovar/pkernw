@@ -1,5 +1,12 @@
 import { useState } from "react";
 import { DEFAULT_HANDS, DEFAULT_TIMED } from "./blindStructureDefaults";
+import {
+  SPEEDS,
+  SPEED_NAMES,
+  buildBlindStructure,
+  formatDuration,
+  structureMinutes,
+} from "./blindStructureBuilder";
 
 const normalizeBlindRow = (row, mode) => {
   const base = {
@@ -33,7 +40,74 @@ const normalizeBreakRow = (row) => ({
   duration_minutes: Number(row.duration_minutes || 5),
 });
 
-export default function BlindStructureEditor({ levels, onChange }) {
+/**
+ * Say how long and how fast, and get a structure.
+ *
+ * The two things a host knows are the two inputs; the dozen pairs of numbers
+ * that follow from them are arithmetic, and blindStructureBuilder.js does it.
+ * Building by hand is still right there — this only fills the table in.
+ */
+function StructureBuilder({ startingChips, players, onBuild }) {
+  const [minutes, setMinutes] = useState(120);
+  const [speed, setSpeed] = useState("normal");
+
+  const preview = buildBlindStructure({ minutes, speed, startingChips, players });
+
+  return (
+    <div className="panel-raised rounded p-2 mb-2 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
+          Play for
+          <input
+            type="number"
+            min={15}
+            max={720}
+            step={15}
+            className="input-field rounded px-2 py-1 w-20 text-right"
+            value={minutes}
+            onChange={(event) => setMinutes(Number(event.target.value))}
+          />
+          min
+        </label>
+
+        <div className="flex rounded overflow-hidden border border-(--color-border)">
+          {SPEED_NAMES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setSpeed(name)}
+              className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
+                speed === name
+                  ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink)"
+                  : "text-(--color-text-muted) hover:text-(--color-silver)"
+              }`}
+            >
+              {SPEEDS[name].label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onBuild(preview)}
+          className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors ml-auto"
+        >
+          Build it
+        </button>
+      </div>
+
+      {/* What you are about to get, before you get it. */}
+      <p className="text-[11px] text-(--color-text-muted)">
+        {`${preview.length} levels of ${SPEEDS[speed].minutesPerLevel} min · `}
+        {`${formatDuration(structureMinutes(preview))} · `}
+        {`blinds ${preview[0].small_blind}/${preview[0].big_blind} up to `}
+        {`${preview[preview.length - 1].small_blind}/${preview[preview.length - 1].big_blind}`}
+      </p>
+    </div>
+  );
+}
+
+export default function BlindStructureEditor({ levels, onChange, startingChips, players }) {
   const [editing, setEditing] = useState(Boolean(levels?.length));
   const [mode, setMode] = useState(
     levels && levels[0]?.duration_minutes ? "time" : "hands"
@@ -110,6 +184,14 @@ export default function BlindStructureEditor({ levels, onChange }) {
           {editing ? "Collapse" : "Customize"}
         </button>
       </div>
+
+      {editing && (
+        <StructureBuilder
+          startingChips={startingChips}
+          players={players}
+          onBuild={(built) => { setMode("time"); onChange(built); }}
+        />
+      )}
 
       {editing && (
         <div className="flex gap-2 mb-2">

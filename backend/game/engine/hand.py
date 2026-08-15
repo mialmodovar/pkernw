@@ -33,6 +33,11 @@ def _monte_carlo_equity(
     num_players = len(hands)
     wins = [0.0] * num_players
 
+    # A finished board has nothing left to sample: every iteration would deal
+    # the same nothing and score the same hands. One pass is the exact answer.
+    if cards_needed <= 0:
+        iterations = 1
+
     for _ in range(iterations):
         runout = random.sample(remaining_deck, cards_needed)
         full_board = board + runout
@@ -238,6 +243,21 @@ class HandEngine:
 
             start = self._first_to_act_postflop()
             await self._betting_round(start, preflop=False)
+
+        # The equities above are broadcast before each street, so the last set
+        # anybody saw was the odds going into the river. Once the river lands
+        # they are settled — and the table was left looking at figures that no
+        # longer meant anything, or at nothing at all. Send the real answer so
+        # the numbers stand until the hands turn over.
+        if len(self.community_cards) == 5 and self._is_all_in_runout():
+            active = [p for p in self.players if not p.is_folded]
+            if len(active) > 1:
+                final = _monte_carlo_equity([p.hole_cards for p in active], self.community_cards)
+                await self.broadcast("all_in_equity", [
+                    {"seat": _seat_of(p), "equity": round(eq * 100, 1),
+                     "cards": cards_to_list(p.hole_cards)}
+                    for p, eq in zip(active, final)
+                ])
 
         return await self._resolve()
 

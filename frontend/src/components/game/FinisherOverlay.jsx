@@ -30,7 +30,10 @@ export default function FinisherOverlay() {
 
   return (
     <div
-      className="animate-finisher pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center gap-2"
+      // Lifted clear of the middle of the felt: the board sits dead centre, and
+      // a GIF landing on top of it hides the one thing everybody is reading.
+      className="animate-finisher pointer-events-none absolute inset-0 z-40
+                 flex flex-col items-center justify-start pt-[6%] gap-2"
       // Announced rather than silent: a player using a screen reader should
       // still be told who knocked whom out, even though the GIF says nothing.
       role="status"
@@ -38,7 +41,7 @@ export default function FinisherOverlay() {
       <img
         src={gifFullUrl(finisher.gifId)}
         alt=""
-        className="max-w-[min(60%,22rem)] max-h-[55%] rounded-lg border-2 border-(--color-highlight)
+        className="max-w-[min(52%,18rem)] max-h-[40%] rounded-lg border-2 border-(--color-highlight)
                    shadow-2xl shadow-black/70"
       />
       <span

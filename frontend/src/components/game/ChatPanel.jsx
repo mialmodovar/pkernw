@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import useGameStore from "../../store/gameStore";
 import { send } from "../../api/socket";
 import { gifPreviewUrl } from "../../api/giphy";
@@ -35,10 +36,16 @@ export function ChatUnreadBadge() {
  * it was said in. Reloading the page starts an empty room, which is also why
  * this never pretends to be a history.
  */
-export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
+export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
   const chat = useGameStore((s) => s.chat);
   const [draft, setDraft] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Where to draw the picker, measured from the button. It renders in a portal
+  // rather than inside the panel: the chat body scrolls, and a floating panel
+  // clips its own children, so a picker positioned inside it was cut off at the
+  // panel's edge instead of opening over the table.
+  const [pickerAt, setPickerAt] = useState(null);
+  const gifButton = useRef(null);
   const scroller = useRef(null);
 
   useEffect(() => {
@@ -59,6 +66,23 @@ export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
   const sendGif = (gifId) => {
     send({ type: "chat_message", gif_id: gifId });
     setPickerOpen(false);
+  };
+
+  const togglePicker = () => {
+    if (pickerOpen) {
+      setPickerOpen(false);
+      return;
+    }
+    const rect = gifButton.current?.getBoundingClientRect();
+    if (rect) {
+      // Kept on screen: near a window edge the picker would otherwise open
+      // half outside it.
+      setPickerAt({
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - 264),
+        bottom: Math.max(8, window.innerHeight - rect.top + 6),
+      });
+    }
+    setPickerOpen(true);
   };
 
   return (
@@ -95,15 +119,22 @@ export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
         )}
       </div>
 
-      <form onSubmit={submit} className="relative flex gap-1.5 p-2 border-t border-(--color-border)">
-        {pickerOpen && (
-          <div className="absolute bottom-full left-2 mb-1 z-30">
-            <GifPicker onPick={sendGif} onClose={() => setPickerOpen(false)} />
-          </div>
+      <form onSubmit={submit} className="flex gap-1.5 p-2 border-t border-(--color-border)">
+        {pickerOpen && pickerAt && createPortal(
+          <>
+            {/* Catches the click that dismisses it, the same trick the theme
+                panel's dropdown uses. */}
+            <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(false)} />
+            <div className="fixed z-50" style={{ left: pickerAt.left, bottom: pickerAt.bottom }}>
+              <GifPicker onPick={sendGif} onClose={() => setPickerOpen(false)} />
+            </div>
+          </>,
+          document.body,
         )}
         <button
+          ref={gifButton}
           type="button"
-          onClick={() => setPickerOpen((open) => !open)}
+          onClick={togglePicker}
           title="Send a GIF"
           aria-label="Send a GIF"
           aria-expanded={pickerOpen}

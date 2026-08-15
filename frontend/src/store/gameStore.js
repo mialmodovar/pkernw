@@ -361,7 +361,10 @@ const useGameStore = create((set) => ({
           communityCards: data.cards || [],
           pot: data.pot || 0,
           players: s.players.map((p) => ({ ...p, bet: 0 })),
-          allInEquity: null,
+          // Deliberately not cleared. During an all-in runout the next set of
+          // equities arrives moments later, and blanking them in between made
+          // the numbers flicker street to street — and vanish altogether on the
+          // river, where they are most worth reading. The deal clears them.
           messages: appendLog(s, entry(s, "street", (data.cards || []).join(" "), { street: data.street })),
         }));
         break;

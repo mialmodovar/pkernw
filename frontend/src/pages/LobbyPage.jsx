@@ -53,7 +53,11 @@ export default function LobbyPage() {
     await useLobbyStore.getState().deleteTournament(tournament.id);
   };
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6">
+    // Bounded to the viewport so the tournament list can scroll inside itself
+    // rather than taking the whole page with it. dvh rather than vh: on a phone
+    // the browser chrome is part of the height and moves as you scroll.
+    <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6
+                    lg:h-[calc(100dvh-4rem)]">
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <StatsPanel />
@@ -61,8 +65,8 @@ export default function LobbyPage() {
         <LeaguePlaceholder />
       </aside>
 
-      <main className="flex-1 space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <main className="flex-1 min-h-0 flex flex-col gap-4">
+        <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex flex-wrap gap-3 items-center">
             {user?.is_staff && (

@@ -36,8 +36,11 @@ export default function TournamentBrowser({ tournaments, onJoin, onOpen, onQuit,
   );
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+    // A column that fills whatever height it is given: the filters stay put and
+    // the list scrolls under them, so the controls do not walk off the top of
+    // the screen the moment there is more than a screenful of tournaments.
+    <section className="flex flex-col min-h-0 gap-3">
+      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center gap-2">
         {/* Scrolls sideways on a phone rather than wrapping into three rows of
             chips above a list nobody can see any more. */}
         <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1 sm:pb-0 sm:flex-wrap">
@@ -77,24 +80,28 @@ export default function TournamentBrowser({ tournaments, onJoin, onOpen, onQuit,
           {search ? `Nothing matches “${search}”.` : EMPTY[filter]}
         </p>
       ) : (
-        groups.map((group) => (
-          <div key={group.key} className="space-y-1.5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)
-                           sticky top-0 py-1 bg-[var(--color-surface-sunken)] backdrop-blur-sm z-10 rounded">
-              {group.label}
-            </h3>
-            {group.tournaments.map((tournament) => (
-              <TournamentCard
-                key={tournament.id}
-                tournament={tournament}
-                onJoin={onJoin}
-                onOpen={onOpen}
-                onQuit={onQuit}
-                onDelete={onDelete}
-              />
-            ))}
-          </div>
-        ))
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 -mr-1">
+          {groups.map((group) => (
+            <div key={group.key} className="space-y-1.5">
+              {/* Sticks to the top of the scroller, so you always know which
+                  day you are looking at part way down a long list. */}
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)
+                             sticky top-0 py-1 bg-[var(--color-surface-sunken)] backdrop-blur-sm z-10 rounded">
+                {group.label}
+              </h3>
+              {group.tournaments.map((tournament) => (
+                <TournamentCard
+                  key={tournament.id}
+                  tournament={tournament}
+                  onJoin={onJoin}
+                  onOpen={onOpen}
+                  onQuit={onQuit}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
       )}
     </section>
   );

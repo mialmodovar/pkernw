@@ -363,6 +363,21 @@ button:disabled {
   100%    { opacity: 0; }
 }
 
+/* The raise field already has a slider and a pair of −/+ buttons beside it, so
+   the browser's own spinner is a third way to do the same thing — and it eats
+   the right-hand end of a field narrow enough that "2.5 BB" needs all of it,
+   hiding the decimal behind the arrows. */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* A GIF arriving over a seat. Pops in from the seat it belongs to, then simply
    sits there — it is a picture to look at, not another thing moving. */
 @keyframes gif-pop {

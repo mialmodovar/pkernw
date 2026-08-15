@@ -58,7 +58,7 @@ export default function EliminationScreen({
         )}
 
         {payout ? (
-          <p className="mt-4 text-[#d9c07a] font-semibold">
+          <p className="mt-4 text-(--color-highlight-text) font-semibold">
             In the money — {payout.percentage}% of the prize pool
           </p>
         ) : (

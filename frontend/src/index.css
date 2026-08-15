@@ -29,6 +29,30 @@
      mild fixed saturation and lightness — see accentFamily(). */
   --color-surface-hover: rgba(74, 46, 50, 0.95);
   --color-surface-hover-deep: rgba(20, 13, 14, 0.7);
+  --color-surface-sunken: rgba(16, 10, 11, 0.95);
+
+  /* The secondary colour — the table's gold. A second hue (accent + 54 deg),
+     not a shade of the accent, because a highlight has to contrast with the
+     chrome to read as one. Derived by highlightFamily() in theme/themes.js;
+     these literals are its output for the default accent. */
+  --color-highlight: #c8a227;
+  --color-highlight-bright: #d4af36;
+  --color-highlight-lift: #e4c154;
+  --color-highlight-deep: #9d7e1d;
+  --color-highlight-deeper: #886d18;
+  --color-highlight-text: #d8c175;
+  --color-highlight-pale: #e7d8aa;
+  --color-highlight-dim: #3b2f0b;
+  --color-highlight-edge: rgba(225, 197, 110, 0.4);
+  --color-highlight-ink: #14100f;
+
+  /* Deliberately NOT themed. Red here means danger — a clock about to expire —
+     and that reading does not survive being recoloured to match an accent.
+     accentFamily() never emits these, so they hold at these values under every
+     theme. The deep one matches the default accent by coincidence of history,
+     not by derivation. */
+  --color-danger: #b3243a;
+  --color-danger-deep: #8a1c2b;
   --color-border: rgba(196, 178, 165, 0.2);
   --color-border-strong: rgba(196, 178, 165, 0.38);
   --color-silver: #c9c3bd;

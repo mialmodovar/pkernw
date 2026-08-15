@@ -65,7 +65,7 @@ function Bar({ pct }) {
   return (
     <div className="h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
-        className="h-full bg-[linear-gradient(90deg,#4a0f18,#d4af37)]"
+        className="h-full bg-[linear-gradient(90deg,var(--color-accent-deep),var(--color-highlight-bright))]"
         style={{ width: `${Math.min(100, pct || 0)}%` }}
       />
     </div>

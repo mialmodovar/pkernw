@@ -20,7 +20,7 @@ export function ChatUnreadBadge() {
     <span
       title={`${unread} new message${unread === 1 ? "" : "s"}`}
       className="shrink-0 min-w-4 px-1 rounded-full text-[10px] font-bold leading-4 text-center
-                 bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208]"
+                 bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink)"
     >
       {unread > 99 ? "99+" : unread}
     </span>
@@ -70,7 +70,7 @@ export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
         ) : (
           chat.map((message) => (
             <p key={message.id} className="leading-snug break-words">
-              <span className="font-semibold text-[#d9c07a]">{message.name}</span>
+              <span className="font-semibold text-(--color-highlight-text)">{message.name}</span>
               <span className="text-(--color-silver)"> {message.text}</span>
             </p>
           ))

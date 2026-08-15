@@ -248,7 +248,7 @@ export default function FloatingPanel({
           <button type="button" onClick={() => set({ pinned: !layout.pinned })}
             aria-pressed={layout.pinned}
             title={layout.pinned ? "Unlock position" : "Lock position"}
-            className={`${ICON_BTN} ${layout.pinned ? "text-[#d9c07a]" : ""}`}>
+            className={`${ICON_BTN} ${layout.pinned ? "text-(--color-highlight-text)" : ""}`}>
             {layout.pinned ? "\u{1F512}" : "\u{1F513}"}
           </button>
           <button type="button" onClick={toggleCollapsed}

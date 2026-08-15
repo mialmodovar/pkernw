@@ -14,7 +14,7 @@ export default function ConnectionBanner({ status, onRetry }) {
       className={`px-4 py-2 text-sm flex items-center justify-center gap-3 border-b ${
         failed
           ? "bg-[#3a1016] border-[rgba(196,178,165,0.25)] text-[#e3cdd1]"
-          : "bg-[#3d2f0b] border-[rgba(224,198,107,0.3)] text-[#e6d9a8]"
+          : "bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)"
       }`}
     >
       {failed ? (
@@ -29,7 +29,7 @@ export default function ConnectionBanner({ status, onRetry }) {
         </>
       ) : (
         <>
-          <span className="w-2 h-2 rounded-full bg-[#d9c07a] animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-(--color-highlight-text) animate-pulse" />
           <span>Reconnecting…</span>
         </>
       )}

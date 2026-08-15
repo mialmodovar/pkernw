@@ -24,7 +24,7 @@ export default function BreakOverlay({ level, nextLevel }) {
         Play resumes automatically. Your seat is kept.
       </p>
       {nextLevel && !nextLevel.is_break && (
-        <p className="mt-4 text-sm text-[#d9c07a]">
+        <p className="mt-4 text-sm text-(--color-highlight-text)">
           Next: {nextLevel.small_blind}/{nextLevel.big_blind}
           {nextLevel.ante ? ` (ante ${nextLevel.ante})` : ""}
         </p>

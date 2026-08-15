@@ -266,6 +266,19 @@ const offsetForInk = (stops, ink, direction) => {
  * changing only how dark it sits. Whichever ink demands the smaller move wins,
  * so the accent is distorted as little as the contrast requirement allows —
  * usually not at all. */
+/** Ink for a gradient that cannot move.
+ *
+ * The accent gets inkPlan(), which is free to shift the whole button until an
+ * ink fits. The highlight ladder is pinned — its lightnesses are what make gold
+ * look like gold — so when neither soft ink clears AA, the ink escalates to
+ * pure white or black instead of the surface moving. */
+const inkForGradient = (stops) => {
+  const light = worstContrast(INK_LIGHT, stops);
+  const dark = worstContrast(INK_DARK, stops);
+  if (light >= dark) return light >= AA_NORMAL ? INK_LIGHT : "#ffffff";
+  return dark >= AA_NORMAL ? INK_DARK : "#000000";
+};
+
 const inkPlan = (stops) => {
   const darker = offsetForInk(stops, INK_LIGHT, -1);
   const lighter = offsetForInk(stops, INK_DARK, 1);
@@ -286,6 +299,76 @@ const liftToContrast = (hex, backdrop, target) => {
     out = toHex(hslToRgb([hue, sat, lum + step]));
     if (contrastRatio(out, backdrop) >= target) break;
   }
+  return out;
+};
+
+/** The secondary colour — the gold, in the default theme.
+ *
+ * The table marks winners, the player on the clock, all-ins and blinds in gold,
+ * and that only works because gold is *not* the accent: a highlight has to
+ * contrast with the chrome around it or it stops reading as a highlight. So
+ * this is a second hue rather than a shade of the first.
+ *
+ * +54 deg is not arbitrary — it is the rotation measured between the original
+ * burgundy accent and the original gold, so the default theme keeps the exact
+ * red-to-yellow relationship it always had, and every other accent inherits the
+ * same relationship rather than a hardcoded yellow that clashes with it.
+ *
+ * Saturation and lightness are pinned per rung instead of following the accent,
+ * which is the opposite of the hover wash: that had to stay mild, this has to
+ * stay loud. A grey accent still gets a highlight you can see.
+ */
+const HIGHLIGHT_HUE_SHIFT = 54;
+
+/** The ladder, written as the palette it has to reproduce.
+ *
+ * Each rung carries the original gold it replaces, and is matched to that
+ * colour's *relative luminance* rather than its HSL lightness. That distinction
+ * is the whole trick: hues are not equally bright, so holding lightness at 52%
+ * while rotating the hue turns a luminous gold into a murky blue, and the rung
+ * stops doing its job. Matching luminance instead keeps every rung as bright as
+ * the gold it stands in for, whatever hue it lands on — a blue highlight simply
+ * comes out paler to get there. */
+const HIGHLIGHT_RUNGS = {
+  "--color-highlight": { saturation: 67.5, like: "#c9a227" },
+  "--color-highlight-bright": { saturation: 64.6, like: "#d4af37" },
+  "--color-highlight-lift": { saturation: 72.4, like: "#e3c250" },
+  "--color-highlight-deep": { saturation: 68.6, like: "#a17c1e" },
+  "--color-highlight-deeper": { saturation: 70.4, like: "#8a6c18" },
+  "--color-highlight-text": { saturation: 55.6, like: "#d9c07a" },
+  "--color-highlight-pale": { saturation: 55.4, like: "#e6d9a8" },
+  "--color-highlight-dim": { saturation: 69.4, like: "#3d2f0b" },
+};
+
+/** The colour at this hue and saturation whose luminance matches `target`.
+ *  Luminance rises monotonically with lightness, so bisection converges. */
+const atLuminance = (hue, saturation, target) => {
+  let low = 0;
+  let high = 100;
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (low + high) / 2;
+    if (luminance(toHex(hslToRgb([hue, saturation, mid]))) < target) low = mid;
+    else high = mid;
+  }
+  return toHex(hslToRgb([hue, saturation, (low + high) / 2]));
+};
+
+const highlightFamily = (accentHue) => {
+  const hue = (accentHue + HIGHLIGHT_HUE_SHIFT) % 360;
+  const out = {};
+  for (const [token, { saturation, like }] of Object.entries(HIGHLIGHT_RUNGS)) {
+    out[token] = atLuminance(hue, saturation, luminance(like));
+  }
+
+  out["--color-highlight-edge"] = withAlpha(
+    atLuminance(hue, 65.4, luminance("#e0c66b")),
+    0.4,
+  );
+  out["--color-highlight-ink"] = inkForGradient([
+    out["--color-highlight-bright"],
+    out["--color-highlight"],
+    out["--color-highlight-deep"],
+  ]);
   return out;
 };
 
@@ -343,6 +426,9 @@ const accentFamily = (accent, backdrop) => {
     "--color-accent-link-hover": shift(link, { l: 8 }),
     "--color-surface-hover": wash(23.3, 23.5, 0.95),
     "--color-surface-hover-deep": wash(21.2, 6.5, 0.7),
+    // The bottom of a player plate — same wash family, near black.
+    "--color-surface-sunken": wash(23, 5.1, 0.95),
+    ...highlightFamily(hue),
   };
 };
 

@@ -43,19 +43,19 @@ export default function TournamentCompleteScreen({
         {/* Your own result first — it's the thing you actually want to know. */}
         {mine ? (
           <div className="text-center mt-3">
-            <h1 className={`text-3xl font-bold ${iWon ? "text-[#d9c07a]" : "text-(--color-silver)"}`}>
+            <h1 className={`text-3xl font-bold ${iWon ? "text-(--color-highlight-text)" : "text-(--color-silver)"}`}>
               {iWon ? "🏆 You won" : `You finished ${ordinal(mine.finish)}`}
             </h1>
             <p className="text-(--color-text-muted) text-sm mt-1">
               of {entrants} entrants
-              {myPayout && <span className="text-[#d9c07a]"> · {myPayout.percentage}% of the prize pool</span>}
+              {myPayout && <span className="text-(--color-highlight-text)"> · {myPayout.percentage}% of the prize pool</span>}
             </p>
           </div>
         ) : (
           <div className="text-center mt-3">
             <h1 className="text-3xl font-bold text-(--color-silver)">Tournament complete</h1>
             {winner && (
-              <p className="text-[#d9c07a] text-sm mt-1">🏆 {winner.name} won</p>
+              <p className="text-(--color-highlight-text) text-sm mt-1">🏆 {winner.name} won</p>
             )}
           </div>
         )}
@@ -83,17 +83,17 @@ export default function TournamentCompleteScreen({
                 className={`px-4 py-2.5 flex items-center gap-3 ${isMe ? "bg-(--color-accent-soft)" : ""}`}
               >
                 <span className={`font-mono text-sm w-6 shrink-0 ${
-                  row.finish === 1 ? "text-[#d9c07a]" : "text-(--color-text-muted)"
+                  row.finish === 1 ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
                 }`}>
                   {row.finish}
                 </span>
                 <span className={`flex-1 min-w-0 truncate ${
-                  row.finish === 1 ? "text-[#d9c07a] font-semibold" : "text-(--color-silver)"
+                  row.finish === 1 ? "text-(--color-highlight-text) font-semibold" : "text-(--color-silver)"
                 }`}>
                   {row.finish === 1 && "🏆 "}{row.name}{isMe && " (you)"}
                 </span>
                 <span className="text-xs text-(--color-text-muted) shrink-0 text-right">
-                  {payout && <span className="text-[#d9c07a]">{payout.percentage}%</span>}
+                  {payout && <span className="text-(--color-highlight-text)">{payout.percentage}%</span>}
                   {payout && record?.rebuy_count > 0 && " · "}
                   {record?.rebuy_count > 0 && `${record.rebuy_count} rebuy${record.rebuy_count === 1 ? "" : "s"}`}
                 </span>

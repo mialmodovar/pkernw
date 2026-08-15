@@ -163,7 +163,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
             {myRank > 0 && <Row label="Your rank">{`${myRank} of ${stacks.length}`}</Row>}
             {chipLeader && (
               <Row label="Chip leader">
-                <span className={chipLeader.username === username ? "text-[#d9c07a]" : ""}>
+                <span className={chipLeader.username === username ? "text-(--color-highlight-text)" : ""}>
                   {chipLeader.username} · {formatChips(chipLeader.chips, showBB, bb)}
                 </span>
               </Row>
@@ -171,7 +171,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
             {paidPlaces > 0 && (
               <Row label="Money">
                 {inTheMoney ? (
-                  <span className="text-[#d9c07a]">In the money</span>
+                  <span className="text-(--color-highlight-text)">In the money</span>
                 ) : onTheBubble ? (
                   <span className="text-[#c76b7a]">On the bubble</span>
                 ) : (
@@ -181,12 +181,12 @@ export default function TournamentInfoPanel({ tournament, username }) {
             )}
             {prizeNow && (
               <Row label="Your prize now">
-                <span className="text-[#d9c07a]">{withMoney(prizeNow)}</span>
+                <span className="text-(--color-highlight-text)">{withMoney(prizeNow)}</span>
               </Row>
             )}
             {nextPrize && (
               <Row label="Next jump">
-                <span className="text-[#d9c07a]">{withMoney(nextPrize)}</span>
+                <span className="text-(--color-highlight-text)">{withMoney(nextPrize)}</span>
                 <span className="text-(--color-text-muted)">
                   {` · ${remaining - 1}${remaining - 1 === 1 ? "st" : remaining - 1 === 2 ? "nd" : remaining - 1 === 3 ? "rd" : "th"}`}
                 </span>
@@ -205,7 +205,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
                 const isMine = table.table_number === currentTableNumber;
                 return (
                   <Row key={table.table_number} label={`Table ${table.table_number}${isMine ? " (yours)" : ""}`}>
-                    <span className={isMine ? "text-[#d9c07a]" : ""}>
+                    <span className={isMine ? "text-(--color-highlight-text)" : ""}>
                       {table.player_count}/{table.max_seats}
                     </span>
                   </Row>
@@ -219,7 +219,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
               <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Payouts</div>
               {payouts.slice(0, 5).map((row) => (
                 <Row key={row.place} label={row.label || `${row.place}`}>
-                  <span className="text-[#d9c07a]">{row.percentage}%</span>
+                  <span className="text-(--color-highlight-text)">{row.percentage}%</span>
                 </Row>
               ))}
             </div>

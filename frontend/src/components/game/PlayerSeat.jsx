@@ -38,7 +38,7 @@ function PositionMarker({ isDealer, isSB, isBB }) {
 // Thin ring that drains while this seat is on the clock. Its colour comes from
 // the same helper the action panel uses, so a seat in its time bank reads red
 // there too rather than staying gold to the last second.
-function TimerRing({ pct, tone = "bg-[#c9a227]" }) {
+function TimerRing({ pct, tone = "bg-(--color-highlight)" }) {
   return (
     <div className="w-full h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
@@ -65,9 +65,9 @@ export default function PlayerSeat({
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
   const borderColor = p.is_disconnected
-    ? "border-[#8a1c2b]"
+    ? "border-(--color-accent)"
     : isActive
-    ? "border-[#c9a227]"
+    ? "border-(--color-highlight)"
     : isMe
     ? "border-[rgba(196,178,165,0.55)]"
     : "border-[rgba(196,178,165,0.18)]";
@@ -79,17 +79,17 @@ export default function PlayerSeat({
   const badges = (
     <div key="badges" className="flex flex-col items-center gap-1">
       {p.is_sitting_out && !p.is_eliminated && (
-        <div className="bg-[#3d2f0b] text-[#e6d9a8] text-[10px] font-bold px-1.5 py-0.5 rounded border border-[rgba(224,198,107,0.4)] text-center">
+        <div className="bg-(--color-highlight-dim) text-(--color-highlight-pale) text-[10px] font-bold px-1.5 py-0.5 rounded border border-(--color-highlight-edge) text-center">
           SITTING OUT
         </div>
       )}
       {p.is_disconnected && !p.is_eliminated && (
-        <div className="bg-[#5a1420] text-[#e8d5d8] text-[10px] font-bold px-1.5 py-0.5 rounded border border-[rgba(196,178,165,0.25)] text-center">
+        <div className="bg-(--color-accent-deep) text-(--color-silver) text-[10px] font-bold px-1.5 py-0.5 rounded border border-[rgba(196,178,165,0.25)] text-center">
           DISCONNECTED
         </div>
       )}
       {isWinner && (
-        <div className="bg-[linear-gradient(135deg,#d4af37,#a17c1e)] text-[#1a1208] text-xs font-extrabold px-2 py-0.5 rounded shadow-lg animate-pulse text-center">
+        <div className="bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))] text-(--color-highlight-ink) text-xs font-extrabold px-2 py-0.5 rounded shadow-lg animate-pulse text-center">
           WINNER +{formatChips(winAmount, showBB, bb)}
         </div>
       )}
@@ -120,13 +120,13 @@ export default function PlayerSeat({
       {/* Your own read on what you hold, next to your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
         <div className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
-                        bg-black/60 border border-(--color-border) text-[#d9c07a] whitespace-nowrap">
+                        bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap">
           {handStrength}
         </div>
       )}
       {showdownEntry && !faceDownAtShowdown && (
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center ${
-          isWinner ? "text-[#d9c07a]" : "text-(--color-text-muted)"
+          isWinner ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
         }`}>
           {showdownEntry.hand_name}
         </div>
@@ -148,7 +148,7 @@ export default function PlayerSeat({
         }
       }}
       title={`${p.name} — tap for stats`}
-      className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+      className={`bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       {liveStream ? (
         <span className={`${compact ? "w-7 h-7" : "w-11 h-11"} rounded-full overflow-hidden shrink-0 border border-(--color-border)`}>
@@ -168,9 +168,9 @@ export default function PlayerSeat({
         <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
         <div className="text-[11px] text-(--color-text-muted)">
           {p.is_eliminated ? (
-            <span className="text-[#c76b7a]">Out</span>
+            <span className="text-(--color-accent-link)">Out</span>
           ) : p.is_all_in ? (
-            <span className="text-[#d9c07a] font-bold">ALL IN</span>
+            <span className="text-(--color-highlight-text) font-bold">ALL IN</span>
           ) : (
             // Any stack at the table flips the whole table between chips and big
             // blinds — the comparison you want is usually somebody else's stack,

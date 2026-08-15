@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import playerProfile, { PROFILE_MIN_HANDS } from "./playerProfile";
+import playerProfile, { PROFILE_MIN_HANDS, vpipTone } from "./playerProfile";
 
 const read = (hands, vpip_pct, pfr_pct) => playerProfile({ hands, vpip_pct, pfr_pct });
 
@@ -24,5 +24,21 @@ describe("playerProfile", () => {
 
   it("carries a description for the hover", () => {
     expect(read(50, 20, 16).description).toMatch(/\w/);
+  });
+});
+
+describe("vpipTone", () => {
+  const tone = (hands, vpip_pct) => vpipTone({ hands, vpip_pct });
+
+  it("runs cold for the players who wait and warm for the ones who do not", () => {
+    expect(tone(50, 10).word).toBe("very tight");
+    expect(tone(50, 22).word).toBe("solid");
+    expect(tone(50, 33).word).toBe("loose");
+    expect(tone(50, 55).word).toBe("very loose");
+  });
+
+  it("stays grey until the sample supports a read", () => {
+    expect(tone(PROFILE_MIN_HANDS - 1, 55).color).toContain("text-muted");
+    expect(tone(PROFILE_MIN_HANDS, 55).color).not.toContain("text-muted");
   });
 });

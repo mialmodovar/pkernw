@@ -42,6 +42,12 @@ remembering.
   range before anything is committed.
 
 ### Changed
+- **The number on a nameplate says what it is.** The bare figure beside a
+  player's stack was their VPIP, which you had to already know to read. It is
+  labelled now, and coloured by how loose it is — cold for the players who
+  wait, warm for the ones who cannot — so a table of tendencies can be taken in
+  without hovering anything. Under twelve hands it stays grey, because a colour
+  there would be claiming a read the sample cannot support.
 - **The table fills the screen.** The betting panel moved into the bottom-right
   corner of the felt and the chat into the bottom-left, both smaller; the
   tournament panel moved to the top right and now shows the blinds and how many

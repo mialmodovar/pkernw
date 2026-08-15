@@ -42,6 +42,24 @@ const PROFILES = {
 };
 
 /**
+ * How loose a VPIP is, for the badge on the nameplate: a word for it and a
+ * colour, cold for the players who wait and warm for the ones who cannot.
+ *
+ * Below the sample the profile needs, the number is still shown — it is theirs
+ * either way — but in plain grey, since colouring it would be claiming a read
+ * that a dozen hands cannot support.
+ */
+export function vpipTone(stats) {
+  const hands = stats?.hands ?? 0;
+  const vpip = stats?.vpip_pct ?? 0;
+  if (hands < PROFILE_MIN_HANDS) return { word: "too few hands to read", color: "text-(--color-text-muted)" };
+  if (vpip < 15) return { word: "very tight", color: "text-[#79b8dd]" };
+  if (vpip < 28) return { word: "solid", color: "text-[#d9c07a]" };
+  if (vpip < 40) return { word: "loose", color: "text-[#e8a24c]" };
+  return { word: "very loose", color: "text-[#e0707a]" };
+}
+
+/**
  * Returns {label, description} once there are enough hands behind it, or null.
  */
 export default function playerProfile(stats) {

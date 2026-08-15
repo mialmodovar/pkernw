@@ -3,6 +3,7 @@ import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import { vpipTone } from "./playerProfile";
 
 // Sits in normal flow between the cards and the nameplate: absolute placement
 // put the button on top of the hole cards, and stacked the dealer disc over the
@@ -185,11 +186,14 @@ export default function PlayerSeat({
           )}
         </div>
       </div>
-      {/* The one number worth carrying on the table itself. */}
+      {/* The one number worth carrying on the table itself. A bare figure said
+          nothing about what it was, so it is labelled — and coloured by how
+          loose it is, which is the part you read at a glance. */}
       {stats?.hands > 0 && (
-        <span className="hidden @[640px]:inline shrink-0 text-[10px] font-semibold text-[#d9c07a] leading-none"
-          title={`VPIP ${stats.vpip_pct}% over ${stats.hands} hands`}>
-          {Math.round(stats.vpip_pct)}
+        <span className={`hidden @[640px]:flex shrink-0 items-baseline gap-0.5 leading-none ${vpipTone(stats).color}`}
+          title={`VPIP ${stats.vpip_pct}% — ${p.name} enters ${stats.vpip_pct}% of hands (${stats.hands} recorded, ${vpipTone(stats).word})`}>
+          <span className="text-[8px] font-bold uppercase tracking-wide opacity-70">vpip</span>
+          <span className="text-[10px] font-semibold">{Math.round(stats.vpip_pct)}</span>
         </span>
       )}
     </div>

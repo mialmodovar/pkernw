@@ -40,3 +40,28 @@ class Watch(models.Model):
 
     def __str__(self):
         return f"{self.watcher.username} watches {self.watched.username}"
+
+
+class AvatarImage(models.Model):
+    """A picture a player uploaded, instead of one of the emoji.
+
+    Held in the database rather than on disk. The container's filesystem is
+    wiped on every deploy — the same reason settings.py refuses to fall back to
+    SQLite — and an avatar that silently disappears on a Tuesday is worse than
+    one that costs a few kilobytes of row. It is a table of its own so that the
+    bytes are only ever loaded by the view that serves them: every other read of
+    a profile, including the one behind every hand of poker, stays cheap.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="avatar_image",
+    )
+    data = models.BinaryField()
+    # Sniffed from the bytes on upload, never taken from the request — see
+    # accounts/avatars.py.
+    content_type = models.CharField(max_length=32)
+    # Doubles as the cache-busting stamp in the avatar's URL.
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username}'s avatar"

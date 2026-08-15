@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from game.giphy import GIF_ID_PATTERN, clean_gif_id
 
-from .models import Profile
+from .avatars import avatar_url
+from .models import AvatarImage, Profile
 
 AVAILABLE_AVATARS = [
     "🃏", "♠️", "♣️", "♥️", "♦️", "🎲", "🏆", "💰",
@@ -34,9 +35,23 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
+    # An uploaded picture wins over the emoji when there is one, but the emoji
+    # is still sent: it is what the client falls back to if the image fails to
+    # load, and what comes back if the picture is removed.
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "theme")
+        fields = ("avatar_emoji", "avatar_url", "theme")
+
+    def get_avatar_url(self, profile):
+        # values_list, so reading a profile never drags the image bytes along.
+        stamp = (
+            AvatarImage.objects.filter(user_id=profile.user_id)
+            .values_list("updated_at", flat=True)
+            .first()
+        )
+        return avatar_url(profile.user_id, stamp)
 
 
 class UserSerializer(serializers.ModelSerializer):

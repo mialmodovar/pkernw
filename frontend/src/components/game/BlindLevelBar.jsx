@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import Avatar from "../Avatar";
 import useGameStore from "../../store/gameStore";
 import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
@@ -59,7 +60,12 @@ function UserChip() {
         aria-expanded={panel === "avatar"}
         className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
       >
-        <span className="text-base leading-none">{user.profile?.avatar_emoji || "\u{1F0CF}"}</span>
+        <Avatar
+          url={user.profile?.avatar_url}
+          emoji={user.profile?.avatar_emoji}
+          name={user.username}
+          className="w-5 h-5 rounded-full"
+        />
         <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">{user.username}</span>
       </button>
       <button

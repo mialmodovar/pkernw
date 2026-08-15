@@ -6,6 +6,8 @@ import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
+import PositionMarker from "./PositionMarker";
+import positionLabels from "./tablePositions";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
@@ -53,7 +55,9 @@ function betPosition(index, capacity, geometry) {
 
 function EmptySeat() {
   return (
-    <div className="w-[clamp(4.75rem,15cqw,8.5rem)] rounded-lg px-3 py-2 text-center
+    // The same width a taken seat occupies, so the ring of seats does not
+    // change shape as players come and go.
+    <div className="w-[clamp(6.25rem,20cqw,11rem)] rounded-lg px-3 py-2 text-center
                     border border-dashed border-(--color-border) bg-black/25">
       <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Empty</div>
     </div>
@@ -99,6 +103,18 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Rotate slots so the hero's seat lands on the bottom-centre position.
   const offset = mySeat ?? 0;
   const bySeat = new Map(players.map((p) => [p.seat, p]));
+
+  // What each seat's position is called this hand. Counted over the players
+  // actually dealt in — somebody sitting out or waiting on a rebuy is not
+  // between the button and the blinds, and counting them would move everyone
+  // else's position by one.
+  const positions = positionLabels(
+    players
+      .filter((p) => !p.is_eliminated && !p.is_sitting_out && !p.is_waiting)
+      .map((p) => p.seat)
+      .sort((a, b) => a - b),
+    dealerSeat,
+  );
 
 
   // Sized by .table-frame, and itself a size container so everything sitting on
@@ -148,9 +164,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 showdownEntry={showdownBySeat.get(p.seat)}
                 faceDownAtShowdown={revealedSeats != null && !revealedSeats.has(p.seat) && !isMe}
                 dimmed={resultRevealed && winnerSeats.length > 0 && showdown != null && !winnerSeats.includes(p.seat)}
-                isDealer={dealerSeat === p.seat}
-                isSB={sbSeat === p.seat}
-                isBB={bbSeat === p.seat}
+                // The button and the blinds are marked on the felt beside the
+                // chips they cost; what the seat itself carries is the name of
+                // the position, which every player in the hand has.
+                position={positions.get(p.seat) || null}
                 timerPct={isActive ? countdown.pct : 100}
                 timerTone={isActive ? timerToneClass(countdown) : undefined}
                 // Past six seats the ring is too tight for a tile of its own,
@@ -171,22 +188,33 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         );
       })}
 
-      {/* Bets, on the line between each seat and the pot */}
+      {/* Bets, on the line between each seat and the pot — and, right beside
+          them, the button and the blind markers. Those three belong with the
+          chips rather than with the nameplates: the blinds ARE the chips in
+          front of those two seats, and the button is read against them. */}
       {Array.from({ length: slots }, (_, visualIdx) => {
         const seat = (offset + visualIdx) % slots;
         const p = bySeat.get(seat);
-        if (!p || !p.bet) return null;
+        if (!p) return null;
+        const isDealer = dealerSeat === p.seat;
+        const isSB = sbSeat === p.seat;
+        const isBB = bbSeat === p.seat;
+        if (!p.bet && !isDealer && !isSB && !isBB) return null;
         const pos = betPosition(visualIdx, slots, geometry);
         return (
           <div key={`bet-${seat}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1
-                       px-1.5 py-0.5 rounded-full bg-black/70 border border-(--color-highlight-edge)
-                       shadow-lg shadow-black/60 animate-chip-in"
+            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1"
             style={{ top: pos.top, left: pos.left }}>
-            <ChipStack amount={p.bet} size={10} />
-            <span className="text-[11px] font-bold text-(--color-highlight-text) leading-none">
-              {formatChips(p.bet, showBB, bb)}
-            </span>
+            <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
+            {p.bet > 0 && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/70
+                               border border-(--color-highlight-edge) shadow-lg shadow-black/60 animate-chip-in">
+                <ChipStack amount={p.bet} size={10} />
+                <span className="text-[11px] font-bold text-(--color-highlight-text) leading-none">
+                  {formatChips(p.bet, showBB, bb)}
+                </span>
+              </span>
+            )}
           </div>
         );
       })}

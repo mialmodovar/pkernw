@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import Avatar from "../Avatar";
 import HoleCards from "./HoleCards";
 import SeatGifBubble from "./SeatGifBubble";
 import useMediaStore from "../../store/mediaStore";
@@ -8,6 +9,7 @@ import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 import { formatEuros } from "./formatMoney";
 import { vpipTone } from "./playerProfile";
+import { positionHint } from "./tablePositions";
 
 const BOUNTY_FLASH_MS = 2200;
 
@@ -32,36 +34,6 @@ function useBountyFlash(seat) {
   return flashId != null && flashId !== spentId ? mine : null;
 }
 
-// Sits in normal flow between the cards and the nameplate: absolute placement
-// put the button on top of the hole cards, and stacked the dealer disc over the
-// blind pill when one player held both (heads-up).
-function PositionMarker({ isDealer, isSB, isBB }) {
-  if (!isDealer && !isSB && !isBB) return null;
-  return (
-    <div className="flex items-center justify-center gap-1">
-      {isDealer && (
-        <span
-          title="Dealer"
-          className="w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-extrabold
-                     bg-[linear-gradient(135deg,#efe9e3,#b9b0a7)] text-[#1a1208]
-                     border border-[#8c8379] shadow shadow-black/50"
-        >
-          D
-        </span>
-      )}
-      {(isSB || isBB) && (
-        <span
-          title={isSB ? "Small blind" : "Big blind"}
-          className="px-1.5 h-5 flex items-center rounded text-[9px] font-bold
-                     bg-black/60 text-(--color-silver) border border-(--color-border)"
-        >
-          {isSB ? "SB" : "BB"}
-        </span>
-      )}
-    </div>
-  );
-}
-
 // Thin ring that drains while this seat is on the clock. Its colour comes from
 // the same helper the action panel uses, so a seat in its time bank reads red
 // there too rather than staying gold to the last second.
@@ -78,7 +50,7 @@ function TimerRing({ pct, tone = "bg-(--color-highlight)" }) {
 
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
-  isDealer, isSB, isBB, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
+  position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
   stats, onInspect, handStrength, shine, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -171,11 +143,13 @@ export default function PlayerSeat({
     </div>
   );
 
-  const markers = <PositionMarker key="markers" isDealer={isDealer} isSB={isSB} isBB={isBB} />;
-
   // The plate is the stats target and the stack inside it is the chips/BB
   // toggle, so this is a div with button semantics rather than a real <button>:
   // a button inside a button is not something HTML allows.
+  //
+  // Its left padding is the avatar's doing: the plate runs the full width of
+  // the seat and passes underneath the picture, so the text has to start clear
+  // of it. See `body` below for the geometry.
   const plate = (
     <div key="plate" role="button" tabIndex={0} onClick={onInspect}
       onKeyDown={(event) => {
@@ -185,7 +159,8 @@ export default function PlayerSeat({
         }
       }}
       title={`${p.name} — tap for stats`}
-      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+      style={{ paddingLeft: "calc(var(--seat-avatar) * 1.08)" }}
+      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg pr-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       {/* What this seat is worth to whoever busts them — pinned to the plate
           rather than tucked inside it, because it is a price on a head and not
@@ -227,14 +202,6 @@ export default function PlayerSeat({
         </span>
       )}
 
-      {liveStream ? (
-        <span className={`${compact ? "w-7 h-7" : "w-11 h-11"} rounded-full overflow-hidden shrink-0 border border-(--color-border)`}>
-          <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
-            name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
-        </span>
-      ) : (
-        <span className="text-xs leading-none shrink-0">{p.avatar || "\u{1F0CF}"}</span>
-      )}
       {/* A microphone with no camera changes nothing about the layout. */}
       {media?.audio && media.status === "connected" && (
         <span className="text-[10px] leading-none shrink-0" title={`${p.name} has their microphone on`}>
@@ -263,38 +230,103 @@ export default function PlayerSeat({
           )}
         </div>
       </div>
-      {/* The one number worth carrying on the table itself. A bare figure said
-          nothing about what it was, so it is labelled — and coloured by how
-          loose it is, which is the part you read at a glance. */}
-      {stats?.hands > 0 && (
-        <span className={`hidden @[640px]:flex shrink-0 items-baseline gap-0.5 leading-none ${vpipTone(stats).color}`}
-          title={`VPIP ${stats.vpip_pct}% — ${p.name} enters ${stats.vpip_pct}% of hands (${stats.hands} recorded, ${vpipTone(stats).word})`}>
-          <span className="text-[8px] font-bold uppercase tracking-wide opacity-70">vpip</span>
-          <span className="text-[10px] font-semibold">{Math.round(stats.vpip_pct)}</span>
+      {/* The two things worth carrying on the table itself, in one column on
+          the far edge of the plate: how loose they are, and where they are
+          sitting this hand. */}
+      {(stats?.hands > 0 || position) && (
+        <span className="shrink-0 flex flex-col items-end gap-px leading-none">
+          {/* A bare figure said nothing about what it was, so it is labelled —
+              and coloured by how loose it is, which is the part you read at a
+              glance. */}
+          {stats?.hands > 0 && (
+            <span className={`hidden @[640px]:flex items-baseline gap-0.5 leading-none ${vpipTone(stats).color}`}
+              title={`VPIP ${stats.vpip_pct}% — ${p.name} enters ${stats.vpip_pct}% of hands (${stats.hands} recorded, ${vpipTone(stats).word})`}>
+              <span className="text-[8px] font-bold uppercase tracking-wide opacity-70">vpip</span>
+              <span className="text-[10px] font-semibold">{Math.round(stats.vpip_pct)}</span>
+            </span>
+          )}
+          {/* Under the VPIP: the same glance that tells you how wide they play
+              tells you how much position they have to play it from. */}
+          {position && (
+            <span
+              title={`${p.name} is ${positionHint(position) || `in ${position}`}`}
+              className="hidden @[520px]:block text-[9px] font-bold uppercase tracking-wide text-(--color-text-muted)"
+            >
+              {position}
+            </span>
+          )}
         </span>
       )}
+    </div>
+  );
+
+  // The face, big and round, on the left of the seat. It is the anchor the rest
+  // of the seat is arranged around: the hole cards sit beside its top half and
+  // the nameplate slides out from under its bottom half, so a seat reads as one
+  // person rather than as a column of parts. When the table is too crowded for
+  // a video tile of its own, this is where the camera goes — same circle, same
+  // place, whether it is a photo or a face that moves.
+  const face = (
+    <span
+      title={p.name}
+      className={`absolute left-0 top-0 -translate-y-1/2 z-20 rounded-full overflow-hidden
+                  border-2 ${borderColor} bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))]
+                  shadow-lg shadow-black/60 w-[var(--seat-avatar)] h-[var(--seat-avatar)]
+                  ${isActive ? "ring-2 ring-(--color-highlight-edge)" : ""}`}
+    >
+      {liveStream ? (
+        <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
+          name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
+      ) : (
+        <Avatar url={p.avatar_url} emoji={p.avatar} name={p.name}
+          className="w-full h-full"
+          emojiClassName="text-[calc(var(--seat-avatar)*0.5)]" />
+      )}
+    </span>
+  );
+
+  // Cards beside the avatar's upper half, plate under its lower half. The plate
+  // is what sets where the seam is — the avatar is pinned to its top edge and
+  // pulled up by half its own height — so the two rows meet at the middle of
+  // the picture however tall the cards happen to be.
+  const body = (
+    <div key="body" className="w-full">
+      <div className="flex items-end justify-start min-h-[calc(var(--seat-avatar)/2)]"
+        style={{ paddingLeft: "calc(var(--seat-avatar) * 1.08)" }}>
+        {cards}
+      </div>
+      <div className="relative">
+        {plate}
+        {face}
+      </div>
     </div>
   );
 
   const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} tone={timerTone} /> : null;
   // On the outer edge, against the nameplate, and only when there is a picture
   // to show — nobody's seat moves because someone else turned a camera on.
-  // On a crowded table the picture rides on the nameplate (see liveStream
+  // On a crowded table the picture rides in the avatar circle (see liveStream
   // above); everywhere else it gets its own tile on the outer edge.
   const video = compactVideo ? null
     : myStream
       ? <SeatVideo key="video" peer={{ stream: myStream, video: true, status: "connected", videoFlowing: true }} name={p.name} mirrored muted />
       : media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
   const stack = topHalf
-    ? [ring, video, plate, markers, cards, badges]
-    : [badges, cards, markers, plate, video, ring];
+    ? [ring, video, body, badges]
+    : [badges, body, video, ring];
 
+  // A phone has no room to spare: the seat ring runs down the long sides of the
+  // screen, so a seat that grows sideways runs off it. The picture is still the
+  // biggest thing in a seat there, just not as big as it gets on a table with
+  // room around it.
   return (
-    <div className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
-      compact ? (isMe ? "w-[5.5rem]" : "w-[4.5rem]") : "w-[clamp(4.75rem,15cqw,8.5rem)]"
-    } ${
-      p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
-    }`}>
+    <div
+      style={{ "--seat-avatar": compact ? (isMe ? "2.4rem" : "2.05rem") : "clamp(2.4rem,7.5cqw,4rem)" }}
+      className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
+        compact ? (isMe ? "w-[6.75rem]" : "w-[5.75rem]") : "w-[clamp(6.25rem,20cqw,11rem)]"
+      } ${
+        p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
+      }`}>
       {stack}
       {/* Over the seat rather than only in the chat panel: a GIF is a reaction,
           and a reaction belongs to the player it came from. */}

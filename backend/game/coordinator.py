@@ -647,6 +647,7 @@ class MultiTableTournamentCoordinator:
 
             runtime_player.name = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
+            runtime_player._avatar_url = record.get("avatar_url")
             runtime_player._finisher_gif_id = record.get("finisher_gif_id")
             runtime_player.chips = record["chips"]
             # Only read in on the first sight of a player. This runs before
@@ -1105,6 +1106,9 @@ class MultiTableTournamentCoordinator:
             "table_number": player._table_number,
             "name": player.name,
             "avatar": getattr(player, "_avatar", "\U0001F0CF"),
+            # The picture, when there is one. The emoji above stays the
+            # fallback, so a client that cannot load it still has a seat marker.
+            "avatar_url": getattr(player, "_avatar_url", None),
             "chips": player.chips,
             "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
             "is_eliminated": player.is_eliminated,

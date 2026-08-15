@@ -1,8 +1,16 @@
+import base64
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+
+from .avatars import AVATAR_MAX_BYTES
+from .models import AvatarImage
 
 User = get_user_model()
 
@@ -177,3 +185,100 @@ class PlayerProfileTests(APITestCase):
 		response = self.client.get(reverse("player-profile", args=["ghost"]))
 
 		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+# A real 1×1 PNG. Small enough to inline, and the point of the tests below is
+# what the bytes say they are rather than what they draw.
+ONE_PIXEL_PNG = base64.b64decode(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+class AvatarImageTests(APITestCase):
+	"""The picture a player uploads instead of one of the emoji."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="shutterbug", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def _upload(self, content, name="avatar.png", content_type="image/png"):
+		return self.client.put(
+			reverse("avatar_image"),
+			{"image": SimpleUploadedFile(name, content, content_type=content_type)},
+			format="multipart",
+		)
+
+	def test_an_uploaded_picture_becomes_the_profile_avatar(self):
+		response = self._upload(ONE_PIXEL_PNG)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertIn(f"/api/auth/avatar/{self.user.id}/", response.data["avatar_url"])
+
+		me = self.client.get(reverse("me"))
+		self.assertEqual(me.data["profile"]["avatar_url"], response.data["avatar_url"])
+		# The emoji is still there underneath, ready for the picture being removed.
+		self.assertEqual(me.data["profile"]["avatar_emoji"], "🃏")
+
+	def test_the_bytes_are_served_back_as_the_type_they_actually_are(self):
+		url = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
+
+		# No credentials: an <img> cannot carry a bearer token.
+		self.client.force_authenticate(None)
+		response = self.client.get(url)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response["Content-Type"], "image/png")
+		self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+		self.assertEqual(response.content, ONE_PIXEL_PNG)
+
+	def test_a_player_without_a_picture_has_none(self):
+		me = self.client.get(reverse("me"))
+		self.assertIsNone(me.data["profile"]["avatar_url"])
+
+		response = self.client.get(reverse("avatar_image_for_user", args=[self.user.id]))
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_a_file_that_is_not_an_image_is_refused_whatever_it_claims_to_be(self):
+		svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+		response = self._upload(svg, name="avatar.png", content_type="image/png")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(AvatarImage.objects.filter(user=self.user).exists())
+
+	def test_an_oversized_upload_is_refused(self):
+		response = self._upload(ONE_PIXEL_PNG + b"\0" * AVATAR_MAX_BYTES)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(AvatarImage.objects.filter(user=self.user).exists())
+
+	def test_replacing_a_picture_changes_its_url(self):
+		first = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
+		AvatarImage.objects.filter(user=self.user).update(
+			updated_at=timezone.now() - timedelta(days=1),
+		)
+
+		second = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
+
+		# One row, one picture — and a URL nothing has cached under.
+		self.assertEqual(AvatarImage.objects.filter(user=self.user).count(), 1)
+		self.assertNotEqual(first, second)
+
+	def test_removing_the_picture_uncovers_the_emoji(self):
+		self._upload(ONE_PIXEL_PNG)
+
+		response = self.client.delete(reverse("avatar_image"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertIsNone(response.data["avatar_url"])
+		self.assertFalse(AvatarImage.objects.filter(user=self.user).exists())
+		me = self.client.get(reverse("me"))
+		self.assertIsNone(me.data["profile"]["avatar_url"])
+		self.assertEqual(me.data["profile"]["avatar_emoji"], "🃏")
+
+	def test_somebody_else_cannot_upload_over_your_avatar(self):
+		self.client.force_authenticate(None)
+
+		response = self._upload(ONE_PIXEL_PNG)
+
+		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

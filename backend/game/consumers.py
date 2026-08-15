@@ -16,6 +16,8 @@ from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 
+from accounts.avatars import avatar_url
+from accounts.models import AvatarImage
 from tournaments.bounties import BountyConfig
 from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 
@@ -186,7 +188,7 @@ def _db_get_levels(tournament_id):
 
 @database_sync_to_async
 def _db_get_player_records(tournament_id):
-    return list(
+    records = list(
         TournamentPlayer.objects.filter(tournament_id=tournament_id)
         .select_related("user", "table")
         .order_by("seat")
@@ -210,6 +212,17 @@ def _db_get_player_records(tournament_id):
             "knockouts",
         )
     )
+
+    # A second, tiny query rather than a join: the avatar bytes live in their
+    # own table precisely so that the query behind every hand never touches
+    # them, and all this needs is the stamp that makes up the URL.
+    stamps = dict(
+        AvatarImage.objects.filter(user_id__in={record["user_id"] for record in records})
+        .values_list("user_id", "updated_at")
+    )
+    for record in records:
+        record["avatar_url"] = avatar_url(record["user_id"], stamps.get(record["user_id"]))
+    return records
 
 
 @database_sync_to_async
@@ -832,6 +845,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "user_id": record["user_id"],
                 "username": record["user__username"],
                 "avatar": record["user__profile__avatar_emoji"] or "\U0001F0CF",
+                # None unless they uploaded a picture, in which case it is what
+                # the table draws and the emoji is only the fallback.
+                "avatar_url": record["avatar_url"],
                 # Their chosen knockout GIF, validated when it was saved and
                 # re-checked here: a profile written before the rule existed,
                 # or by hand, must not reach the table unchecked.

@@ -39,6 +39,30 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  // A picture, which covers the emoji for as long as it is there. The blob has
+  // already been cropped and re-encoded by the browser (see avatarImage.js);
+  // this only carries it.
+  uploadAvatarImage: async (blob) => {
+    const form = new FormData();
+    form.append("image", blob, "avatar");
+    const { data } = await api.put("/auth/me/avatar/image/", form);
+    const user = get().user;
+    if (user) {
+      set({ user: { ...user, profile: { ...user.profile, avatar_url: data.avatar_url } } });
+    }
+    return data.avatar_url;
+  },
+
+  // Removing the picture is not choosing a new avatar — it uncovers the emoji
+  // that was underneath it all along.
+  removeAvatarImage: async () => {
+    await api.delete("/auth/me/avatar/image/");
+    const user = get().user;
+    if (user) {
+      set({ user: { ...user, profile: { ...user.profile, avatar_url: null } } });
+    }
+  },
+
   logout: () => {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");

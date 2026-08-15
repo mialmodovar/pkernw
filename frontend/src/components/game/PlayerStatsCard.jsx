@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import api from "../../api/http";
+import Avatar from "../Avatar";
 import playerProfile, { PROFILE_MIN_HANDS } from "./playerProfile";
 
 /**
@@ -166,7 +167,13 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
       <div className="panel rounded-xl w-full max-w-sm p-4 shadow-2xl shadow-black/70 max-h-[85vh] overflow-y-auto"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
-          <span className="text-2xl leading-none">{player.avatar || "\u{1F0CF}"}</span>
+          <Avatar
+            url={player.avatar_url}
+            emoji={player.avatar}
+            name={player.name}
+            className="w-9 h-9 shrink-0 rounded-full border border-(--color-border)"
+            emojiClassName="text-2xl"
+          />
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-(--color-silver) truncate">{player.name}</p>
             <p className="text-xs text-(--color-text-muted)">

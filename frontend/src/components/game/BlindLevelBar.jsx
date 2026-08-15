@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import useGameStore from "../../store/gameStore";
 import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
@@ -16,17 +17,40 @@ import ThemeSettings from "../lobby/ThemeSettings";
  *
  * One panel at a time, like the profile card, since both drop from the same
  * chip and two at once would overlap.
+ *
+ * Drawn through a portal rather than in place. Every .panel carries a
+ * backdrop-filter, and a backdrop filter makes a stacking context — so a panel
+ * opened inside this bar was sealed into it, however high its z-index, and the
+ * host controls below simply painted over the top. The portal takes it out of
+ * that box entirely.
  */
 function UserChip() {
   const user = useAuthStore((s) => s.user);
   const updateAvatar = useAuthStore((s) => s.updateAvatar);
   const [panel, setPanel] = useState(null);
-  const toggle = (name) => setPanel((current) => (current === name ? null : name));
+  const [at, setAt] = useState(null);
+  const chip = useRef(null);
+
+  const toggle = (name) => {
+    if (panel === name) {
+      setPanel(null);
+      return;
+    }
+    const rect = chip.current?.getBoundingClientRect();
+    if (rect) {
+      // Hung off the right edge, where the chip is, and kept on screen.
+      setAt({
+        right: Math.max(8, window.innerWidth - rect.right),
+        top: rect.bottom + 6,
+      });
+    }
+    setPanel(name);
+  };
 
   if (!user) return null;
 
   return (
-    <span className="relative flex items-center gap-1 pr-2 mr-1 border-r border-(--color-border)">
+    <span ref={chip} className="relative flex items-center gap-1 pr-2 mr-1 border-r border-(--color-border)">
       <button
         type="button"
         onClick={() => toggle("avatar")}
@@ -56,19 +80,15 @@ function UserChip() {
         </svg>
       </button>
 
-      {panel && (
+      {panel && at && createPortal(
         <>
           {/* Catches the click that dismisses it, the same way the theme
               panel's own dropdown does. */}
           <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
-          {/* Zero-height anchor: both panels position themselves against a
-              relative parent, and this gives them one of the right width
-              hanging off the correct edge of a chip that sits at the far
-              right of the bar. */}
-          {/* Above the table's own overlays, which reach z-40 for a finisher:
-              the bar comes first in the document, so an equal z-index would
-              lose to them. */}
-          <div className="absolute right-0 top-full z-50 w-60">
+          {/* A zero-height anchor of the right width, hung where the chip is:
+              both panels position themselves against a relative parent, and
+              this gives them one. */}
+          <div className="fixed z-50 w-60" style={{ right: at.right, top: at.top }}>
             <div className="relative">
               {panel === "avatar" && (
                 <EmojiPicker onSelect={updateAvatar} onClose={() => setPanel(null)} />
@@ -76,7 +96,8 @@ function UserChip() {
               {panel === "settings" && <ThemeSettings onClose={() => setPanel(null)} />}
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </span>
   );

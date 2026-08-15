@@ -12,6 +12,7 @@ from .serializers import (
     TournamentListSerializer,
     TournamentDetailSerializer,
     TournamentCreateSerializer,
+    TournamentUpdateSerializer,
     BlindLevelSerializer,
 )
 
@@ -345,6 +346,37 @@ def quit_tournament(request, pk):
 
     tp.delete()
     return Response({"status": "unregistered"})
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_tournament(request, pk):
+    """Let the host fix a tournament nobody has played yet.
+
+    Only in the lobby: once the first hand is dealt the structure is what the
+    play happened under, and editing it rewrites history rather than plans.
+
+    The money is not editable at all, even here. The buy-in, what it pays and
+    what a head is worth are the terms players joined on, and changing those
+    behind them is a different thing from moving the start time.
+    """
+    try:
+        tournament = Tournament.objects.get(pk=pk, host=request.user)
+    except Tournament.DoesNotExist:
+        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.status != "lobby":
+        return Response(
+            {"error": "Only a tournament that has not started can be edited"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = TournamentUpdateSerializer(
+        tournament, data=request.data, partial=True, context={"request": request},
+    )
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(TournamentDetailSerializer(tournament, context={"request": request}).data)
 
 
 @api_view(["DELETE"])

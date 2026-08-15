@@ -20,7 +20,7 @@ const EMPTY = {
  * and easier to search: the ordering already puts a game you are seated at
  * above one that starts on Thursday (see tournamentBrowsing.js).
  */
-export default function TournamentBrowser({ tournaments, onJoin, onOpen, onQuit, onDelete }) {
+export default function TournamentBrowser({ tournaments, onJoin, onOpen, onQuit, onDelete, onEdit }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
@@ -97,6 +97,7 @@ export default function TournamentBrowser({ tournaments, onJoin, onOpen, onQuit,
                   onOpen={onOpen}
                   onQuit={onQuit}
                   onDelete={onDelete}
+                  onEdit={onEdit}
                 />
               ))}
             </div>

@@ -2255,3 +2255,106 @@ class RebuyWindowTests(TestCase):
 		async_to_sync(coordinator.apply_rebuy)(11, 10_000)
 		self.assertEqual(coordinator._rebuy_pending, {22})
 		self.assertGreater(coordinator._rebuy_deadline, 0.0)
+
+
+class EditTournamentTests(APITestCase):
+	"""Fixing a tournament nobody has played yet — but not the terms people
+	joined on."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="edit_host", password="secret123", is_staff=True)
+		self.other = User.objects.create_user(username="edit_other", password="secret123")
+		self.client.force_authenticate(self.host)
+		response = self.client.post(reverse("tournament-list"), {
+			"name": "Weekly",
+			"starting_chips": 10000,
+			"buy_in_cents": 2000,
+			"payout_structure": [{"place": 1, "label": "1st", "percentage": 100}],
+			"bounty_mode": "progressive",
+			"bounty_cents": 1000,
+		}, format="json")
+		self.tournament = Tournament.objects.get(id=response.data["id"])
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _edit(self, **payload):
+		return self.client.patch(
+			reverse("tournament-edit", args=[self.tournament.id]), payload, format="json",
+		)
+
+	def test_the_host_can_change_the_arrangements(self):
+		response = self._edit(name="Weekly (moved)", showdown_seconds=9, starting_chips=25000)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.name, "Weekly (moved)")
+		self.assertEqual(self.tournament.showdown_seconds, 9)
+		self.assertEqual(self.tournament.starting_chips, 25000)
+
+	def test_players_already_seated_get_the_new_stack(self):
+		"""Nobody has played, so leaving them on the old one would seat them
+		with different chips to everybody else."""
+		self._edit(starting_chips=25000)
+
+		self.assertEqual(self.tournament.players.get().chips, 25000)
+
+	def test_the_buy_in_cannot_be_moved_behind_the_players(self):
+		self._edit(buy_in_cents=9999)
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.buy_in_cents, 2000)
+
+	def test_editing_something_else_does_not_wipe_the_payouts(self):
+		"""The create serializer defaults an absent payout structure to empty,
+		which would have cleared it on every unrelated edit."""
+		self._edit(name="Weekly II")
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(len(self.tournament.payout_structure), 1)
+		self.assertEqual(self.tournament.bounty_mode, "progressive")
+		self.assertEqual(self.tournament.bounty_cents, 1000)
+
+	def test_the_blind_structure_can_be_replaced(self):
+		response = self._edit(levels=[
+			{"small_blind": 100, "big_blind": 200, "ante": 0, "duration_minutes": 12},
+			{"small_blind": 200, "big_blind": 400, "ante": 50, "duration_minutes": 12},
+		])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self.tournament.levels.count(), 2)
+		self.assertEqual(self.tournament.levels.first().big_blind, 200)
+
+	def test_shortening_the_structure_pulls_the_cutoffs_in_with_it(self):
+		"""Refusing the edit because a leftover cutoff points past the new last
+		level is no help to a host who just shortened the tournament."""
+		self._edit(levels=[
+			{"small_blind": 100, "big_blind": 200, "ante": 0, "duration_minutes": 12},
+			{"small_blind": 200, "big_blind": 400, "ante": 50, "duration_minutes": 12},
+		])
+
+		self.tournament.refresh_from_db()
+		self.assertLessEqual(self.tournament.late_reg_level, 2)
+		self.assertLessEqual(self.tournament.rebuy_level, 2)
+
+	def test_the_cap_cannot_drop_below_the_players_already_seated(self):
+		response = self._edit(max_players=0)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_tournament_under_way_cannot_be_edited(self):
+		Tournament.objects.filter(id=self.tournament.id).update(status="running")
+
+		response = self._edit(name="too late")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_only_the_host_can_edit(self):
+		self.client.force_authenticate(self.other)
+
+		response = self._edit(name="not yours")
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_the_game_type_is_recorded(self):
+		self.assertEqual(self.tournament.game_type, "nlh")

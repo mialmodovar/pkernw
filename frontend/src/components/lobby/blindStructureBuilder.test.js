@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   SPEEDS,
   buildBlindStructure,
+  estimateMinutes,
   formatDuration,
   niceBlind,
   structureMinutes,
@@ -98,5 +99,32 @@ describe("formatDuration", () => {
     expect(formatDuration(120)).toBe("2h");
     expect(formatDuration(150)).toBe("2h 30m");
     expect(formatDuration(0)).toBe("—");
+  });
+});
+
+describe("estimateMinutes", () => {
+  it("gives a bigger field a longer night", () => {
+    expect(estimateMinutes({ players: 18 })).toBeGreaterThan(estimateMinutes({ players: 6 }));
+  });
+
+  it("halves for turbo and quarters for hyper, which is what they mean", () => {
+    const normal = estimateMinutes({ players: 9, speed: "normal" });
+    expect(estimateMinutes({ players: 9, speed: "turbo" })).toBeLessThan(normal);
+    expect(estimateMinutes({ players: 9, speed: "hyper" }))
+      .toBeLessThan(estimateMinutes({ players: 9, speed: "turbo" }));
+  });
+
+  it("answers in quarter hours rather than pretending to be exact", () => {
+    for (const players of [2, 5, 9, 13, 27]) {
+      expect(estimateMinutes({ players }) % 15).toBe(0);
+    }
+  });
+
+  it("never suggests a tournament shorter than sitting down takes", () => {
+    expect(estimateMinutes({ players: 2, speed: "hyper" })).toBeGreaterThanOrEqual(30);
+  });
+
+  it("has an answer for a call with nothing in it", () => {
+    expect(estimateMinutes()).toBeGreaterThan(0);
   });
 });

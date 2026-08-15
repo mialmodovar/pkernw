@@ -212,7 +212,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
+        fields = ("id", "name", "game_type", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
                   "is_host",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
@@ -233,7 +233,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "host_name", "status", "starting_chips", "buy_in_cents",
+        fields = ("id", "name", "game_type", "host_name", "status", "starting_chips", "buy_in_cents",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
@@ -263,7 +263,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
+        fields = ("id", "name", "game_type", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
@@ -418,3 +418,81 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             bounty_cents=starting_bounty_cents(BountyConfig.from_tournament(tournament)),
         )
         return tournament
+
+
+# What a tournament cannot change once people have signed up for it. The money
+# is the agreement they joined on — the buy-in, what it pays, and what a head is
+# worth — and moving it after the fact is changing the deal behind them. The
+# rest is arrangement: when it starts, how fast the blinds climb, how long the
+# clock is.
+LOCKED_AFTER_CREATION = (
+    "buy_in_cents",
+    "payout_structure",
+    "bounty_mode",
+    "bounty_cents",
+    "bounty_progressive_split_pct",
+)
+
+
+class TournamentUpdateSerializer(TournamentCreateSerializer):
+    """Editing a tournament nobody has played yet."""
+
+    class Meta(TournamentCreateSerializer.Meta):
+        fields = tuple(
+            field for field in TournamentCreateSerializer.Meta.fields
+            if field not in LOCKED_AFTER_CREATION
+        )
+
+    # Cutoffs that are counted in blind levels, and so cannot outlive a
+    # structure that got shorter.
+    LEVEL_CUTOFFS = ("late_reg_level", "rebuy_level", "time_bank_refill_level")
+
+    def validate(self, attrs):
+        # Shortening the structure used to be refused outright, because the
+        # cutoffs left over from the old one pointed past the end of the new.
+        # They are subordinate to the structure rather than the other way
+        # round, so they follow it down instead of blocking the edit.
+        levels = attrs.get("levels")
+        if levels:
+            blind_levels = sum(1 for level in levels if not level.get("is_break", False))
+            for field in self.LEVEL_CUTOFFS:
+                current = attrs.get(field, getattr(self.instance, field, None))
+                if blind_levels and current and current > blind_levels:
+                    attrs[field] = blind_levels
+
+        attrs = super().validate(attrs)
+        # The parent fills in defaults for the money fields it thinks it is
+        # creating — an empty payout structure among them. Left in, saving an
+        # edit would quietly wipe the payouts nobody asked to change.
+        for field in LOCKED_AFTER_CREATION:
+            attrs.pop(field, None)
+
+        seated = self.instance.players.count() if self.instance else 0
+        max_players = attrs.get("max_players", getattr(self.instance, "max_players", 0))
+        if max_players < seated:
+            raise serializers.ValidationError(
+                {"max_players": f"{seated} players have already taken a seat."}
+            )
+        return attrs
+
+    def update(self, instance, validated_data):
+        levels_data = validated_data.pop("levels", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+
+        if levels_data is not None:
+            # Replaced rather than reconciled: a blind structure is one object,
+            # and nobody has played a hand off the old one.
+            instance.levels.all().delete()
+            for index, level in enumerate(levels_data, 1):
+                normalized = _normalize_level_payload(level)
+                normalized["level_number"] = index
+                normalized.pop("id", None)
+                BlindLevel.objects.create(tournament=instance, **normalized)
+
+        # Anyone already seated is holding the old starting stack. No hand has
+        # been played, so handing them the new one is safe — and leaving them on
+        # the old one would seat them with different chips to everybody else.
+        instance.players.update(chips=instance.starting_chips)
+        return instance

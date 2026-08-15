@@ -99,6 +99,28 @@ export function buildBlindStructure({
   return levels;
 }
 
+/**
+ * How long a tournament of this size ought to take at this speed.
+ *
+ * More players take longer, close enough to linearly for a home game: every
+ * entrant is another stack that has to be lost before it can end. The speeds
+ * halve and quarter that, which is what they mean.
+ *
+ * An estimate, and offered as one — it is the starting point for the quick
+ * setup, not a promise about when everyone goes home.
+ */
+const MINUTES_PER_PLAYER = 15;
+const SETUP_MINUTES = 30;
+const SPEED_DIVISOR = { normal: 1, turbo: 2, hyper: 4 };
+
+export function estimateMinutes({ players = 9, speed = "normal" } = {}) {
+  const full = SETUP_MINUTES + MINUTES_PER_PLAYER * Math.max(2, players);
+  const divisor = SPEED_DIVISOR[speed] || 1;
+  // To the nearest quarter hour, because an estimate that reads 142 minutes is
+  // pretending to a precision it does not have.
+  return Math.max(30, Math.round(full / divisor / 15) * 15);
+}
+
 /** How long the structure below it actually runs, breaks included. */
 export function structureMinutes(levels) {
   return (levels || []).reduce((total, level) => total + (level.duration_minutes || 0), 0);

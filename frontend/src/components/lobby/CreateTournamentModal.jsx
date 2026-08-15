@@ -2,13 +2,24 @@ import { useEffect, useState } from "react";
 import api from "../../api/http";
 import BlindStructureEditor from "./BlindStructureEditor";
 import { DEFAULT_HANDS } from "./blindStructureDefaults";
+import {
+  SPEEDS,
+  SPEED_NAMES,
+  buildBlindStructure,
+  estimateMinutes,
+  formatDuration,
+} from "./blindStructureBuilder";
 
 const toDatetimeLocalValue = (date) => {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 16);
 };
 
-export default function CreateTournamentForm({ onCancel, onCreate }) {
+// The only game there is, so far. Named rather than assumed, so adding another
+// is a list to extend instead of an assumption to hunt down.
+const GAME_TYPES = [{ value: "nlh", label: "No-Limit Hold'em" }];
+
+export default function CreateTournamentForm({ onCancel, onCreate, editing = null, onSave }) {
   const [name, setName] = useState("");
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledStart, setScheduledStart] = useState(() => toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000)));
@@ -48,6 +59,14 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [autoRemoveOfflineSeconds, setAutoRemoveOfflineSeconds] = useState(300);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
   const [error, setError] = useState("");
+  const [gameType, setGameType] = useState("nlh");
+  // Most tournaments are one of three, and answering thirty questions to get
+  // one of them is the reason hosts reuse whatever they made last time. Quick
+  // asks the two that matter and derives the rest; advanced is the whole form,
+  // unchanged. Editing is always the full form — you came here to change a
+  // particular thing.
+  const [advanced, setAdvanced] = useState(Boolean(editing));
+  const [quickSpeed, setQuickSpeed] = useState("normal");
   // Tournaments to copy a setup from. Most games in a home league are the same
   // game every week, and rebuilding a structure, a payout table and a bounty
   // rule from memory each time is how they end up subtly different.
@@ -55,26 +74,47 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const [templateId, setTemplateId] = useState("");
   const [templateBusy, setTemplateBusy] = useState(false);
 
+  // Editing starts from the tournament being edited. Same loader as the
+  // template picker, because "fill this form in from that tournament" is the
+  // same job whether you are copying it or changing it.
+  const editingId = editing?.id ?? null;
+
   useEffect(() => {
+    // Once for the tournament handed in. Re-running it would undo whatever has
+    // been typed since, so the id is the whole dependency.
+    if (editingId != null) applyTemplate(String(editingId), { keepName: false });
+  }, [editingId]);
+
+  useEffect(() => {
+    if (editingId != null) return undefined;   // nothing to copy from, it is the one being edited
     let cancelled = false;
     api.get("/tournaments/")
       .then(({ data }) => { if (!cancelled) setTemplates(data.slice(0, 25)); })
       // A form that cannot offer templates is still a working form.
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [editingId]);
 
   /**
    * Take everything from an earlier tournament except what makes it that
    * tournament: its name and when it was due to start.
    */
-  const applyTemplate = async (id) => {
+  const applyTemplate = async (id, { keepName = true } = {}) => {
     setTemplateId(id);
     if (!id) return;
     setTemplateBusy(true);
     setError("");
     try {
       const { data } = await api.get(`/tournaments/${id}/`);
+      // A copy is a new night and needs its own name; an edit is the same one.
+      if (!keepName) {
+        setName(data.name);
+        setGameType(data.game_type || "nlh");
+        if (data.scheduled_start_at) {
+          setScheduleEnabled(true);
+          setScheduledStart(toDatetimeLocalValue(new Date(data.scheduled_start_at)));
+        }
+      }
       setChips(data.starting_chips);
       setMaxPlayers(data.max_players);
       setPlayersPerTable(data.players_per_table);
@@ -238,9 +278,30 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
       showdown_seconds: showdownSeconds,
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
-    if (customLevels) payload.levels = customLevels;
+    payload.game_type = gameType;
+    if (editing) {
+      // The money is not the host's to change once people have joined on it,
+      // and the server refuses it regardless — see LOCKED_AFTER_CREATION.
+      delete payload.buy_in_cents;
+      delete payload.payout_structure;
+      delete payload.bounty_mode;
+      delete payload.bounty_cents;
+      delete payload.bounty_progressive_split_pct;
+    }
+    if (!advanced) {
+      // The two answers, turned into a structure. Everything else is the
+      // form's own defaults, which is what "quick" means.
+      payload.levels = buildBlindStructure({
+        minutes: estimateMinutes({ players: maxPlayers, speed: quickSpeed }),
+        speed: quickSpeed,
+        startingChips: chips,
+        players: maxPlayers,
+      });
+    } else if (customLevels) {
+      payload.levels = customLevels;
+    }
     try {
-      await onCreate(payload);
+      await (editing ? onSave(payload) : onCreate(payload));
     } catch (requestError) {
       const details = requestError.response?.data;
       if (typeof details === "string") {
@@ -260,7 +321,31 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
 
   return (
     <form onSubmit={handleSubmit} className="panel p-6 rounded-xl space-y-4">
-      <h2 className="text-xl font-bold text-(--color-silver)">Create Tournament</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl font-bold text-(--color-silver)">
+          {editing ? "Edit Tournament" : "Create Tournament"}
+        </h2>
+        {/* Not offered while editing: you came here to change one particular
+            thing, and the quick form cannot express most of them. */}
+        {!editing && (
+          <div className="flex rounded overflow-hidden border border-(--color-border)">
+            {[["Quick", false], ["Advanced", true]].map(([label, value]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setAdvanced(value)}
+                className={`px-3 py-1 text-xs font-semibold transition-colors ${
+                  advanced === value
+                    ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink)"
+                    : "text-(--color-text-muted) hover:text-(--color-silver)"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {templates.length > 0 && (
         <label className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -286,6 +371,71 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         <input className="input-field w-full px-3 py-2 rounded transition-colors"
           value={name} onChange={(e) => setName(e.target.value)} placeholder="My Tournament" />
       </div>
+
+      <label className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-(--color-text-muted)">Game</span>
+        <select
+          className="input-field px-2 py-1 rounded flex-1 transition-colors"
+          value={gameType}
+          onChange={(event) => setGameType(event.target.value)}
+        >
+          {GAME_TYPES.map((game) => (
+            <option key={game.value} value={game.value}>{game.label}</option>
+          ))}
+        </select>
+      </label>
+
+      {/* Quick: the two answers everything else follows from. */}
+      {!advanced && (
+        <div className="panel-raised rounded-lg p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-(--color-silver)">Speed</span>
+            <div className="flex rounded overflow-hidden border border-(--color-border)">
+              {SPEED_NAMES.map((speed) => (
+                <button
+                  key={speed}
+                  type="button"
+                  onClick={() => setQuickSpeed(speed)}
+                  className={`px-3 py-1 text-xs font-semibold transition-colors ${
+                    quickSpeed === speed
+                      ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink)"
+                      : "text-(--color-text-muted) hover:text-(--color-silver)"
+                  }`}
+                >
+                  {SPEEDS[speed].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-(--color-text-muted)">Players</span>
+            <input
+              type="number"
+              min={2}
+              max={90}
+              className="input-field px-2 py-1 rounded w-24 text-right transition-colors"
+              value={maxPlayers}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setMaxPlayers(value);
+                // One table until there are too many for one table.
+                setPlayersPerTable(Math.min(9, Math.max(2, value)));
+              }}
+            />
+          </label>
+
+          <p className="text-xs text-(--color-text-muted) leading-snug">
+            {`About ${formatDuration(estimateMinutes({ players: maxPlayers, speed: quickSpeed }))}, `}
+            {`${chips.toLocaleString()} chips, `}
+            {`${SPEEDS[quickSpeed].minutesPerLevel} minute levels. `}
+            No buy-in, no bounties — switch to Advanced for those.
+          </p>
+        </div>
+      )}
+
+      {advanced && (
+        <>
 
         <div className="panel-raised rounded-lg p-3 space-y-3">
           <label className="flex items-center justify-between text-sm">
@@ -451,6 +601,16 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
           )}
         </div>
 
+        {/* Hidden while editing rather than disabled: the money is the deal
+            players joined on, and a greyed-out form still invites the argument
+            about why. The server refuses it either way. */}
+        {editing ? (
+          <p className="text-xs text-(--color-text-muted) panel-raised rounded-lg p-3">
+            Buy-in, payouts and bounties are fixed once a tournament is open —
+            they are what players signed up to. Delete it and make another if
+            those need to change.
+          </p>
+        ) : (
         <div className="panel-raised rounded-lg p-3 space-y-3">
           <label className="flex items-center justify-between text-sm">
             <span className="text-(--color-silver)">Prize Pool Reference</span>
@@ -593,6 +753,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
             </div>
           </div>
         </div>
+        )}
 
         <div className="panel-raised rounded-lg p-3 space-y-3">
           <label className="flex items-center justify-between text-sm gap-3">
@@ -655,12 +816,16 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
           startingChips={chips}
           players={maxPlayers}
         />
+        </>
+      )}
 
-        {error && <p className="text-sm text-[#c76b7a]">{error}</p>}
+      {error && <p className="text-sm text-(--color-accent-link)">{error}</p>}
 
       <div className="flex gap-3 justify-end">
         <button type="button" onClick={onCancel} className="btn-secondary px-4 py-2 rounded transition-colors">Cancel</button>
-        <button type="submit" className="btn-accent px-4 py-2 rounded font-semibold transition-colors">Create</button>
+        <button type="submit" className="btn-accent px-4 py-2 rounded font-semibold transition-colors">
+          {editing ? "Save changes" : "Create"}
+        </button>
       </div>
     </form>
   );

@@ -41,7 +41,11 @@ function StatusPill({ tournament: t }) {
  * Everything that survived is what you actually scan a list for: when, who is
  * in it, what it costs — one line of it, in the order you read.
  */
-export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete }) {
+// Only one game so far, so the label is only worth the width when a
+// tournament is something other than the default everybody assumes.
+const GAME_LABELS = { nlh: "NLH" };
+
+export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete, onEdit }) {
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
@@ -63,6 +67,7 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
     // Never the percentages: a share is a rule for splitting a pot, and the pot
     // is knowable here. Places paid is the count, the pool is the money.
     poolCents > 0 ? `${euros(poolCents)} pool` : null,
+    GAME_LABELS[t.game_type] || null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
   ].filter(Boolean);
@@ -120,6 +125,15 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
         )}
         {/* Paused counts as well: a night that breaks up half way through
             should not leave a game nobody can get rid of. */}
+        {t.is_host && t.status === "lobby" && onEdit && (
+          <button onClick={() => onEdit(t)}
+            title="Change this tournament — only until it starts"
+            aria-label={`Edit ${t.name}`}
+            className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
+                       transition-colors text-(--color-text-muted)">
+            Edit
+          </button>
+        )}
         {t.is_host && (t.status === "lobby" || t.status === "paused") && onDelete && (
           <button onClick={() => onDelete(t)}
             title={t.status === "paused"

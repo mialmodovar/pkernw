@@ -14,6 +14,12 @@ class Tournament(models.Model):
         ("hands",       "Every N hands"),
         ("blind_level", "At blind level"),
     ]
+    # One game for now, named rather than assumed. A tournament that does not
+    # say what it is played with is one that cannot be joined by anything else
+    # later without guessing what the old rows meant.
+    GAME_TYPE_CHOICES = [
+        ("nlh", "No-Limit Hold'em"),
+    ]
     BOUNTY_MODE_CHOICES = [
         ("none",        "No bounties"),
         ("fixed",       "Fixed knockout"),
@@ -22,6 +28,7 @@ class Tournament(models.Model):
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
     name           = models.CharField(max_length=100)
+    game_type      = models.CharField(max_length=8, choices=GAME_TYPE_CHOICES, default="nlh")
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")
     scheduled_start_at = models.DateTimeField(null=True, blank=True)
     starting_chips = models.IntegerField(default=10_000)

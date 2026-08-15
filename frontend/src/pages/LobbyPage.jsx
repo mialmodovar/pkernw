@@ -7,6 +7,7 @@ import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
 import CalotesPanel from "../components/lobby/CalotesPanel";
+import WatchPanel from "../components/lobby/WatchPanel";
 
 export default function LobbyPage() {
   const { user, logout } = useAuthStore();
@@ -68,6 +69,7 @@ export default function LobbyPage() {
         <ProfileCard />
         <StatsPanel />
         <CalotesPanel />
+        <WatchPanel />
         <LeaguePlaceholder />
       </aside>
 

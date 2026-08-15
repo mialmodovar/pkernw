@@ -1,4 +1,60 @@
+import { useEffect, useState } from "react";
+
+import api from "../../api/http";
 import playerProfile, { PROFILE_MIN_HANDS } from "./playerProfile";
+
+/**
+ * Keep an eye on this player from the lobby afterwards.
+ *
+ * This is where you meet people worth remembering, so this is where marking
+ * one belongs — the lobby's watch panel can add by name, but only if you can
+ * remember the name.
+ */
+function WatchToggle({ username, isMe }) {
+  const [watched, setWatched] = useState(null);   // null until we know
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (isMe || !username) return undefined;
+    let cancelled = false;
+    api.get(`/auth/players/${encodeURIComponent(username)}/`)
+      .then(({ data }) => { if (!cancelled) setWatched(data.is_watched); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [username, isMe]);
+
+  if (isMe || watched === null) return null;
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (watched) {
+        await api.delete(`/auth/watching/${encodeURIComponent(username)}/`);
+      } else {
+        await api.post("/auth/watching/", { username });
+      }
+      setWatched(!watched);
+    } catch {
+      // Nothing lost: the button still says what the server last told us.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={busy}
+      title={watched ? `Stop watching ${username}` : `Watch ${username} from the lobby`}
+      className={`px-2 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
+        watched ? "btn-secondary" : "btn-accent"
+      }`}
+    >
+      {watched ? "Watching" : "Watch"}
+    </button>
+  );
+}
 
 // Grouped the way a read is built: how they enter a pot, what they do when
 // somebody comes over the top, and how they play once there is a board.
@@ -101,7 +157,7 @@ function StatRow({ row, stats, hands, above }) {
  * sample it came from — a 100% 3-bet over two chances is noise, and hiding that
  * would be worse than showing nothing.
  */
-export default function PlayerStatsCard({ player, stats, onClose }) {
+export default function PlayerStatsCard({ player, stats, onClose, isMe = false }) {
   const hands = stats?.hands ?? 0;
   const profile = playerProfile(stats);
 
@@ -117,6 +173,7 @@ export default function PlayerStatsCard({ player, stats, onClose }) {
               {hands ? `${hands.toLocaleString()} hands recorded` : "No hands recorded yet"}
             </p>
           </div>
+          <WatchToggle username={player.name} isMe={isMe} />
           <button onClick={onClose}
             className="btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors">
             Close

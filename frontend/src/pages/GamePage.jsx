@@ -437,7 +437,12 @@ export default function GamePage() {
         </div>
       )}
       {inspecting && (
-        <PlayerStatsCard player={inspecting} stats={playerStats[inspecting.name]} onClose={() => setInspecting(null)} />
+        <PlayerStatsCard
+          player={inspecting}
+          stats={playerStats[inspecting.name]}
+          isMe={inspecting.name === user?.username}
+          onClose={() => setInspecting(null)}
+        />
       )}
 
     </div>

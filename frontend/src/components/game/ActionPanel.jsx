@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import ShowCardsBar from "./ShowCardsBar";
 import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 
 // Keyboard shortcuts arm on the first press and commit on the second, so a
@@ -49,7 +50,7 @@ export default function ActionPanel({
 }) {
   // `bare` is the form used inside a FloatingPanel, which draws the frame itself.
   const shell = bare ? "" : "panel rounded-lg shadow-lg shadow-black/50";
-  const { actionOnSeat, actionContext, showBB, level, players, handNumber } = useGameStore();
+  const { actionOnSeat, actionContext, showBB, level, players, handNumber, holeCards } = useGameStore();
   const [preselect, setPreselect] = useState(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [raiseText, setRaiseText] = useState(null); // non-null only while typing
@@ -173,6 +174,10 @@ export default function ActionPanel({
             ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
             : "Waiting for next hand..."}
         </span>
+        {/* Between hands, in the place your hands are already resting: showing
+            a card is a decision like any other, and every other one is made
+            from this panel rather than from the middle of the felt. */}
+        <ShowCardsBar myCards={holeCards} mySeat={mySeat} />
         {/* Deciding early only makes sense while you still hold cards. */}
         {inHand && actionOnSeat !== null && (
           <div className="flex items-center gap-2">

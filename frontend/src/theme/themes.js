@@ -364,6 +364,10 @@ const highlightFamily = (accentHue) => {
     atLuminance(hue, 65.4, luminance("#e0c66b")),
     0.4,
   );
+  // Bare channels, for the places that need the highlight at an alpha of their
+  // own — the card glow pulses through five of them, so a fixed-alpha token
+  // cannot serve it. Used as rgb(var(--highlight-rgb) / 0.55).
+  out["--highlight-rgb"] = toRgb(out["--color-highlight-bright"]).join(" ");
   out["--color-highlight-ink"] = inkForGradient([
     out["--color-highlight-bright"],
     out["--color-highlight"],

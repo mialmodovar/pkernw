@@ -81,6 +81,11 @@
   /* The panel a floating window sits on has to be opaque (see .panel-floating),
      so it cannot be derived from the translucent --color-surface. */
   --panel-floating-bg: #23161a;
+
+  /* Highlight channels for rules that need their own alpha —
+     rgb(var(--highlight-rgb) / 0.6). Not under --color-* because it is not a
+     colour value and Tailwind would try to mint utilities from it. */
+  --highlight-rgb: 212 175 54;
 }
 
 /* Themes native controls (checkboxes, radios, range sliders) so they stop
@@ -290,12 +295,12 @@ button:disabled {
    for what earns it. */
 @keyframes card-glow {
   0%, 100% {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.55),
-                0 0 9px rgba(212, 175, 55, 0.35);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgb(var(--highlight-rgb) / 0.55),
+                0 0 9px rgb(var(--highlight-rgb) / 0.35);
   }
   50% {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.9),
-                0 0 18px rgba(212, 175, 55, 0.6);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgb(var(--highlight-rgb) / 0.9),
+                0 0 18px rgb(var(--highlight-rgb) / 0.6);
   }
 }
 
@@ -316,7 +321,7 @@ button:disabled {
    that is worth turning off. The gold edge stays; it says the same thing. */
 @media (prefers-reduced-motion: reduce) {
   .animate-card-glow { animation: none; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55),
-                                                    0 0 0 1px rgba(212, 175, 55, 0.85); }
+                                                    0 0 0 1px rgb(var(--highlight-rgb) / 0.85); }
   .animate-card-sheen { display: none; }
 }
 

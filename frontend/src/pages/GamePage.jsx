@@ -250,7 +250,7 @@ export default function GamePage() {
           can be seen. Say so, and let anyone who has seen enough move on. */}
       {standings && !standingsReady && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
-                        bg-[#3d2f0b] border-[rgba(224,198,107,0.4)] text-[#e6d9a8]">
+                        bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
           <span>That's the tournament — final hand.</span>
           <button
             onClick={() => setStandingsReady(true)}

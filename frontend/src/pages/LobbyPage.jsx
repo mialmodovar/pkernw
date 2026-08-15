@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
-import TournamentList from "../components/lobby/TournamentList";
+import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
@@ -12,6 +12,17 @@ export default function LobbyPage() {
   const { user, logout } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
+
+  // The three scopes overlap — a tournament you are seated at and that is open
+  // for late registration comes back in two of them — so they are merged by id
+  // rather than concatenated, or it would be listed twice.
+  const tournaments = useMemo(() => {
+    const byId = new Map();
+    for (const tournament of [...mineActive, ...upcoming, ...past]) {
+      byId.set(tournament.id, { ...byId.get(tournament.id), ...tournament });
+    }
+    return [...byId.values()];
+  }, [mineActive, upcoming, past]);
 
   useEffect(() => {
     fetchLobbyData();
@@ -50,7 +61,7 @@ export default function LobbyPage() {
         <LeaguePlaceholder />
       </aside>
 
-      <main className="flex-1 space-y-8">
+      <main className="flex-1 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex flex-wrap gap-3 items-center">
@@ -77,32 +88,13 @@ export default function LobbyPage() {
         {loading ? (
           <p className="text-(--color-text-muted)">Loading...</p>
         ) : (
-          <>
-            {mineActive.length > 0 && (
-              <TournamentList
-                title="Your Active Games"
-                tournaments={mineActive}
-                onJoin={onJoin}
-                onOpen={onOpen}
-              />
-            )}
-            <TournamentList
-              title="Upcoming Tournaments"
-              tournaments={upcoming}
-              emptyMessage="No tournaments open right now. Create one!"
-              onJoin={onJoin}
-              onOpen={onOpen}
-              onQuit={onQuit}
-              onDelete={onDelete}
-            />
-            <TournamentList
-              title="Past Tournaments"
-              tournaments={past}
-              emptyMessage="You haven't finished any tournaments yet."
-              onJoin={onJoin}
-              onOpen={onOpen}
-            />
-          </>
+          <TournamentBrowser
+            tournaments={tournaments}
+            onJoin={onJoin}
+            onOpen={onOpen}
+            onQuit={onQuit}
+            onDelete={onDelete}
+          />
         )}
       </main>
     </div>

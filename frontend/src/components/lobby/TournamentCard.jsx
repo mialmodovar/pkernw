@@ -1,15 +1,6 @@
-const formatScheduledStart = (value) => {
-  if (!value) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-};
-
-const formatDate = (value) => {
-  if (!value) return null;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
-};
+const formatTime = (value) => (value
+  ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+  : null);
 
 const ordinal = (n) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
@@ -18,113 +9,126 @@ const ordinal = (n) => {
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
-/** The numbers a player scans a list for: cost, turnout, and what is at stake. */
-function Headline({ label, value, accent }) {
-  return (
-    <div className="panel-raised rounded px-2 py-1 leading-tight">
-      <span className="block text-[10px] uppercase tracking-wide text-(--color-text-muted)">{label}</span>
-      <span className={`block text-sm font-semibold ${accent ? "text-[#d9c07a]" : "text-(--color-silver)"}`}>
-        {value}
+/** A word about what state this is in, in the one colour that says it. */
+function StatusPill({ tournament: t }) {
+  if (t.late_registration_open) {
+    return (
+      <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide
+                       bg-(--color-highlight-dim) text-(--color-highlight-pale)
+                       border border-(--color-highlight-edge)">
+        late reg
       </span>
-    </div>
+    );
+  }
+  const tone = {
+    lobby: "bg-(--color-accent-soft) text-(--color-silver) border-(--color-border-strong)",
+    running: "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)",
+    paused: "bg-black/30 text-(--color-silver) border-(--color-border)",
+    finished: "bg-black/30 text-(--color-text-muted) border-(--color-border)",
+  }[t.status];
+  return (
+    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${tone}`}>
+      {t.status === "lobby" ? "open" : t.status}
+    </span>
   );
 }
 
+/**
+ * One tournament, in one row.
+ *
+ * The old card stacked four tile-shaped statistics and three lines of prose,
+ * which meant three tournaments filled a laptop screen and one filled a phone.
+ * Everything that survived is what you actually scan a list for: when, who is
+ * in it, what it costs — one line of it, in the order you read.
+ */
 export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete }) {
-  const statusColor = {
-    lobby: "bg-amber-900/50 text-amber-200 border border-amber-700/40",
-    running: "bg-(--color-accent-soft) text-red-200 border border-(--color-border-strong)",
-    paused: "bg-black/30 text-(--color-silver) border border-(--color-border)",
-    finished: "bg-black/30 text-(--color-text-muted) border border-(--color-border)",
-  }[t.status];
-  const scheduledStart = formatScheduledStart(t.scheduled_start_at);
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
-  // Entrants so far, since rebuys are not in the list payload and would only
-  // make this number look more certain than it is.
-  const potCents = buyInCents * t.player_count;
+  const startTime = formatTime(t.scheduled_start_at);
+  const full = t.player_count >= t.max_players;
+  const bountyOn = (t.bounty_mode || "none") !== "none" && (t.bounty_cents || 0) > 0;
+
+  // Read left to right, most-particular first. Joined as one line so it wraps
+  // as prose on a narrow screen instead of becoming a column of chips.
+  const facts = [
+    startTime && !isFinished ? startTime : null,
+    `${t.player_count}/${t.max_players}`,
+    buyInCents > 0 ? euros(buyInCents) : "free",
+    bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
+    t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
+  ].filter(Boolean);
+
+  const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;
 
   return (
-    <div className="panel p-4 rounded-lg flex items-center justify-between gap-4 hover:border-(--color-border-strong) transition-colors">
-      <div className="min-w-0">
-        <h3 className="font-semibold text-(--color-silver) truncate">{t.name}</h3>
-        <p className="text-sm text-(--color-text-muted)">
-          Host: {t.host_name} &middot; {t.players_per_table}/table &middot; {t.starting_chips.toLocaleString()} chips
-        </p>
-
-        <div className="flex flex-wrap gap-2 mt-2">
-          <Headline label="Entrants" value={`${t.player_count}/${t.max_players}`} />
-          {buyInCents > 0 && <Headline label="Buy-in" value={euros(buyInCents)} />}
-          {potCents > 0 && <Headline label="Prize pool" value={euros(potCents)} accent />}
-          {t.payout_structure?.length > 0 && (
-            <Headline label="Places paid" value={t.payout_structure.length} />
+    <div className="panel rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2
+                    hover:border-(--color-border-strong) transition-colors">
+      {/* Name and the facts under it take the width; everything else is fixed
+          and sits to the right, or wraps under on a phone. */}
+      <div className="min-w-0 flex-1 basis-48">
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusPill tournament={t} />
+          <h3 className="font-semibold text-sm text-(--color-silver) truncate">{t.name}</h3>
+          {t.is_joined && !isFinished && (
+            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-(--color-highlight-text)">
+              joined
+            </span>
           )}
         </div>
 
-        {/* Finished tournaments lead with the result, which is the only thing
-            still worth knowing about them. */}
-        {isFinished ? (
-          <p className="text-sm mt-1">
-            {t.winner_name ? (
-              <span className="text-[#d9c07a]">🏆 {t.winner_name} won</span>
-            ) : (
-              <span className="text-(--color-text-muted)">No winner recorded</span>
-            )}
-            {t.my_finish_position && (
-              <span className={iWon ? "text-[#d9c07a]" : "text-(--color-silver)"}>
-                {" · "}you finished {ordinal(t.my_finish_position)}
-              </span>
-            )}
-            {formatDate(t.created_at) && (
-              <span className="text-(--color-text-muted)"> · {formatDate(t.created_at)}</span>
-            )}
-          </p>
-        ) : (
-          <>
-            {scheduledStart && (
-              <p className="text-sm text-(--color-silver)">Scheduled start: {scheduledStart}</p>
-            )}
-            {t.time_bank_seconds > 0 && (
-              <p className="text-sm text-(--color-text-muted)">Time bank: {t.time_bank_seconds}s</p>
-            )}
-          </>
-        )}
+        <p className="text-xs text-(--color-text-muted) truncate">
+          {isFinished ? (
+            <>
+              {t.winner_name
+                ? <span className="text-(--color-highlight-text)">🏆 {t.winner_name}</span>
+                : "no winner recorded"}
+              {t.my_finish_position && (
+                <span className={iWon ? "text-(--color-highlight-text)" : "text-(--color-silver)"}>
+                  {` · you ${ordinal(t.my_finish_position)}`}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              {facts.join(" · ")}
+              <span className="hidden sm:inline"> · {t.host_name}</span>
+            </>
+          )}
+        </p>
       </div>
-      <div className="flex items-center gap-3 shrink-0">
-        <span className={`text-xs px-2 py-1 rounded ${statusColor}`}>{t.status}</span>
-        {t.late_registration_open && (
-          <span className="text-xs px-2 py-1 rounded bg-emerald-900/40 text-emerald-200 border border-emerald-700/40">
-            late reg
-          </span>
-        )}
-        {t.is_joined && !isFinished && (
-          <span className="text-xs text-(--color-text-muted)">Joined</span>
+
+      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+        {full && !t.is_joined && !isFinished && (
+          <span className="text-[11px] text-(--color-text-muted)">full</span>
         )}
         {t.is_joined && !t.is_host && t.status === "lobby" && onQuit && (
           <button onClick={() => onQuit(t.id)}
             title="Give up your seat and free it for someone else"
-            className="px-3 py-1 panel-raised hover:border-(--color-border-strong) rounded text-sm transition-colors text-(--color-silver)">
+            className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
+                       transition-colors text-(--color-text-muted)">
             Leave
           </button>
         )}
         {t.is_host && t.status === "lobby" && onDelete && (
           <button onClick={() => onDelete(t)}
             title="Delete this tournament — only possible before it starts"
-            className="px-3 py-1 rounded text-sm transition-colors
-                       bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]">
+            aria-label={`Delete ${t.name}`}
+            className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
+                       transition-colors text-(--color-accent-link)">
             Delete
           </button>
         )}
-        {(t.status === "lobby" || t.late_registration_open) && !t.is_joined && (
+        {canJoin && (
           <button onClick={() => onJoin(t.id)}
-            className="btn-accent px-3 py-1 rounded text-sm transition-colors">
+            className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
             Join
           </button>
         )}
         <button onClick={() => onOpen(t.id)}
-          className="px-3 py-1 panel-raised hover:border-(--color-border-strong) rounded text-sm transition-colors text-(--color-silver)">
-          {isFinished ? "Results" : "Open"}
+          className="px-2.5 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
+                     transition-colors text-(--color-silver)">
+          {isFinished ? "Results" : t.is_joined ? "Open" : "View"}
         </button>
       </div>
     </div>

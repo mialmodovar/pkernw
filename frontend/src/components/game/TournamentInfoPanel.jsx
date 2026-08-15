@@ -88,8 +88,12 @@ export default function TournamentInfoPanel({ tournament, username }) {
 
   if (!open) {
     return (
-      <div className={`${corner} flex items-center gap-2 panel panel-floating rounded-full
-                       py-1 pl-3 pr-1 shadow-lg shadow-black/50`}>
+      <div
+        onDoubleClick={() => setOpen(true)}
+        title="Double-click to open tournament info"
+        className={`${corner} flex items-center gap-2 panel panel-floating rounded-full
+                    py-1 pl-3 pr-1 shadow-lg shadow-black/50 select-none`}
+      >
         <span className="text-[11px] font-semibold leading-none text-(--color-silver) whitespace-nowrap">
           {levelLabel}
         </span>
@@ -116,8 +120,14 @@ export default function TournamentInfoPanel({ tournament, username }) {
   return (
     <div className={`${corner} w-52 md:w-60 panel rounded-lg text-xs shadow-lg shadow-black/50
                      max-h-[85%] overflow-y-auto`}>
-      <div className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
-                      font-semibold uppercase tracking-wide text-(--color-silver)">
+      {/* Double-click the header to collapse, the same gesture the floating
+          panels use on their title bars. */}
+      <div
+        onDoubleClick={() => setOpen(false)}
+        title="Double-click to collapse"
+        className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
+                   font-semibold uppercase tracking-wide text-(--color-silver) select-none cursor-pointer"
+      >
         <span className="truncate">{tournament?.name || "Tournament"}</span>
         <button
           type="button"

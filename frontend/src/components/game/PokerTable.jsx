@@ -8,6 +8,7 @@ import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
+import ShowCardsBar from "./ShowCardsBar";
 import FinisherOverlay from "./FinisherOverlay";
 
 
@@ -119,6 +120,9 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             All in
           </span>
         )}
+        {/* Under the pot, in the middle of the table: it appears only in the
+            gap between hands, where nothing else is competing for that space. */}
+        <ShowCardsBar myCards={holeCards} mySeat={mySeat} />
       </div>
 
       {/* Seats — one per slot, occupied or not */}

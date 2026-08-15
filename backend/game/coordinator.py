@@ -56,6 +56,7 @@ class MultiTableTournamentCoordinator:
         rabbit_hunting_enabled: bool = False,
         auto_remove_offline_seconds: int = 0,
         bounty: Optional[BountyConfig] = None,
+        showdown_seconds: Optional[float] = None,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
@@ -67,6 +68,12 @@ class MultiTableTournamentCoordinator:
         self.rabbit_hunting_enabled = rabbit_hunting_enabled
         self.auto_remove_offline_seconds = max(0, auto_remove_offline_seconds or 0)
         self.bounty = bounty or BountyConfig()
+        # How long the table holds between hands. Configurable per tournament:
+        # a table of friends reading each other's cards wants longer than one
+        # grinding through levels.
+        self.showdown_seconds = float(
+            self.INTER_HAND_SECONDS if showdown_seconds is None else max(1.0, showdown_seconds)
+        )
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -90,6 +97,16 @@ class MultiTableTournamentCoordinator:
         self._standings: List[EnginePlayer] = []
         self._refilled_blind_levels = set()
         self._offline_since: Dict[int, float] = {}
+        # Who has said they are ready, and whether saying so still means
+        # anything. Only open during the pre-tournament countdown.
+        self._ready_user_ids: set[int] = set()
+        self._countdown_open = False
+        # The gap between hands, and whether cards can still be shown in it.
+        # The deadline is a monotonic timestamp rather than a duration so a
+        # reveal can push it back while the wait is already running.
+        self._show_open = False
+        self._show_deadline = 0.0
+        self._shown_this_hand: set[int] = set()
         self.is_paused = False
         self._paused_at: Optional[float] = None
         # Set once the winner is being decided, so a rebuy can't slip in after
@@ -127,10 +144,22 @@ class MultiTableTournamentCoordinator:
             },
         )
 
+        # Thirty seconds is there so everyone has time to load the table, not
+        # because the table needs it. When every player says they are ready
+        # there is nothing left to wait for, so the count stops early.
+        self._countdown_open = True
+        await self._broadcast_ready_state()
         for remaining in range(30, 0, -1):
+            if self._everyone_ready():
+                await self.broadcast_tournament("countdown", {"seconds": 0, "reason": "all_ready"})
+                break
             await self.broadcast_tournament("countdown", {"seconds": remaining})
             await asyncio.sleep(1)
-        await self.broadcast_tournament("countdown", {"seconds": 0})
+        else:
+            await self.broadcast_tournament("countdown", {"seconds": 0})
+        # Nobody can be "ready" for a tournament that has started, and leaving
+        # the flag up would let a late arrival's click cut short a break.
+        self._countdown_open = False
 
         while self._active_player_count() > 1:
             await self._wait_if_paused()
@@ -167,6 +196,12 @@ class MultiTableTournamentCoordinator:
 
             active_before = self._active_player_count()
             results = await asyncio.gather(*(self._run_table_hand(table, level) for table in playable_tables))
+
+            # Cards can be shown from the moment the hands are over. What
+            # follows — eliminations, bounties, a database write — takes long
+            # enough that a player clicking straight away was being refused.
+            self._shown_this_hand = set()
+            self._show_open = True
 
             busted: List[EnginePlayer] = []
             seen = set()
@@ -215,7 +250,7 @@ class MultiTableTournamentCoordinator:
             await self.persist_player_states(list(self._players_by_id.values()))
             if self.persist_progress is not None:
                 await self.persist_progress(self._level_index, self._hands_in_level)
-            await asyncio.sleep(3)
+            await self._inter_hand_pause()
 
         self._finishing = True
         winner = next(
@@ -240,6 +275,127 @@ class MultiTableTournamentCoordinator:
             },
         )
         return standings
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # The gap between hands, and showing cards in it
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # The default pause between hands, when a tournament does not say. Long
+    # enough to read the result and to look at anything somebody showed.
+    INTER_HAND_SECONDS = 5.0
+    # Ten players each showing in turn should not stall the tournament, so the
+    # extensions are capped at a multiple of the pause rather than unbounded.
+    MAX_GAP_MULTIPLIER = 3
+
+    async def _inter_hand_pause(self) -> None:
+        """Wait between hands, longer if anybody shows their cards.
+
+        The whole point of showing a card is that the table sees it, so the
+        deal cannot be allowed to land on top of it. Polled rather than slept
+        in one go, because the deadline moves while the wait is running.
+        """
+        started = time.monotonic()
+        # Extended already if somebody showed during the bookkeeping above.
+        self._show_deadline = max(self._show_deadline, started + self.showdown_seconds)
+        self._show_open = True
+        try:
+            while True:
+                now = time.monotonic()
+                deadline = min(
+                    self._show_deadline,
+                    started + self.showdown_seconds * self.MAX_GAP_MULTIPLIER,
+                )
+                if now >= deadline:
+                    return
+                await asyncio.sleep(min(0.25, deadline - now))
+        finally:
+            self._show_open = False
+
+    async def show_cards(self, user_id: int, indices: List[int]) -> bool:
+        """Show one or both of your cards to the table, after the hand.
+
+        Only between hands: showing a card mid-hand tells the players still
+        deciding something they have no right to know, which is why live poker
+        does not allow it either.
+
+        Once per hand, so the window cannot be held open indefinitely by one
+        player revealing a card at a time.
+        """
+        if not self._show_open or user_id in self._shown_this_hand:
+            return False
+        player = self._players_by_user_id.get(user_id)
+        if player is None or not player.hole_cards:
+            return False
+
+        wanted = sorted({index for index in indices if index in (0, 1)})
+        cards = [player.hole_cards[i] for i in wanted if i < len(player.hole_cards)]
+        if not cards:
+            return False
+
+        self._shown_this_hand.add(user_id)
+        # Everyone gets a full pause to look, including whoever shows last.
+        self._show_deadline = max(self._show_deadline, time.monotonic() + self.showdown_seconds)
+        await self._broadcast_to_table(
+            player._table_number,
+            "cards_shown",
+            {
+                "seat": player._seat,
+                "name": player.name,
+                "cards": cards_to_list(cards),
+                # Which of the two, so a single card shows in the right place.
+                "indices": wanted[: len(cards)],
+            },
+        )
+        return True
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Ready — the pre-tournament countdown, cut short by agreement
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _seated_user_ids(self) -> set:
+        return {
+            player._user_id
+            for player in self._players_by_id.values()
+            if not player.is_eliminated and player.chips > 0 and player._user_id is not None
+        }
+
+    def _everyone_ready(self) -> bool:
+        """True when every seated player has said so.
+
+        Unanimity among everyone with a seat, not among everyone connected: if
+        it were the latter, the first player to load could start the tournament
+        on their own while the rest were still opening the page, which is the
+        one thing the countdown exists to prevent.
+
+        A player who never connects therefore cannot be ready, and the count
+        simply runs out as it always did. That is the fallback, so this can
+        never deadlock the start.
+        """
+        seated = self._seated_user_ids()
+        return bool(seated) and seated <= self._ready_user_ids
+
+    async def set_ready(self, user_id: int, value: bool = True) -> bool:
+        """Say whether you are ready. Ignored once the tournament is under way."""
+        if not self._countdown_open:
+            return False
+        if value:
+            self._ready_user_ids.add(user_id)
+        else:
+            self._ready_user_ids.discard(user_id)
+        await self._broadcast_ready_state()
+        return True
+
+    async def _broadcast_ready_state(self) -> None:
+        seated = self._seated_user_ids()
+        await self.broadcast_tournament(
+            "ready_state",
+            {
+                # Only the seats that count, so a client cannot show 4/3 ready
+                # after somebody leaves between the click and the broadcast.
+                "ready_user_ids": sorted(self._ready_user_ids & seated),
+                "total": len(seated),
+            },
+        )
 
     async def snapshot_for_user(self, user_id: int) -> Optional[dict]:
         player = self._players_by_user_id.get(user_id)
@@ -285,6 +441,11 @@ class MultiTableTournamentCoordinator:
             "table_count": len(self._tables),
             "table_summaries": self.table_summaries(),
             "is_paused": self.is_paused,
+            # So a client that reloads during the countdown gets back the
+            # readiness it can see, rather than an empty tally until the next
+            # person clicks.
+            "ready_user_ids": sorted(self._ready_user_ids & self._seated_user_ids()),
+            "ready_total": len(self._seated_user_ids()),
             # Included so a client joining or reconnecting mid-tournament gets
             # the blind level straight away, instead of waiting for the next
             # level_change broadcast.

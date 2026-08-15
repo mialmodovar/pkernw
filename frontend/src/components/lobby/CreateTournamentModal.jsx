@@ -39,6 +39,10 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   // On by default: seeing the cards that would have come is the kind of thing
   // a friendly game wants, and a host who disagrees can turn it off here.
   const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(true);
+  // How long the table holds after each hand — also the window in which players
+  // can show their cards, so it is how long anybody has to look at what was
+  // shown.
+  const [showdownSeconds, setShowdownSeconds] = useState(5);
   const [autoRemoveOfflineEnabled, setAutoRemoveOfflineEnabled] = useState(false);
   const [autoRemoveOfflineSeconds, setAutoRemoveOfflineSeconds] = useState(300);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
@@ -129,6 +133,10 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         }
       }
     }
+    if (showdownSeconds < 2 || showdownSeconds > 60) {
+      setError("The showdown pause must be between 2 and 60 seconds.");
+      return;
+    }
     if (autoRemoveOfflineEnabled && autoRemoveOfflineSeconds <= 0) {
       setError("Offline removal timeout must be positive.");
       return;
@@ -157,6 +165,7 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
       bounty_cents: bountyCents,
       bounty_progressive_split_pct: bountyMode === "progressive" ? Number(bountySplit) : 50,
       rabbit_hunting_enabled: rabbitHuntingEnabled,
+      showdown_seconds: showdownSeconds,
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
     if (customLevels) payload.levels = customLevels;
@@ -497,6 +506,22 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         </div>
 
         <div className="panel-raised rounded-lg p-3 space-y-3">
+          <label className="flex items-center justify-between text-sm gap-3">
+            <span className="text-(--color-silver)">Showdown pause (s)</span>
+            <input
+              type="number"
+              min={2}
+              max={60}
+              className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
+              value={showdownSeconds}
+              onChange={(e) => setShowdownSeconds(Number(e.target.value))}
+            />
+          </label>
+          <p className="text-xs text-(--color-text-muted)">
+            How long the table waits after each hand. This is also the window
+            for showing your cards, so it is how long the others get to look.
+          </p>
+
           <label className="flex items-center justify-between text-sm">
             <span className="text-(--color-silver)">Rabbit Hunting</span>
             <input

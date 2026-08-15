@@ -221,6 +221,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "showdown_seconds",
                   "auto_remove_offline_seconds", "created_at")
 
 
@@ -239,6 +240,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "showdown_seconds",
                   "created_at")
 
     def get_players(self, tournament):
@@ -267,6 +269,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "showdown_seconds",
                   "levels")
 
     def validate(self, attrs):
@@ -282,6 +285,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         time_bank_refill_every_hands = attrs.get("time_bank_refill_every_hands")
         time_bank_refill_level = attrs.get("time_bank_refill_level")
         payout_structure = attrs.get("payout_structure", [])
+        showdown_seconds = attrs.get("showdown_seconds", getattr(self.instance, "showdown_seconds", 5))
         bounty_mode = attrs.get("bounty_mode", getattr(self.instance, "bounty_mode", "none"))
         bounty_cents = attrs.get("bounty_cents", getattr(self.instance, "bounty_cents", 0))
         bounty_split = attrs.get(
@@ -333,6 +337,13 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             attrs["time_bank_refill_every_hands"] = None
             attrs["time_bank_refill_level"] = None
         attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
+
+        # Below two seconds nobody can read the result, and beyond a minute the
+        # pause stops being a pause.
+        if not 2 <= showdown_seconds <= 60:
+            raise serializers.ValidationError(
+                {"showdown_seconds": "The showdown pause must be between 2 and 60 seconds."}
+            )
 
         if bounty_mode not in {"none", "fixed", "progressive"}:
             raise serializers.ValidationError({"bounty_mode": "Choose a valid knockout mode."})

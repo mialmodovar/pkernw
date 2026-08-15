@@ -53,6 +53,11 @@ class Tournament(models.Model):
     # Matches the create form's default, so a tournament made anywhere else —
     # the admin, a shell — behaves like one made through the app.
     rabbit_hunting_enabled = models.BooleanField(default=True)
+    # How long the table holds after a hand before the next deal. This is the
+    # window in which cards can be shown, so it is also how long anybody has to
+    # look at what was shown — a table that deals over a revealed card may as
+    # well not offer showing at all.
+    showdown_seconds = models.IntegerField(default=5)
     auto_remove_offline_seconds = models.IntegerField(default=0)
     # Blind progress, persisted so a restart resumes where play actually was
     # instead of rewinding the tournament to level 1.

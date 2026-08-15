@@ -1,3 +1,5 @@
+import time
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
@@ -1554,3 +1556,339 @@ class CoordinatorBountyTests(TestCase):
 		self.assertEqual(payload["bounty_cents"], 1000)
 		self.assertEqual(payload["bounty_won_cents"], 0)
 		self.assertEqual(payload["knockouts"], 0)
+
+
+class ReadyToStartTests(TestCase):
+	"""The pre-tournament countdown, cut short when everybody says so."""
+
+	def _coordinator(self, broadcasts=None):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(event_type, payload):
+			if broadcasts is not None:
+				broadcasts.append((event_type, payload))
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=capture,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+		)
+
+	def _seat(self, coordinator, tp_id, chips=5000):
+		player = EnginePlayer(name=f"p{tp_id}", chips=chips)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._global_seat = tp_id
+		player._table_number = 1
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_nobody_is_ready_to_begin_with(self):
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		self._seat(coordinator, 2)
+		coordinator._countdown_open = True
+
+		self.assertFalse(coordinator._everyone_ready())
+
+	def test_every_seat_saying_so_is_what_starts_it(self):
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		self._seat(coordinator, 2)
+		coordinator._countdown_open = True
+
+		self.assertTrue(async_to_sync(coordinator.set_ready)(11))
+		self.assertFalse(coordinator._everyone_ready())
+
+		async_to_sync(coordinator.set_ready)(22)
+		self.assertTrue(coordinator._everyone_ready())
+
+	def test_one_player_cannot_start_it_for_everybody(self):
+		"""The countdown exists so people can load the table. If readiness only
+		counted the connected, the first to arrive could skip it alone."""
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		self._seat(coordinator, 2)
+		self._seat(coordinator, 3)
+		coordinator._countdown_open = True
+
+		async_to_sync(coordinator.set_ready)(11)
+
+		self.assertFalse(coordinator._everyone_ready())
+
+	def test_a_player_can_change_their_mind(self):
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		coordinator._countdown_open = True
+
+		async_to_sync(coordinator.set_ready)(11)
+		self.assertTrue(coordinator._everyone_ready())
+
+		async_to_sync(coordinator.set_ready)(11, False)
+		self.assertFalse(coordinator._everyone_ready())
+
+	def test_readiness_is_refused_once_the_tournament_is_under_way(self):
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		# The countdown is over: a late click must not cut short anything else.
+		coordinator._countdown_open = False
+
+		self.assertFalse(async_to_sync(coordinator.set_ready)(11))
+		self.assertEqual(coordinator._ready_user_ids, set())
+
+	def test_an_empty_table_is_never_ready(self):
+		coordinator = self._coordinator()
+		coordinator._countdown_open = True
+
+		self.assertFalse(coordinator._everyone_ready())
+
+	def test_the_tally_only_counts_players_who_still_have_a_seat(self):
+		coordinator = self._coordinator()
+		self._seat(coordinator, 1)
+		gone = self._seat(coordinator, 2)
+		coordinator._countdown_open = True
+		async_to_sync(coordinator.set_ready)(11)
+		async_to_sync(coordinator.set_ready)(22)
+
+		# They left between the click and the broadcast.
+		gone.is_eliminated = True
+
+		broadcasts = []
+		coordinator.broadcast_tournament = lambda event_type, payload: _record(broadcasts, event_type, payload)
+		async_to_sync(coordinator._broadcast_ready_state)()
+
+		event_type, payload = broadcasts[-1]
+		self.assertEqual(event_type, "ready_state")
+		self.assertEqual(payload["total"], 1)
+		self.assertEqual(payload["ready_user_ids"], [11])
+
+
+async def _record(sink, event_type, payload):
+	sink.append((event_type, payload))
+
+
+class ShowCardsTests(TestCase):
+	"""Showing your hand after it is over, and the gap that makes it worth doing."""
+
+	def _coordinator(self, broadcasts=None):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(table_number, event_type, payload):
+			if broadcasts is not None:
+				broadcasts.append((event_type, payload))
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=capture,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+		)
+
+	def _seat_with_cards(self, coordinator, tp_id=1):
+		from game.engine.card import Card, Rank, Suit
+
+		player = EnginePlayer(name=f"p{tp_id}", chips=5000)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._global_seat = tp_id
+		player._table_number = 1
+		player.hole_cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_both_cards_reach_the_table(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = True
+		coordinator._show_deadline = time.monotonic() + 3
+
+		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0, 1]))
+
+		event_type, payload = broadcasts[-1]
+		self.assertEqual(event_type, "cards_shown")
+		self.assertEqual(len(payload["cards"]), 2)
+		self.assertEqual(payload["indices"], [0, 1])
+
+	def test_one_card_shows_only_that_card(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = True
+
+		async_to_sync(coordinator.show_cards)(11, [1])
+
+		_, payload = broadcasts[-1]
+		self.assertEqual(len(payload["cards"]), 1)
+		self.assertEqual(payload["indices"], [1])
+
+	def test_showing_is_refused_while_a_hand_is_being_played(self):
+		"""Telling the table what you hold while people are still deciding is
+		not something live poker allows either."""
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = False
+
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [0, 1]))
+		self.assertEqual(broadcasts, [])
+
+	def test_showing_twice_in_one_hand_is_refused(self):
+		coordinator = self._coordinator([])
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = True
+
+		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
+		# Otherwise one player could hold the gap open a card at a time.
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [1]))
+
+	def test_showing_buys_the_table_time_to_look(self):
+		coordinator = self._coordinator([])
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = True
+		coordinator._show_deadline = time.monotonic() + 0.2
+
+		async_to_sync(coordinator.show_cards)(11, [0, 1])
+
+		# The next deal must not land on top of what was just shown.
+		self.assertGreater(coordinator._show_deadline - time.monotonic(), 3)
+
+	def test_nonsense_indices_show_nothing(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = True
+
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [5, -1]))
+		self.assertEqual(broadcasts, [])
+
+	def test_a_player_holding_no_cards_shows_nothing(self):
+		coordinator = self._coordinator([])
+		player = self._seat_with_cards(coordinator)
+		player.hole_cards = []
+		coordinator._show_open = True
+
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [0, 1]))
+
+	def test_the_gap_ends_on_its_own_when_nobody_shows(self):
+		coordinator = self._coordinator([])
+		coordinator.INTER_HAND_SECONDS = 0.05
+
+		started = time.monotonic()
+		async_to_sync(coordinator._inter_hand_pause)()
+
+		self.assertGreaterEqual(time.monotonic() - started, 0.05)
+		# And the window is shut again, so a late click cannot reveal anything.
+		self.assertFalse(coordinator._show_open)
+
+
+class ShowdownPauseTests(APITestCase):
+	"""The pause between hands, which is also the window for showing cards."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="pause_host", password="secret123", is_staff=True)
+		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_five_seconds_unless_asked_otherwise(self):
+		response = self.client.post(reverse("tournament-list"), {"name": "Default"}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).showdown_seconds, 5)
+
+	def test_a_host_can_set_it(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Slow", "showdown_seconds": 12}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).showdown_seconds, 12)
+
+	def test_too_short_to_read_is_refused(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Blink", "showdown_seconds": 1}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("showdown_seconds", response.data)
+
+	def test_a_pause_that_stops_being_one_is_refused(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Forever", "showdown_seconds": 120}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ShowdownPauseLengthTests(TestCase):
+	"""What the engine does with the configured pause."""
+
+	def _coordinator(self, **kwargs):
+		async def noop(*args, **kwargs):
+			return None
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+			**kwargs,
+		)
+
+	def test_the_tournaments_setting_is_what_the_table_waits(self):
+		self.assertEqual(self._coordinator(showdown_seconds=9).showdown_seconds, 9)
+
+	def test_a_tournament_that_says_nothing_gets_the_default(self):
+		coordinator = self._coordinator()
+		self.assertEqual(coordinator.showdown_seconds, coordinator.INTER_HAND_SECONDS)
+
+	def test_a_nonsense_setting_cannot_make_the_table_not_wait(self):
+		# Validation refuses this on the way in; the engine still refuses to
+		# deal straight over the previous hand if one ever reaches it.
+		self.assertGreaterEqual(self._coordinator(showdown_seconds=0).showdown_seconds, 1)
+
+	def test_showing_a_card_buys_a_whole_pause_to_look_at_it(self):
+		from game.engine.card import Card, Rank, Suit
+
+		coordinator = self._coordinator(showdown_seconds=8)
+		player = EnginePlayer(name="p", chips=100)
+		player._tp_id = 1
+		player._user_id = 11
+		player._seat = 1
+		player._table_number = 1
+		player.hole_cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+		coordinator._players_by_id[1] = player
+		coordinator._players_by_user_id[11] = player
+		coordinator._show_open = True
+		coordinator._show_deadline = time.monotonic() + 0.1
+
+		async_to_sync(coordinator.show_cards)(11, [0])
+
+		self.assertGreater(coordinator._show_deadline - time.monotonic(), 7)

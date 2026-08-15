@@ -498,6 +498,20 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             coordinator = _tournament_runners.get(self.tournament_id)
             if coordinator is not None:
                 await coordinator.set_sitting_out(self.user.id, bool(data.get("value")))
+        elif message_type == "show_cards":
+            coordinator = _tournament_runners.get(self.tournament_id)
+            if coordinator is not None:
+                raw = data.get("cards")
+                indices = raw if isinstance(raw, list) else [0, 1]
+                await coordinator.show_cards(
+                    self.user.id,
+                    [index for index in indices if isinstance(index, int)],
+                )
+        elif message_type == "ready":
+            # Like sit_out: a player only ever speaks for their own seat.
+            coordinator = _tournament_runners.get(self.tournament_id)
+            if coordinator is not None:
+                await coordinator.set_ready(self.user.id, bool(data.get("value", True)))
         elif message_type == "chat_message":
             await self._send_chat(data)
         elif message_type in ("media_signal", "media_presence"):
@@ -688,6 +702,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             rabbit_hunting_enabled=tournament.rabbit_hunting_enabled,
             auto_remove_offline_seconds=tournament.auto_remove_offline_seconds,
             bounty=BountyConfig.from_tournament(tournament),
+            showdown_seconds=tournament.showdown_seconds,
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,

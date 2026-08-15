@@ -9,6 +9,7 @@ import MediaControls from "../components/game/MediaControls";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
+import StartCountdown from "../components/game/StartCountdown";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
 import ActionPanel, { ActionCountdownBadge } from "../components/game/ActionPanel";
@@ -39,7 +40,6 @@ export default function GamePage() {
     reset,
     standings,
     players,
-    countdown,
     isPaused,
     currentTableNumber,
     tableCount,
@@ -375,7 +375,7 @@ export default function GamePage() {
           <>
             <FloatingPanel
               id="chat" title="Table chat" anchor="bottom-left"
-              defaultWidth={224} defaultHeight={128} minWidth={180} minHeight={110}
+              defaultWidth={288} defaultHeight={192} minWidth={180} minHeight={110}
               actions={<MediaControls />}
               badge={<ChatUnreadBadge />}
             >
@@ -393,13 +393,7 @@ export default function GamePage() {
             </FloatingPanel>
           </>
         )}
-        {countdown !== null && countdown > 0 && (
-          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
-            <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
-            <div className="text-6xl font-bold text-(--color-silver) tabular-nums">{countdown}</div>
-            <div className="text-(--color-text-muted) text-sm mt-3">Waiting for all players to connect...</div>
-          </div>
-        )}
+        <StartCountdown myUserId={user?.id} />
         <BreakOverlay level={level} nextLevel={nextLevel} />
         {isPaused && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
@@ -424,7 +418,7 @@ export default function GamePage() {
           onClick={() => setChatOpen(false)}
         >
           <div className="p-2 pb-safe space-y-2" onClick={(e) => e.stopPropagation()}>
-            <ChatPanel className="w-full h-56" />
+            <ChatPanel className="w-full h-72" />
             <button
               onClick={() => setChatOpen(false)}
               className="btn-secondary w-full py-2 rounded text-sm font-semibold transition-colors"

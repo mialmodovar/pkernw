@@ -95,6 +95,14 @@ const useGameStore = create((set) => ({
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
   countdown: null,    // seconds remaining before tournament starts
+  // Who is ready to start, and how many seats there are to be ready. The count
+  // exists so the overlay can say 3/5 without having to work out which of the
+  // players it can see are actually seated.
+  readyUserIds: [],
+  readyTotal: 0,
+  // Between hands you may show what you had. The server decides whether a
+  // reveal is allowed; this is only whether to offer it.
+  showCardsOpen: false,
   isPaused: false,
   standings: null, // final standings when tournament finishes
   lastElimination: null, // { seat, name, finish_position, reason }
@@ -158,6 +166,8 @@ const useGameStore = create((set) => ({
       case "game_state":
         set((s) => ({
           players: data.players || [],
+          readyUserIds: data.ready_user_ids || s.readyUserIds,
+          readyTotal: data.ready_total ?? s.readyTotal,
           communityCards: data.community_cards || [],
           pot: data.pot || 0,
           street: data.street || null,
@@ -202,6 +212,14 @@ const useGameStore = create((set) => ({
         set({ countdown: data.seconds ?? data.data?.seconds ?? null });
         break;
 
+      // Who has said they are ready during the pre-tournament countdown.
+      case "ready_state":
+        set({
+          readyUserIds: data.ready_user_ids || [],
+          readyTotal: data.total || 0,
+        });
+        break;
+
       case "hand_started":
         set({
           handNumber: data.hand_number,
@@ -217,6 +235,7 @@ const useGameStore = create((set) => ({
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
+          showCardsOpen: false,
           holeCards: [],
           handStrength: null,
           actionOnSeat: null,
@@ -232,6 +251,9 @@ const useGameStore = create((set) => ({
             is_all_in: false,
             bet: 0,
             cards: null,
+            // Last hand's voluntary reveal. Without clearing it, whoever showed
+            // once would never be offered the button again.
+            shown: false,
           })),
         }));
         break;
@@ -383,14 +405,30 @@ const useGameStore = create((set) => ({
       }
 
       case "hand_complete":
-        if (data.stacks) {
-          set((s) => ({
-            players: s.players.map((p) => {
-              const updated = data.stacks.find((st) => st.seat === p.seat);
-              return updated ? { ...p, chips: updated.chips, bet: 0 } : { ...p, bet: 0 };
-            }),
-          }));
-        }
+        set((s) => ({
+          // The window in which cards can be shown. It closes when the next
+          // hand starts, which is the server's rule too — this only decides
+          // whether the button is on screen.
+          showCardsOpen: true,
+          players: data.stacks
+            ? s.players.map((p) => {
+                const updated = data.stacks.find((st) => st.seat === p.seat);
+                return updated ? { ...p, chips: updated.chips, bet: 0 } : { ...p, bet: 0 };
+              })
+            : s.players,
+        }));
+        break;
+
+      // Somebody chose to show. Their cards go onto their seat the same way a
+      // showdown's do, so nothing else has to know the difference.
+      case "cards_shown":
+        set((s) => ({
+          players: s.players.map((p) =>
+            (p.seat === data.seat ? { ...p, cards: data.cards, shown: true } : p)
+          ),
+          messages: appendLog(s, entry(s, "showdown",
+            `${data.name} shows ${(data.cards || []).join(" ")}`)),
+        }));
         break;
 
       case "rabbit_hunt":
@@ -643,6 +681,7 @@ const useGameStore = create((set) => ({
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
       bountyFlash: null, gifBubbles: {}, finisher: null,
+      readyUserIds: [], readyTotal: 0, showCardsOpen: false,
     }),
 }));
 

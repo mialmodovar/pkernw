@@ -62,8 +62,11 @@ export default function FloatingPanel({
   const gesture = useRef(null);
   const autoOpened = useRef(false);
 
+  // Locked to begin with: the default arrangement is the considered one, and a
+  // panel you have to deliberately unlock can't be dragged halfway across the
+  // felt by a misjudged click while you are trying to act.
   const defaults = {
-    dx: 8, dy: 8, w: defaultWidth, h: defaultHeight, collapsed: false, pinned: false,
+    dx: 8, dy: 8, w: defaultWidth, h: defaultHeight, collapsed: false, pinned: true,
   };
   const [layout, setLayout] = useState(() => readLayout(id, defaults));
 
@@ -232,8 +235,11 @@ export default function FloatingPanel({
         {layout.collapsed && badge}
         <div className="ml-auto flex items-center gap-1">
           {actions}
+          {/* Position and size only, as it says — re-locking a panel you had
+              deliberately unlocked is not something this button promises. */}
           {moved && (
-            <button type="button" onClick={() => set(defaults)}
+            <button type="button"
+              onClick={() => set({ dx: defaults.dx, dy: defaults.dy, w: defaults.w, h: defaults.h })}
               title="Restore original position and size"
               className={ICON_BTN}>
               ↺

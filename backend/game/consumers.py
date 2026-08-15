@@ -14,6 +14,7 @@ from django.db import transaction
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser
+from django.utils import timezone
 
 from tournaments.bounties import BountyConfig
 from tournaments.models import BlindLevel, Tournament, TournamentPlayer
@@ -112,7 +113,11 @@ async def _group_send(channel_layer, group, event_type, payload):
 
 @database_sync_to_async
 def _db_set_tournament_status(tournament_id, status):
-    Tournament.objects.filter(id=tournament_id).update(status=status)
+    fields = {"status": status}
+    if status == "finished":
+        # What "it took three hours" is measured against at the other end.
+        fields["finished_at"] = timezone.now()
+    Tournament.objects.filter(id=tournament_id).update(**fields)
 
 
 @database_sync_to_async

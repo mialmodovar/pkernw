@@ -9,6 +9,17 @@ const ordinal = (n) => {
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
+/** "2h 15m" — the way a host says how long something took. */
+const spanBetween = (from, to) => {
+  if (!from) return null;
+  const minutes = Math.round((new Date(to || Date.now()) - new Date(from)) / 60000);
+  if (!Number.isFinite(minutes) || minutes < 1) return "just started";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest}m`;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+};
+
 /** A word about what state this is in, in the one colour that says it. */
 function StatusPill({ tournament: t }) {
   if (t.late_registration_open) {
@@ -58,18 +69,34 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
   // a figure that only ever grows.
   const poolCents = Math.max(0, buyInCents - (bountyOn ? (t.bounty_cents || 0) : 0)) * t.player_count;
 
+  const running = t.status === "running" || t.status === "paused";
+  // How long it has been going, or how long it took. Neither can be read off
+  // created_at: a tournament made on Monday for Friday night was not four days
+  // long — which is why the server stamps play starting and ending.
+  const elapsed = isFinished
+    ? (t.started_at && t.finished_at ? spanBetween(t.started_at, t.finished_at) : null)
+    : running ? spanBetween(t.started_at) : null;
+
   // Read left to right, most-particular first. Joined as one line so it wraps
   // as prose on a narrow screen instead of becoming a column of chips.
   const facts = [
-    startTime && !isFinished ? startTime : null,
+    startTime && !isFinished && !running ? startTime : null,
+    elapsed ? (isFinished ? `took ${elapsed}` : `${elapsed} in`) : null,
     `${t.player_count}/${t.max_players}`,
+    // 8-max and 9-max play differently enough that it belongs next to the
+    // turnout rather than buried in the setup screen.
+    t.players_per_table ? `${t.players_per_table}-max` : null,
     buyInCents > 0 ? euros(buyInCents) : "free",
     // Never the percentages: a share is a rule for splitting a pot, and the pot
     // is knowable here. Places paid is the count, the pool is the money.
-    poolCents > 0 ? `${euros(poolCents)} pool` : null,
+    poolCents > 0 ? `${euros(poolCents)} pool` : buyInCents > 0 ? null : "no prize",
     GAME_LABELS[t.game_type] || null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
+    // Only worth saying while you can still act on it.
+    !isFinished && t.late_reg_level > 0 && (t.status === "lobby" || t.late_registration_open)
+      ? `reg to L${t.late_reg_level}`
+      : null,
   ].filter(Boolean);
 
   const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;
@@ -101,6 +128,11 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
                   {` · you ${ordinal(t.my_finish_position)}`}
                 </span>
               )}
+              {/* The result leads, but how big and how long it was is the rest
+                  of what anybody asks about a night that is over. */}
+              {` · ${t.player_count} played`}
+              {elapsed && ` · took ${elapsed}`}
+              {poolCents > 0 && ` · ${euros(poolCents)}`}
             </>
           ) : (
             <>

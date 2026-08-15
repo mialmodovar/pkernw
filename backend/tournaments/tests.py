@@ -2358,3 +2358,83 @@ class EditTournamentTests(APITestCase):
 
 	def test_the_game_type_is_recorded(self):
 		self.assertEqual(self.tournament.game_type, "nlh")
+
+
+class PlayTimestampTests(APITestCase):
+	"""When play began and ended — which created_at cannot stand in for."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="clock_host", password="secret123", is_staff=True)
+		self.other = User.objects.create_user(username="clock_other", password="secret123")
+		self.client.force_authenticate(self.host)
+		self.tournament = Tournament.objects.create(host=self.host, name="Timed", status="lobby")
+		TournamentPlayer.objects.create(tournament=self.tournament, user=self.host, seat=0, chips=1000)
+		TournamentPlayer.objects.create(tournament=self.tournament, user=self.other, seat=1, chips=1000)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_nothing_is_stamped_while_it_sits_in_the_lobby(self):
+		self.assertIsNone(self.tournament.started_at)
+		self.assertIsNone(self.tournament.finished_at)
+
+	def test_starting_stamps_when_play_began(self):
+		response = self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.tournament.refresh_from_db()
+		self.assertIsNotNone(self.tournament.started_at)
+
+	def test_resuming_from_a_pause_is_not_starting_again(self):
+		"""Otherwise every pause would reset how long it had been running."""
+		self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+		self.tournament.refresh_from_db()
+		began = self.tournament.started_at
+
+		self.client.post(reverse("tournament-pause", args=[self.tournament.id]))
+		self.client.post(reverse("tournament-resume", args=[self.tournament.id]))
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.started_at, began)
+
+	def test_a_scheduled_start_stamps_it_too(self):
+		from django.utils import timezone as tz
+
+		Tournament.objects.filter(id=self.tournament.id).update(
+			scheduled_start_at=tz.now() - timedelta(minutes=1),
+		)
+
+		# The lobby poll is what starts a scheduled tournament.
+		self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+		self.assertIsNotNone(self.tournament.started_at)
+
+	def test_finishing_stamps_the_other_end(self):
+		from game.consumers import _db_set_tournament_status
+
+		async_to_sync(_db_set_tournament_status)(self.tournament.id, "finished")
+
+		self.tournament.refresh_from_db()
+		self.assertIsNotNone(self.tournament.finished_at)
+
+	def test_a_status_that_is_not_finished_does_not_stamp_an_ending(self):
+		from game.consumers import _db_set_tournament_status
+
+		async_to_sync(_db_set_tournament_status)(self.tournament.id, "paused")
+
+		self.tournament.refresh_from_db()
+		self.assertIsNone(self.tournament.finished_at)
+
+	def test_the_lobby_list_carries_both(self):
+		self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		row = next(
+			item for item in self.client.get(reverse("tournament-list")).data
+			if item["id"] == self.tournament.id
+		)
+
+		self.assertIn("started_at", row)
+		self.assertIn("finished_at", row)
+		self.assertIsNotNone(row["started_at"])

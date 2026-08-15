@@ -29,7 +29,8 @@ def _start_due_scheduled_tournaments():
     for tournament in due_tournaments:
         if tournament.players.count() >= 2:
             tournament.status = "running"
-            tournament.save(update_fields=["status"])
+            tournament.started_at = timezone.now()
+            tournament.save(update_fields=["status", "started_at"])
 
 
 def _get_table_assignment(tournament, global_seat):
@@ -163,7 +164,10 @@ def start_tournament(request, pk):
         )
 
     tournament.status = "running"
-    tournament.save()
+    # Stamped once, on the way out of the lobby: resuming from a pause is not
+    # starting again, and would otherwise reset how long this has been running.
+    tournament.started_at = timezone.now()
+    tournament.save(update_fields=["status", "started_at"])
     return Response({"status": "running"})
 
 

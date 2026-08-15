@@ -71,6 +71,10 @@ class Tournament(models.Model):
     current_level_index = models.IntegerField(default=0)
     hands_in_level = models.IntegerField(default=0)
     created_at     = models.DateTimeField(auto_now_add=True)
+    # When play actually began and ended, which created_at cannot stand in for:
+    # a tournament made on Monday for Friday night was not four days long.
+    started_at     = models.DateTimeField(null=True, blank=True)
+    finished_at    = models.DateTimeField(null=True, blank=True)
 
     def required_table_count(self, player_count=None):
         total_players = self.players.count() if player_count is None else player_count

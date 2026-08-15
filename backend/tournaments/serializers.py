@@ -222,7 +222,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "showdown_seconds",
-                  "auto_remove_offline_seconds", "created_at")
+                  "auto_remove_offline_seconds", "created_at", "started_at", "finished_at")
 
 
 class TournamentDetailSerializer(serializers.ModelSerializer):

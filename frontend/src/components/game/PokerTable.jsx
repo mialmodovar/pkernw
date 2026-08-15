@@ -57,7 +57,7 @@ function EmptySeat() {
   return (
     // The same width a taken seat occupies, so the ring of seats does not
     // change shape as players come and go.
-    <div className="w-[clamp(6.25rem,20cqw,11rem)] rounded-lg px-3 py-2 text-center
+    <div className="w-[clamp(8.75rem,27cqw,15rem)] rounded-lg px-3 py-2 text-center
                     border border-dashed border-(--color-border) bg-black/25">
       <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Empty</div>
     </div>

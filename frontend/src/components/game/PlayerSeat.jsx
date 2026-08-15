@@ -159,9 +159,17 @@ export default function PlayerSeat({
         }
       }}
       title={`${p.name} — tap for stats`}
-      style={{ paddingLeft: "calc(var(--seat-avatar) * 1.08)" }}
-      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg pr-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
-                     flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
+      style={{
+        // The plate already starts at the middle of the picture (see `body`),
+        // so this is only the rest of the way clear of it.
+        paddingLeft: "calc(var(--seat-avatar) * 0.62)",
+        // At least as deep as the half of the picture that overlaps it, so the
+        // circle never hangs below the plate it is supposed to be sitting on —
+        // and so the name has room above and below it either way.
+        minHeight: "calc(var(--seat-avatar) * 0.5)",
+      }}
+      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg pr-2 py-1.5 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+                     flex items-center gap-2 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
       {/* What this seat is worth to whoever busts them — pinned to the plate
           rather than tucked inside it, because it is a price on a head and not
           another stat. Gone once they are out: the bounty went with them, to
@@ -269,8 +277,17 @@ export default function PlayerSeat({
   const face = (
     <span
       title={p.name}
+      style={{
+        // Solid, not the translucent surface the panels use: this circle sits
+        // over the nameplate and over the felt, and either showing through an
+        // emoji avatar makes the face look like a hole in the seat. Same
+        // gradient as everywhere else, painted onto an opaque base — the trick
+        // .panel-solid uses in index.css, for the same reason.
+        background:
+          "linear-gradient(160deg, var(--color-surface-raised), var(--color-surface-sunken)), var(--panel-floating-bg)",
+      }}
       className={`absolute left-0 top-0 -translate-y-1/2 z-20 rounded-full overflow-hidden
-                  border-2 ${borderColor} bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))]
+                  border-2 ${borderColor}
                   shadow-lg shadow-black/60 w-[var(--seat-avatar)] h-[var(--seat-avatar)]
                   ${isActive ? "ring-2 ring-(--color-highlight-edge)" : ""}`}
     >
@@ -292,10 +309,16 @@ export default function PlayerSeat({
   const body = (
     <div key="body" className="w-full">
       <div className="flex items-end justify-start min-h-[calc(var(--seat-avatar)/2)]"
-        style={{ paddingLeft: "calc(var(--seat-avatar) * 1.08)" }}>
+        style={{ paddingLeft: "calc(var(--seat-avatar) * 1.12)" }}>
         {cards}
       </div>
-      <div className="relative">
+      {/* The plate begins halfway across the picture rather than beside it, so
+          its left edge and corners are behind the circle and what you see is a
+          nameplate coming out from under a face. The padding moves the plate
+          only: an absolutely positioned box is placed against the padding edge,
+          so the circle stays at the seat's left edge where the cards above are
+          measured from. */}
+      <div className="relative" style={{ paddingLeft: "calc(var(--seat-avatar) * 0.5)" }}>
         {plate}
         {face}
       </div>
@@ -321,9 +344,9 @@ export default function PlayerSeat({
   // room around it.
   return (
     <div
-      style={{ "--seat-avatar": compact ? (isMe ? "2.4rem" : "2.05rem") : "clamp(2.4rem,7.5cqw,4rem)" }}
+      style={{ "--seat-avatar": compact ? (isMe ? "3rem" : "2.75rem") : "clamp(3.6rem,11.75cqw,6.25rem)" }}
       className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
-        compact ? (isMe ? "w-[6.75rem]" : "w-[5.75rem]") : "w-[clamp(6.25rem,20cqw,11rem)]"
+        compact ? (isMe ? "w-[7.5rem]" : "w-[6.75rem]") : "w-[clamp(8.75rem,27cqw,15rem)]"
       } ${
         p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
       }`}>

@@ -4,6 +4,18 @@ import useGameStore from "../../store/gameStore";
 const DEFAULT_ACTION_SECONDS = 20; // matches coordinator.py's action_timer_seconds
 const TICK_MS = 250;
 
+/** What colour a clock is, wherever it is drawn.
+ *
+ * The seat ring and the action panel are the same clock seen from two places,
+ * so the decision lives here rather than in each of them — they used to
+ * disagree, with the ring still calmly gold while the panel had gone red.
+ */
+export function timerToneClass(countdown) {
+  if (countdown.inTimeBank) return "bg-[#8a1c2b]";
+  if (countdown.displaySeconds != null && countdown.displaySeconds <= 3) return "bg-[#b3243a]";
+  return "bg-[#c9a227]";
+}
+
 /**
  * Ticks down the current actor's clock, split into the regular clock and the
  * time bank. `action_required` is broadcast to the whole table, so this works

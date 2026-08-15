@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
-import { useActionCountdown } from "./useActionCountdown";
+import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 
 // Keyboard shortcuts arm on the first press and commit on the second, so a
 // stray keystroke can't fold your hand. The mouse commits immediately.
@@ -288,13 +288,7 @@ export default function ActionPanel({
       {/* Timer bar — regular clock first, then the time bank */}
       <div className="h-1.5 bg-black/50 w-full mt-2">
         <div
-          className={`h-full transition-all duration-1000 ease-linear ${
-            countdown.inTimeBank
-              ? "bg-[#8a1c2b]"
-              : countdown.displaySeconds != null && countdown.displaySeconds <= 3
-              ? "bg-[#b3243a]"
-              : "bg-[#c9a227]"
-          }`}
+          className={`h-full transition-all duration-1000 ease-linear ${timerToneClass(countdown)}`}
           style={{ width: `${countdown.pct}%` }}
         />
       </div>

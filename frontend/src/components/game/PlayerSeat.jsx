@@ -34,12 +34,14 @@ function PositionMarker({ isDealer, isSB, isBB }) {
   );
 }
 
-// Thin ring that drains while this seat is on the clock.
-function TimerRing({ pct }) {
+// Thin ring that drains while this seat is on the clock. Its colour comes from
+// the same helper the action panel uses, so a seat in its time bank reads red
+// there too rather than staying gold to the last second.
+function TimerRing({ pct, tone = "bg-[#c9a227]" }) {
   return (
     <div className="w-full h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
-        className="h-full bg-[#c9a227] transition-all duration-1000 ease-linear"
+        className={`h-full transition-all duration-1000 ease-linear ${tone}`}
         style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
       />
     </div>
@@ -48,7 +50,7 @@ function TimerRing({ pct }) {
 
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
-  isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
+  isDealer, isSB, isBB, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
   stats, onInspect, handStrength, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -172,7 +174,7 @@ export default function PlayerSeat({
     </button>
   );
 
-  const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} /> : null;
+  const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} tone={timerTone} /> : null;
   // On the outer edge, against the nameplate, and only when there is a picture
   // to show — nobody's seat moves because someone else turned a camera on.
   // On a crowded table the picture rides on the nameplate (see liveStream

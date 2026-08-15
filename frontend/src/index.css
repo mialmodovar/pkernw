@@ -104,6 +104,11 @@ body {
   min-height: 100vh;
 }
 
+/* Note the backdrop-filter: it makes every .panel a stacking context. Anything
+   that has to escape one — a popover, a dropdown, a full-screen modal opened
+   from inside a panel — cannot do it with a z-index, however large, and has to
+   go through a portal instead. This has caught the GIF picker, the appearance
+   panel and the player profile so far. */
 .panel {
   background: linear-gradient(160deg, var(--color-surface), rgba(16, 10, 11, 0.8));
   border: 1px solid var(--color-border);

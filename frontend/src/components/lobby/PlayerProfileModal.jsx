@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import api from "../../api/http";
 
@@ -28,6 +29,11 @@ function Stat({ label, value }) {
  * Deliberately short. The full read — VPIP, 3-bet, fold to c-bet — belongs at
  * the table where you are using it against them; here the question is closer to
  * "how have they been doing", which four numbers and five results answer.
+ *
+ * Drawn through a portal. It opens from inside the watch panel, and every
+ * .panel carries a backdrop-filter — which makes a stacking context, so a
+ * full-screen overlay rendered in there was sealed into a box the size of the
+ * panel and the league card below simply painted over it.
  */
 export default function PlayerProfileModal({ username, onClose, onWatchChange }) {
   const [profile, setProfile] = useState(null);
@@ -67,7 +73,7 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
 
   const stats = profile?.stats;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
       onClick={onClose}
@@ -140,6 +146,7 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

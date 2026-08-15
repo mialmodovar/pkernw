@@ -14,16 +14,20 @@ import useGameStore from "../../store/gameStore";
  */
 export default function ShowCardsBar({ myCards, mySeat }) {
   const open = useGameStore((s) => s.showCardsOpen);
-  // Gone once the reveal comes back from the server, rather than the moment the
-  // button is pressed. The server opens its window a beat after the hand ends,
-  // and a click that lands early is refused — hiding the bar on the click would
-  // spend the one reveal a hand allows on a message nobody acted on.
-  const alreadyShowed = useGameStore((s) => (
-    mySeat == null ? false : Boolean(s.players.find((p) => p.seat === mySeat)?.shown)
+  // Nothing to offer once your cards are already face up. That covers all three
+  // ways it happens — a showdown, an all-in runout, or having just shown them
+  // yourself — because each of those puts the cards on your own seat, and a
+  // seat with cards on it is a hand everybody can already see.
+  //
+  // Reading the seat rather than remembering the click also means the bar goes
+  // when the server confirms, not when the button is pressed: the reveal window
+  // opens a beat after the hand ends, and a click that lands early is refused.
+  const alreadyPublic = useGameStore((s) => (
+    mySeat == null ? false : Boolean(s.players.find((p) => p.seat === mySeat)?.cards?.length)
   ));
 
   const cards = myCards || [];
-  if (!open || alreadyShowed || cards.length === 0) return null;
+  if (!open || alreadyPublic || cards.length === 0) return null;
 
   const show = (indices) => send({ type: "show_cards", cards: indices });
 

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { equityShake } from "../components/game/equitySwing";
 import { formatEuros } from "../components/game/formatMoney";
 
 const SHOW_BB_KEY = "poker.showBB";
@@ -94,6 +95,11 @@ const useGameStore = create((set) => ({
   rabbitCards: null,
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
+  // The last card that changed the hand, for the table to shake on. Cleared by
+  // whatever draws it, like the other one-shot animations.
+  equityShake: null,
+  equityShakeSequence: 0,
+  clearEquityShake: (id) => set((s) => (s.equityShake?.id === id ? { equityShake: null } : {})),
   countdown: null,    // seconds remaining before tournament starts
   // Who is ready to start, and how many seats there are to be ready. The count
   // exists so the overlay can say 3/5 without having to work out which of the
@@ -250,10 +256,10 @@ const useGameStore = create((set) => ({
             is_folded: false,
             is_all_in: false,
             bet: 0,
+            // Clearing this is also what makes the show-cards button come back
+            // next hand: a seat with cards on it is one everybody can see, and
+            // that is the whole test for whether there is anything left to show.
             cards: null,
-            // Last hand's voluntary reveal. Without clearing it, whoever showed
-            // once would never be offered the button again.
-            shown: false,
           })),
         }));
         break;
@@ -371,13 +377,23 @@ const useGameStore = create((set) => ({
 
       case "all_in_equity": {
         const eqList = data.data || data;
-        set((s) => ({
-          allInEquity: eqList,
-          players: s.players.map((p) => {
-            const eq = Array.isArray(eqList) ? eqList.find((e) => e.seat === p.seat) : null;
-            return eq ? { ...p, cards: eq.cards } : p;
-          }),
-        }));
+        set((s) => {
+          // Each reading is the odds after a card landed, so measuring it
+          // against the one before says what that card did. A card that
+          // changes the hand shakes the table; most cards do not.
+          const shake = equityShake(s.allInEquity, eqList);
+          return {
+            allInEquity: eqList,
+            ...(shake
+              ? { equityShake: { intensity: shake, id: s.equityShakeSequence + 1 },
+                  equityShakeSequence: s.equityShakeSequence + 1 }
+              : {}),
+            players: s.players.map((p) => {
+              const eq = Array.isArray(eqList) ? eqList.find((e) => e.seat === p.seat) : null;
+              return eq ? { ...p, cards: eq.cards } : p;
+            }),
+          };
+        });
         break;
       }
 
@@ -427,7 +443,7 @@ const useGameStore = create((set) => ({
       case "cards_shown":
         set((s) => ({
           players: s.players.map((p) =>
-            (p.seat === data.seat ? { ...p, cards: data.cards, shown: true } : p)
+            (p.seat === data.seat ? { ...p, cards: data.cards } : p)
           ),
           messages: appendLog(s, entry(s, "showdown",
             `${data.name} shows ${(data.cards || []).join(" ")}`)),
@@ -558,17 +574,23 @@ const useGameStore = create((set) => ({
       // Somebody knocked somebody out. Carries the eliminator's chosen GIF,
       // which the table plays in the middle — see FinisherOverlay.
       case "player_knockout":
-        set((s) => (data.finisher_gif_id
-          ? {
-              finisher: {
-                gifId: data.finisher_gif_id,
-                name: data.name,
-                victimName: data.victim_name,
-                id: s.finisherSequence + 1,
-              },
-              finisherSequence: s.finisherSequence + 1,
-            }
-          : {}));
+        set((s) => {
+          // A split pot has two people knocking one out, and both of them own
+          // the moment. Only those who chose a finisher appear; if nobody did,
+          // there is nothing to play.
+          const playing = (data.eliminators || [])
+            .filter((one) => one.finisher_gif_id)
+            .map((one) => ({ gifId: one.finisher_gif_id, name: one.name }));
+          if (!playing.length) return {};
+          return {
+            finisher: {
+              players: playing,
+              victimName: data.victim_name,
+              id: s.finisherSequence + 1,
+            },
+            finisherSequence: s.finisherSequence + 1,
+          };
+        });
         break;
 
 
@@ -683,7 +705,7 @@ const useGameStore = create((set) => ({
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
-      bountyFlash: null, gifBubbles: {}, finisher: null,
+      bountyFlash: null, gifBubbles: {}, finisher: null, equityShake: null,
       readyUserIds: [], readyTotal: 0, showCardsOpen: false,
     }),
 }));

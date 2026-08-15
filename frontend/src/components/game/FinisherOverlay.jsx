@@ -38,18 +38,26 @@ export default function FinisherOverlay() {
       // still be told who knocked whom out, even though the GIF says nothing.
       role="status"
     >
-      <img
-        src={gifFullUrl(finisher.gifId)}
-        alt=""
-        className="max-w-[min(52%,18rem)] max-h-[40%] rounded-lg border-2 border-(--color-highlight)
-                   shadow-2xl shadow-black/70"
-      />
+      {/* Two GIFs when two players share the knockout, side by side and each
+          smaller, so a split pot still fits across the felt. */}
+      <div className="flex items-start justify-center gap-2 max-w-[86%]">
+        {finisher.players.map((one, index) => (
+          <img
+            key={`${one.gifId}-${index}`}
+            src={gifFullUrl(one.gifId)}
+            alt=""
+            className={`${
+              finisher.players.length > 1 ? "max-w-[42%] max-h-[34%]" : "max-w-[min(52%,18rem)] max-h-[40%]"
+            } rounded-lg border-2 border-(--color-highlight) shadow-2xl shadow-black/70`}
+          />
+        ))}
+      </div>
       <span
         className="px-3 py-1 rounded-full text-xs font-extrabold whitespace-nowrap
                    bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
                    text-(--color-highlight-ink) border border-(--color-highlight-deeper) shadow-lg shadow-black/60"
       >
-        {finisher.name} knocked out {finisher.victimName}
+        {finisher.players.map((one) => one.name).join(" & ")} knocked out {finisher.victimName}
       </span>
     </div>
   );

@@ -506,12 +506,61 @@ class MultiTableTournamentCoordinator:
         # A stale standings entry would list them twice in the final results.
         self._standings = [p for p in self._standings if p._tp_id != player._tp_id]
 
+        # They are back, but not in the hand being played — seats are only dealt
+        # out at the next rebalance. Until then they sit at the table marked as
+        # waiting, because a rebuy that leaves you invisible until the next hand
+        # looks like a rebuy that did not work.
+        player._waiting_for_hand = True
+        self._seat_waiting_player(player)
+
         await self.persist_player_states(list(self._players_by_id.values()))
         await self.broadcast_tournament(
             "player_rebuy",
             {"name": player.name, "chips": chips},
         )
+        await self._broadcast_table_roster(player._table_number)
         return ""
+
+    def _seat_waiting_player(self, player: EnginePlayer) -> None:
+        """Give a returning player somewhere to be shown until the next deal.
+
+        Only for display: the table's own player list is left alone, because a
+        hand may be running off it and adding to it mid-hand would deal them in
+        halfway through. The next rebalance assigns the real seat, which may not
+        be this one — the roster it broadcasts then corrects it.
+        """
+        table = self._tables.get(player._table_number)
+        if table is None:
+            table = next(iter(sorted(self._tables.values(), key=lambda item: len(item.players))), None)
+        if table is None:
+            return
+
+        player._table_number = table.table_number
+        taken = {seated._seat for seated in table.players}
+        free = next((seat for seat in range(table.max_seats) if seat not in taken), None)
+        if free is not None:
+            player._seat = free
+
+    async def _broadcast_table_roster(self, table_number: int) -> None:
+        """Who is at this table right now, waiting players included."""
+        table = self._tables.get(table_number)
+        if table is None:
+            return
+        waiting = [
+            player for player in self._players_by_id.values()
+            if getattr(player, "_waiting_for_hand", False)
+            and player._table_number == table_number
+            and player not in table.players
+        ]
+        roster = sorted([*table.players, *waiting], key=lambda item: item._seat)
+        await self._broadcast_to_table(
+            table_number,
+            "table_players",
+            {
+                "table_number": table_number,
+                "players": [self._player_payload(player) for player in roster],
+            },
+        )
 
     def table_summaries(self) -> List[dict]:
         return [
@@ -596,6 +645,8 @@ class MultiTableTournamentCoordinator:
                 player._table_number = table_index
                 player._seat = seat_at_table
                 player._global_seat = global_seat
+                # Dealt in from here, so they stop reading as waiting.
+                player._waiting_for_hand = False
                 global_seat += 1
                 grouped_players[table_index].append(player)
                 layout.append(
@@ -1005,6 +1056,8 @@ class MultiTableTournamentCoordinator:
             # In the payload so it survives a game_state snapshot, unlike the
             # client-only is_disconnected flag.
             "is_sitting_out": player.is_sitting_out,
+            # Back from a rebuy, at the table but not in the hand being played.
+            "is_waiting": getattr(player, "_waiting_for_hand", False),
         }
 
     async def _announce_knockout(
@@ -1012,24 +1065,36 @@ class MultiTableTournamentCoordinator:
         victim: EnginePlayer,
         eliminators: List[EnginePlayer],
     ) -> None:
-        """Say who knocked whom out, and play their finisher if they have one.
+        """Say who knocked whom out, and play their finishers if they have any.
 
         Separate from the bounty payment above because it is not about money: a
-        tournament with no bounties still has knockouts worth marking. Sent per
-        eliminator, so a split pot plays both their GIFs.
+        tournament with no bounties still has knockouts worth marking.
+
+        One knockout is one event, however many people did it. Sending it per
+        eliminator meant a split pot fired twice in the same instant and the
+        second finisher landed on top of the first, so only whoever happened to
+        be last got theirs played — both share the knockout, so both play.
+
+        Sent to the victim's table: everyone involved was in the same hand.
         """
-        for eliminator in eliminators:
-            await self._broadcast_to_table(
-                eliminator._table_number,
-                "player_knockout",
-                {
-                    "seat": eliminator._seat,
-                    "name": eliminator.name,
-                    "victim_seat": victim._seat,
-                    "victim_name": victim.name,
-                    "finisher_gif_id": getattr(eliminator, "_finisher_gif_id", None),
-                },
-            )
+        if not eliminators:
+            return
+        await self._broadcast_to_table(
+            victim._table_number,
+            "player_knockout",
+            {
+                "victim_seat": victim._seat,
+                "victim_name": victim.name,
+                "eliminators": [
+                    {
+                        "seat": eliminator._seat,
+                        "name": eliminator.name,
+                        "finisher_gif_id": getattr(eliminator, "_finisher_gif_id", None),
+                    }
+                    for eliminator in eliminators
+                ],
+            },
+        )
 
     async def _pay_bounty(
         self,

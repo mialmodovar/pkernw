@@ -378,6 +378,36 @@ button:disabled {
   appearance: textfield;
 }
 
+/* A card that turns an all-in over. Two weights: a shove that says the hand
+   just changed, and a longer, harder one for the cards that take it away from
+   somebody who had it won. The rotation is what makes it read as the table
+   being hit rather than the page scrolling. */
+@keyframes quake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10%  { transform: translate(-6px, 3px) rotate(-0.35deg); }
+  22%  { transform: translate(5px, -4px) rotate(0.3deg); }
+  35%  { transform: translate(-4px, -2px) rotate(-0.2deg); }
+  50%  { transform: translate(4px, 3px) rotate(0.18deg); }
+  65%  { transform: translate(-3px, 1px) rotate(-0.12deg); }
+  80%  { transform: translate(2px, -1px) rotate(0.06deg); }
+}
+
+.animate-quake {
+  animation: quake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+.animate-quake-hard {
+  animation: quake 0.85s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  animation-iteration-count: 2;
+}
+
+/* Shaking the table under somebody trying to read it is the first thing to go
+   when motion is unwelcome. The odds themselves still say what happened. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-quake,
+  .animate-quake-hard { animation: none; }
+}
+
 /* A GIF arriving over a seat. Pops in from the seat it belongs to, then simply
    sits there — it is a picture to look at, not another thing moving. */
 @keyframes gif-pop {

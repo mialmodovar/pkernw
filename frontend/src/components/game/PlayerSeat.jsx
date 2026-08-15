@@ -107,7 +107,15 @@ export default function PlayerSeat({
   // the top half and the plate always ends up on the outer edge.
   const badges = (
     <div key="badges" className="flex flex-col items-center gap-1">
-      {p.is_sitting_out && !p.is_eliminated && (
+      {/* Back from a rebuy, at the table but not in the hand being dealt. The
+          alternative was being invisible until the next one, which reads as a
+          rebuy that did not work. */}
+      {p.is_waiting && !p.is_eliminated && (
+        <div className="bg-(--color-highlight-dim) text-(--color-highlight-pale) text-[10px] font-bold px-1.5 py-0.5 rounded border border-(--color-highlight-edge) text-center">
+          WAITING
+        </div>
+      )}
+      {p.is_sitting_out && !p.is_eliminated && !p.is_waiting && (
         <div className="bg-(--color-highlight-dim) text-(--color-highlight-pale) text-[10px] font-bold px-1.5 py-0.5 rounded border border-(--color-highlight-edge) text-center">
           SITTING OUT
         </div>
@@ -285,7 +293,7 @@ export default function PlayerSeat({
     <div className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
       compact ? (isMe ? "w-[5.5rem]" : "w-[4.5rem]") : "w-[clamp(4.75rem,15cqw,8.5rem)]"
     } ${
-      p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
+      p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
     }`}>
       {stack}
       {/* Over the seat rather than only in the chat panel: a GIF is a reaction,

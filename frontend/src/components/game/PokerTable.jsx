@@ -9,6 +9,7 @@ import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import ShowCardsBar from "./ShowCardsBar";
+import useEquityQuake from "./useEquityQuake";
 import FinisherOverlay from "./FinisherOverlay";
 
 
@@ -70,6 +71,9 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
   const compact = useCompactLayout();
+  // The whole table takes the hit, so the board, the seats and the chips move
+  // together — shaking one of them would read as a glitch in that element.
+  const quake = useEquityQuake();
   const geometry = compact ? PORTRAIT : LANDSCAPE;
 
   // Winners are known from pot_awarded; their best five get the gold ring, and
@@ -101,7 +105,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Sized by .table-frame, and itself a size container so everything sitting on
   // the felt is measured against the felt rather than against the window.
   return (
-    <div className="@container table-frame relative mx-auto">
+    <div className={`@container table-frame relative mx-auto ${quake}`}>
       {/* Felt */}
       <div className={`felt absolute ${
         compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]"

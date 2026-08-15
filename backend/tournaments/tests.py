@@ -1892,3 +1892,194 @@ class ShowdownPauseLengthTests(TestCase):
 		async_to_sync(coordinator.show_cards)(11, [0])
 
 		self.assertGreater(coordinator._show_deadline - time.monotonic(), 7)
+
+
+class KnockoutAnnouncementTests(TestCase):
+	"""Who gets named, and whose finisher plays, when a hand ends somebody."""
+
+	def _coordinator(self, broadcasts):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(table_number, event_type, payload):
+			broadcasts.append((event_type, payload))
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=capture,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+		)
+
+	def _player(self, coordinator, tp_id, name, gif=None):
+		player = EnginePlayer(name=name, chips=1000)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._global_seat = tp_id
+		player._table_number = 1
+		player._finisher_gif_id = gif
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_a_split_pot_knockout_is_one_event_naming_both(self):
+		"""Sent per eliminator, the second finisher landed on top of the first
+		in the same instant and only the last one ever played."""
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		victim = self._player(coordinator, 1, "victim")
+		one = self._player(coordinator, 2, "one", gif="aaa")
+		two = self._player(coordinator, 3, "two", gif="bbb")
+
+		async_to_sync(coordinator._announce_knockout)(victim, [one, two])
+
+		self.assertEqual(len(broadcasts), 1)
+		event_type, payload = broadcasts[0]
+		self.assertEqual(event_type, "player_knockout")
+		self.assertEqual(payload["victim_name"], "victim")
+		self.assertEqual(
+			[(e["name"], e["finisher_gif_id"]) for e in payload["eliminators"]],
+			[("one", "aaa"), ("two", "bbb")],
+		)
+
+	def test_an_eliminator_without_a_finisher_is_still_named(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		victim = self._player(coordinator, 1, "victim")
+		one = self._player(coordinator, 2, "one", gif="aaa")
+		two = self._player(coordinator, 3, "two")
+
+		async_to_sync(coordinator._announce_knockout)(victim, [one, two])
+
+		_, payload = broadcasts[0]
+		self.assertEqual(len(payload["eliminators"]), 2)
+		self.assertIsNone(payload["eliminators"][1]["finisher_gif_id"])
+
+	def test_a_knockout_with_nobody_to_credit_says_nothing(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		victim = self._player(coordinator, 1, "victim")
+
+		async_to_sync(coordinator._announce_knockout)(victim, [])
+
+		self.assertEqual(broadcasts, [])
+
+
+class RebuySeatVisibilityTests(TestCase):
+	"""A rebuy you cannot see looks like a rebuy that did not work."""
+
+	def _coordinator(self, broadcasts):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(table_number, event_type, payload):
+			broadcasts.append((table_number, event_type, payload))
+
+		async def assignments(layout, active_table_numbers):
+			# What the real one hands back: the table rows it wrote.
+			return {number: {"id": number, "max_seats": 9} for number in active_table_numbers}
+
+		coordinator = MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=capture,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=assignments,
+			persist_player_states=noop,
+		)
+		return coordinator
+
+	def _player(self, coordinator, tp_id, seat, chips=1000, eliminated=False):
+		from game.coordinator import RuntimeTable
+
+		player = EnginePlayer(name=f"p{tp_id}", chips=chips)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = seat
+		player._global_seat = seat
+		player._table_number = 1
+		player.is_eliminated = eliminated
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		table = coordinator._tables.setdefault(1, RuntimeTable(table_number=1, max_seats=9))
+		if not eliminated:
+			table.players.append(player)
+		return player
+
+	def test_a_rebought_player_appears_at_the_table_straight_away(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		self._player(coordinator, 2, 1)
+		busted = self._player(coordinator, 3, 2, chips=0, eliminated=True)
+
+		async_to_sync(coordinator.apply_rebuy)(33, 10_000)
+
+		rosters = [payload for _, event, payload in broadcasts if event == "table_players"]
+		self.assertTrue(rosters)
+		names = [entry["name"] for entry in rosters[-1]["players"]]
+		self.assertIn(busted.name, names)
+
+	def test_they_are_shown_as_waiting_rather_than_in_the_hand(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		busted = self._player(coordinator, 2, 1, chips=0, eliminated=True)
+
+		async_to_sync(coordinator.apply_rebuy)(22, 10_000)
+
+		roster = [p for _, event, payload in broadcasts if event == "table_players"
+				  for p in payload["players"]]
+		waiting = next(entry for entry in roster if entry["name"] == busted.name)
+		self.assertTrue(waiting["is_waiting"])
+		# Everyone already in the hand is unaffected.
+		seated = next(entry for entry in roster if entry["name"] == "p1")
+		self.assertFalse(seated["is_waiting"])
+
+	def test_the_running_hand_is_not_dealt_a_new_player_halfway_through(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		self._player(coordinator, 2, 1)
+		self._player(coordinator, 3, 2, chips=0, eliminated=True)
+		before = list(coordinator._tables[1].players)
+
+		async_to_sync(coordinator.apply_rebuy)(33, 10_000)
+
+		# Only the broadcast roster grows; the table's own list is what a hand
+		# in progress is being played from.
+		self.assertEqual(coordinator._tables[1].players, before)
+
+	def test_they_take_a_free_seat_rather_than_somebody_elses(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		self._player(coordinator, 2, 1)
+		busted = self._player(coordinator, 3, 0, chips=0, eliminated=True)
+
+		async_to_sync(coordinator.apply_rebuy)(33, 10_000)
+
+		self.assertNotIn(busted._seat, (0, 1))
+
+	def test_the_next_deal_stops_them_reading_as_waiting(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		busted = self._player(coordinator, 2, 1, chips=0, eliminated=True)
+		async_to_sync(coordinator.apply_rebuy)(22, 10_000)
+		self.assertTrue(busted._waiting_for_hand)
+
+		async_to_sync(coordinator._rebalance_tables)()
+
+		self.assertFalse(busted._waiting_for_hand)

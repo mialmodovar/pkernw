@@ -51,9 +51,9 @@ export default function LobbyPage() {
       </aside>
 
       <main className="flex-1 space-y-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-wrap gap-3 items-center">
             {user?.is_staff && (
               <>
                 <button onClick={() => navigate("/dev/table")}

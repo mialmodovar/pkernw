@@ -2,7 +2,7 @@ import useGameStore from "../../store/gameStore";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
-import { useActionCountdown } from "./useActionCountdown";
+import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 import { useShowdownReveal } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
@@ -135,6 +135,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 isSB={sbSeat === p.seat}
                 isBB={bbSeat === p.seat}
                 timerPct={isActive ? countdown.pct : 100}
+                timerTone={isActive ? timerToneClass(countdown) : undefined}
                 // Past six seats the ring is too tight for a tile of its own,
                 // so the picture moves onto the nameplate instead. A phone is
                 // never wide enough for the tile.

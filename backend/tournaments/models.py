@@ -37,7 +37,9 @@ class Tournament(models.Model):
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
     payout_structure = models.JSONField(default=list, blank=True)
-    rabbit_hunting_enabled = models.BooleanField(default=False)
+    # Matches the create form's default, so a tournament made anywhere else —
+    # the admin, a shell — behaves like one made through the app.
+    rabbit_hunting_enabled = models.BooleanField(default=True)
     auto_remove_offline_seconds = models.IntegerField(default=0)
     # Blind progress, persisted so a restart resumes where play actually was
     # instead of rewinding the tournament to level 1.

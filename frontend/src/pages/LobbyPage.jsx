@@ -55,10 +55,17 @@ export default function LobbyPage() {
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex gap-3 items-center">
             {user?.is_staff && (
-              <button onClick={() => navigate("/tournaments/new")}
-                className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
-                Create Tournament
-              </button>
+              <>
+                <button onClick={() => navigate("/dev/table")}
+                  title="Open the game table with mock players, for layout work"
+                  className="btn-secondary px-3 py-2 rounded font-semibold text-sm transition-colors">
+                  Table sandbox
+                </button>
+                <button onClick={() => navigate("/tournaments/new")}
+                  className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
+                  Create Tournament
+                </button>
+              </>
             )}
             <button onClick={logout}
               className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">

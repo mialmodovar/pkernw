@@ -5,13 +5,35 @@ import MediaControls from "./MediaControls";
 
 const MAX_CHARS = 240;
 
+/** How much you have missed while the chat was collapsed.
+ *
+ * Mounted only while the panel is collapsed, so mounting IS the moment the
+ * counting starts — and unmounting on expand is what clears it. Counts the
+ * store's arrival sequence rather than the message array, which is capped.
+ */
+export function ChatUnreadBadge() {
+  const sequence = useGameStore((s) => s.chatSequence);
+  const [seen] = useState(sequence);
+  const unread = sequence - seen;
+  if (unread <= 0) return null;
+  return (
+    <span
+      title={`${unread} new message${unread === 1 ? "" : "s"}`}
+      className="shrink-0 min-w-4 px-1 rounded-full text-[10px] font-bold leading-4 text-center
+                 bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208]"
+    >
+      {unread > 99 ? "99+" : unread}
+    </span>
+  );
+}
+
 /** Table talk.
  *
  * Nothing here is stored: what is said at a friendly game belongs to the night
  * it was said in. Reloading the page starts an empty room, which is also why
  * this never pretends to be a history.
  */
-export default function ChatPanel({ className = "w-56 h-32" }) {
+export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
   const chat = useGameStore((s) => s.chat);
   const [draft, setDraft] = useState("");
   const scroller = useRef(null);
@@ -30,11 +52,17 @@ export default function ChatPanel({ className = "w-56 h-32" }) {
   };
 
   return (
-    <div className={`panel rounded-lg flex flex-col shadow-lg shadow-black/50 ${className}`}>
-      <div className="px-3 py-1.5 border-b border-(--color-border) flex items-center justify-between gap-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">Table chat</h2>
-        <MediaControls />
-      </div>
+    // `bare` is the form used inside a FloatingPanel, which supplies the frame
+    // and the title bar itself — including the media controls.
+    <div className={bare
+      ? "w-full h-full flex flex-col"
+      : `panel rounded-lg flex flex-col shadow-lg shadow-black/50 ${className}`}>
+      {!bare && (
+        <div className="px-3 py-1.5 border-b border-(--color-border) flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-(--color-silver)">Table chat</h2>
+          <MediaControls />
+        </div>
+      )}
 
       <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-2 text-xs space-y-1.5">
         {chat.length === 0 ? (

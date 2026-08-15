@@ -8,6 +8,8 @@ import LobbyPage from "./pages/LobbyPage";
 import CreateTournamentPage from "./pages/CreateTournamentPage";
 import TournamentSetupPage from "./pages/TournamentSetupPage";
 import GamePage from "./pages/GamePage";
+import DevTablePage from "./pages/DevTablePage";
+import StaffRoute from "./components/auth/StaffRoute";
 import BuildStamp from "./components/BuildStamp";
 
 export default function App() {
@@ -33,6 +35,7 @@ export default function App() {
       <Route path="/tournaments/new" element={<ProtectedRoute><CreateTournamentPage /></ProtectedRoute>} />
       <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
       <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+      <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>

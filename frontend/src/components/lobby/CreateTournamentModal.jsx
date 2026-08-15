@@ -31,7 +31,9 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
     { place: 2, label: "2nd", percentage: 30 },
     { place: 3, label: "3rd", percentage: 20 },
   ]);
-  const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(false);
+  // On by default: seeing the cards that would have come is the kind of thing
+  // a friendly game wants, and a host who disagrees can turn it off here.
+  const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(true);
   const [autoRemoveOfflineEnabled, setAutoRemoveOfflineEnabled] = useState(false);
   const [autoRemoveOfflineSeconds, setAutoRemoveOfflineSeconds] = useState(300);
   const [customLevels, setCustomLevels] = useState(null); // null = use server default

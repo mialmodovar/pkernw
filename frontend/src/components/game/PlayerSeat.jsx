@@ -34,12 +34,14 @@ function PositionMarker({ isDealer, isSB, isBB }) {
   );
 }
 
-// Thin ring that drains while this seat is on the clock.
-function TimerRing({ pct }) {
+// Thin ring that drains while this seat is on the clock. Its colour comes from
+// the same helper the action panel uses, so a seat in its time bank reads red
+// there too rather than staying gold to the last second.
+function TimerRing({ pct, tone = "bg-[#c9a227]" }) {
   return (
     <div className="w-full h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
-        className="h-full bg-[#c9a227] transition-all duration-1000 ease-linear"
+        className={`h-full transition-all duration-1000 ease-linear ${tone}`}
         style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
       />
     </div>
@@ -48,10 +50,11 @@ function TimerRing({ pct }) {
 
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
-  isDealer, isSB, isBB, timerPct, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
+  isDealer, isSB, isBB, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
   stats, onInspect, handStrength, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
+  const toggleBB = useGameStore((s) => s.toggleBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
   const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
   // Only used when the table is too crowded for a tile of its own.
@@ -131,8 +134,17 @@ export default function PlayerSeat({
 
   const markers = <PositionMarker key="markers" isDealer={isDealer} isSB={isSB} isBB={isBB} />;
 
+  // The plate is the stats target and the stack inside it is the chips/BB
+  // toggle, so this is a div with button semantics rather than a real <button>:
+  // a button inside a button is not something HTML allows.
   const plate = (
-    <button key="plate" type="button" onClick={onInspect}
+    <div key="plate" role="button" tabIndex={0} onClick={onInspect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onInspect?.();
+        }
+      }}
       title={`${p.name} — tap for stats`}
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
@@ -158,7 +170,17 @@ export default function PlayerSeat({
           ) : p.is_all_in ? (
             <span className="text-[#d9c07a] font-bold">ALL IN</span>
           ) : (
-            <>{formatChips(p.chips, showBB, bb)}</>
+            // Any stack at the table flips the whole table between chips and big
+            // blinds — the comparison you want is usually somebody else's stack,
+            // so you shouldn't have to find your own to ask for it.
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); toggleBB(); }}
+              title={showBB ? "Showing big blinds — tap for chips" : "Showing chips — tap for big blinds"}
+              className="rounded px-0.5 -mx-0.5 hover:bg-white/10 hover:text-(--color-silver) transition-colors"
+            >
+              {formatChips(p.chips, showBB, bb)}
+            </button>
           )}
         </div>
       </div>
@@ -169,10 +191,10 @@ export default function PlayerSeat({
           {Math.round(stats.vpip_pct)}
         </span>
       )}
-    </button>
+    </div>
   );
 
-  const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} /> : null;
+  const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} tone={timerTone} /> : null;
   // On the outer edge, against the nameplate, and only when there is a picture
   // to show — nobody's seat moves because someone else turned a camera on.
   // On a crowded table the picture rides on the nameplate (see liveStream

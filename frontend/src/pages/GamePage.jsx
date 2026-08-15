@@ -25,6 +25,11 @@ import PlayerStatsCard from "../components/game/PlayerStatsCard";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 
+// How long the table stays up after a hand ends your tournament — yours or
+// everyone's. The last hand is the one worth looking at, and a result screen
+// that arrives on the same beat as the pot means you never see it.
+const RESULT_DELAY_MS = 8000;
+
 export default function GamePage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -54,6 +59,7 @@ export default function GamePage() {
   // Busting out shouldn't yank the table away mid-river; and once told, a
   // player may want to stay and watch.
   const [eliminationReady, setEliminationReady] = useState(false);
+  const [standingsReady, setStandingsReady] = useState(false);
   const [spectating, setSpectating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -142,9 +148,20 @@ export default function GamePage() {
       setSpectating(false);
       return undefined;
     }
-    const timer = setTimeout(() => setEliminationReady(true), 6000);
+    const timer = setTimeout(() => setEliminationReady(true), RESULT_DELAY_MS);
     return () => clearTimeout(timer);
   }, [myEliminationFinish]);
+
+  // The last hand of a tournament is the one everybody wants to look at, and it
+  // used to be swapped for the standings the instant the pot was awarded.
+  useEffect(() => {
+    if (!standings) {
+      setStandingsReady(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setStandingsReady(true), RESULT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [standings]);
 
   // Find "my" seat
   const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
@@ -194,21 +211,11 @@ export default function GamePage() {
     }
   };
 
-  if (myEliminationFinish && !standings && eliminationReady && !spectating) {
-    return (
-      <EliminationScreen
-        tournamentId={id}
-        tournament={tournament}
-        finishPosition={myEliminationFinish}
-        reason={eliminatedByEvent ? lastElimination.reason : null}
-        onRebought={() => { setSpectating(false); setEliminationReady(false); loadTournament(); }}
-        onSpectate={() => setSpectating(true)}
-        onLeave={() => navigate("/")}
-      />
-    );
-  }
+  // Already told they are out, so there is no hand left for them to watch: the
+  // standings can take over the moment they arrive.
+  const eliminationShowing = Boolean(myEliminationFinish) && eliminationReady && !spectating;
 
-  if (standings) {
+  if (standings && (standingsReady || eliminationShowing)) {
     return (
       <TournamentCompleteScreen
         standings={standings}
@@ -222,9 +229,37 @@ export default function GamePage() {
     );
   }
 
+  if (eliminationShowing && !standings) {
+    return (
+      <EliminationScreen
+        tournamentId={id}
+        tournament={tournament}
+        finishPosition={myEliminationFinish}
+        reason={eliminatedByEvent ? lastElimination.reason : null}
+        onRebought={() => { setSpectating(false); setEliminationReady(false); loadTournament(); }}
+        onSpectate={() => setSpectating(true)}
+        onLeave={() => navigate("/")}
+      />
+    );
+  }
+
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
+      {/* The tournament is over and the table is only still up so the last hand
+          can be seen. Say so, and let anyone who has seen enough move on. */}
+      {standings && !standingsReady && (
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
+                        bg-[#3d2f0b] border-[rgba(224,198,107,0.4)] text-[#e6d9a8]">
+          <span>That's the tournament — final hand.</span>
+          <button
+            onClick={() => setStandingsReady(true)}
+            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            Show standings
+          </button>
+        </div>
+      )}
       {myEliminationFinish && spectating && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-[#3a1016] border-[rgba(196,178,165,0.25)] text-[#e3cdd1]">

@@ -42,6 +42,12 @@ remembering.
   range before anything is committed.
 
 ### Changed
+- **The hand that ends a tournament stays on screen.** The standings replaced
+  the table the instant the last pot was awarded, so the hand you just lost — or
+  won — everything on was gone before you could look at it. The table now holds
+  for eight seconds, with a line saying the tournament is over and a button for
+  anyone who has seen enough. Busting out waits the same eight seconds, rather
+  than six.
 - **The number on a nameplate says what it is.** The bare figure beside a
   player's stack was their VPIP, which you had to already know to read. It is
   labelled now, and coloured by how loose it is — cold for the players who

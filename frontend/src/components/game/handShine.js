@@ -59,11 +59,16 @@ export function isPremiumHoleCards(cards) {
 
 /** The score of the best five of these cards: [category, ...tiebreakers]. */
 export function bestFive(cards) {
+  return bestFiveCombo(cards)?.score ?? null;
+}
+
+/** The same, keeping the five cards that scored it. */
+function bestFiveCombo(cards) {
   if (cards.length < 5) return null;
   let best = null;
   for (const combo of combinations(cards, 5)) {
     const score = scoreFive(combo);
-    if (!best || compare(score, best) > 0) best = score;
+    if (!best || compare(score, best.score) > 0) best = { score, cards: combo };
   }
   return best;
 }
@@ -136,6 +141,32 @@ export default function handShines(holeCards, communityCards) {
   // nothing to it, the hand belongs to the whole table and is no news.
   const theirs = bestFive(board);
   return !theirs || beatsTheBoard(mine, theirs);
+}
+
+/**
+ * Which of the board cards are part of the hand that is shining.
+ *
+ * A hand is made of five cards and only two of them are yours, so lighting up
+ * the hole cards alone shows half of it. These are the community cards that
+ * belong to the same five — the flush that runs through the board, the pair the
+ * board gives your set — so the whole hand catches the light at once.
+ *
+ * Returns the original strings that were passed in, so the caller can match
+ * them against what it is rendering without parsing anything.
+ */
+export function shiningBoardCards(holeCards, communityCards) {
+  if (!handShines(holeCards, communityCards)) return [];
+
+  const hole = toCards(holeCards);
+  const board = (communityCards || []).map((value) => ({ value, card: toCard(value) }))
+    .filter((entry) => entry.card);
+  if (board.length < 3) return [];   // preflop shine is the hole cards alone
+
+  const best = bestFiveCombo([...hole, ...board.map((entry) => entry.card)]);
+  if (!best) return [];
+
+  const inHand = new Set(best.cards);
+  return board.filter((entry) => inHand.has(entry.card)).map((entry) => entry.value);
 }
 
 // How much of a score is the hand itself rather than a kicker: the two pairs of

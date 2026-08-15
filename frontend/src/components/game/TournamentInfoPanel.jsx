@@ -1,6 +1,7 @@
 import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import { formatEuros } from "./formatMoney";
 import { formatClock, useLevelCountdown } from "./useLevelCountdown";
 
 function Row({ label, children }) {
@@ -25,6 +26,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const levelRemaining = useLevelCountdown();
   const tableSummaries = useGameStore((s) => s.tableSummaries);
   const currentTableNumber = useGameStore((s) => s.currentTableNumber);
+  const livePlayers = useGameStore((s) => s.players);
   const showBB = useGameStore((s) => s.showBB);
   const bb = level?.big_blind || 0;
 
@@ -63,13 +65,39 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const nextPrize = inTheMoney ? payoutFor(remaining - 1) : null;
 
   // Every rebuy is another buy-in — the same sum the settlement ledger makes.
-  const poolCents = (tournament?.buy_in_cents || 0) * (tournament?.players || [])
-    .reduce((sum, p) => sum + 1 + (p.rebuy_count || 0), 0);
+  const entries = (tournament?.players || []).reduce((sum, p) => sum + 1 + (p.rebuy_count || 0), 0);
+  // The percentages below are shares of what is played for by placing, and in a
+  // knockout tournament part of every buy-in went onto a head instead. Showing
+  // the whole buy-in here would promise a first prize that does not exist.
+  const placingBuyInCents = Math.max(
+    0,
+    (tournament?.buy_in_cents || 0) - ((tournament?.bounty_mode || "none") !== "none" ? (tournament?.bounty_cents || 0) : 0),
+  );
+  const poolCents = placingBuyInCents * entries;
   const money = (percentage) => (poolCents > 0
     ? (Math.round(poolCents * percentage) / 10000).toLocaleString(undefined,
         { style: "currency", currency: "EUR", maximumFractionDigits: 2 })
     : null);
   const withMoney = (row) => `${row.percentage}%${money(row.percentage) ? ` · ${money(row.percentage)}` : ""}`;
+
+  // Knockouts. The live table is the truthful source — it is updated the moment
+  // a bounty changes hands — and the REST snapshot covers the case where your
+  // own seat is not on the table being watched (eliminated, or spectating).
+  const bountyMode = tournament?.bounty_mode || "none";
+  const bountyOn = bountyMode !== "none" && (tournament?.bounty_cents || 0) > 0;
+  const myLiveSeat = livePlayers.find((p) => p.name === username);
+  const myRestSeat = (tournament?.players || []).find((p) => p.username === username);
+  const myBountyWon = myLiveSeat?.bounty_won_cents ?? myRestSeat?.bounty_won_cents ?? 0;
+  const myKnockouts = myLiveSeat?.knockouts ?? myRestSeat?.knockouts ?? 0;
+  const myHead = myLiveSeat?.bounty_cents ?? myRestSeat?.bounty_cents ?? 0;
+  // Every entry paid for one bounty, rebuys included — the same count the
+  // settlement uses, so the pool shown here is the pool that gets paid.
+  const bountyPoolCents = (tournament?.bounty_cents || 0) * entries;
+  const biggestHead = bountyOn
+    ? [...(tournament?.players || [])]
+        .filter((p) => !p.is_eliminated)
+        .sort((a, b) => (b.bounty_cents || 0) - (a.bounty_cents || 0))[0]
+    : null;
 
   // The blinds and the clock stay on screen whether or not the panel is open —
   // they are the two things you look up mid-hand without wanting to read a card.
@@ -193,6 +221,46 @@ export default function TournamentInfoPanel({ tournament, username }) {
               </Row>
             )}
           </div>
+
+          {/* Knockouts. What you have already banked off other people's heads
+              is the half of a bounty tournament the payout table never shows —
+              you can be out of the money and still up on the night. */}
+          {bountyOn && (
+            <div className="pt-2 border-t border-(--color-border) space-y-1">
+              <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+                {bountyMode === "progressive" ? "Progressive KO" : "Knockouts"}
+              </div>
+              <Row label="KO winnings">
+                <span className="text-(--color-highlight-text) font-semibold">{formatEuros(myBountyWon)}</span>
+                <span className="text-(--color-text-muted)">
+                  {` · ${myKnockouts} KO${myKnockouts === 1 ? "" : "s"}`}
+                </span>
+              </Row>
+              {myHead > 0 && (
+                <Row label="On your head">
+                  <span className="text-(--color-highlight-text)">{formatEuros(myHead)}</span>
+                  {bountyMode === "progressive" && myHead > (tournament?.bounty_cents || 0) && (
+                    <span className="text-(--color-text-muted)">
+                      {` · from ${formatEuros(tournament.bounty_cents)}`}
+                    </span>
+                  )}
+                </Row>
+              )}
+              {biggestHead && (
+                <Row label="Biggest bounty">
+                  <span className={biggestHead.username === username ? "text-(--color-highlight-text)" : ""}>
+                    {biggestHead.username} · {formatEuros(biggestHead.bounty_cents || 0)}
+                  </span>
+                </Row>
+              )}
+              <Row label="KO pool">{formatEuros(bountyPoolCents)}</Row>
+              {bountyMode === "progressive" && (
+                <p className="text-[10px] text-(--color-text-muted) leading-snug">
+                  {`Knock someone out and ${tournament.bounty_progressive_split_pct}% of their bounty is yours to keep — the rest goes onto your own head.`}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Other tables. tableSummaries was already in the store and had
               never been rendered anywhere. */}

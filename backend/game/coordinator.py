@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from tournaments.bounties import BountyConfig, split_knockout
+
 from .engine.hand import HandEngine, cards_to_list
 from .engine.player import Player as EnginePlayer
 
@@ -53,6 +55,7 @@ class MultiTableTournamentCoordinator:
         time_bank_refill_level: Optional[int] = None,
         rabbit_hunting_enabled: bool = False,
         auto_remove_offline_seconds: int = 0,
+        bounty: Optional[BountyConfig] = None,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
@@ -63,6 +66,7 @@ class MultiTableTournamentCoordinator:
         self.time_bank_refill_level = time_bank_refill_level
         self.rabbit_hunting_enabled = rabbit_hunting_enabled
         self.auto_remove_offline_seconds = max(0, auto_remove_offline_seconds or 0)
+        self.bounty = bounty or BountyConfig()
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -166,7 +170,10 @@ class MultiTableTournamentCoordinator:
 
             busted: List[EnginePlayer] = []
             seen = set()
-            for table_busted in results:
+            eliminators_by_victim: Dict[int, List[EnginePlayer]] = {}
+            for table_busted, table_knockouts in results:
+                for victim, eliminators in table_knockouts:
+                    eliminators_by_victim.setdefault(victim._tp_id, eliminators)
                 for player in table_busted:
                     if player._tp_id in seen or player.chips > 0:
                         continue
@@ -189,6 +196,13 @@ class MultiTableTournamentCoordinator:
                         "name": player.name,
                         "finish_position": player.finish_position,
                     },
+                )
+                # remaining_count is now what is left after this bust, so 1 means
+                # this knockout ended the tournament.
+                await self._pay_bounty(
+                    player,
+                    eliminators_by_victim.get(player._tp_id, []),
+                    is_final=remaining_count <= 1,
                 )
 
             self._check_chip_total(f"after hand {self._hands_played + 1}")
@@ -321,6 +335,11 @@ class MultiTableTournamentCoordinator:
         player.chips = chips
         player.is_eliminated = False
         player.finish_position = 0
+        # A rebuy is another buy-in, so it puts another bounty on their head.
+        # In a progressive game that is the base amount again — whatever they
+        # had grown it to went to whoever knocked them out.
+        if self.bounty.enabled:
+            player._bounty_cents = getattr(player, "_bounty_cents", 0) + self.bounty.amount_cents
         # A stale standings entry would list them twice in the final results.
         self._standings = [p for p in self._standings if p._tp_id != player._tp_id]
 
@@ -355,6 +374,13 @@ class MultiTableTournamentCoordinator:
             runtime_player.name = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
             runtime_player.chips = record["chips"]
+            # Only read in on the first sight of a player. This runs before
+            # every hand and the DB write happens after it, so re-reading here
+            # would roll a bounty won in the last hand straight back.
+            if is_new:
+                runtime_player._bounty_cents = record.get("bounty_cents") or 0
+                runtime_player._bounty_won_cents = record.get("bounty_won_cents") or 0
+                runtime_player._knockouts = record.get("knockouts") or 0
             runtime_player.is_eliminated = record["is_eliminated"]
             runtime_player.finish_position = record["finish_position"] or 0
             runtime_player.time_bank_seconds_remaining = record["time_bank_seconds_remaining"] or 0
@@ -468,10 +494,12 @@ class MultiTableTournamentCoordinator:
                 {"players": [self._player_payload(player) for player in sorted(table.players, key=lambda item: item._seat)]},
             )
 
-    async def _run_table_hand(self, table: RuntimeTable, level: Dict[str, int]) -> List[EnginePlayer]:
+    async def _run_table_hand(
+        self, table: RuntimeTable, level: Dict[str, int],
+    ) -> tuple[List[EnginePlayer], List[tuple[EnginePlayer, List[EnginePlayer]]]]:
         players = sorted(table.players, key=lambda item: item._seat)
         if len(players) < 2:
-            return []
+            return [], []
 
         engine = HandEngine(
             players=players,
@@ -488,7 +516,14 @@ class MultiTableTournamentCoordinator:
         table.hand_number += 1
         table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))
         table.players = players
-        return [player for player in result.busted_players if player.chips == 0]
+        return (
+            [player for player in result.busted_players if player.chips == 0],
+            [
+                (victim, eliminators)
+                for victim, eliminators in result.knockouts
+                if victim.chips == 0
+            ],
+        )
 
     async def _request_action_tracked(self, table, player, context):
         """Ask a player to act, remembering whose turn it is for reconnects."""
@@ -797,10 +832,61 @@ class MultiTableTournamentCoordinator:
             "is_eliminated": player.is_eliminated,
             "is_folded": player.is_folded,
             "is_all_in": player.is_all_in,
+            # What this seat is worth to whoever busts them, and what they have
+            # already taken off other people. Always sent, so a client never has
+            # to guess whether a blank means zero or means not loaded.
+            "bounty_cents": getattr(player, "_bounty_cents", 0),
+            "bounty_won_cents": getattr(player, "_bounty_won_cents", 0),
+            "knockouts": getattr(player, "_knockouts", 0),
             # In the payload so it survives a game_state snapshot, unlike the
             # client-only is_disconnected flag.
             "is_sitting_out": player.is_sitting_out,
         }
+
+    async def _pay_bounty(
+        self,
+        victim: EnginePlayer,
+        eliminators: List[EnginePlayer],
+        is_final: bool = False,
+    ) -> None:
+        """Move a busted player's bounty to whoever knocked them out.
+
+        Nothing happens without an eliminator — a player removed for being
+        offline, or one who quit, was not knocked out by anybody. Their bounty
+        stays on their head and settlement hands it back, which is the only
+        answer that keeps the pool adding up.
+        """
+        if not self.bounty.enabled or not eliminators:
+            return
+        on_head = getattr(victim, "_bounty_cents", 0)
+        if on_head <= 0:
+            return
+
+        awards = split_knockout(self.bounty, on_head, len(eliminators), is_final_knockout=is_final)
+        # Taken off the head first: a bounty must never be paid twice, and the
+        # awards below add up to exactly this.
+        victim._bounty_cents = 0
+
+        for award in awards:
+            eliminator = eliminators[award.eliminator_index]
+            eliminator._bounty_won_cents = getattr(eliminator, "_bounty_won_cents", 0) + award.cash_cents
+            eliminator._bounty_cents = getattr(eliminator, "_bounty_cents", 0) + award.to_head_cents
+            eliminator._knockouts = getattr(eliminator, "_knockouts", 0) + 1
+            await self._broadcast_to_table(
+                eliminator._table_number,
+                "bounty_won",
+                {
+                    "seat": eliminator._seat,
+                    "name": eliminator.name,
+                    "victim_name": victim.name,
+                    "cash_cents": award.cash_cents,
+                    "to_head_cents": award.to_head_cents,
+                    "bounty_cents": eliminator._bounty_cents,
+                    "bounty_won_cents": eliminator._bounty_won_cents,
+                    "knockouts": eliminator._knockouts,
+                    "split_ways": len(awards),
+                },
+            )
 
     def _refill_time_banks_after_hand(self):
         if (

@@ -1134,3 +1134,423 @@ class SettlementEndpointTests(APITestCase):
 		self.assertEqual(data["balance_cents"], 1000)
 		self.assertEqual([row["username"] for row in data["owed_to_me"]], ["e_bea"])
 		self.assertEqual(data["i_owe"], [])
+
+
+class BountySplitTests(TestCase):
+	"""The arithmetic, on its own — no database, no hand in progress."""
+
+	def test_a_fixed_bounty_is_paid_entirely_in_cash(self):
+		from tournaments.bounties import BountyConfig, split_knockout
+
+		config = BountyConfig(mode="fixed", amount_cents=1000)
+		awards = split_knockout(config, 1000, 1)
+
+		self.assertEqual(len(awards), 1)
+		self.assertEqual(awards[0].cash_cents, 1000)
+		self.assertEqual(awards[0].to_head_cents, 0)
+
+	def test_a_progressive_bounty_half_pays_out_and_half_goes_on_the_head(self):
+		from tournaments.bounties import BountyConfig, split_knockout
+
+		config = BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50)
+		awards = split_knockout(config, 1500, 1)
+
+		self.assertEqual(awards[0].cash_cents, 750)
+		self.assertEqual(awards[0].to_head_cents, 750)
+
+	def test_a_split_pot_splits_the_bounty_without_losing_a_cent(self):
+		from tournaments.bounties import BountyConfig, split_knockout
+
+		config = BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50)
+		awards = split_knockout(config, 1001, 3)
+
+		self.assertEqual(len(awards), 3)
+		self.assertEqual(sum(a.cash_cents + a.to_head_cents for a in awards), 1001)
+		# The odd cents go to the first eliminator rather than evaporating.
+		self.assertEqual([a.cash_cents + a.to_head_cents for a in awards], [334, 334, 333])
+
+	def test_the_last_knockout_pays_the_whole_bounty_in_cash(self):
+		from tournaments.bounties import BountyConfig, split_knockout
+
+		config = BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50)
+		awards = split_knockout(config, 2000, 1, is_final_knockout=True)
+
+		# Nobody is left to collect off the winner's head, so growing it would
+		# be money that never gets paid.
+		self.assertEqual(awards[0].cash_cents, 2000)
+		self.assertEqual(awards[0].to_head_cents, 0)
+
+	def test_no_bounty_configured_awards_nothing(self):
+		from tournaments.bounties import BountyConfig, split_knockout
+
+		self.assertEqual(split_knockout(BountyConfig(), 1000, 1), [])
+
+
+class BountyLedgerTests(TestCase):
+	"""Settlement has to pay out every cent that went onto a head."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="k_host", password="secret123", is_staff=True)
+		self.bea = User.objects.create_user(username="k_bea", password="secret123")
+		self.cid = User.objects.create_user(username="k_cid", password="secret123")
+
+	def _tournament(self, **overrides):
+		defaults = dict(
+			host=self.host,
+			name="KO night",
+			status="finished",
+			buy_in_cents=2000,
+			bounty_mode="progressive",
+			bounty_cents=1000,
+			bounty_progressive_split_pct=50,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		defaults.update(overrides)
+		return Tournament.objects.create(**defaults)
+
+	def test_the_whole_bounty_pool_is_paid_out(self):
+		from tournaments.ledger import settle_tournament
+		from tournaments.models import LedgerEntry
+
+		t = self._tournament()
+		# host knocked both out: cid's bounty went half to cash and half onto
+		# host's head, then bea's whole bounty in cash as the final knockout.
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.host, seat=0, chips=30000, finish_position=1,
+			bounty_cents=1500, bounty_won_cents=1500, knockouts=2,
+		)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.bea, seat=1, chips=0, finish_position=2, is_eliminated=True,
+		)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.cid, seat=2, chips=0, finish_position=3, is_eliminated=True,
+		)
+
+		settle_tournament(t)
+
+		entries = {e.user_id: e for e in LedgerEntry.objects.filter(tournament=t)}
+		# Three buy-ins of 20€: 30€ played for by placing, 30€ in bounties.
+		self.assertEqual(sum(e.stake_cents for e in entries.values()), 6000)
+		self.assertEqual(sum(e.prize_cents for e in entries.values()), 6000)
+		# The winner takes the 30€ of places plus the 30€ of bounties: the 15€
+		# banked, and the 15€ left sitting on their own head.
+		self.assertEqual(entries[self.host.id].prize_cents, 6000)
+		self.assertEqual(entries[self.host.id].bounty_prize_cents, 3000)
+		self.assertEqual(entries[self.bea.id].prize_cents, 0)
+
+	def test_a_bounty_nobody_claimed_goes_back_to_its_owner(self):
+		from tournaments.ledger import settle_tournament
+		from tournaments.models import LedgerEntry
+
+		t = self._tournament()
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.host, seat=0, chips=30000, finish_position=1, bounty_cents=1000,
+		)
+		# Removed for being offline — nobody knocked them out, so their bounty
+		# was never anybody's to take and it is still on their head.
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.bea, seat=1, chips=0, finish_position=2,
+			is_eliminated=True, bounty_cents=1000,
+		)
+
+		settle_tournament(t)
+
+		entries = {e.user_id: e for e in LedgerEntry.objects.filter(tournament=t)}
+		self.assertEqual(sum(e.prize_cents for e in entries.values()), 4000)
+		self.assertEqual(entries[self.bea.id].prize_cents, 1000)
+
+	def test_a_rebuy_buys_another_bounty_into_the_pool(self):
+		from tournaments.ledger import settle_tournament
+		from tournaments.models import LedgerEntry
+
+		t = self._tournament()
+		# bea was knocked out twice, having bought a second bounty in between:
+		# 5€ cash and 5€ onto the head the first time, then the whole 10€ in
+		# cash as the knockout that ended it.
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.host, seat=0, chips=30000, finish_position=1,
+			bounty_cents=1500, bounty_won_cents=1500, knockouts=2,
+		)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.bea, seat=1, chips=0, finish_position=2,
+			is_eliminated=True, rebuy_count=1,
+		)
+
+		settle_tournament(t)
+
+		entries = {e.user_id: e for e in LedgerEntry.objects.filter(tournament=t)}
+		# Three buy-ins in total, one of them a rebuy.
+		self.assertEqual(sum(e.stake_cents for e in entries.values()), 6000)
+		self.assertEqual(sum(e.prize_cents for e in entries.values()), 6000)
+
+	def test_a_tournament_without_bounties_settles_exactly_as_before(self):
+		from tournaments.ledger import settle_tournament
+		from tournaments.models import LedgerEntry
+
+		t = self._tournament(bounty_mode="none", bounty_cents=0)
+		TournamentPlayer.objects.create(tournament=t, user=self.host, seat=0, chips=30000, finish_position=1)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.bea, seat=1, chips=0, finish_position=2, is_eliminated=True,
+		)
+
+		settle_tournament(t)
+
+		entries = {e.user_id: e for e in LedgerEntry.objects.filter(tournament=t)}
+		self.assertEqual(entries[self.host.id].prize_cents, 4000)
+		self.assertEqual(entries[self.host.id].bounty_prize_cents, 0)
+
+
+class BountyConfigurationTests(APITestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(username="ko_host", password="secret123", is_staff=True)
+		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _payload(self, **overrides):
+		payload = {
+			"name": "KO",
+			"buy_in_cents": 2000,
+			"payout_structure": [{"place": 1, "label": "1st", "percentage": 100}],
+			"bounty_mode": "progressive",
+			"bounty_cents": 1000,
+			"bounty_progressive_split_pct": 50,
+		}
+		payload.update(overrides)
+		return payload
+
+	def test_a_progressive_tournament_is_created_and_the_host_gets_a_bounty(self):
+		response = self.client.post(reverse("tournament-list"), self._payload(), format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		tournament = Tournament.objects.get(id=response.data["id"])
+		self.assertEqual(tournament.bounty_mode, "progressive")
+		self.assertEqual(tournament.players.get().bounty_cents, 1000)
+
+	def test_a_bounty_bigger_than_the_buy_in_is_refused(self):
+		response = self.client.post(
+			reverse("tournament-list"), self._payload(bounty_cents=2000), format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("bounty_cents", response.data)
+
+	def test_bounties_without_a_buy_in_are_refused(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			self._payload(buy_in_cents=0, payout_structure=[]),
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_turning_bounties_off_clears_the_amount(self):
+		response = self.client.post(
+			reverse("tournament-list"), self._payload(bounty_mode="none"), format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).bounty_cents, 0)
+
+
+class KnockoutAttributionTests(TestCase):
+	"""Whose bounty went to whom, decided by the pot the busted player was
+	actually playing for rather than by who won the hand."""
+
+	def _player(self, name, invested, folded=False):
+		player = EnginePlayer(name=name, chips=0)
+		player.total_invested = invested
+		player.is_folded = folded
+		return player
+
+	def test_the_side_pot_winner_does_not_collect_the_short_stack(self):
+		from game.engine.hand import Pot, _attribute_knockouts
+
+		short = self._player("short", 100)
+		caller = self._player("caller", 500)
+		raiser = self._player("raiser", 500)
+		# Main pot everyone contested, side pot only the two deep stacks.
+		pots = [Pot(amount=300, eligible=[short, caller, raiser]),
+				Pot(amount=800, eligible=[caller, raiser])]
+
+		knockouts = _attribute_knockouts([short], pots, [[caller], [raiser]])
+
+		# The short stack was never playing for the side pot, so the bounty
+		# belongs to whoever took the main pot.
+		self.assertEqual(knockouts, [(short, [caller])])
+
+	def test_a_split_pot_names_both_winners(self):
+		from game.engine.hand import Pot, _attribute_knockouts
+
+		victim = self._player("victim", 100)
+		one = self._player("one", 100)
+		two = self._player("two", 100)
+		pots = [Pot(amount=300, eligible=[victim, one, two])]
+
+		knockouts = _attribute_knockouts([victim], pots, [[one, two]])
+
+		self.assertEqual(knockouts, [(victim, [one, two])])
+
+	def test_a_player_all_in_for_the_ante_alone_still_has_an_eliminator(self):
+		from game.engine.hand import Pot, _attribute_knockouts
+
+		# Antes are dead money and never reach a pot, so this player is in no
+		# pot's eligible list at all. The main pot took them out.
+		anted_off = self._player("anted", 0)
+		winner = self._player("winner", 500)
+		pots = [Pot(amount=600, eligible=[winner])]
+
+		knockouts = _attribute_knockouts([anted_off], pots, [[winner]])
+
+		self.assertEqual(knockouts, [(anted_off, [winner])])
+
+	def test_the_winner_of_a_pot_is_never_their_own_eliminator(self):
+		from game.engine.hand import Pot, _attribute_knockouts
+
+		lone = self._player("lone", 100)
+		pots = [Pot(amount=100, eligible=[lone])]
+
+		self.assertEqual(_attribute_knockouts([lone], pots, [[lone]]), [])
+
+
+class CoordinatorBountyTests(TestCase):
+	"""Bounties moving between heads while the tournament runs."""
+
+	def _coordinator(self, bounty, broadcasts=None, persisted=None):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture_table(table_number, event_type, payload):
+			if broadcasts is not None:
+				broadcasts.append((event_type, payload))
+
+		async def capture_states(players):
+			if persisted is not None:
+				persisted.extend(
+					{"tp_id": p._tp_id, "bounty_cents": getattr(p, "_bounty_cents", 0)}
+					for p in players
+				)
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=capture_table,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=capture_states,
+			bounty=bounty,
+		)
+
+	def _player(self, coordinator, tp_id, name, bounty_cents=0, chips=1000):
+		player = EnginePlayer(name=name, chips=chips)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._global_seat = tp_id
+		player._table_number = 1
+		player._bounty_cents = bounty_cents
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_a_progressive_knockout_splits_between_cash_and_the_winners_head(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(
+			BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50)
+		)
+		victim = self._player(coordinator, 1, "victim", bounty_cents=1000, chips=0)
+		hunter = self._player(coordinator, 2, "hunter", bounty_cents=1000)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		self.assertEqual(hunter._bounty_won_cents, 500)
+		self.assertEqual(hunter._bounty_cents, 1500)
+		self.assertEqual(hunter._knockouts, 1)
+		# Taken off the head, so it can never be collected twice.
+		self.assertEqual(victim._bounty_cents, 0)
+
+	def test_a_fixed_knockout_leaves_the_winners_own_head_alone(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(BountyConfig(mode="fixed", amount_cents=1000))
+		victim = self._player(coordinator, 1, "victim", bounty_cents=1000, chips=0)
+		hunter = self._player(coordinator, 2, "hunter", bounty_cents=1000)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		self.assertEqual(hunter._bounty_won_cents, 1000)
+		self.assertEqual(hunter._bounty_cents, 1000)
+
+	def test_the_knockout_that_ends_it_pays_the_whole_bounty_in_cash(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(
+			BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50)
+		)
+		victim = self._player(coordinator, 1, "victim", bounty_cents=2000, chips=0)
+		hunter = self._player(coordinator, 2, "hunter", bounty_cents=1000)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter], is_final=True)
+
+		self.assertEqual(hunter._bounty_won_cents, 2000)
+		self.assertEqual(hunter._bounty_cents, 1000)
+
+	def test_nobody_claims_the_bounty_of_a_player_nobody_knocked_out(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(BountyConfig(mode="fixed", amount_cents=1000))
+		victim = self._player(coordinator, 1, "victim", bounty_cents=1000, chips=0)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [])
+
+		# Still on their head, which is what makes settlement hand it back.
+		self.assertEqual(victim._bounty_cents, 1000)
+
+	def test_the_table_is_told_about_a_bounty_changing_hands(self):
+		from tournaments.bounties import BountyConfig
+
+		broadcasts = []
+		coordinator = self._coordinator(
+			BountyConfig(mode="progressive", amount_cents=1000, progressive_split_pct=50),
+			broadcasts=broadcasts,
+		)
+		victim = self._player(coordinator, 1, "victim", bounty_cents=1000, chips=0)
+		hunter = self._player(coordinator, 2, "hunter", bounty_cents=1000)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		event_type, payload = broadcasts[-1]
+		self.assertEqual(event_type, "bounty_won")
+		self.assertEqual(payload["victim_name"], "victim")
+		self.assertEqual(payload["cash_cents"], 500)
+		self.assertEqual(payload["to_head_cents"], 500)
+		self.assertEqual(payload["bounty_cents"], 1500)
+
+	def test_a_rebuy_puts_a_fresh_bounty_on_the_head(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(BountyConfig(mode="progressive", amount_cents=1000))
+		player = self._player(coordinator, 1, "back", bounty_cents=0, chips=0)
+		player.is_eliminated = True
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "")
+
+		self.assertEqual(player._bounty_cents, 1000)
+
+	def test_the_bounty_rides_the_player_payload(self):
+		from tournaments.bounties import BountyConfig
+
+		coordinator = self._coordinator(BountyConfig(mode="fixed", amount_cents=1000))
+		player = self._player(coordinator, 1, "seat", bounty_cents=1000)
+
+		payload = coordinator._player_payload(player)
+
+		self.assertEqual(payload["bounty_cents"], 1000)
+		self.assertEqual(payload["bounty_won_cents"], 0)
+		self.assertEqual(payload["knockouts"], 0)

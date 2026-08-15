@@ -1,3 +1,5 @@
+import { formatEuros } from "./formatMoney";
+
 const ordinal = (n) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
   return `${n}${suffix}`;
@@ -33,6 +35,13 @@ export default function TournamentCompleteScreen({
   const entrants = tournament?.players?.length ?? rows.length;
   const myPayout = mine ? payoutFor(mine.finish) : null;
 
+  const bountyOn = (tournament?.bounty_mode || "none") !== "none" && (tournament?.bounty_cents || 0) > 0;
+  // Once settled the ledger figure is the authoritative one — it includes the
+  // bounty still on the winner's own head. Before that lands, what they
+  // collected off other people is the best answer available.
+  const bountyPrize = (record) => (record?.bounty_prize_cents || record?.bounty_won_cents || 0);
+  const myRecord = mine ? playerRecord(mine.name) : null;
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-lg panel rounded-xl p-6 shadow-2xl shadow-black/60">
@@ -63,10 +72,20 @@ export default function TournamentCompleteScreen({
         <div className="grid grid-cols-3 gap-2 mt-5">
           <Stat label="Entrants" value={entrants} />
           <Stat label="Hands" value={handNumber || "—"} />
-          <Stat
-            label="Final blinds"
-            value={level ? `${level.small_blind}/${level.big_blind}` : "—"}
-          />
+          {/* In a knockout tournament this is often the bigger half of the
+              night's result, so it replaces the final blinds rather than
+              being buried in the standings. */}
+          {bountyOn && myRecord ? (
+            <Stat
+              label={`Your KOs (${myRecord.knockouts || 0})`}
+              value={formatEuros(bountyPrize(myRecord))}
+            />
+          ) : (
+            <Stat
+              label="Final blinds"
+              value={level ? `${level.small_blind}/${level.big_blind}` : "—"}
+            />
+          )}
         </div>
 
         <h2 className="text-xs uppercase tracking-wide text-(--color-text-muted) mt-6 mb-2">
@@ -94,7 +113,13 @@ export default function TournamentCompleteScreen({
                 </span>
                 <span className="text-xs text-(--color-text-muted) shrink-0 text-right">
                   {payout && <span className="text-(--color-highlight-text)">{payout.percentage}%</span>}
-                  {payout && record?.rebuy_count > 0 && " · "}
+                  {bountyOn && bountyPrize(record) > 0 && (
+                    <span className="text-(--color-highlight-text)">
+                      {payout && " · "}
+                      {`${record.knockouts || 0} KO · ${formatEuros(bountyPrize(record))}`}
+                    </span>
+                  )}
+                  {(payout || bountyPrize(record) > 0) && record?.rebuy_count > 0 && " · "}
                   {record?.rebuy_count > 0 && `${record.rebuy_count} rebuy${record.rebuy_count === 1 ? "" : "s"}`}
                 </span>
               </li>

@@ -15,6 +15,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser
 
+from tournaments.bounties import BountyConfig
 from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 
 from .models import Hand, HandAction
@@ -167,6 +168,9 @@ def _db_get_player_records(tournament_id):
             "is_eliminated",
             "finish_position",
             "time_bank_seconds_remaining",
+            "bounty_cents",
+            "bounty_won_cents",
+            "knockouts",
         )
     )
 
@@ -245,6 +249,9 @@ def _db_update_player_states(tournament_id, states):
             # alive, and that was being written away as NULL.
             finish_position=state["finish_position"] or None,
             time_bank_seconds_remaining=state["time_bank_seconds_remaining"],
+            bounty_cents=state.get("bounty_cents", 0),
+            bounty_won_cents=state.get("bounty_won_cents", 0),
+            knockouts=state.get("knockouts", 0),
         )
 
 
@@ -673,6 +680,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             time_bank_refill_level=tournament.time_bank_refill_level,
             rabbit_hunting_enabled=tournament.rabbit_hunting_enabled,
             auto_remove_offline_seconds=tournament.auto_remove_offline_seconds,
+            bounty=BountyConfig.from_tournament(tournament),
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,
@@ -756,6 +764,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "is_eliminated": record["is_eliminated"],
                 "finish_position": record["finish_position"],
                 "time_bank_seconds_remaining": record["time_bank_seconds_remaining"],
+                "bounty_cents": record["bounty_cents"],
+                "bounty_won_cents": record["bounty_won_cents"],
+                "knockouts": record["knockouts"],
             }
             for record in records
         ]
@@ -771,6 +782,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "is_eliminated": player.is_eliminated,
                 "finish_position": player.finish_position,
                 "time_bank_seconds_remaining": player.time_bank_seconds_remaining,
+                "bounty_cents": getattr(player, "_bounty_cents", 0),
+                "bounty_won_cents": getattr(player, "_bounty_won_cents", 0),
+                "knockouts": getattr(player, "_knockouts", 0),
             }
             for player in players
         ]

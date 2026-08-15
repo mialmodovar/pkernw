@@ -5,6 +5,7 @@ from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
+from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .permissions import StaffCreatesTournaments
 from .serializers import (
@@ -122,6 +123,7 @@ def join_tournament(request, pk):
         tournament=tournament, user=request.user,
         table=table, seat=next_seat, seat_at_table=seat_at_table, chips=tournament.starting_chips,
         time_bank_seconds_remaining=tournament.time_bank_seconds,
+        bounty_cents=starting_bounty_cents(BountyConfig.from_tournament(tournament)),
     )
     _start_due_scheduled_tournaments()
     return Response(

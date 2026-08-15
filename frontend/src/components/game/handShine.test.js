@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import handShines, { isPremiumHoleCards } from "./handShine";
+import handShines, { isPremiumHoleCards, shiningBoardCards } from "./handShine";
 
 describe("premium holdings", () => {
   it("shines for the big pairs and the big broadway hands", () => {
@@ -53,5 +53,40 @@ describe("handShines", () => {
   it("says nothing without two hole cards", () => {
     expect(handShines([], ["AD", "KC", "2H"])).toBe(false);
     expect(handShines(null, null)).toBe(false);
+  });
+});
+
+describe("shiningBoardCards", () => {
+  it("lights up the board cards that are part of the hand", () => {
+    // Two pair with the best kicker available: the seven and the deuce play no
+    // part in the five and stay dark.
+    expect(shiningBoardCards(["AS", "KH"], ["AD", "KC", "7D", "8C", "2H"]).sort())
+      .toEqual(["8C", "AD", "KC"]);
+  });
+
+  it("includes the kicker, the same five the showdown ring draws", () => {
+    // Five cards in total, so every one of them is in the hand.
+    expect(shiningBoardCards(["AS", "KH"], ["AD", "KC", "2H"]).sort())
+      .toEqual(["2H", "AD", "KC"]);
+  });
+
+  it("lights up the whole run of a flush", () => {
+    expect(shiningBoardCards(["AS", "KS"], ["QS", "JS", "TS"]).sort())
+      .toEqual(["JS", "QS", "TS"]);
+  });
+
+  it("gives nothing back when the hand does not shine", () => {
+    expect(shiningBoardCards(["AS", "AH"], ["KD", "7C", "2H"])).toEqual([]);
+    // Two pair the board made for everybody is not the hero's hand.
+    expect(shiningBoardCards(["7S", "2H"], ["KD", "KC", "QH", "QS", "3D"])).toEqual([]);
+  });
+
+  it("gives nothing back before the flop, where the shine is the hole cards", () => {
+    expect(shiningBoardCards(["AS", "AH"], [])).toEqual([]);
+  });
+
+  it("hands back the same strings it was given", () => {
+    expect(shiningBoardCards(["A♠", "2♥"], ["3♦", "4♣", "5♥"]).sort())
+      .toEqual(["3♦", "4♣", "5♥"]);
   });
 });

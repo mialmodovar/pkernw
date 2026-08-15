@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { formatEuros } from "../components/game/formatMoney";
+
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
 
@@ -96,6 +98,10 @@ const useGameStore = create((set) => ({
   isPaused: false,
   standings: null, // final standings when tournament finishes
   lastElimination: null, // { seat, name, finish_position, reason }
+  // The last bounty collected, for the seat to animate. Cleared by the seat
+  // itself once the animation has run.
+  bountyFlash: null,
+  bountyFlashSequence: 0,
   connectionStatus: "connecting", // connecting | open | reconnecting | failed
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   messages: [],    // action log
@@ -392,6 +398,37 @@ const useGameStore = create((set) => ({
             data.reason === "offline_timeout"
               ? `${data.name} removed for being offline (${data.finish_position})`
               : `${data.name} eliminated in ${data.finish_position}`)),
+        }));
+        break;
+
+      // A bounty changing hands. The seat's own numbers come with it, so the
+      // table updates without waiting for the next roster broadcast, and
+      // `bountyFlash` is what the seat animates on.
+      case "bounty_won":
+        set((s) => ({
+          players: s.players.map((p) =>
+            p.seat === data.seat
+              ? {
+                  ...p,
+                  bounty_cents: data.bounty_cents,
+                  bounty_won_cents: data.bounty_won_cents,
+                  knockouts: data.knockouts,
+                }
+              : p
+          ),
+          bountyFlash: {
+            seat: data.seat,
+            cashCents: data.cash_cents,
+            toHeadCents: data.to_head_cents,
+            victimName: data.victim_name,
+            // Two knockouts in a row on the same seat are the same object by
+            // value, so the animation needs something that always changes.
+            id: s.bountyFlashSequence + 1,
+          },
+          bountyFlashSequence: s.bountyFlashSequence + 1,
+          messages: appendLog(s, entry(s, "info",
+            `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
+            + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
         }));
         break;
 

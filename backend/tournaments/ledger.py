@@ -12,6 +12,7 @@ from collections import defaultdict
 
 from django.db import transaction
 
+from .bounties import BountyConfig, prize_pool_share_cents
 from .models import LedgerEntry, Settlement, Tournament
 
 
@@ -28,6 +29,8 @@ def settle_tournament(tournament):
     if not payouts:
         return False
 
+    bounty = BountyConfig.from_tournament(tournament)
+
     with transaction.atomic():
         if LedgerEntry.objects.filter(tournament=tournament).exists():
             return False  # already settled
@@ -36,18 +39,38 @@ def settle_tournament(tournament):
         if not players:
             return False
 
-        # Each rebuy is another buy-in, so the pot grows with them.
-        stakes = {p.user_id: tournament.buy_in_cents * (1 + p.rebuy_count) for p in players}
-        pot = sum(stakes.values())
+        # Each rebuy is another buy-in, so the pot grows with them — and in a
+        # bounty game each rebuy also puts a fresh bounty back on the head.
+        entries = {p.user_id: 1 + p.rebuy_count for p in players}
+        stakes = {user_id: tournament.buy_in_cents * count for user_id, count in entries.items()}
 
-        prizes = _prizes_for(pot, payouts, {p.user_id: p.finish_position for p in players})
+        # Only the non-bounty part of every buy-in is played for by placing.
+        # The bounty part was paid out hand by hand as knockouts happened.
+        placing_pot = sum(
+            prize_pool_share_cents(bounty, tournament.buy_in_cents) * count
+            for count in entries.values()
+        )
+
+        prizes = _prizes_for(placing_pot, payouts, {p.user_id: p.finish_position for p in players})
+
+        # What each player collected off other people's heads, plus whatever is
+        # still on their own. A knockout empties the victim's head into the
+        # eliminator's, so a head with anything left on it belongs to somebody
+        # nobody knocked out: the winner, or a player who quit or timed out.
+        # Counting it back to them is what makes the bounty pool add up — every
+        # cent that went onto a head comes off it exactly once.
+        bounty_prizes = {
+            p.user_id: (p.bounty_won_cents or 0) + (p.bounty_cents or 0)
+            for p in players
+        } if bounty.enabled else {}
 
         LedgerEntry.objects.bulk_create([
             LedgerEntry(
                 tournament=tournament,
                 user_id=user_id,
                 stake_cents=stake,
-                prize_cents=prizes.get(user_id, 0),
+                prize_cents=prizes.get(user_id, 0) + bounty_prizes.get(user_id, 0),
+                bounty_prize_cents=bounty_prizes.get(user_id, 0),
             )
             for user_id, stake in stakes.items()
         ])

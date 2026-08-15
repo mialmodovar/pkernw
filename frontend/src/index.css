@@ -325,6 +325,44 @@ button:disabled {
   .animate-card-sheen { display: none; }
 }
 
+/* A bounty collected. The badge lands on the seat that won it, holds long
+   enough to be read, then floats off — money leaving one head for another is
+   the moment a knockout tournament turns on, and it deserves to be seen. */
+@keyframes bounty-collect {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.6); }
+  18%  { opacity: 1; transform: translateY(0) scale(1.18); }
+  30%  { transform: translateY(0) scale(1); }
+  70%  { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-26px) scale(0.92); }
+}
+
+.animate-bounty-collect {
+  animation: bounty-collect 2.2s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+/* The pill on the nameplate, flaring as it is topped up. */
+@keyframes bounty-bump {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgb(var(--highlight-rgb) / 0); }
+  25%      { transform: scale(1.3); box-shadow: 0 0 12px 3px rgb(var(--highlight-rgb) / 0.7); }
+  60%      { transform: scale(1.05); box-shadow: 0 0 6px 1px rgb(var(--highlight-rgb) / 0.35); }
+}
+
+.animate-bounty-bump {
+  animation: bounty-bump 1.1s ease-out;
+}
+
+/* The motion is the point, but the badge still has to be readable without it:
+   with motion reduced it simply appears and holds, then goes. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bounty-collect { animation: fade-in 0.12s ease-out, bounty-fade 2.2s linear forwards; }
+  .animate-bounty-bump { animation: none; }
+}
+
+@keyframes bounty-fade {
+  0%, 80% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
 /* Mucked cards slide away and fade rather than just dimming in place. */
 @keyframes fold-out {
   from { opacity: 0.85; transform: translateY(0) scale(1) rotate(0deg); }

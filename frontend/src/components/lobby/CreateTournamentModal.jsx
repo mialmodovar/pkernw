@@ -31,6 +31,11 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
     { place: 2, label: "2nd", percentage: 30 },
     { place: 3, label: "3rd", percentage: 20 },
   ]);
+  // Knockouts come out of the buy-in, so the whole section lives under the
+  // prize pool and switches off with it.
+  const [bountyMode, setBountyMode] = useState("none");
+  const [bountyEuros, setBountyEuros] = useState(0);
+  const [bountySplit, setBountySplit] = useState(50);
   // On by default: seeing the cards that would have come is the kind of thing
   // a friendly game wants, and a host who disagrees can turn it off here.
   const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(true);
@@ -47,7 +52,11 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
   const payoutTotal = payoutRows.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
   // Cents, so the euro shares below match what the ledger will record to the cent.
   const buyInCents = payoutEnabled ? Math.max(0, Math.round(Number(buyInEuros || 0) * 100)) : 0;
-  const potCents = buyInCents * maxPlayers;
+  const bountyOn = payoutEnabled && bountyMode !== "none";
+  const bountyCents = bountyOn ? Math.max(0, Math.round(Number(bountyEuros || 0) * 100)) : 0;
+  // The percentages below share out only what is left after the bounties, so
+  // the euro figures beside them stay honest.
+  const potCents = Math.max(0, buyInCents - bountyCents) * maxPlayers;
 
   const updatePayoutRow = (index, field, value) => {
     setPayoutRows((rows) => rows.map((row, rowIndex) => (
@@ -101,6 +110,24 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         setError("Payout percentages must add up to 100.");
         return;
       }
+      if (bountyMode !== "none") {
+        if (buyInCents <= 0) {
+          setError("Set a buy-in for the knockout bounties to come out of.");
+          return;
+        }
+        if (bountyCents <= 0) {
+          setError("Set a bounty amount.");
+          return;
+        }
+        if (bountyCents >= buyInCents) {
+          setError("The bounty comes out of the buy-in, so it must be less than it.");
+          return;
+        }
+        if (bountyMode === "progressive" && (bountySplit < 1 || bountySplit > 99)) {
+          setError("The progressive cash share must be between 1% and 99%.");
+          return;
+        }
+      }
     }
     if (autoRemoveOfflineEnabled && autoRemoveOfflineSeconds <= 0) {
       setError("Offline removal timeout must be positive.");
@@ -126,6 +153,9 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
         percentage: row.percentage,
       })) : [],
       buy_in_cents: buyInCents,
+      bounty_mode: bountyOn ? bountyMode : "none",
+      bounty_cents: bountyCents,
+      bounty_progressive_split_pct: bountyMode === "progressive" ? Number(bountySplit) : 50,
       rabbit_hunting_enabled: rabbitHuntingEnabled,
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
@@ -345,6 +375,64 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
             />
           </label>
 
+          {/* Knockouts. One select and one amount is the whole configuration —
+              the bounty is carved out of the buy-in above rather than charged
+              on top, so nobody has to work out what the night actually costs. */}
+          <div className="space-y-2 pt-1 border-t border-(--color-border)">
+            <label className="flex items-center justify-between text-sm gap-3">
+              <span className="text-(--color-text-muted) text-xs">Knockout bounties</span>
+              <select
+                className="input-field px-2 py-1 rounded w-40 transition-colors disabled:opacity-50"
+                value={bountyMode}
+                disabled={!payoutEnabled}
+                onChange={(e) => setBountyMode(e.target.value)}
+              >
+                <option value="none">Off</option>
+                <option value="fixed">Fixed KO</option>
+                <option value="progressive">Progressive KO</option>
+              </select>
+            </label>
+
+            {bountyOn && (
+              <>
+                <label className="flex items-center justify-between text-sm gap-3">
+                  <span className="text-(--color-text-muted) text-xs">Bounty per player (€)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.5"
+                    className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
+                    value={bountyEuros}
+                    onChange={(e) => setBountyEuros(e.target.value)}
+                  />
+                </label>
+
+                {bountyMode === "progressive" && (
+                  <label className="flex items-center justify-between text-sm gap-3">
+                    <span className="text-(--color-text-muted) text-xs">Paid in cash (%)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
+                      value={bountySplit}
+                      onChange={(e) => setBountySplit(Number(e.target.value))}
+                    />
+                  </label>
+                )}
+
+                <p className="text-xs text-(--color-text-muted) leading-snug">
+                  {bountyCents >= buyInCents && buyInCents > 0
+                    ? "The bounty has to be smaller than the buy-in."
+                    : `Of each ${(buyInCents / 100).toFixed(2)}€ buy-in, ${((buyInCents - bountyCents) / 100).toFixed(2)}€ goes to the places below and ${(bountyCents / 100).toFixed(2)}€ onto that player's head. `
+                      + (bountyMode === "progressive"
+                        ? `Knock someone out and ${bountySplit}% of their bounty is cash in hand; the other ${100 - bountySplit}% is added to your own head.`
+                        : "Every head is worth the same all tournament.")}
+                </p>
+              </>
+            )}
+          </div>
+
           <div className="space-y-2">
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-(--color-text-muted)">
               <span>Place</span>
@@ -401,7 +489,8 @@ export default function CreateTournamentForm({ onCancel, onCreate }) {
               </button>
               <span className={`text-xs ${payoutEnabled && Math.round(payoutTotal * 100) / 100 !== 100 ? "text-[#c76b7a]" : "text-(--color-text-muted)"}`}>
                 Total {payoutTotal.toFixed(2)}%
-                {buyInCents > 0 && ` · pot up to ${(potCents / 100).toFixed(2)}€`}
+                {buyInCents > 0 && ` · ${bountyOn ? "places" : "pot"} up to ${(potCents / 100).toFixed(2)}€`}
+                {bountyOn && ` · KO pool ${(bountyCents * maxPlayers / 100).toFixed(2)}€`}
               </span>
             </div>
           </div>

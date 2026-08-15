@@ -1,9 +1,35 @@
+import { useEffect, useState } from "react";
+
 import HoleCards from "./HoleCards";
 import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import { formatEuros } from "./formatMoney";
 import { vpipTone } from "./playerProfile";
+
+const BOUNTY_FLASH_MS = 2200;
+
+// The badge that announces a knockout, and the bump on the pill it just topped
+// up. Both hang off one flash from the store, and both clear themselves — the
+// seat should not still be celebrating three hands later.
+function useBountyFlash(seat) {
+  const flash = useGameStore((s) => s.bountyFlash);
+  const mine = flash && flash.seat === seat ? flash : null;
+  // Which flash has already had its moment. Held by id rather than by the flash
+  // itself, so a second knockout on the same seat starts a fresh animation
+  // instead of being mistaken for the one still fading out.
+  const [spentId, setSpentId] = useState(null);
+  const flashId = mine ? mine.id : null;
+
+  useEffect(() => {
+    if (flashId == null) return undefined;
+    const timer = setTimeout(() => setSpentId(flashId), BOUNTY_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [flashId]);
+
+  return flashId != null && flashId !== spentId ? mine : null;
+}
 
 // Sits in normal flow between the cards and the nameplate: absolute placement
 // put the button on top of the hole cards, and stacked the dealer disc over the
@@ -64,6 +90,8 @@ export default function PlayerSeat({
     : null;
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
+  const bountyFlash = useBountyFlash(p.seat);
+  const bountyCents = p.bounty_cents || 0;
   const borderColor = p.is_disconnected
     ? "border-(--color-accent)"
     : isActive
@@ -148,8 +176,48 @@ export default function PlayerSeat({
         }
       }}
       title={`${p.name} — tap for stats`}
-      className={`bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
+      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
+      {/* What this seat is worth to whoever busts them — pinned to the plate
+          rather than tucked inside it, because it is a price on a head and not
+          another stat. Gone once they are out: the bounty went with them, to
+          whoever collected it. */}
+      {bountyCents > 0 && !p.is_eliminated && (
+        <span
+          key={bountyFlash?.id || "bounty"}
+          title={`${p.name} is worth ${formatEuros(bountyCents)} to whoever knocks them out`}
+          className={`absolute -top-2 -right-1 z-10 px-1.5 py-px rounded-full text-[10px] font-extrabold leading-none
+                      bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
+                      text-(--color-highlight-ink) border border-(--color-highlight-deeper)
+                      shadow shadow-black/60 whitespace-nowrap
+                      ${bountyFlash ? "animate-bounty-bump" : ""}`}
+        >
+          {formatEuros(bountyCents)}
+        </span>
+      )}
+
+      {/* The knockout itself. Lands on the seat that collected it, holds long
+          enough to read whose bounty it was, then floats away. */}
+      {bountyFlash && (
+        <span
+          key={bountyFlash.id}
+          className="animate-bounty-collect pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 z-20
+                     px-2 py-0.5 rounded-md text-center whitespace-nowrap
+                     bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight))]
+                     text-(--color-highlight-ink) border border-(--color-highlight-deeper)
+                     shadow-lg shadow-black/60"
+        >
+          <span className="block text-[11px] font-extrabold leading-tight">
+            KO +{formatEuros(bountyFlash.cashCents)}
+          </span>
+          <span className="block text-[8px] font-semibold leading-tight opacity-80">
+            {bountyFlash.toHeadCents > 0
+              ? `${formatEuros(bountyFlash.toHeadCents)} onto their head`
+              : bountyFlash.victimName}
+          </span>
+        </span>
+      )}
+
       {liveStream ? (
         <span className={`${compact ? "w-7 h-7" : "w-11 h-11"} rounded-full overflow-hidden shrink-0 border border-(--color-border)`}>
           <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}

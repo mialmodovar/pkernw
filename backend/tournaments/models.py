@@ -14,6 +14,11 @@ class Tournament(models.Model):
         ("hands",       "Every N hands"),
         ("blind_level", "At blind level"),
     ]
+    BOUNTY_MODE_CHOICES = [
+        ("none",        "No bounties"),
+        ("fixed",       "Fixed knockout"),
+        ("progressive", "Progressive knockout"),
+    ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
     name           = models.CharField(max_length=100)
@@ -37,6 +42,14 @@ class Tournament(models.Model):
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
     payout_structure = models.JSONField(default=list, blank=True)
+    # Bounties come out of the buy-in, they are not charged on top of it: a €20
+    # buy-in with a €10 bounty pays €10 into the prize pool and puts €10 on the
+    # player's head. Nobody has to work out what a "€20 + €20" tournament costs.
+    bounty_mode    = models.CharField(max_length=12, choices=BOUNTY_MODE_CHOICES, default="none")
+    bounty_cents   = models.IntegerField(default=0)   # per buy-in, the part that goes on a head
+    # Progressive only: what share of a captured bounty is paid out in cash. The
+    # rest goes onto the winner's own head, which is what makes it progressive.
+    bounty_progressive_split_pct = models.IntegerField(default=50)
     # Matches the create form's default, so a tournament made anywhere else —
     # the admin, a shell — behaves like one made through the app.
     rabbit_hunting_enabled = models.BooleanField(default=True)
@@ -107,6 +120,12 @@ class TournamentPlayer(models.Model):
     finish_position = models.IntegerField(null=True, blank=True)
     is_eliminated   = models.BooleanField(default=False)
     rebuy_count     = models.IntegerField(default=0)
+    # What sits on this player's head right now, and what they have already
+    # collected off other people's. In a fixed-bounty game the first never
+    # moves; in a progressive one it grows with every knockout.
+    bounty_cents    = models.IntegerField(default=0)
+    bounty_won_cents = models.IntegerField(default=0)
+    knockouts       = models.IntegerField(default=0)
     time_bank_seconds_remaining = models.IntegerField(default=0)
     joined_at       = models.DateTimeField(auto_now_add=True)
 
@@ -128,7 +147,10 @@ class LedgerEntry(models.Model):
     tournament  = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name="ledger_entries")
     user        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ledger_entries")
     stake_cents = models.IntegerField(default=0)   # buy-in plus rebuys
-    prize_cents = models.IntegerField(default=0)
+    prize_cents = models.IntegerField(default=0)   # everything they took home, bounties included
+    # The part of prize_cents that came from knockouts rather than from placing.
+    # Split out so the results can say where the money was won.
+    bounty_prize_cents = models.IntegerField(default=0)
     created_at  = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -3,6 +3,7 @@ from django.utils import timezone
 
 from game.consumers import late_registration_open as _late_registration_open
 
+from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
 
@@ -122,6 +123,7 @@ class BlindLevelSerializer(serializers.ModelSerializer):
 class TournamentPlayerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     prize_cents = serializers.SerializerMethodField()
+    bounty_prize_cents = serializers.SerializerMethodField()
     table_id = serializers.IntegerField(source="table.id", read_only=True)
     table_number = serializers.IntegerField(source="table.table_number", read_only=True)
 
@@ -139,7 +141,11 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "is_eliminated",
             "rebuy_count",
             "time_bank_seconds_remaining",
+            "bounty_cents",
+            "bounty_won_cents",
+            "knockouts",
             "prize_cents",
+            "bounty_prize_cents",
         )
 
     def get_prize_cents(self, player):
@@ -148,7 +154,16 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
         Read from the map the parent serializer builds, so a full table costs
         one query rather than one per seat.
         """
-        return self.context.get("prizes_by_user", {}).get(player.user_id, 0)
+        return self.context.get("prizes_by_user", {}).get(player.user_id, (0, 0))[0]
+
+    def get_bounty_prize_cents(self, player):
+        """The knockout half of that prize, once settled.
+
+        Before settlement the live `bounty_won_cents` on the row is the honest
+        answer and the clients fall back to it — this only ever reports what the
+        ledger actually recorded.
+        """
+        return self.context.get("prizes_by_user", {}).get(player.user_id, (0, 0))[1]
 
 
 class TournamentTableSerializer(serializers.ModelSerializer):
@@ -205,6 +220,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
+                  "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "auto_remove_offline_seconds", "created_at")
 
 
@@ -222,15 +238,18 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "created_at")
 
     def get_players(self, tournament):
         from .models import LedgerEntry
 
-        prizes = dict(
-            LedgerEntry.objects.filter(tournament=tournament)
-            .values_list("user_id", "prize_cents")
-        )
+        prizes = {
+            user_id: (prize_cents, bounty_cents)
+            for user_id, prize_cents, bounty_cents in LedgerEntry.objects
+            .filter(tournament=tournament)
+            .values_list("user_id", "prize_cents", "bounty_prize_cents")
+        }
         return TournamentPlayerSerializer(
             tournament.players.all(), many=True,
             context={**self.context, "prizes_by_user": prizes},
@@ -247,6 +266,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "levels")
 
     def validate(self, attrs):
@@ -262,6 +282,13 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         time_bank_refill_every_hands = attrs.get("time_bank_refill_every_hands")
         time_bank_refill_level = attrs.get("time_bank_refill_level")
         payout_structure = attrs.get("payout_structure", [])
+        bounty_mode = attrs.get("bounty_mode", getattr(self.instance, "bounty_mode", "none"))
+        bounty_cents = attrs.get("bounty_cents", getattr(self.instance, "bounty_cents", 0))
+        bounty_split = attrs.get(
+            "bounty_progressive_split_pct",
+            getattr(self.instance, "bounty_progressive_split_pct", 50),
+        )
+        buy_in_cents = attrs.get("buy_in_cents", getattr(self.instance, "buy_in_cents", 0))
         auto_remove_offline_seconds = attrs.get(
             "auto_remove_offline_seconds",
             getattr(self.instance, "auto_remove_offline_seconds", 0),
@@ -306,6 +333,31 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             attrs["time_bank_refill_every_hands"] = None
             attrs["time_bank_refill_level"] = None
         attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
+
+        if bounty_mode not in {"none", "fixed", "progressive"}:
+            raise serializers.ValidationError({"bounty_mode": "Choose a valid knockout mode."})
+        if bounty_mode == "none":
+            attrs["bounty_cents"] = 0
+        else:
+            if buy_in_cents <= 0:
+                raise serializers.ValidationError(
+                    {"bounty_mode": "Knockout bounties need a buy-in to come out of."}
+                )
+            if bounty_cents <= 0:
+                raise serializers.ValidationError({"bounty_cents": "Enter a positive bounty."})
+            # The bounty is part of the buy-in, not an extra charge on top of
+            # it. Taking the whole buy-in would leave nothing to place for.
+            if bounty_cents >= buy_in_cents:
+                raise serializers.ValidationError(
+                    {"bounty_cents": "The bounty comes out of the buy-in, so it must be less than it."}
+                )
+        if bounty_mode == "progressive":
+            if not 1 <= bounty_split <= 99:
+                raise serializers.ValidationError(
+                    {"bounty_progressive_split_pct": "The cash share must be between 1 and 99 percent."}
+                )
+        else:
+            attrs["bounty_progressive_split_pct"] = 50
 
         if levels:
             blind_level_count = sum(1 for level in levels if not level.get("is_break", False))
@@ -352,5 +404,6 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             tournament=tournament, user=tournament.host,
             table=primary_table, seat=0, seat_at_table=0, chips=tournament.starting_chips,
             time_bank_seconds_remaining=tournament.time_bank_seconds,
+            bounty_cents=starting_bounty_cents(BountyConfig.from_tournament(tournament)),
         )
         return tournament

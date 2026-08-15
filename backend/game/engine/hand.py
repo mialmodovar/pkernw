@@ -99,6 +99,41 @@ class HandResult:
     busted_players: List[Player]
     community_cards: List[Card]
     hand_number:    int
+    # Who knocked whom out: (victim, eliminators). Bounty tournaments need this
+    # and nothing else in the hand knows it — by the time the coordinator sees a
+    # stack on zero, the pot that took it has already been paid out.
+    knockouts:      List[Tuple[Player, List[Player]]] = field(default_factory=list)
+
+
+def _attribute_knockouts(
+    busted: List[Player],
+    pots: List[Pot],
+    pot_winners: List[List[Player]],
+) -> List[Tuple[Player, List[Player]]]:
+    """Match each busted player to whoever took their last chips.
+
+    The bounty belongs to the winner of the last pot the busted player was
+    playing for — not necessarily the winner of the hand. A short stack all-in
+    for the main pot loses their bounty to whoever wins that main pot, even if a
+    third player takes a side pot twice the size.
+
+    A split pot splits the bounty, which is why this returns a list.
+    """
+    knockouts: List[Tuple[Player, List[Player]]] = []
+    for victim in busted:
+        eliminators: List[Player] = []
+        for index in reversed(range(min(len(pots), len(pot_winners)))):
+            if victim not in pots[index].eligible:
+                continue
+            eliminators = [w for w in pot_winners[index] if w is not victim]
+            break
+        if not eliminators and pot_winners:
+            # Nothing had them as eligible — they were all-in for the ante
+            # alone, which never reaches a pot. The main pot took them out.
+            eliminators = [w for w in pot_winners[0] if w is not victim]
+        if eliminators:
+            knockouts.append((victim, eliminators))
+    return knockouts
 
 
 # ── Card serialisation helper ────────────────────────────────────────────
@@ -440,12 +475,16 @@ class HandEngine:
                 pots = [Pot(amount=self._dead_money, eligible=active or self.players[:1])]
         awards: List[Tuple[Player, int, str]] = []
         active = [p for p in self.players if not p.is_folded]
+        # Winners of each pot, in the same order as `pots`, so a busted player
+        # can be matched to whoever took the last pot they were playing for.
+        pot_winners: List[List[Player]] = []
 
         if len(active) == 1:
             winner = active[0]
             total  = sum(pt.amount for pt in pots)
             winner.chips += total
             winner.hands_won += 1
+            pot_winners = [[winner] for _ in pots]
             awards.append((winner, total, "uncontested"))
             await self.broadcast("pot_awarded", [{
                 "seat": _seat_of(winner),
@@ -475,6 +514,7 @@ class HandEngine:
                 scores  = [(p, evaluate(p.hole_cards + self.community_cards)) for p in eligible]
                 best    = max(s for _, s in scores)
                 winners = [p for p, s in scores if s == best]
+                pot_winners.append(winners)
 
                 share    = pot.amount // len(winners)
                 odd_chip = pot.amount % len(winners)
@@ -511,6 +551,7 @@ class HandEngine:
             busted_players=busted,
             community_cards=self.community_cards,
             hand_number=self.hand_number,
+            knockouts=_attribute_knockouts(busted, pots, pot_winners),
         )
 
     # ── helpers ──────────────────────────────────────────────────────────

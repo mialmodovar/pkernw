@@ -48,6 +48,13 @@ const PROFILES = {
  * Below the sample the profile needs, the number is still shown — it is theirs
  * either way — but in plain grey, since colouring it would be claiming a read
  * that a dozen hands cannot support.
+ *
+ * These four are deliberately literals rather than theme tokens. They are a
+ * scale, and the meaning is carried by the progression through it — cold to
+ * warm, in order. Swapping the middle rung for the theme's highlight would
+ * break the ramp the moment the accent moved: under the slate preset it would
+ * run blue, lavender, orange, red, and "solid" would no longer read as sitting
+ * between tight and loose. Data colours answer to the data, not the theme.
  */
 export function vpipTone(stats) {
   const hands = stats?.hands ?? 0;

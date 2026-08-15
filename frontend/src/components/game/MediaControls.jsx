@@ -11,7 +11,7 @@ function ToggleButton({ on, label, icon, onClick }) {
       aria-pressed={on}
       className={`w-7 h-7 rounded-full border text-xs flex items-center justify-center transition-colors ${
         on
-          ? "border-[#c9a227] bg-[#3d2f0b] text-[#e6d9a8]"
+          ? "border-(--color-highlight) bg-(--color-highlight-dim) text-(--color-highlight-pale)"
           : "border-(--color-border) bg-black/40 opacity-45 grayscale hover:opacity-80 hover:border-(--color-border-strong)"
       }`}
     >

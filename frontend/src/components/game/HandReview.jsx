@@ -43,7 +43,7 @@ function Hand({ hand }) {
     <div className="panel-raised rounded-lg p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-(--color-silver)">Hand #{hand.hand_number}</span>
-        <span className="text-xs text-[#d9c07a]">Pot {hand.pot_total?.toLocaleString()}</span>
+        <span className="text-xs text-(--color-highlight-text)">Pot {hand.pot_total?.toLocaleString()}</span>
       </div>
 
       {hand.community_cards?.length > 0 && (
@@ -82,7 +82,7 @@ function Hand({ hand }) {
       {awards.length > 0 && (
         <div className="mt-1.5 space-y-0.5 text-xs">
           {awards.map((award, i) => (
-            <div key={i} className="text-[#d9c07a] font-semibold">
+            <div key={i} className="text-(--color-highlight-text) font-semibold">
               {nameFor(award.seat)} wins {award.amount?.toLocaleString()} ({award.description})
             </div>
           ))}

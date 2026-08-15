@@ -6,7 +6,7 @@ const AVATARS = [
 
 export default function EmojiPicker({ onSelect, onClose }) {
   return (
-    <div className="absolute z-10 mt-2 p-3 panel-raised bg-[#241417] rounded-lg shadow-xl shadow-black/50 animate-fade-in">
+    <div className="absolute z-10 mt-2 p-3 panel-raised panel-solid rounded-lg shadow-xl shadow-black/50 animate-fade-in">
       <div className="grid grid-cols-6 gap-1">
         {AVATARS.map((emoji) => (
           <button

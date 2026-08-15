@@ -250,7 +250,7 @@ export default function GamePage() {
           can be seen. Say so, and let anyone who has seen enough move on. */}
       {standings && !standingsReady && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
-                        bg-[#3d2f0b] border-[rgba(224,198,107,0.4)] text-[#e6d9a8]">
+                        bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
           <span>That's the tournament — final hand.</span>
           <button
             onClick={() => setStandingsReady(true)}
@@ -310,7 +310,7 @@ export default function GamePage() {
         <div className="fixed top-14 left-1/2 z-30 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-xl panel-raised px-4 py-3 shadow-2xl shadow-black/60">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-[#d9c07a]">Table move</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-(--color-highlight-text)">Table move</div>
               <div className="mt-1 text-sm text-(--color-silver)">
                 You were moved to table {tableAssignmentNotice.tableNumber}, seat {tableAssignmentNotice.seat}.
               </div>
@@ -361,7 +361,7 @@ export default function GamePage() {
       </div>
 
       <div className={`table-area flex-1 min-h-0 flex items-center justify-center relative px-1 md:px-4 transition-shadow duration-300 ${
-        isMyTurn ? "shadow-[inset_0_0_120px_rgba(212,175,55,0.18)]" : ""
+        isMyTurn ? "shadow-[inset_0_0_120px_var(--app-glow)]" : ""
       }`}>
         <TournamentInfoPanel tournament={tournament} username={user?.username} />
         <PokerTable mySeat={mySeat} capacity={capacity}

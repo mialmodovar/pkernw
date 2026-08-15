@@ -1,15 +1,91 @@
 @import "tailwindcss";
 
+/* Every value here is a default, not a constant. The theme settings in the
+   lobby re-set these same custom properties on <html>, where an inline style
+   outranks this rule, so a preset re-skins the whole app without any component
+   knowing a theme exists. Keep anything a preset should be able to move in a
+   variable — a colour written straight into a rule is a colour the user cannot
+   change. See frontend/src/theme/themes.js for the values each preset writes. */
 @theme {
   --color-surface: rgba(38, 24, 27, 0.85);
   --color-surface-raised: rgba(56, 34, 38, 0.9);
+  /* The accent's relatives — the gradient stops either side of it, the ink that
+     reads on top of it, and the lifted version legible as a link on a dark
+     panel. Every one of them is derived from --color-accent by accentFamily()
+     in theme/themes.js; the literals here are that derivation's output for the
+     default accent, kept only so the first paint matches what JS then applies.
+     Change the accent here and you must change these too, or better, change it
+     in themes.js and paste the result back. */
   --color-accent: #8a1c2b;
-  --color-accent-hover: #a3283a;
+  --color-accent-hover: #a22839;
+  --color-accent-bright: #b63244;
+  --color-accent-deep: #4a0f17;
+  --color-accent-deep-hover: #60131e;
   --color-accent-soft: rgba(138, 28, 43, 0.18);
+  --color-accent-text: #f1e9e6;
+  --color-accent-link: #dd959f;
+  --color-accent-link-hover: #e7b4bb;
+  /* The wash under a hovered panel or secondary button. Accent hue, held at a
+     mild fixed saturation and lightness — see accentFamily(). */
+  --color-surface-hover: rgba(74, 46, 50, 0.95);
+  --color-surface-hover-deep: rgba(20, 13, 14, 0.7);
+  --color-surface-sunken: rgba(16, 10, 11, 0.95);
+
+  /* The secondary colour — the table's gold. A second hue (accent + 54 deg),
+     not a shade of the accent, because a highlight has to contrast with the
+     chrome to read as one. Derived by highlightFamily() in theme/themes.js;
+     these literals are its output for the default accent. */
+  --color-highlight: #c8a227;
+  --color-highlight-bright: #d4af36;
+  --color-highlight-lift: #e4c154;
+  --color-highlight-deep: #9d7e1d;
+  --color-highlight-deeper: #886d18;
+  --color-highlight-text: #d8c175;
+  --color-highlight-pale: #e7d8aa;
+  --color-highlight-dim: #3b2f0b;
+  --color-highlight-edge: rgba(225, 197, 110, 0.4);
+  --color-highlight-ink: #14100f;
+
+  /* Deliberately NOT themed. Red here means danger — a clock about to expire —
+     and that reading does not survive being recoloured to match an accent.
+     accentFamily() never emits these, so they hold at these values under every
+     theme. The deep one matches the default accent by coincidence of history,
+     not by derivation. */
+  --color-danger: #b3243a;
+  --color-danger-deep: #8a1c2b;
   --color-border: rgba(196, 178, 165, 0.2);
   --color-border-strong: rgba(196, 178, 165, 0.38);
   --color-silver: #c9c3bd;
   --color-text-muted: #9c9490;
+}
+
+/* The composite surfaces — whole gradients and patterns rather than single
+   colours, so a preset can swap a flat felt for a radial one, or a woven card
+   back for a striped one, in the same slot. Kept out of @theme because Tailwind
+   would try to mint utilities from them. */
+:root {
+  --app-bg: linear-gradient(180deg, #0c0708 0%, #0a0708 40%, #070506 100%);
+  --app-glow: rgba(120, 26, 36, 0.18);
+
+  --felt-bg:
+    radial-gradient(ellipse 62% 62% at 50% 34%,
+      rgba(134, 34, 47, 0.6),
+      rgba(58, 16, 23, 0.92) 55%,
+      rgba(12, 7, 9, 0.99) 100%),
+    linear-gradient(180deg, #2a1015, #120809);
+
+  --card-back-bg: repeating-linear-gradient(45deg, #5e1523 0 3px, #4a1019 3px 6px);
+  --card-back-edge: rgba(214, 199, 190, 0.45);
+  --card-back-pip: rgba(224, 210, 200, 0.55);
+
+  /* The panel a floating window sits on has to be opaque (see .panel-floating),
+     so it cannot be derived from the translucent --color-surface. */
+  --panel-floating-bg: #23161a;
+
+  /* Highlight channels for rules that need their own alpha —
+     rgb(var(--highlight-rgb) / 0.6). Not under --color-* because it is not a
+     colour value and Tailwind would try to mint utilities from it. */
+  --highlight-rgb: 212 175 54;
 }
 
 /* Themes native controls (checkboxes, radios, range sliders) so they stop
@@ -23,8 +99,8 @@ input[type="range"] {
 body {
   @apply text-gray-100;
   font-family: Inter, system-ui, -apple-system, sans-serif;
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(120, 26, 36, 0.18), transparent),
-    linear-gradient(180deg, #0c0708 0%, #0a0708 40%, #070506 100%);
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--app-glow), transparent),
+    var(--app-bg);
   min-height: 100vh;
 }
 
@@ -39,7 +115,7 @@ body {
    showing through your chat, so these get an opaque base under the same
    gradient — same panel, still legible wherever you park it. */
 .panel-floating {
-  background-color: #23161a;
+  background-color: var(--panel-floating-bg);
 }
 
 .panel-raised {
@@ -47,14 +123,19 @@ body {
   border: 1px solid var(--color-border-strong);
 }
 
+/* The dark end of this gradient used to be a fixed red, which meant a blue or
+   green accent faded into maroon. Both ends now come off the accent itself, and
+   the text colour is chosen against the stops rather than assumed to be light —
+   an accent is a free colour choice, and nothing about the hex says whether
+   white will still read on it. */
 .btn-accent {
-  background: linear-gradient(135deg, var(--color-accent-hover), var(--color-accent) 55%, #4a0f18);
+  background: linear-gradient(135deg, var(--color-accent-hover), var(--color-accent) 55%, var(--color-accent-deep));
   border: 1px solid var(--color-border-strong);
-  color: #f1e9e6;
+  color: var(--color-accent-text);
 }
 
 .btn-accent:hover {
-  background: linear-gradient(135deg, #b8324a, var(--color-accent-hover) 55%, #611221);
+  background: linear-gradient(135deg, var(--color-accent-bright), var(--color-accent-hover) 55%, var(--color-accent-deep-hover));
 }
 
 .btn-secondary {
@@ -64,7 +145,7 @@ body {
 }
 
 .btn-secondary:hover {
-  background: linear-gradient(160deg, rgba(74, 46, 51, 0.95), rgba(20, 13, 15, 0.7));
+  background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
   border-color: var(--color-border-strong);
   color: #f1e9e6;
 }
@@ -75,7 +156,28 @@ body {
 button.panel-raised:hover:not(:disabled),
 button.panel:hover:not(:disabled) {
   border-color: var(--color-border-strong);
-  background: linear-gradient(160deg, rgba(74, 46, 51, 0.95), rgba(20, 13, 15, 0.7));
+  background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
+}
+
+/* A raised panel with nothing showing through it.
+   Note this cannot be done by adding a background-color utility: the `background`
+   shorthand above sets background-color back to transparent, and these rules are
+   unlayered, so they outrank anything Tailwind emits into its utilities layer.
+   The fix is to paint the same gradient over an opaque final layer instead.
+   Popovers need it — they sit over the card's own text, and a translucent
+   settings panel is one you have to read twice. Must stay below the hover rule
+   above, which it ties with on specificity and beats only on source order. */
+.panel-solid {
+  background:
+    linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65)),
+    var(--panel-floating-bg);
+  backdrop-filter: none;
+}
+
+button.panel-solid:hover:not(:disabled) {
+  background:
+    linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep)),
+    var(--panel-floating-bg);
 }
 
 /* Anything clickable says so, and nothing disabled pretends to be. */
@@ -102,12 +204,14 @@ button:disabled {
   box-shadow: 0 0 0 1px var(--color-accent-soft);
 }
 
+/* Not the raw accent: a dark one is unreadable as text on a dark panel, so this
+   is the accent lifted until it clears 7:1 against it. */
 .link-accent {
-  color: #d98a97;
+  color: var(--color-accent-link);
 }
 
 .link-accent:hover {
-  color: #eab5be;
+  color: var(--color-accent-link-hover);
   text-decoration: underline;
 }
 
@@ -146,12 +250,7 @@ button:disabled {
 /* The light falls from above and the rim stays dark, which is what stops the
    felt reading as one flat sheet of red. */
 .felt {
-  background:
-    radial-gradient(ellipse 62% 62% at 50% 34%,
-      rgba(134, 34, 47, 0.6),
-      rgba(58, 16, 23, 0.92) 55%,
-      rgba(12, 7, 9, 0.99) 100%),
-    linear-gradient(180deg, #2a1015, #120809);
+  background: var(--felt-bg);
   border: 2px solid var(--color-border-strong);
   box-shadow:
     inset 0 0 90px rgba(0, 0, 0, 0.78),
@@ -196,12 +295,12 @@ button:disabled {
    for what earns it. */
 @keyframes card-glow {
   0%, 100% {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.55),
-                0 0 9px rgba(212, 175, 55, 0.35);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgb(var(--highlight-rgb) / 0.55),
+                0 0 9px rgb(var(--highlight-rgb) / 0.35);
   }
   50% {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.9),
-                0 0 18px rgba(212, 175, 55, 0.6);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgb(var(--highlight-rgb) / 0.9),
+                0 0 18px rgb(var(--highlight-rgb) / 0.6);
   }
 }
 
@@ -222,7 +321,7 @@ button:disabled {
    that is worth turning off. The gold edge stays; it says the same thing. */
 @media (prefers-reduced-motion: reduce) {
   .animate-card-glow { animation: none; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55),
-                                                    0 0 0 1px rgba(212, 175, 55, 0.85); }
+                                                    0 0 0 1px rgb(var(--highlight-rgb) / 0.85); }
   .animate-card-sheen { display: none; }
 }
 

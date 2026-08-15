@@ -31,7 +31,7 @@ function DisplayToggles() {
             onClick={() => { if (showBB !== value) toggleBB(); }}
             className={`px-2 py-0.5 text-xs font-semibold transition-colors ${
               showBB === value
-                ? "bg-[linear-gradient(135deg,#d4af37,#8a6c18)] text-[#1a1208]"
+                ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink)"
                 : "text-(--color-text-muted) hover:text-(--color-silver)"
             }`}
           >

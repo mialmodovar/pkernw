@@ -107,7 +107,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         <CommunityCards winningCards={winningBoardCards} />
         <PotDisplay />
         {allInEquity?.length > 0 && (
-          <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-[#d9c07a] animate-pulse">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-(--color-highlight-text) animate-pulse">
             All in
           </span>
         )}
@@ -168,11 +168,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         return (
           <div key={`bet-${seat}`}
             className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1
-                       px-1.5 py-0.5 rounded-full bg-black/70 border border-[rgba(224,198,107,0.35)]
+                       px-1.5 py-0.5 rounded-full bg-black/70 border border-(--color-highlight-edge)
                        shadow-lg shadow-black/60 animate-chip-in"
             style={{ top: pos.top, left: pos.left }}>
             <ChipStack amount={p.bet} size={10} />
-            <span className="text-[11px] font-bold text-[#d9c07a] leading-none">
+            <span className="text-[11px] font-bold text-(--color-highlight-text) leading-none">
               {formatChips(p.bet, showBB, bb)}
             </span>
           </div>

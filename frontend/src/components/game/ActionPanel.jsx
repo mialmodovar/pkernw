@@ -8,7 +8,7 @@ import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
 const BTN = "px-2.5 py-3 md:py-1.5 rounded font-semibold text-xs transition-colors min-w-0 md:min-w-[4.75rem] touch-manipulation";
-const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
+const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";
 const STEPPER = "btn-secondary w-9 shrink-0 rounded text-base font-bold leading-none py-1.5 md:hidden touch-manipulation";
 
 /** The clock, for when the panel is collapsed and its own timer bar is hidden.
@@ -27,7 +27,7 @@ export function ActionCountdownBadge() {
           ? "bg-[#5a1420] text-[#e8d5d8]"
           : countdown.displaySeconds <= 3
           ? "bg-[#b3243a] text-[#f0e2d6]"
-          : "bg-black/50 text-[#d9c07a]"
+          : "bg-black/50 text-(--color-highlight-text)"
       }`}
     >
       {countdown.displaySeconds}
@@ -150,7 +150,7 @@ export default function ActionPanel({
     if (amSittingOut) {
       return (
         <div className={`${shell} p-3 text-center text-sm`}>
-          <p className="text-[#d9c07a] font-semibold">You are sitting out</p>
+          <p className="text-(--color-highlight-text) font-semibold">You are sitting out</p>
           <p className="text-(--color-text-muted) text-xs mt-1">
             Your turns pass automatically, and you keep paying blinds and antes.
           </p>
@@ -249,7 +249,7 @@ export default function ActionPanel({
                 onClick={() => { setRaiseText(null); setRaiseAmount(preset.chips); }}
                 className={`px-2 py-2 md:py-1 rounded text-xs font-semibold transition-colors touch-manipulation ${
                   preset.emphasis
-                    ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-[#e0c66b] text-[#f0e2d6]"
+                    ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-(--color-highlight-text) text-[#f0e2d6]"
                     : "btn-secondary"
                 }`}>
                 {preset.label}
@@ -278,7 +278,7 @@ export default function ActionPanel({
               step={sliderStep}
               value={fromChips(raiseAmount)}
               onChange={(e) => setRaiseFromControl(e.target.value)}
-              className="flex-1 h-6 md:h-auto md:flex-none md:w-24 md:order-1 accent-[#d4af37] cursor-pointer touch-manipulation"
+              className="flex-1 h-6 md:h-auto md:flex-none md:w-24 md:order-1 accent-(--color-highlight-bright) cursor-pointer touch-manipulation"
             />
             <button type="button" onClick={() => nudge(1)} aria-label="Raise more" className={STEPPER}>+</button>
           </div>
@@ -307,7 +307,7 @@ export default function ActionPanel({
         </div>
 
         {armed && (
-          <span className="text-xs text-[#d9c07a]">
+          <span className="text-xs text-(--color-highlight-text)">
             Press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
           </span>
         )}
@@ -335,8 +335,8 @@ export default function ActionPanel({
           )}
           {can.raise && (
             <button onClick={() => commit("raise")} disabled={locked}
-              className={`${BTN} flex-1 md:flex-none bg-[linear-gradient(135deg,#d4af37,#8a6c18)] hover:bg-[linear-gradient(135deg,#e3c250,#a17c1e)]
-                          border border-[#e0c66b] text-[#1a1208]
+              className={`${BTN} flex-1 md:flex-none bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
+                          border border-(--color-highlight-text) text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
               Raise {fmt(raiseAmount)}
             </button>

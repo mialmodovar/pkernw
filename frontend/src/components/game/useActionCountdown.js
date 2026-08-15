@@ -10,10 +10,13 @@ const TICK_MS = 250;
  * so the decision lives here rather than in each of them — they used to
  * disagree, with the ring still calmly gold while the panel had gone red.
  */
+// Only the calm end follows the theme. The two urgent tones stay red on
+// purpose: red means running out of time in a way no other hue does, and a
+// green theme must not turn "you are nearly timed out" green.
 export function timerToneClass(countdown) {
-  if (countdown.inTimeBank) return "bg-[#8a1c2b]";
-  if (countdown.displaySeconds != null && countdown.displaySeconds <= 3) return "bg-[#b3243a]";
-  return "bg-[#c9a227]";
+  if (countdown.inTimeBank) return "bg-(--color-danger-deep)";
+  if (countdown.displaySeconds != null && countdown.displaySeconds <= 3) return "bg-(--color-danger)";
+  return "bg-(--color-highlight)";
 }
 
 /**

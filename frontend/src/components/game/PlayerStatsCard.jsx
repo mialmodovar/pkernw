@@ -65,7 +65,7 @@ function Bar({ pct }) {
   return (
     <div className="h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
-        className="h-full bg-[linear-gradient(90deg,#4a0f18,#d4af37)]"
+        className="h-full bg-[linear-gradient(90deg,var(--color-accent-deep),var(--color-highlight-bright))]"
         style={{ width: `${Math.min(100, pct || 0)}%` }}
       />
     </div>
@@ -86,7 +86,7 @@ function StatRow({ row, stats, hands, above }) {
             {row.label}
           </span>
         </Tip>
-        <span className="shrink-0 text-[#d9c07a] font-semibold">
+        <span className="shrink-0 text-(--color-highlight-text) font-semibold">
           {known ? `${value}%` : "—"}
           <span className="text-(--color-text-muted) font-normal"> ({chances ?? 0})</span>
         </span>
@@ -133,7 +133,7 @@ export default function PlayerStatsCard({ player, stats, onClose }) {
             {profile ? (
               <div className="mt-3">
                 <Tip text={profile.description}>
-                  <span className="inline-block rounded-full border border-(--color-border-strong) bg-black/40 px-2 py-0.5 text-[11px] font-semibold text-[#d9c07a]">
+                  <span className="inline-block rounded-full border border-(--color-border-strong) bg-black/40 px-2 py-0.5 text-[11px] font-semibold text-(--color-highlight-text)">
                     {profile.label}
                   </span>
                 </Tip>

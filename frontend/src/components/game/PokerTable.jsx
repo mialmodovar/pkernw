@@ -7,7 +7,7 @@ import { useShowdownReveal } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
-import handShines from "./handShine";
+import handShines, { shiningBoardCards } from "./handShine";
 
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
@@ -83,6 +83,9 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Your own good cards catch the light. Held back once the hands turn over,
   // where the gold ring on the winning five is the thing to look at.
   const heroShines = showdown == null && handShines(holeCards, communityCards);
+  // A hand is five cards, not two. The board cards that make it up shine with
+  // the hero's own, so what lights up is the hand rather than half of it.
+  const shiningBoard = heroShines ? shiningBoardCards(holeCards, communityCards) : [];
 
   // Fall back to what the seat numbers imply until capacity is known.
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
@@ -104,7 +107,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
-        <CommunityCards winningCards={winningBoardCards} />
+        <CommunityCards winningCards={winningBoardCards} shiningCards={shiningBoard} />
         <PotDisplay />
         {allInEquity?.length > 0 && (
           <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-(--color-highlight-text) animate-pulse">

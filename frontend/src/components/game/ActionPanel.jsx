@@ -11,6 +11,30 @@ const BTN = "px-2.5 py-3 md:py-1.5 rounded font-semibold text-xs transition-colo
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-[#d4af37]";
 const STEPPER = "btn-secondary w-9 shrink-0 rounded text-base font-bold leading-none py-1.5 md:hidden touch-manipulation";
 
+/** The clock, for when the panel is collapsed and its own timer bar is hidden.
+ *
+ * Someone is on the clock whether or not you have the panel open, and a
+ * collapsed panel that hides that is worse than no panel at all.
+ */
+export function ActionCountdownBadge() {
+  const countdown = useActionCountdown();
+  if (!countdown.active) return null;
+  return (
+    <span
+      title={countdown.inTimeBank ? "Time bank" : "Seconds left to act"}
+      className={`shrink-0 min-w-5 px-1 rounded text-[11px] font-bold font-mono leading-4 text-center ${
+        countdown.inTimeBank
+          ? "bg-[#5a1420] text-[#e8d5d8]"
+          : countdown.displaySeconds <= 3
+          ? "bg-[#b3243a] text-[#f0e2d6]"
+          : "bg-black/50 text-[#d9c07a]"
+      }`}
+    >
+      {countdown.displaySeconds}
+    </span>
+  );
+}
+
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
 const PRESELECTS = [
@@ -20,7 +44,11 @@ const PRESELECTS = [
   { key: "callany", label: "Call any" },
 ];
 
-export default function ActionPanel({ mySeat, onAction, disabled = false, amSittingOut = false, onSitIn }) {
+export default function ActionPanel({
+  mySeat, onAction, disabled = false, amSittingOut = false, onSitIn, bare = false,
+}) {
+  // `bare` is the form used inside a FloatingPanel, which draws the frame itself.
+  const shell = bare ? "" : "panel rounded-lg shadow-lg shadow-black/50";
   const { actionOnSeat, actionContext, showBB, level, players, handNumber } = useGameStore();
   const [preselect, setPreselect] = useState(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
@@ -121,7 +149,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
     // "waiting", with nothing explaining why your turns keep passing.
     if (amSittingOut) {
       return (
-        <div className="panel rounded-lg p-3 text-center text-sm">
+        <div className={`${shell} p-3 text-center text-sm`}>
           <p className="text-[#d9c07a] font-semibold">You are sitting out</p>
           <p className="text-(--color-text-muted) text-xs mt-1">
             Your turns pass automatically, and you keep paying blinds and antes.
@@ -139,7 +167,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
     }
     const inHand = players.find((p) => p.seat === mySeat && !p.is_folded && !p.is_eliminated);
     return (
-      <div className="panel rounded-lg p-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs shadow-lg shadow-black/50">
+      <div className={`${shell} p-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs`}>
         <span className="text-(--color-text-muted)">
           {actionOnSeat !== null
             ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
@@ -207,7 +235,7 @@ export default function ActionPanel({ mySeat, onAction, disabled = false, amSitt
   return (
     // It lives in the corner of the felt now, so it is sized to be read at a
     // glance rather than to fill a row.
-    <div className="panel rounded-lg overflow-hidden w-full shadow-lg shadow-black/50">
+    <div className={`${shell} overflow-hidden w-full`}>
       {/* Sizing row — kept clear of the commit buttons */}
       {can.raise && maxRaise > minRaise && (
         <div className="px-2 pt-2 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1.5">

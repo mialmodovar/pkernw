@@ -3,13 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { connect, disconnect, onMessage, onStatus, send, retry } from "../api/socket";
 import useTableMedia from "../media/useTableMedia";
 import useTableSounds from "../components/game/useTableSounds";
-import ChatPanel from "../components/game/ChatPanel";
+import ChatPanel, { ChatUnreadBadge } from "../components/game/ChatPanel";
+import FloatingPanel from "../components/game/FloatingPanel";
+import MediaControls from "../components/game/MediaControls";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
-import ActionPanel from "../components/game/ActionPanel";
+import ActionPanel, { ActionCountdownBadge } from "../components/game/ActionPanel";
 import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
@@ -164,13 +166,14 @@ export default function GamePage() {
 
   const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
-  const actionPanel = (
+  const actionPanel = (bare = false) => (
     <ActionPanel
       mySeat={mySeat}
       onAction={handleAction}
       disabled={connectionStatus !== "open"}
       amSittingOut={amSittingOut}
       onSitIn={() => send({ type: "sit_out", value: false })}
+      bare={bare}
     />
   );
   const handleAdminControl = async (control) => {
@@ -328,13 +331,30 @@ export default function GamePage() {
           statsByName={playerStats}
           onInspectPlayer={setInspecting} />
 
-        <div className="hidden md:block absolute bottom-2 left-2 z-10">
-          <ChatPanel />
-        </div>
+        {/* On a desktop these float on the felt, and stay where you put them.
+            A phone gets neither: the chat is a sheet and the action panel has a
+            band of its own below the table. */}
         {!compact && (
-          <div className="absolute bottom-2 right-2 z-10 w-[min(32rem,60%)]">
-            {actionPanel}
-          </div>
+          <>
+            <FloatingPanel
+              id="chat" title="Table chat" anchor="bottom-left"
+              defaultWidth={224} defaultHeight={128} minWidth={180} minHeight={110}
+              actions={<MediaControls />}
+              badge={<ChatUnreadBadge />}
+            >
+              <ChatPanel bare />
+            </FloatingPanel>
+            {/* Collapsed, it still shows whose clock is running — and it opens
+                itself when the action reaches you, then folds back after. */}
+            <FloatingPanel
+              id="action" title="Actions" anchor="bottom-right"
+              defaultWidth={512} minWidth={320} minHeight={132}
+              expandWhen={isMyTurn}
+              badge={<ActionCountdownBadge />}
+            >
+              {actionPanel(true)}
+            </FloatingPanel>
+          </>
         )}
         {countdown !== null && countdown > 0 && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
@@ -356,7 +376,7 @@ export default function GamePage() {
           sit on top of the hero's own cards. */}
       {compact && (
         <div className="shrink-0 px-1 pb-safe">
-          {actionPanel}
+          {actionPanel()}
         </div>
       )}
 

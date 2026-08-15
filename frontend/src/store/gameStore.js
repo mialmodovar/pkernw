@@ -42,6 +42,17 @@ const entry = (state, kind, text, overrides = {}) => ({
 
 const appendLog = (state, ...entries) => [...state.messages, ...entries].slice(-LOG_LIMIT);
 
+// Un-freezing the table has to give back the time it spent frozen, whichever
+// message carries the news — the explicit resume event, or a state snapshot
+// arriving after a reconnect. Losing that would hand the actor a clock that had
+// silently run down while nobody could act.
+const resumeClock = (state) => ({
+  pausedSince: null,
+  actionStartedAt: state.actionStartedAt && state.pausedSince
+    ? state.actionStartedAt + (Date.now() - state.pausedSince)
+    : state.actionStartedAt,
+});
+
 const useGameStore = create((set) => ({
   // Game state
   players: [],
@@ -53,6 +64,12 @@ const useGameStore = create((set) => ({
   handStrength: null, // what you currently hold, e.g. "Pair of Aces"
   actionOnSeat: null,
   actionContext: null, // { seat, to_call, min_raise, max_raise, valid_actions, timer_sec }
+  // When the current actor's clock started, and since when it has been frozen.
+  // The clock has to be a property of the TABLE, not of whichever component
+  // happens to be drawing it: a panel that collapses, expands or reconnects
+  // mid-turn has to pick up the real remaining time, not start counting afresh.
+  actionStartedAt: null,
+  pausedSince: null,
   dealerSeat: null,
   sbSeat: null,
   bbSeat: null,
@@ -84,6 +101,10 @@ const useGameStore = create((set) => ({
   // What has been said at this table since the page opened. Nothing is stored
   // server-side, so this is the whole of it.
   chat: [],
+  // Counts every message ever said, where `chat` is capped at the last hundred.
+  // An unread badge has to count arrivals, and once the cap is reached the
+  // array's length stops changing.
+  chatSequence: 0,
   toggleSound: () => set((s) => {
     const soundEnabled = !s.soundEnabled;
     writeStoredFlag(SOUND_KEY, soundEnabled);
@@ -109,6 +130,13 @@ const useGameStore = create((set) => ({
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.table_summaries || s.tableSummaries,
           isPaused: data.is_paused ?? s.isPaused,
+          // Only a snapshot that actually carries the flag may touch the clock;
+          // most of them don't mention it at all.
+          ...(data.is_paused == null
+            ? {}
+            : data.is_paused
+            ? { pausedSince: s.pausedSince ?? Date.now() }
+            : resumeClock(s)),
           level: data.level || s.level,
           // Restored on reconnect so the table reads correctly mid-hand.
           dealerSeat: data.dealer_seat ?? null,
@@ -155,6 +183,7 @@ const useGameStore = create((set) => ({
           handStrength: null,
           actionOnSeat: null,
           actionContext: null,
+          actionStartedAt: null,
         });
         // Reset per-hand player state
         set((s) => ({
@@ -212,6 +241,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           actionOnSeat: data.seat,
           actionContext: data,
+          actionStartedAt: Date.now(),
           // The server's pot is authoritative; prefer it over the locally
           // accumulated figure, which can drift mid-hand.
           pot: data.pot ?? s.pot,
@@ -396,6 +426,7 @@ const useGameStore = create((set) => ({
 
       case "chat_message":
         set((s) => ({
+          chatSequence: s.chatSequence + 1,
           chat: [...s.chat, {
             // The server does not number these, and two identical messages a
             // second apart still need distinct keys.
@@ -435,6 +466,7 @@ const useGameStore = create((set) => ({
       case "tournament_paused":
         set((s) => ({
           isPaused: true,
+          pausedSince: s.pausedSince ?? Date.now(),
           level: data.level || s.level,
           messages: appendLog(s, entry(s, "info", "Tournament paused")),
         }));
@@ -443,6 +475,7 @@ const useGameStore = create((set) => ({
       case "tournament_resumed":
         set((s) => ({
           isPaused: false,
+          ...resumeClock(s),
           level: data.level || s.level,
           messages: appendLog(s, entry(s, "info", "Tournament resumed")),
         }));
@@ -506,9 +539,10 @@ const useGameStore = create((set) => ({
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
-      actionContext: null, level: null, showdown: null,
+      actionContext: null, actionStartedAt: null, pausedSince: null,
+      level: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
-      standings: null, lastElimination: null, messages: [], chat: [],
+      standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
     }),

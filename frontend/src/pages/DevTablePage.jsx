@@ -27,6 +27,7 @@ export default function DevTablePage() {
   const handleEvent = useGameStore((s) => s.handleEvent);
   const username = useAuthStore((s) => s.user?.username) || "you";
   const chatCounter = useRef(0);
+  const lastAction = useRef(null);
 
   // Turned on before the game page is allowed to mount — otherwise its own
   // mount effect would open a websocket to a tournament that does not exist.
@@ -56,12 +57,22 @@ export default function DevTablePage() {
       ? heroSeat
       : Number(config.actionSeat);
 
+    // Re-issuing `action_required` restarts the actor's clock, so it is only
+    // sent when the decision itself changed. Without this every unrelated knob
+    // would reset the timer, and the sandbox would misreport the one thing you
+    // opened it to look at.
+    const actionKey = actionOnSeat === null ? null
+      : [actionOnSeat, config.pot, config.bigBlind, config.street, hero?.chips].join("|");
+    const sameAction = actionKey !== null && actionKey === lastAction.current;
+    lastAction.current = actionKey;
+
     // Anything with no clearing event of its own. A real table clears these by
     // starting the next hand, which would also wipe the board we are looking at.
     useGameStore.setState({
       showdown: null, potAwards: null, winnerSeats: [],
-      allInEquity: null, actionContext: null, rabbitCards: null,
+      allInEquity: null, rabbitCards: null,
       standings: null, lastElimination: null,
+      ...(sameAction ? {} : { actionContext: null }),
     });
 
     handleEvent({
@@ -91,7 +102,7 @@ export default function DevTablePage() {
     handleEvent({ type: "hand_strength", text: config.handStrength });
     handleEvent({ type: "countdown", seconds: config.countdown || null });
 
-    if (actionOnSeat !== null) {
+    if (actionOnSeat !== null && !sameAction) {
       handleEvent({
         type: "action_required",
         seat: actionOnSeat,

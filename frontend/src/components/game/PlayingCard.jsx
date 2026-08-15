@@ -54,7 +54,7 @@ export function CardBack({ size = "seat", className = "" }) {
   );
 }
 
-export default function PlayingCard({ card, size = "seat", winning, className = "", style }) {
+export default function PlayingCard({ card, size = "seat", winning, shine, className = "", style }) {
   const parsed = typeof card === "string" ? parseCard(card) : card;
   if (!parsed) return <CardBack size={size} className={className} />;
 
@@ -63,10 +63,18 @@ export default function PlayingCard({ card, size = "seat", winning, className = 
 
   return (
     <div
-      className={`${s.box} ${CARD_FACE} ${winning ? CARD_WINNING : ""} relative flex flex-col
+      className={`${s.box} ${CARD_FACE} ${winning ? CARD_WINNING : ""} ${shine ? "animate-card-glow" : ""} relative flex flex-col
                   items-center justify-center leading-none ${className}`}
       style={{ color: colour, ...style }}
     >
+      {/* The sheen is clipped to the card and sits over the pips, so it reads as
+          light crossing the face rather than a shape drawn on it. */}
+      {shine && (
+        <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-[4px]">
+          <span className="absolute inset-y-0 left-0 w-1/2 animate-card-sheen
+                           bg-[linear-gradient(100deg,transparent,rgba(255,246,214,0.85),transparent)]" />
+        </span>
+      )}
       {s.corner && (
         // No room for a corner index on a phone; the centred rank is the index.
         <span className={`absolute top-[2px] left-[3px] hidden md:flex flex-col items-center gap-[1px] font-black ${s.corner}`}>

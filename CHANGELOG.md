@@ -9,6 +9,12 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Your good cards catch the light.** A premium holding before the flop — tens
+  or better, AK, AQs, KQs — and anything better than one pair once the board is
+  out, and your two cards pick up a gold edge and a slow sheen. Only your own
+  cards ever shine, and only when your cards are what made the hand: a board
+  that pairs twice by itself belongs to the table, not to you. The sheen stops
+  for anyone who has asked their system for less motion.
 - **A player's card reads them in one word, and in a lot more numbers.** Tapping
   a seat used to give four preflop percentages and leave the interpreting to
   you. It now names the style — Nit, Rock, TAG, LAG, Calling station, Maniac —

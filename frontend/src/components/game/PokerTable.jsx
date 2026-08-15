@@ -7,6 +7,7 @@ import { useShowdownReveal } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
+import handShines from "./handShine";
 
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
@@ -59,7 +60,7 @@ function EmptySeat() {
 
 export default function PokerTable({ mySeat, capacity, statsByName, onInspectPlayer }) {
   const {
-    players, actionOnSeat, holeCards, winnerSeats, potAwards, allInEquity,
+    players, actionOnSeat, holeCards, communityCards, winnerSeats, potAwards, allInEquity,
     dealerSeat, sbSeat, bbSeat, showdown, handStrength,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
@@ -78,6 +79,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const winningBoardCards = resultRevealed
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
+
+  // Your own good cards catch the light. Held back once the hands turn over,
+  // where the gold ring on the winning five is the thing to look at.
+  const heroShines = showdown == null && handShines(holeCards, communityCards);
 
   // Fall back to what the seat numbers imply until capacity is known.
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
@@ -144,6 +149,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 stats={statsByName?.[p.name]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
+                shine={isMe && heroShines && !p.is_folded}
                 compact={compact}
               />
             ) : (

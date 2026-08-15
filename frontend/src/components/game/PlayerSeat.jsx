@@ -51,7 +51,7 @@ function TimerRing({ pct, tone = "bg-[#c9a227]" }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   isDealer, isSB, isBB, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength, compactVideo, compact = false,
+  stats, onInspect, handStrength, shine, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
@@ -111,6 +111,7 @@ export default function PlayerSeat({
         isMe={isMe}
         faceDown={faceDownAtShowdown}
         winningCards={isWinner ? showdownEntry?.best_cards : null}
+        shine={shine}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}

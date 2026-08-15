@@ -1,6 +1,6 @@
 import PlayingCard, { CardBack } from "./PlayingCard";
 
-export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, faceDown, size = "seat" }) {
+export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, faceDown, shine, size = "seat" }) {
   if (eliminated) return null;
   // Held face down until this seat's turn in the staged showdown reveal.
   if (faceDown) {
@@ -38,7 +38,7 @@ export default function HoleCards({ cards, folded, eliminated, isMe, winningCard
   return (
     <div className="flex gap-0.5">
       {cards.map((card, index) => (
-        <PlayingCard key={index} card={card} size={size} winning={winners.has(card)} />
+        <PlayingCard key={index} card={card} size={size} winning={winners.has(card)} shine={shine} />
       ))}
     </div>
   );

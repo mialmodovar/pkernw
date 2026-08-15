@@ -191,6 +191,41 @@ button:disabled {
   animation: chip-in 0.22s ease-out;
 }
 
+/* A holding worth looking at catches the light: a gold edge that breathes, and
+   a sheen that crosses the card. Only ever on your own cards — see handShine.js
+   for what earns it. */
+@keyframes card-glow {
+  0%, 100% {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.55),
+                0 0 9px rgba(212, 175, 55, 0.35);
+  }
+  50% {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.9),
+                0 0 18px rgba(212, 175, 55, 0.6);
+  }
+}
+
+.animate-card-glow {
+  animation: card-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes card-sheen {
+  0%        { transform: translateX(-160%) skewX(-18deg); }
+  55%, 100% { transform: translateX(320%) skewX(-18deg); }
+}
+
+.animate-card-sheen {
+  animation: card-sheen 2.4s ease-in-out infinite;
+}
+
+/* A sweep across a card you are trying to read is exactly the kind of motion
+   that is worth turning off. The gold edge stays; it says the same thing. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-glow { animation: none; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55),
+                                                    0 0 0 1px rgba(212, 175, 55, 0.85); }
+  .animate-card-sheen { display: none; }
+}
+
 /* Mucked cards slide away and fade rather than just dimming in place. */
 @keyframes fold-out {
   from { opacity: 0.85; transform: translateY(0) scale(1) rotate(0deg); }

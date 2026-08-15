@@ -25,7 +25,7 @@ const GROUPS = [
   {
     title: "Postflop",
     rows: [
-      { key: "saw_flop_pct", label: "Saw flop", hint: "Hands where they were still in on the flop" },
+      { key: "saw_flop_pct", label: "Saw flop", hint: "Hands where they were still in and acting on the flop" },
       { key: "cbet_pct", label: "C-bet", hint: "Bet the flop as the last preflop raiser", chances: "cbet_chances" },
       { key: "fold_to_cbet_pct", label: "Fold to c-bet", hint: "Folded to the preflop raiser's flop bet", chances: "fold_to_cbet_chances" },
       {
@@ -39,9 +39,31 @@ const GROUPS = [
 // Under this, the percentages say more about luck than about the player.
 const THIN_SAMPLE = 30;
 
+/**
+ * A hover explanation that actually appears. The native `title` tooltip is at
+ * the browser's mercy — slow, easy to miss, and absent on touch — so this is
+ * drawn in the card, and opens on focus too for anyone tapping rather than
+ * pointing.
+ */
+function Tip({ text, above, children }) {
+  return (
+    <span className="relative inline-block group focus-within:z-20 hover:z-20">
+      <span tabIndex={0} className="cursor-help outline-none">{children}</span>
+      <span role="tooltip"
+        className={`pointer-events-none absolute left-0 z-30 w-44 rounded-md border border-(--color-border-strong)
+                    bg-[#120b0d] px-2 py-1.5 text-[10px] font-normal leading-snug text-(--color-silver)
+                    shadow-lg shadow-black/70 opacity-0 transition-opacity
+                    group-hover:opacity-100 group-focus-within:opacity-100
+                    ${above ? "bottom-full mb-1" : "top-full mt-1"}`}>
+        {text}
+      </span>
+    </span>
+  );
+}
+
 function Bar({ pct }) {
   return (
-    <div className="h-1.5 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
+    <div className="h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
       <div
         className="h-full bg-[linear-gradient(90deg,#4a0f18,#d4af37)]"
         style={{ width: `${Math.min(100, pct || 0)}%` }}
@@ -50,19 +72,26 @@ function Bar({ pct }) {
   );
 }
 
-function StatRow({ row, stats, hands }) {
+function StatRow({ row, stats, hands, above }) {
   const chances = row.chances ? stats[row.chances] : hands;
+  const value = stats[row.key];
+  // A stat the server did not send is unknown, which is not the same as zero.
+  const known = chances > 0 && typeof value === "number";
 
   return (
-    <div>
-      <div className="flex justify-between text-xs">
-        <span className="text-(--color-silver) cursor-help" title={row.hint}>{row.label}</span>
-        <span className="text-[#d9c07a] font-semibold">
-          {chances ? `${stats[row.key]}%` : "—"}
+    <div className="min-w-0">
+      <div className="flex justify-between items-baseline gap-1 text-[11px]">
+        <Tip text={row.hint} above={above}>
+          <span className="text-(--color-silver) underline decoration-dotted decoration-(--color-text-muted) underline-offset-2">
+            {row.label}
+          </span>
+        </Tip>
+        <span className="shrink-0 text-[#d9c07a] font-semibold">
+          {known ? `${value}%` : "—"}
           <span className="text-(--color-text-muted) font-normal"> ({chances ?? 0})</span>
         </span>
       </div>
-      <div className="mt-0.5"><Bar pct={chances ? stats[row.key] : 0} /></div>
+      <div className="mt-1"><Bar pct={known ? value : 0} /></div>
     </div>
   );
 }
@@ -78,7 +107,7 @@ export default function PlayerStatsCard({ player, stats, onClose }) {
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="panel rounded-xl w-full max-w-xs p-4 shadow-2xl shadow-black/70 max-h-[85vh] overflow-y-auto"
+      <div className="panel rounded-xl w-full max-w-sm p-4 shadow-2xl shadow-black/70 max-h-[85vh] overflow-y-auto"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <span className="text-2xl leading-none">{player.avatar || "\u{1F0CF}"}</span>
@@ -102,25 +131,33 @@ export default function PlayerStatsCard({ player, stats, onClose }) {
           <>
             {/* One word for the whole read, with the reasoning a hover away. */}
             {profile ? (
-              <p className="mt-3">
-                <span title={profile.description}
-                  className="inline-block cursor-help rounded-full border border-(--color-border-strong) bg-black/40 px-2 py-0.5 text-[11px] font-semibold text-[#d9c07a]">
-                  {profile.label}
-                </span>
-              </p>
+              <div className="mt-3">
+                <Tip text={profile.description}>
+                  <span className="inline-block rounded-full border border-(--color-border-strong) bg-black/40 px-2 py-0.5 text-[11px] font-semibold text-[#d9c07a]">
+                    {profile.label}
+                  </span>
+                </Tip>
+              </div>
             ) : (
               <p className="mt-3 text-[11px] text-(--color-text-muted)">
                 Profile after {PROFILE_MIN_HANDS} hands.
               </p>
             )}
 
-            <div className="mt-3 space-y-4">
-              {GROUPS.map((group) => (
-                <div key={group.title} className="space-y-3">
-                  <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">{group.title}</p>
-                  {group.rows.map((row) => (
-                    <StatRow key={row.key} row={row} stats={stats} hands={hands} />
-                  ))}
+            <div className="mt-3 space-y-3">
+              {GROUPS.map((group, groupIndex) => (
+                <div key={group.title}>
+                  <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-1.5">
+                    {group.title}
+                  </p>
+                  {/* Two columns: the same read in half the height, so the whole
+                      card fits without scrolling on a phone. */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {group.rows.map((row) => (
+                      <StatRow key={row.key} row={row} stats={stats} hands={hands}
+                        above={groupIndex === GROUPS.length - 1} />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

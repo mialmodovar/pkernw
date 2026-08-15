@@ -49,12 +49,20 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
   const full = t.player_count >= t.max_players;
   const bountyOn = (t.bounty_mode || "none") !== "none" && (t.bounty_cents || 0) > 0;
 
+  // What is actually at stake, in money. The list payload carries no rebuy
+  // counts, so this is entrants so far — the same basis the old card used, and
+  // a figure that only ever grows.
+  const poolCents = Math.max(0, buyInCents - (bountyOn ? (t.bounty_cents || 0) : 0)) * t.player_count;
+
   // Read left to right, most-particular first. Joined as one line so it wraps
   // as prose on a narrow screen instead of becoming a column of chips.
   const facts = [
     startTime && !isFinished ? startTime : null,
     `${t.player_count}/${t.max_players}`,
     buyInCents > 0 ? euros(buyInCents) : "free",
+    // Never the percentages: a share is a rule for splitting a pot, and the pot
+    // is knowable here. Places paid is the count, the pool is the money.
+    poolCents > 0 ? `${euros(poolCents)} pool` : null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
   ].filter(Boolean);

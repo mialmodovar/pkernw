@@ -2,6 +2,7 @@ import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 import { formatEuros } from "./formatMoney";
+import { entryCount, payoutLabel } from "./prizePool";
 import { formatClock, useLevelCountdown } from "./useLevelCountdown";
 
 function Row({ label, children }) {
@@ -65,20 +66,10 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const nextPrize = inTheMoney ? payoutFor(remaining - 1) : null;
 
   // Every rebuy is another buy-in — the same sum the settlement ledger makes.
-  const entries = (tournament?.players || []).reduce((sum, p) => sum + 1 + (p.rebuy_count || 0), 0);
-  // The percentages below are shares of what is played for by placing, and in a
-  // knockout tournament part of every buy-in went onto a head instead. Showing
-  // the whole buy-in here would promise a first prize that does not exist.
-  const placingBuyInCents = Math.max(
-    0,
-    (tournament?.buy_in_cents || 0) - ((tournament?.bounty_mode || "none") !== "none" ? (tournament?.bounty_cents || 0) : 0),
-  );
-  const poolCents = placingBuyInCents * entries;
-  const money = (percentage) => (poolCents > 0
-    ? (Math.round(poolCents * percentage) / 10000).toLocaleString(undefined,
-        { style: "currency", currency: "EUR", maximumFractionDigits: 2 })
-    : null);
-  const withMoney = (row) => `${row.percentage}%${money(row.percentage) ? ` · ${money(row.percentage)}` : ""}`;
+  const entries = entryCount(tournament);
+  // Money wherever there is money to state; the percentage only survives a
+  // tournament with no buy-in, where the split is all there is to say.
+  const withMoney = (row) => payoutLabel(tournament, row, entries);
 
   // Knockouts. The live table is the truthful source — it is updated the moment
   // a bounty changes hands — and the REST snapshot covers the case where your
@@ -287,7 +278,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
               <div className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">Payouts</div>
               {payouts.slice(0, 5).map((row) => (
                 <Row key={row.place} label={row.label || `${row.place}`}>
-                  <span className="text-(--color-highlight-text)">{row.percentage}%</span>
+                  <span className="text-(--color-highlight-text)">{withMoney(row)}</span>
                 </Row>
               ))}
             </div>

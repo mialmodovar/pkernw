@@ -1,4 +1,5 @@
 import { formatEuros } from "./formatMoney";
+import { entryCount, payoutLabel } from "./prizePool";
 
 const ordinal = (n) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
@@ -42,6 +43,16 @@ export default function TournamentCompleteScreen({
   const bountyPrize = (record) => (record?.bounty_prize_cents || record?.bounty_won_cents || 0);
   const myRecord = mine ? playerRecord(mine.name) : null;
 
+  const entries = entryCount(tournament);
+  // What a place is worth in money. Once the tournament has settled, the
+  // ledger's own figure is the truest answer there is — it is what was actually
+  // recorded, bounties included — so it wins over anything recomputed here.
+  const prizeLabel = (finish, record) => {
+    if (record?.prize_cents > 0) return formatEuros(record.prize_cents);
+    const payout = payoutFor(finish);
+    return payout ? payoutLabel(tournament, payout, entries) : null;
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-lg panel rounded-xl p-6 shadow-2xl shadow-black/60">
@@ -57,7 +68,11 @@ export default function TournamentCompleteScreen({
             </h1>
             <p className="text-(--color-text-muted) text-sm mt-1">
               of {entrants} entrants
-              {myPayout && <span className="text-(--color-highlight-text)"> · {myPayout.percentage}% of the prize pool</span>}
+              {myPayout && (
+                <span className="text-(--color-highlight-text)">
+                  {` · ${prizeLabel(mine.finish, myRecord)}`}
+                </span>
+              )}
             </p>
           </div>
         ) : (
@@ -111,16 +126,24 @@ export default function TournamentCompleteScreen({
                 }`}>
                   {row.finish === 1 && "🏆 "}{row.name}{isMe && " (you)"}
                 </span>
+                {/* One money figure per player: what they took home. Once
+                    settled that already includes their knockouts, so the KO
+                    line breaks it down rather than adding to it — two euro
+                    amounts side by side read as a sum, and would be wrong. */}
                 <span className="text-xs text-(--color-text-muted) shrink-0 text-right">
-                  {payout && <span className="text-(--color-highlight-text)">{payout.percentage}%</span>}
+                  {(payout || record?.prize_cents > 0) && (
+                    <span className="text-(--color-highlight-text)">{prizeLabel(row.finish, record)}</span>
+                  )}
                   {bountyOn && bountyPrize(record) > 0 && (
-                    <span className="text-(--color-highlight-text)">
-                      {payout && " · "}
-                      {`${record.knockouts || 0} KO · ${formatEuros(bountyPrize(record))}`}
+                    <span>
+                      {(payout || record?.prize_cents > 0) ? " " : ""}
+                      {record?.prize_cents > 0
+                        ? `(${record.knockouts || 0} KO, ${formatEuros(bountyPrize(record))} of it)`
+                        : `${record.knockouts || 0} KO · ${formatEuros(bountyPrize(record))}`}
                     </span>
                   )}
-                  {(payout || bountyPrize(record) > 0) && record?.rebuy_count > 0 && " · "}
-                  {record?.rebuy_count > 0 && `${record.rebuy_count} rebuy${record.rebuy_count === 1 ? "" : "s"}`}
+                  {record?.rebuy_count > 0
+                    && ` · ${record.rebuy_count} rebuy${record.rebuy_count === 1 ? "" : "s"}`}
                 </span>
               </li>
             );

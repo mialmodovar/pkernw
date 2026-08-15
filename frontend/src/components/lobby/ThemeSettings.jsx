@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import useThemeStore from "../../store/themeStore";
+import GifPicker from "../game/GifPicker";
+import { gifPreviewUrl } from "../../api/giphy";
 import {
   ACCENT_SWATCHES,
   PATTERNS,
@@ -50,8 +52,9 @@ function SectionLabel({ children, action }) {
 }
 
 export default function ThemeSettings({ onClose }) {
-  const { preset, accent, pattern, update } = useThemeStore();
+  const { preset, accent, pattern, finisherGifId, update } = useThemeStore();
   const [listOpen, setListOpen] = useState(false);
+  const [finisherOpen, setFinisherOpen] = useState(false);
   const currentAccent = effectiveAccent({ preset, accent });
 
   // A settings panel that cannot be dismissed from the keyboard is a trap.
@@ -61,11 +64,12 @@ export default function ThemeSettings({ onClose }) {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (listOpen) setListOpen(false);
+      else if (finisherOpen) setFinisherOpen(false);
       else onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [listOpen, onClose]);
+  }, [listOpen, finisherOpen, onClose]);
 
   const choosePreset = (name) => {
     update({ preset: name });
@@ -217,6 +221,67 @@ export default function ThemeSettings({ onClose }) {
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
           The accent tints buttons and highlights; the pattern is the card back.
           Felt colour comes from the theme.
+        </p>
+      </div>
+
+      {/* Your finisher. Not a colour, but it belongs with the rest of how you
+          show up at a table, and this is where a player already comes to set
+          that. */}
+      <div className="mt-3 pt-3 border-t border-(--color-border)">
+        <SectionLabel
+          action={
+            finisherGifId && (
+              <button
+                onClick={() => update({ finisherGifId: null })}
+                className="text-[0.65rem] text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
+              >
+                Remove
+              </button>
+            )
+          }
+        >
+          Finisher
+        </SectionLabel>
+
+        <div className="relative flex items-center gap-2">
+          <button
+            onClick={() => setFinisherOpen((open) => !open)}
+            aria-expanded={finisherOpen}
+            className="flex items-center gap-2 p-1.5 rounded panel-raised panel-solid text-left flex-1 min-w-0"
+          >
+            {finisherGifId ? (
+              <img
+                src={gifPreviewUrl(finisherGifId)}
+                alt="Your finisher"
+                className="w-10 h-7 object-cover rounded shrink-0 border border-black/40"
+              />
+            ) : (
+              <span className="w-10 h-7 rounded shrink-0 border border-dashed border-(--color-border)
+                               flex items-center justify-center text-[0.6rem] text-(--color-text-muted)">
+                none
+              </span>
+            )}
+            <span className="text-sm text-(--color-silver) flex-1 truncate">
+              {finisherGifId ? "Change GIF" : "Choose a GIF"}
+            </span>
+          </button>
+
+          {finisherOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setFinisherOpen(false)} />
+              <div className="absolute right-0 top-full z-20 mt-1">
+                <GifPicker
+                  title="Search for your finisher"
+                  onPick={(id) => { update({ finisherGifId: id }); setFinisherOpen(false); }}
+                  onClose={() => setFinisherOpen(false)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
+          Plays in the middle of the table whenever you knock somebody out.
         </p>
       </div>
     </div>

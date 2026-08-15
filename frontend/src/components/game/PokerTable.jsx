@@ -8,6 +8,7 @@ import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
+import FinisherOverlay from "./FinisherOverlay";
 
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
@@ -104,6 +105,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       <div className={`felt absolute ${
         compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]"
       }`} />
+
+      {/* A knockout GIF, over the middle of the table. Sits inside the frame
+          so it covers the felt and not the whole page. */}
+      <FinisherOverlay />
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">

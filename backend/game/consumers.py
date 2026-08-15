@@ -21,6 +21,7 @@ from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 from .models import Hand, HandAction
 
 from .coordinator import MultiTableTournamentCoordinator
+from .giphy import clean_gif_id as _clean_gif_id
 
 
 _game_tasks: Dict[int, asyncio.Task] = {}
@@ -160,6 +161,7 @@ def _db_get_player_records(tournament_id):
             "user_id",
             "user__username",
             "user__profile__avatar_emoji",
+            "user__profile__theme",
             "table_id",
             "table__table_number",
             "seat",
@@ -513,7 +515,11 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         keeping a transcript of a friendly game is a promise nobody asked for.
         """
         text = str(data.get("text") or "").strip()[:CHAT_MAX_CHARS]
-        if not text:
+        # A GIF travels as its Giphy id and never as a URL. Taking a URL here
+        # would make table chat a way to put any image on somebody else's
+        # screen, from any host, with the table's own styling around it.
+        gif_id = _clean_gif_id(data.get("gif_id"))
+        if not text and not gif_id:
             return
 
         # A flood would push the game's own messages down the same socket.
@@ -533,6 +539,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             "user_id": self.user.id,
             "name": self.user.username,
             "text": text,
+            "gif_id": gif_id,
         })
 
     # ------------------------------------------------------------------
@@ -756,6 +763,10 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "user_id": record["user_id"],
                 "username": record["user__username"],
                 "avatar": record["user__profile__avatar_emoji"] or "\U0001F0CF",
+                # Their chosen knockout GIF, validated when it was saved and
+                # re-checked here: a profile written before the rule existed,
+                # or by hand, must not reach the table unchecked.
+                "finisher_gif_id": _clean_gif_id((record["user__profile__theme"] or {}).get("finisher_gif_id")),
                 "table_id": record["table_id"],
                 "table_number": record["table__table_number"],
                 "seat": record["seat"],

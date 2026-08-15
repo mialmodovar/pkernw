@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { send } from "../../api/socket";
+import { gifPreviewUrl } from "../../api/giphy";
+import GifPicker from "./GifPicker";
 import MediaControls from "./MediaControls";
 
 const MAX_CHARS = 240;
@@ -36,6 +38,7 @@ export function ChatUnreadBadge() {
 export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
   const chat = useGameStore((s) => s.chat);
   const [draft, setDraft] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const scroller = useRef(null);
 
   useEffect(() => {
@@ -49,6 +52,13 @@ export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
     if (!text) return;
     // A closed socket swallows this; clearing anyway would lose what was typed.
     if (send({ type: "chat_message", text: text.slice(0, MAX_CHARS) })) setDraft("");
+  };
+
+  // A GIF is its own message: sending it with whatever half-typed line is in
+  // the box would post that line by surprise.
+  const sendGif = (gifId) => {
+    send({ type: "chat_message", gif_id: gifId });
+    setPickerOpen(false);
   };
 
   return (
@@ -69,15 +79,38 @@ export default function ChatPanel({ className = "w-56 h-32", bare = false }) {
           <p className="text-(--color-text-muted)">Nobody has said anything yet.</p>
         ) : (
           chat.map((message) => (
-            <p key={message.id} className="leading-snug break-words">
+            <div key={message.id} className="leading-snug break-words">
               <span className="font-semibold text-(--color-highlight-text)">{message.name}</span>
-              <span className="text-(--color-silver)"> {message.text}</span>
-            </p>
+              {message.text && <span className="text-(--color-silver)"> {message.text}</span>}
+              {message.gifId && (
+                <img
+                  src={gifPreviewUrl(message.gifId)}
+                  alt={`GIF from ${message.name}`}
+                  loading="lazy"
+                  className="mt-1 rounded border border-(--color-border) max-w-full w-32"
+                />
+              )}
+            </div>
           ))
         )}
       </div>
 
-      <form onSubmit={submit} className="flex gap-1.5 p-2 border-t border-(--color-border)">
+      <form onSubmit={submit} className="relative flex gap-1.5 p-2 border-t border-(--color-border)">
+        {pickerOpen && (
+          <div className="absolute bottom-full left-2 mb-1 z-30">
+            <GifPicker onPick={sendGif} onClose={() => setPickerOpen(false)} />
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setPickerOpen((open) => !open)}
+          title="Send a GIF"
+          aria-label="Send a GIF"
+          aria-expanded={pickerOpen}
+          className="btn-secondary px-2 py-1 rounded text-[10px] font-bold tracking-wide transition-colors shrink-0"
+        >
+          GIF
+        </button>
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}

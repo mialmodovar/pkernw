@@ -23,6 +23,10 @@ export const DEFAULT_THEME = {
   preset: DEFAULT_PRESET,
   accent: null,
   pattern: DEFAULT_PATTERN,
+  // The GIF that plays in the middle of the table when you knock somebody out.
+  // A Giphy id, never a URL — see api/giphy.js. Null is "no finisher", which is
+  // what everyone starts with.
+  finisherGifId: null,
 };
 
 /** Card-back patterns, as templates rather than finished artwork.
@@ -439,11 +443,20 @@ const accentFamily = (accent, backdrop) => {
 /** Drops anything we would not have written ourselves — an unknown preset from
  *  an older client, a malformed accent, or the empty object every profile
  *  carried before themes existed. Always returns something applyTheme can use. */
+// Giphy ids are short and alphanumeric. Anything else did not come from the
+// picker, so it is dropped rather than passed on — the same rule the server
+// applies in game/giphy.py.
+const GIF_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 export function normalizeTheme(theme) {
   const preset = PRESETS[theme?.preset] ? theme.preset : DEFAULT_PRESET;
   const accent = isHexColour(theme?.accent) ? theme.accent.toLowerCase() : null;
   const pattern = PATTERNS[theme?.pattern] ? theme.pattern : DEFAULT_PATTERN;
-  return { preset, accent, pattern };
+  // The server speaks snake_case and the client camelCase; this is the one
+  // place the two names meet, so both spellings are accepted on the way in.
+  const rawGif = theme?.finisherGifId ?? theme?.finisher_gif_id ?? null;
+  const finisherGifId = GIF_ID.test(String(rawGif || "")) ? String(rawGif) : null;
+  return { preset, accent, pattern, finisherGifId };
 }
 
 /** The card back a preset/pattern pair produces. Exported so the settings panel

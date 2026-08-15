@@ -8,6 +8,11 @@ WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+# Vite bakes VITE_* into the bundle at build time, so the Giphy key has to
+# arrive here rather than as a runtime environment variable. Empty is fine: the
+# app builds and runs, and the GIF picker says it needs a key.
+ARG VITE_GIPHY_API_KEY=""
+ENV VITE_GIPHY_API_KEY=$VITE_GIPHY_API_KEY
 RUN npm run build
 
 

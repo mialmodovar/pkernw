@@ -48,7 +48,14 @@ const schedulePush = (theme) => {
   pushTimer = setTimeout(() => {
     // A failed save leaves the local copy in place and the account copy stale.
     // The next change retries, and nothing the player can see is lost.
-    api.patch("/auth/me/theme/", theme).catch(() => {});
+    // The server names this field in snake_case, like every other field it
+    // takes; the rest of the theme happens to be spelled the same either way.
+    api.patch("/auth/me/theme/", {
+      preset: theme.preset,
+      accent: theme.accent,
+      pattern: theme.pattern,
+      finisher_gif_id: theme.finisherGifId,
+    }).catch(() => {});
   }, PUSH_DELAY_MS);
 };
 

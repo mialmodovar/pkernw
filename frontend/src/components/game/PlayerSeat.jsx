@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import HoleCards from "./HoleCards";
+import SeatGifBubble from "./SeatGifBubble";
 import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
@@ -287,6 +288,9 @@ export default function PlayerSeat({
       p.is_disconnected ? "opacity-60" : dimmed ? "opacity-45" : ""
     }`}>
       {stack}
+      {/* Over the seat rather than only in the chat panel: a GIF is a reaction,
+          and a reaction belongs to the player it came from. */}
+      <SeatGifBubble userId={p.user_id} name={p.name} />
     </div>
   );
 }

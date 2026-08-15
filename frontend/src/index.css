@@ -363,6 +363,38 @@ button:disabled {
   100%    { opacity: 0; }
 }
 
+/* A GIF arriving over a seat. Pops in from the seat it belongs to, then simply
+   sits there — it is a picture to look at, not another thing moving. */
+@keyframes gif-pop {
+  0%   { opacity: 0; transform: translate(-50%, 10px) scale(0.7); }
+  60%  { opacity: 1; transform: translate(-50%, 0) scale(1.06); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.animate-gif-pop {
+  animation: gif-pop 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* The finisher, over the middle of the table. Lands hard, holds, then goes. */
+@keyframes finisher {
+  0%   { opacity: 0; transform: scale(0.75); }
+  10%  { opacity: 1; transform: scale(1.04); }
+  16%  { transform: scale(1); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.97); }
+}
+
+.animate-finisher {
+  animation: finisher 4s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+/* Both are decoration over a game somebody is trying to read. With motion
+   reduced they appear and leave without the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-gif-pop { animation: fade-in 0.12s ease-out; }
+  .animate-finisher { animation: fade-in 0.12s ease-out; }
+}
+
 /* Mucked cards slide away and fade rather than just dimming in place. */
 @keyframes fold-out {
   from { opacity: 0.85; transform: translateY(0) scale(1) rotate(0deg); }

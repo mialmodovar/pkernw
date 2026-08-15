@@ -199,9 +199,11 @@ class MultiTableTournamentCoordinator:
                 )
                 # remaining_count is now what is left after this bust, so 1 means
                 # this knockout ended the tournament.
+                eliminators = eliminators_by_victim.get(player._tp_id, [])
+                await self._announce_knockout(player, eliminators)
                 await self._pay_bounty(
                     player,
-                    eliminators_by_victim.get(player._tp_id, []),
+                    eliminators,
                     is_final=remaining_count <= 1,
                 )
 
@@ -373,6 +375,7 @@ class MultiTableTournamentCoordinator:
 
             runtime_player.name = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
+            runtime_player._finisher_gif_id = record.get("finisher_gif_id")
             runtime_player.chips = record["chips"]
             # Only read in on the first sight of a player. This runs before
             # every hand and the DB write happens after it, so re-reading here
@@ -842,6 +845,30 @@ class MultiTableTournamentCoordinator:
             # client-only is_disconnected flag.
             "is_sitting_out": player.is_sitting_out,
         }
+
+    async def _announce_knockout(
+        self,
+        victim: EnginePlayer,
+        eliminators: List[EnginePlayer],
+    ) -> None:
+        """Say who knocked whom out, and play their finisher if they have one.
+
+        Separate from the bounty payment above because it is not about money: a
+        tournament with no bounties still has knockouts worth marking. Sent per
+        eliminator, so a split pot plays both their GIFs.
+        """
+        for eliminator in eliminators:
+            await self._broadcast_to_table(
+                eliminator._table_number,
+                "player_knockout",
+                {
+                    "seat": eliminator._seat,
+                    "name": eliminator.name,
+                    "victim_seat": victim._seat,
+                    "victim_name": victim.name,
+                    "finisher_gif_id": getattr(eliminator, "_finisher_gif_id", None),
+                },
+            )
 
     async def _pay_bounty(
         self,

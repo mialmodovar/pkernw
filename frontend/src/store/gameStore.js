@@ -102,6 +102,25 @@ const useGameStore = create((set) => ({
   // itself once the animation has run.
   bountyFlash: null,
   bountyFlashSequence: 0,
+  // A GIF said in chat also goes up over the sender's seat. Keyed by user id —
+  // seats move between tables, and one player can only be showing one at a
+  // time, so a newer GIF replaces theirs rather than queueing behind it.
+  gifBubbles: {},
+  gifBubbleSequence: 0,
+  // The knockout GIF playing in the middle of the table, if any.
+  finisher: null,
+  finisherSequence: 0,
+  // Both are cleared by whatever is drawing them, once it has run its course.
+  // The store holds no timers: a component that unmounts mid-animation would
+  // leave one running with nothing to update.
+  clearGifBubble: (userId, id) => set((s) => {
+    const current = s.gifBubbles[userId];
+    if (!current || current.id !== id) return {};   // already replaced by a newer one
+    const next = { ...s.gifBubbles };
+    delete next[userId];
+    return { gifBubbles: next };
+  }),
+  clearFinisher: (id) => set((s) => (s.finisher?.id === id ? { finisher: null } : {})),
   connectionStatus: "connecting", // connecting | open | reconnecting | failed
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   messages: [],    // action log
@@ -480,12 +499,37 @@ const useGameStore = create((set) => ({
           chat: [...s.chat, {
             // The server does not number these, and two identical messages a
             // second apart still need distinct keys.
-            id: `${data.user_id}-${s.chat.length}-${data.text.length}`,
+            id: `${data.user_id}-${s.chat.length}-${(data.text || "").length}`,
             name: data.name,
             text: data.text,
+            gifId: data.gif_id || null,
           }].slice(-100),
+          // A GIF is said to the table, not just to the chat panel, so it also
+          // goes up over the seat of whoever sent it. Keyed by user rather than
+          // seat: seats move between tables, and this outlives a hand.
+          gifBubbles: data.gif_id
+            ? { ...s.gifBubbles, [data.user_id]: { gifId: data.gif_id, id: s.gifBubbleSequence + 1 } }
+            : s.gifBubbles,
+          gifBubbleSequence: s.gifBubbleSequence + (data.gif_id ? 1 : 0),
         }));
         break;
+
+      // Somebody knocked somebody out. Carries the eliminator's chosen GIF,
+      // which the table plays in the middle — see FinisherOverlay.
+      case "player_knockout":
+        set((s) => (data.finisher_gif_id
+          ? {
+              finisher: {
+                gifId: data.finisher_gif_id,
+                name: data.name,
+                victimName: data.victim_name,
+                id: s.finisherSequence + 1,
+              },
+              finisherSequence: s.finisherSequence + 1,
+            }
+          : {}));
+        break;
+
 
       case "player_disconnected":
         set((s) => ({
@@ -598,6 +642,7 @@ const useGameStore = create((set) => ({
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
+      bountyFlash: null, gifBubbles: {}, finisher: null,
     }),
 }));
 

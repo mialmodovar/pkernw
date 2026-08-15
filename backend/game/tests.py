@@ -1005,3 +1005,35 @@ class ChipDriftDetectionTests(TestCase):
             coordinator._check_chip_total("in a test")
 
         self.assertFalse(printed.called)
+
+
+class GifIdTests(TestCase):
+	"""A GIF is an id, never a URL. Everything else about the feature rests on
+	that, so the rule is checked rather than assumed."""
+
+	def test_a_plain_giphy_id_is_kept(self):
+		from game.giphy import clean_gif_id
+
+		self.assertEqual(clean_gif_id("3o7abKhOpu0NwenH3O"), "3o7abKhOpu0NwenH3O")
+		self.assertEqual(clean_gif_id("  l0He-Xyz_9  "), "l0He-Xyz_9")
+
+	def test_a_url_is_not_an_id(self):
+		from game.giphy import clean_gif_id
+
+		# The whole point: nobody gets to name the host an image comes from.
+		self.assertIsNone(clean_gif_id("https://evil.example/tracker.gif"))
+		self.assertIsNone(clean_gif_id("//media.giphy.com/media/abc/giphy.gif"))
+		self.assertIsNone(clean_gif_id("abc/../../etc/passwd"))
+		self.assertIsNone(clean_gif_id("<img src=x onerror=alert(1)>"))
+
+	def test_nothing_is_nothing(self):
+		from game.giphy import clean_gif_id
+
+		self.assertIsNone(clean_gif_id(""))
+		self.assertIsNone(clean_gif_id(None))
+		self.assertIsNone(clean_gif_id("   "))
+
+	def test_an_absurdly_long_id_is_refused(self):
+		from game.giphy import clean_gif_id
+
+		self.assertIsNone(clean_gif_id("a" * 65))

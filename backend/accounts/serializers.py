@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from game.giphy import GIF_ID_PATTERN, clean_gif_id
+
 from .models import Profile
 
 AVAILABLE_AVATARS = [
@@ -54,10 +56,21 @@ class AvatarUpdateSerializer(serializers.Serializer):
 
 
 class ThemeUpdateSerializer(serializers.Serializer):
-    """A whole theme at once — the client always sends both fields, and the
+    """A whole theme at once — the client always sends every field, and the
     stored blob is replaced rather than merged, so clearing the accent is just
     sending it as null."""
 
     preset = serializers.ChoiceField(choices=AVAILABLE_THEME_PRESETS, default="burgundy")
     accent = serializers.RegexField(HEX_COLOUR, allow_null=True, default=None)
     pattern = serializers.ChoiceField(choices=AVAILABLE_CARD_PATTERNS, default="weave")
+    # The GIF that plays in the middle of the table when this player knocks
+    # somebody out. Stored as a Giphy id, never a URL — see game/giphy.py for
+    # why that distinction is the whole security of the feature.
+    finisher_gif_id = serializers.RegexField(
+        GIF_ID_PATTERN.pattern, allow_null=True, allow_blank=True, default=None,
+    )
+
+    def validate_finisher_gif_id(self, value):
+        # An empty string is how the client says "no finisher", and it should
+        # land in the profile as a null rather than as a blank to test for.
+        return clean_gif_id(value)

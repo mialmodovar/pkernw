@@ -8,13 +8,16 @@ import {
   PRESET_NAMES,
   cardBackImage,
   effectiveAccent,
+  resolveTokens,
 } from "../../theme/themes";
 
 /** A miniature of what the preset does to the table: the actual felt gradient
  *  with the actual card back lying on it. Cheaper to read than three colour
  *  chips, and it is the real values rather than an approximation of them. */
 function PresetPreview({ preset, pattern }) {
-  const tokens = PRESETS[preset].tokens;
+  // Resolved rather than declared, so the dot shows the accent after the
+  // readability correction — the colour that will actually be on screen.
+  const tokens = resolveTokens({ preset, pattern });
   return (
     <span
       className="w-10 h-7 rounded relative overflow-hidden shrink-0 border border-black/40"

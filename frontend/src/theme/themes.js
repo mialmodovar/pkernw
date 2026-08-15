@@ -82,8 +82,6 @@ export const PRESETS = {
       "--color-surface": "rgba(38, 24, 27, 0.85)",
       "--color-surface-raised": "rgba(56, 34, 38, 0.9)",
       "--color-accent": "#8a1c2b",
-      "--color-accent-hover": "#a3283a",
-      "--color-accent-soft": "rgba(138, 28, 43, 0.18)",
       "--color-border": "rgba(196, 178, 165, 0.2)",
       "--color-border-strong": "rgba(196, 178, 165, 0.38)",
       "--color-silver": "#c9c3bd",
@@ -106,8 +104,6 @@ export const PRESETS = {
       "--color-surface": "rgba(24, 32, 28, 0.85)",
       "--color-surface-raised": "rgba(34, 46, 40, 0.9)",
       "--color-accent": "#1e6b45",
-      "--color-accent-hover": "#2a8556",
-      "--color-accent-soft": "rgba(30, 107, 69, 0.18)",
       "--color-border": "rgba(190, 202, 192, 0.2)",
       "--color-border-strong": "rgba(190, 202, 192, 0.38)",
       "--color-silver": "#c4ccc5",
@@ -130,8 +126,6 @@ export const PRESETS = {
       "--color-surface": "rgba(26, 30, 40, 0.85)",
       "--color-surface-raised": "rgba(38, 44, 58, 0.9)",
       "--color-accent": "#2f4b8a",
-      "--color-accent-hover": "#3d5fa8",
-      "--color-accent-soft": "rgba(47, 75, 138, 0.18)",
       "--color-border": "rgba(178, 188, 205, 0.2)",
       "--color-border-strong": "rgba(178, 188, 205, 0.38)",
       "--color-silver": "#c3c8d2",
@@ -166,15 +160,191 @@ const toRgb = (hex) => {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
-/** Toward white, so a chosen accent still has a lighter hover state. Mixing in
- *  sRGB is crude next to a proper colour space, but at 14% it is a nudge and
- *  nobody can tell the difference. */
-const lighten = (hex, amount) => {
-  const channels = toRgb(hex).map((c) => Math.round(c + (255 - c) * amount));
-  return `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-};
+const toHex = (rgb) =>
+  `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 
 const withAlpha = (hex, alpha) => `rgba(${toRgb(hex).join(", ")}, ${alpha})`;
+
+const hslWithAlpha = (hsl, alpha) =>
+  `rgba(${hslToRgb(hsl).map(Math.round).join(", ")}, ${alpha})`;
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+// --- HSL ------------------------------------------------------------------
+// The accent's relatives are made by moving lightness and leaving hue alone.
+// Mixing toward white in sRGB instead would work, but it washes the colour out
+// as it lightens: a deep red would go pink rather than bright red, and the
+// button gradient would lose the very thing that makes it read as one colour.
+
+const rgbToHsl = ([r, g, b]) => {
+  const [rd, gd, bd] = [r / 255, g / 255, b / 255];
+  const max = Math.max(rd, gd, bd);
+  const min = Math.min(rd, gd, bd);
+  const delta = max - min;
+  const l = (max + min) / 2;
+  if (!delta) return [0, 0, l * 100];
+
+  const s = delta / (1 - Math.abs(2 * l - 1));
+  let h;
+  if (max === rd) h = ((gd - bd) / delta) % 6;
+  else if (max === gd) h = (bd - rd) / delta + 2;
+  else h = (rd - gd) / delta + 4;
+  return [((h * 60) + 360) % 360, s * 100, l * 100];
+};
+
+const hslToRgb = ([h, s, l]) => {
+  const sd = s / 100;
+  const ld = l / 100;
+  const c = (1 - Math.abs(2 * ld - 1)) * sd;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = ld - c / 2;
+  const [r, g, b] =
+    h < 60 ? [c, x, 0] :
+    h < 120 ? [x, c, 0] :
+    h < 180 ? [0, c, x] :
+    h < 240 ? [0, x, c] :
+    h < 300 ? [x, 0, c] : [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+};
+
+/** Move a colour by lightness points, optionally scaling saturation. */
+const shift = (hex, { l = 0, s = 1 }) => {
+  const [hue, sat, lum] = rgbToHsl(toRgb(hex));
+  return toHex(hslToRgb([hue, clamp(sat * s, 0, 100), clamp(lum + l, 0, 100)]));
+};
+
+// --- Contrast -------------------------------------------------------------
+// WCAG relative luminance. Needed because an accent is a free colour choice:
+// white-on-burgundy reads fine, white-on-yellow does not, and nothing about
+// the hex itself says which you picked.
+
+const channelLuminance = (c) => {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+
+const luminance = (hex) => {
+  const [r, g, b] = toRgb(hex).map(channelLuminance);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+
+export const contrastRatio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+const INK_LIGHT = "#f1e9e6";
+const INK_DARK = "#14100f";
+
+const AA_NORMAL = 4.5;
+
+const worstContrast = (ink, stops) =>
+  Math.min(...stops.map((stop) => contrastRatio(ink, stop)));
+
+/** How far the whole gradient must move in lightness for `ink` to clear AA on
+ *  every stop, walking in `direction` (-1 darker, +1 lighter). 0 if it already
+ *  does. Always terminates: at either extreme one ink or the other is at
+ *  maximum contrast. */
+const offsetForInk = (stops, ink, direction) => {
+  for (let step = 0; step <= 60; step += 1) {
+    const moved = stops.map((stop) => shift(stop, { l: direction * step }));
+    if (worstContrast(ink, moved) >= AA_NORMAL) return direction * step;
+  }
+  return direction * 60;
+};
+
+/** Pick the ink, and the lightness correction the accent needs to earn it.
+ *
+ * A button is a gradient, and the two inks fail at opposite ends of it: light
+ * ink dies on the brightest stop, dark ink on the deepest. Mid-lightness
+ * accents — teal, olive, mid green — fail *both*, sitting in a band where
+ * neither white nor near-black reaches 4.5:1. No choice of text colour saves
+ * those, so the button itself has to move.
+ *
+ * Rather than clamp each stop (which collapses the gradient to a flat slab),
+ * the whole family shifts by one offset, keeping its shape and its hue and
+ * changing only how dark it sits. Whichever ink demands the smaller move wins,
+ * so the accent is distorted as little as the contrast requirement allows —
+ * usually not at all. */
+const inkPlan = (stops) => {
+  const darker = offsetForInk(stops, INK_LIGHT, -1);
+  const lighter = offsetForInk(stops, INK_DARK, 1);
+  return Math.abs(darker) <= Math.abs(lighter)
+    ? { ink: INK_LIGHT, offset: darker }
+    : { ink: INK_DARK, offset: lighter };
+};
+
+/** Raise lightness until the colour clears `target` contrast against `backdrop`.
+ *
+ * Accent-coloured text is the case a fixed palette cannot survive: a navy
+ * accent that looks right on a button is invisible as a link on a dark panel.
+ * Returns the lifted colour, or the lightest it could manage. */
+const liftToContrast = (hex, backdrop, target) => {
+  const [hue, sat, lum] = rgbToHsl(toRgb(hex));
+  let out = hex;
+  for (let step = 0; lum + step <= 94; step += 2) {
+    out = toHex(hslToRgb([hue, sat, lum + step]));
+    if (contrastRatio(out, backdrop) >= target) break;
+  }
+  return out;
+};
+
+/** Everything downstream of one accent hex.
+ *
+ * Kept in one place so a preset's own accent and a custom one are treated
+ * identically — the presets declare a single --color-accent and get the rest
+ * from here, which is what stops the palette drifting apart as it grows.
+ *
+ * `backdrop` is the preset's opaque panel colour: the most demanding surface
+ * accent text actually sits on, and lighter than the page behind it, so
+ * clearing it clears both. */
+const accentFamily = (accent, backdrop) => {
+  // The gradient the accent wants, before any readability correction. Ordered
+  // brightest to deepest; the two ends are what decide the ink.
+  const wanted = [
+    shift(accent, { l: 13, s: 0.86 }),
+    shift(accent, { l: 7, s: 0.91 }),
+    accent,
+    shift(accent, { l: -15 }),
+    shift(accent, { l: -10 }),
+  ];
+
+  const { ink, offset } = inkPlan(wanted.slice(0, 4));
+  const [bright, hover, mid, deep, deepHover] = wanted.map((stop) => shift(stop, { l: offset }));
+
+  // Links sit on a panel rather than on the accent, so they take the opposite
+  // correction — lifted until they are readable rather than pushed under ink.
+  const link = liftToContrast(shift(mid, { s: 0.78 }), backdrop, 7);
+
+  // The wash under a hovered panel or secondary button. Only the hue is taken
+  // from the accent; saturation and lightness are held at these mild fixed
+  // values so the tint stays a hint rather than a second accent — a vivid
+  // accent must not produce a vivid panel, and a grey one still has to give a
+  // visible hover. The numbers are the burgundy midtone this replaced, read
+  // back in HSL, so the default theme is unchanged.
+  // Capped by the accent's own saturation, never just set to the mild value: a
+  // grey accent has no hue at all (rgbToHsl reports 0, i.e. red), and tinting
+  // by it would put a red wash back under every hovered button — the exact
+  // thing this replaced.
+  const [hue, accentSaturation] = rgbToHsl(toRgb(mid));
+  const wash = (saturation, lightness, alpha) =>
+    hslWithAlpha([hue, Math.min(saturation, accentSaturation), lightness], alpha);
+
+  return {
+    "--color-accent": mid,
+    "--color-accent-hover": hover,
+    "--color-accent-bright": bright,
+    "--color-accent-deep": deep,
+    "--color-accent-deep-hover": deepHover,
+    "--color-accent-soft": withAlpha(mid, 0.18),
+    "--app-glow": withAlpha(mid, 0.18),
+    "--color-accent-text": ink,
+    "--color-accent-link": link,
+    "--color-accent-link-hover": shift(link, { l: 8 }),
+    "--color-surface-hover": wash(23.3, 23.5, 0.95),
+    "--color-surface-hover-deep": wash(21.2, 6.5, 0.7),
+  };
+};
 
 /** Drops anything we would not have written ourselves — an unknown preset from
  *  an older client, a malformed accent, or the empty object every profile
@@ -201,18 +371,15 @@ export function cardBackImage(preset, pattern) {
  * the largest surface on screen to get wrong. */
 export function resolveTokens(theme) {
   const { preset, accent, pattern } = normalizeTheme(theme);
-  const tokens = {
-    ...PRESETS[preset].tokens,
-    "--card-back-bg": cardBackImage(preset, pattern),
-  };
-  if (!accent) return tokens;
+  const base = PRESETS[preset].tokens;
 
   return {
-    ...tokens,
-    "--color-accent": accent,
-    "--color-accent-hover": lighten(accent, 0.14),
-    "--color-accent-soft": withAlpha(accent, 0.18),
-    "--app-glow": withAlpha(accent, 0.18),
+    ...base,
+    "--card-back-bg": cardBackImage(preset, pattern),
+    // A custom accent is not a special case: the preset's own accent goes
+    // through exactly the same derivation, so the two cannot look different in
+    // kind, only in hue.
+    ...accentFamily(accent || base["--color-accent"], base["--panel-floating-bg"]),
   };
 }
 

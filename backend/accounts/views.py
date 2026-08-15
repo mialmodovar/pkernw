@@ -4,7 +4,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from .models import Profile
-from .serializers import AvatarUpdateSerializer, RegisterSerializer, UserSerializer
+from .serializers import (
+    AvatarUpdateSerializer,
+    RegisterSerializer,
+    ThemeUpdateSerializer,
+    UserSerializer,
+)
 
 
 class RegisterView(generics.CreateAPIView):
@@ -31,3 +36,16 @@ def update_avatar(request):
     profile.save(update_fields=["avatar_emoji"])
 
     return Response({"avatar_emoji": profile.avatar_emoji}, status=status.HTTP_200_OK)
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_theme(request):
+    serializer = ThemeUpdateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.theme = serializer.validated_data
+    profile.save(update_fields=["theme"])
+
+    return Response(profile.theme, status=status.HTTP_200_OK)

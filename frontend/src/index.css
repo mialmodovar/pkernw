@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Every value here is a default, not a constant. The theme settings in the
+   lobby re-set these same custom properties on <html>, where an inline style
+   outranks this rule, so a preset re-skins the whole app without any component
+   knowing a theme exists. Keep anything a preset should be able to move in a
+   variable — a colour written straight into a rule is a colour the user cannot
+   change. See frontend/src/theme/themes.js for the values each preset writes. */
 @theme {
   --color-surface: rgba(38, 24, 27, 0.85);
   --color-surface-raised: rgba(56, 34, 38, 0.9);
@@ -10,6 +16,30 @@
   --color-border-strong: rgba(196, 178, 165, 0.38);
   --color-silver: #c9c3bd;
   --color-text-muted: #9c9490;
+}
+
+/* The composite surfaces — whole gradients and patterns rather than single
+   colours, so a preset can swap a flat felt for a radial one, or a woven card
+   back for a striped one, in the same slot. Kept out of @theme because Tailwind
+   would try to mint utilities from them. */
+:root {
+  --app-bg: linear-gradient(180deg, #0c0708 0%, #0a0708 40%, #070506 100%);
+  --app-glow: rgba(120, 26, 36, 0.18);
+
+  --felt-bg:
+    radial-gradient(ellipse 62% 62% at 50% 34%,
+      rgba(134, 34, 47, 0.6),
+      rgba(58, 16, 23, 0.92) 55%,
+      rgba(12, 7, 9, 0.99) 100%),
+    linear-gradient(180deg, #2a1015, #120809);
+
+  --card-back-bg: repeating-linear-gradient(45deg, #5e1523 0 3px, #4a1019 3px 6px);
+  --card-back-edge: rgba(214, 199, 190, 0.45);
+  --card-back-pip: rgba(224, 210, 200, 0.55);
+
+  /* The panel a floating window sits on has to be opaque (see .panel-floating),
+     so it cannot be derived from the translucent --color-surface. */
+  --panel-floating-bg: #23161a;
 }
 
 /* Themes native controls (checkboxes, radios, range sliders) so they stop
@@ -23,8 +53,8 @@ input[type="range"] {
 body {
   @apply text-gray-100;
   font-family: Inter, system-ui, -apple-system, sans-serif;
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(120, 26, 36, 0.18), transparent),
-    linear-gradient(180deg, #0c0708 0%, #0a0708 40%, #070506 100%);
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--app-glow), transparent),
+    var(--app-bg);
   min-height: 100vh;
 }
 
@@ -39,7 +69,7 @@ body {
    showing through your chat, so these get an opaque base under the same
    gradient — same panel, still legible wherever you park it. */
 .panel-floating {
-  background-color: #23161a;
+  background-color: var(--panel-floating-bg);
 }
 
 .panel-raised {
@@ -146,12 +176,7 @@ button:disabled {
 /* The light falls from above and the rim stays dark, which is what stops the
    felt reading as one flat sheet of red. */
 .felt {
-  background:
-    radial-gradient(ellipse 62% 62% at 50% 34%,
-      rgba(134, 34, 47, 0.6),
-      rgba(58, 16, 23, 0.92) 55%,
-      rgba(12, 7, 9, 0.99) 100%),
-    linear-gradient(180deg, #2a1015, #120809);
+  background: var(--felt-bg);
   border: 2px solid var(--color-border-strong);
   box-shadow:
     inset 0 0 90px rgba(0, 0, 0, 0.78),

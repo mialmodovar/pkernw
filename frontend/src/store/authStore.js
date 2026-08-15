@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import api from "../api/http";
+import useThemeStore from "./themeStore";
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -10,6 +11,7 @@ const useAuthStore = create((set, get) => ({
     if (!token) { set({ loading: false }); return; }
     try {
       const { data } = await api.get("/auth/me/");
+      useThemeStore.getState().hydrate(data.profile?.theme);
       set({ user: data, loading: false });
     } catch {
       set({ user: null, loading: false });
@@ -21,6 +23,7 @@ const useAuthStore = create((set, get) => ({
     localStorage.setItem("access", data.access);
     localStorage.setItem("refresh", data.refresh);
     const me = await api.get("/auth/me/");
+    useThemeStore.getState().hydrate(me.data.profile?.theme);
     set({ user: me.data });
   },
 
@@ -39,6 +42,10 @@ const useAuthStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");
+    // The theme is one of this account's belongings, so it leaves with them —
+    // otherwise the next player to log in on this browser would inherit the
+    // skin, and have it saved onto their own profile.
+    useThemeStore.getState().clear();
     set({ user: null });
   },
 }));

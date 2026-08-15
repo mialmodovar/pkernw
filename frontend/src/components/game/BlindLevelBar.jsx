@@ -1,15 +1,83 @@
+import { useState } from "react";
+
 import useGameStore from "../../store/gameStore";
 import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
+import EmojiPicker from "../lobby/EmojiPicker";
+import ThemeSettings from "../lobby/ThemeSettings";
 
-// Chips/BB display and the turn-cue sound switch. Both preferences persist.
+/**
+ * Who you are, and the two things about that you might want to change.
+ *
+ * The same avatar picker and appearance panel the lobby's profile card opens,
+ * reached from the one place your name appears at the table — going back to the
+ * lobby to change a card back is a strange thing to have to do mid-tournament,
+ * and this is where a player already looks for themselves.
+ *
+ * One panel at a time, like the profile card, since both drop from the same
+ * chip and two at once would overlap.
+ */
 function UserChip() {
   const user = useAuthStore((s) => s.user);
+  const updateAvatar = useAuthStore((s) => s.updateAvatar);
+  const [panel, setPanel] = useState(null);
+  const toggle = (name) => setPanel((current) => (current === name ? null : name));
+
   if (!user) return null;
+
   return (
-    <span className="flex items-center gap-1.5 pr-2 mr-1 border-r border-(--color-border)">
-      <span className="text-base leading-none">{user.profile?.avatar_emoji || "\u{1F0CF}"}</span>
-      <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">{user.username}</span>
+    <span className="relative flex items-center gap-1 pr-2 mr-1 border-r border-(--color-border)">
+      <button
+        type="button"
+        onClick={() => toggle("avatar")}
+        title="Change your avatar"
+        aria-label="Change your avatar"
+        aria-expanded={panel === "avatar"}
+        className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
+      >
+        <span className="text-base leading-none">{user.profile?.avatar_emoji || "\u{1F0CF}"}</span>
+        <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">{user.username}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => toggle("settings")}
+        title="Appearance settings"
+        aria-label="Appearance settings"
+        aria-expanded={panel === "settings"}
+        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+          panel === "settings" ? "bg-white/10" : "hover:bg-white/10"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"
+          className="w-3.5 h-3.5 text-(--color-text-muted)" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
+      {panel && (
+        <>
+          {/* Catches the click that dismisses it, the same way the theme
+              panel's own dropdown does. */}
+          <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
+          {/* Zero-height anchor: both panels position themselves against a
+              relative parent, and this gives them one of the right width
+              hanging off the correct edge of a chip that sits at the far
+              right of the bar. */}
+          {/* Above the table's own overlays, which reach z-40 for a finisher:
+              the bar comes first in the document, so an equal z-index would
+              lose to them. */}
+          <div className="absolute right-0 top-full z-50 w-60">
+            <div className="relative">
+              {panel === "avatar" && (
+                <EmojiPicker onSelect={updateAvatar} onClose={() => setPanel(null)} />
+              )}
+              {panel === "settings" && <ThemeSettings onClose={() => setPanel(null)} />}
+            </div>
+          </div>
+        </>
+      )}
     </span>
   );
 }

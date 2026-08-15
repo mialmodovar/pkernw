@@ -41,6 +41,7 @@ export const DEFAULT_CONFIG = {
   // Tournament context
   tableCount: 3,
   hostControls: true,
+  buyInCents: 2000,      // €20 a seat, so the prize figures have something to work from
 
   // Cameras
   cameras: "none",       // none | half | all

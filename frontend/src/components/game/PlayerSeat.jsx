@@ -54,6 +54,7 @@ export default function PlayerSeat({
   stats, onInspect, handStrength, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
+  const toggleBB = useGameStore((s) => s.toggleBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
   const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
   // Only used when the table is too crowded for a tile of its own.
@@ -133,8 +134,17 @@ export default function PlayerSeat({
 
   const markers = <PositionMarker key="markers" isDealer={isDealer} isSB={isSB} isBB={isBB} />;
 
+  // The plate is the stats target and the stack inside it is the chips/BB
+  // toggle, so this is a div with button semantics rather than a real <button>:
+  // a button inside a button is not something HTML allows.
   const plate = (
-    <button key="plate" type="button" onClick={onInspect}
+    <div key="plate" role="button" tabIndex={0} onClick={onInspect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onInspect?.();
+        }
+      }}
       title={`${p.name} — tap for stats`}
       className={`bg-[linear-gradient(160deg,rgba(56,34,38,0.95),rgba(16,10,11,0.95))] rounded-lg px-1.5 py-1 border-2 ${borderColor} w-full shadow-lg shadow-black/50
                      flex items-center gap-1 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
@@ -160,7 +170,17 @@ export default function PlayerSeat({
           ) : p.is_all_in ? (
             <span className="text-[#d9c07a] font-bold">ALL IN</span>
           ) : (
-            <>{formatChips(p.chips, showBB, bb)}</>
+            // Any stack at the table flips the whole table between chips and big
+            // blinds — the comparison you want is usually somebody else's stack,
+            // so you shouldn't have to find your own to ask for it.
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); toggleBB(); }}
+              title={showBB ? "Showing big blinds — tap for chips" : "Showing chips — tap for big blinds"}
+              className="rounded px-0.5 -mx-0.5 hover:bg-white/10 hover:text-(--color-silver) transition-colors"
+            >
+              {formatChips(p.chips, showBB, bb)}
+            </button>
           )}
         </div>
       </div>
@@ -171,7 +191,7 @@ export default function PlayerSeat({
           {Math.round(stats.vpip_pct)}
         </span>
       )}
-    </button>
+    </div>
   );
 
   const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} tone={timerTone} /> : null;

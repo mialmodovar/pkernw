@@ -46,12 +46,20 @@ const appendLog = (state, ...entries) => [...state.messages, ...entries].slice(-
 // message carries the news — the explicit resume event, or a state snapshot
 // arriving after a reconnect. Losing that would hand the actor a clock that had
 // silently run down while nobody could act.
-const resumeClock = (state) => ({
-  pausedSince: null,
-  actionStartedAt: state.actionStartedAt && state.pausedSince
-    ? state.actionStartedAt + (Date.now() - state.pausedSince)
-    : state.actionStartedAt,
-});
+const resumeClock = (state) => {
+  const frozenFor = state.pausedSince ? Date.now() - state.pausedSince : 0;
+  const shift = (at) => (at && frozenFor ? at + frozenFor : at);
+  return {
+    pausedSince: null,
+    actionStartedAt: shift(state.actionStartedAt),
+    levelClockAt: shift(state.levelClockAt),
+  };
+};
+
+// A level reading is only fresh when the server actually sent one; falling back
+// to the level we already had must not restart its clock.
+const withLevel = (next, current) =>
+  (next ? { level: next, levelClockAt: Date.now() } : { level: current });
 
 const useGameStore = create((set) => ({
   // Game state
@@ -70,6 +78,11 @@ const useGameStore = create((set) => ({
   // mid-turn has to pick up the real remaining time, not start counting afresh.
   actionStartedAt: null,
   pausedSince: null,
+  // Same idea for the blind level: `remaining_seconds` is a reading taken at a
+  // moment, so the moment has to be kept with it. Otherwise anything that mounts
+  // part way through a level — the info panel being reopened — counts down from
+  // the top again.
+  levelClockAt: null,
   dealerSeat: null,
   sbSeat: null,
   bbSeat: null,
@@ -137,7 +150,7 @@ const useGameStore = create((set) => ({
             : data.is_paused
             ? { pausedSince: s.pausedSince ?? Date.now() }
             : resumeClock(s)),
-          level: data.level || s.level,
+          ...withLevel(data.level, s.level),
           // Restored on reconnect so the table reads correctly mid-hand.
           dealerSeat: data.dealer_seat ?? null,
           sbSeat: data.sb_seat ?? null,
@@ -148,7 +161,7 @@ const useGameStore = create((set) => ({
 
       case "tournament_started":
         set({
-          level: data.level || null,
+          ...withLevel(data.level, null),
           standings: null,
           lastElimination: null,
           isPaused: false,
@@ -457,7 +470,7 @@ const useGameStore = create((set) => ({
 
       case "level_change":
         set((s) => ({
-          level: data,
+          ...withLevel(data, s.level),
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.tables || s.tableSummaries,
         }));
@@ -467,7 +480,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           isPaused: true,
           pausedSince: s.pausedSince ?? Date.now(),
-          level: data.level || s.level,
+          ...withLevel(data.level, s.level),
           messages: appendLog(s, entry(s, "info", "Tournament paused")),
         }));
         break;
@@ -476,7 +489,7 @@ const useGameStore = create((set) => ({
         set((s) => ({
           isPaused: false,
           ...resumeClock(s),
-          level: data.level || s.level,
+          ...withLevel(data.level, s.level),
           messages: appendLog(s, entry(s, "info", "Tournament resumed")),
         }));
         break;
@@ -505,7 +518,7 @@ const useGameStore = create((set) => ({
 
       case "break_started":
         set((s) => ({
-          level: data,
+          ...withLevel(data, s.level),
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.tables || s.tableSummaries,
           messages: appendLog(s, entry(s, "info", `Break started (${data.duration_minutes} min)`)),
@@ -514,7 +527,10 @@ const useGameStore = create((set) => ({
 
       case "break_tick":
         set((s) => ({
-          level: s.level ? { ...s.level, remaining_seconds: data.remaining_seconds } : s.level,
+          ...withLevel(
+            s.level ? { ...s.level, remaining_seconds: data.remaining_seconds } : null,
+            s.level,
+          ),
         }));
         break;
 
@@ -540,7 +556,7 @@ const useGameStore = create((set) => ({
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
-      level: null, showdown: null,
+      level: null, levelClockAt: null, showdown: null,
       potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],

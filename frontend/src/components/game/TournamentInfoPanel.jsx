@@ -1,6 +1,7 @@
 import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import { formatClock, useLevelCountdown } from "./useLevelCountdown";
 
 function Row({ label, children }) {
   return (
@@ -21,6 +22,7 @@ function Row({ label, children }) {
 export default function TournamentInfoPanel({ tournament, username }) {
   const [open, setOpen] = useState(false);
   const level = useGameStore((s) => s.level);
+  const levelRemaining = useLevelCountdown();
   const tableSummaries = useGameStore((s) => s.tableSummaries);
   const currentTableNumber = useGameStore((s) => s.currentTableNumber);
   const showBB = useGameStore((s) => s.showBB);
@@ -54,23 +56,60 @@ export default function TournamentInfoPanel({ tournament, username }) {
   const inTheMoney = paidPlaces > 0 && remaining <= paidPlaces;
   const onTheBubble = paidPlaces > 0 && remaining === paidPlaces + 1;
 
+  // Bust now and you finish where the last player standing after you would:
+  // in the place equal to the number of players still in.
+  const payoutFor = (place) => payouts.find((row) => row.place === place);
+  const prizeNow = inTheMoney ? payoutFor(remaining) : null;
+  const nextPrize = inTheMoney ? payoutFor(remaining - 1) : null;
+
+  // Every rebuy is another buy-in — the same sum the settlement ledger makes.
+  const poolCents = (tournament?.buy_in_cents || 0) * (tournament?.players || [])
+    .reduce((sum, p) => sum + 1 + (p.rebuy_count || 0), 0);
+  const money = (percentage) => (poolCents > 0
+    ? (Math.round(poolCents * percentage) / 10000).toLocaleString(undefined,
+        { style: "currency", currency: "EUR", maximumFractionDigits: 2 })
+    : null);
+  const withMoney = (row) => `${row.percentage}%${money(row.percentage) ? ` · ${money(row.percentage)}` : ""}`;
+
+  // The blinds and the clock stay on screen whether or not the panel is open —
+  // they are the two things you look up mid-hand without wanting to read a card.
+  const levelLabel = level
+    ? level.is_break
+      ? "Break"
+      : `L${level.blind_level_number || 1} · ${level.small_blind}/${level.big_blind}`
+    : "—";
+  const levelClock = levelRemaining != null
+    ? formatClock(levelRemaining)
+    : level?.duration_minutes != null ? `${level.duration_minutes}:00` : null;
+
   // Closed it is a single button: this is reference you want between hands, not
   // something worth a corner of the felt every hand.
   const corner = "absolute top-1 right-1 md:top-2 md:right-2 z-10";
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Tournament info"
-        aria-label="Show tournament info"
-        className={`${corner} w-8 h-8 rounded-full panel flex items-center justify-center
-                    font-serif italic font-bold text-base leading-none text-(--color-silver)
-                    shadow-lg shadow-black/50 hover:border-(--color-border-strong) transition-colors`}
-      >
-        i
-      </button>
+      <div className={`${corner} flex items-center gap-2 panel panel-floating rounded-full
+                       py-1 pl-3 pr-1 shadow-lg shadow-black/50`}>
+        <span className="text-[11px] font-semibold leading-none text-(--color-silver) whitespace-nowrap">
+          {levelLabel}
+        </span>
+        {levelClock && (
+          <span className="text-[11px] font-mono leading-none tabular-nums text-(--color-text-muted)">
+            {levelClock}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Tournament info"
+          aria-label="Show tournament info"
+          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center
+                     font-serif italic font-bold text-sm leading-none text-(--color-silver)
+                     hover:bg-white/10 transition-colors"
+        >
+          i
+        </button>
+      </div>
     );
   }
 
@@ -93,8 +132,11 @@ export default function TournamentInfoPanel({ tournament, username }) {
 
       <div className="px-3 pb-3 space-y-2">
           <div className="space-y-1">
-            <Row label="Blinds">
+            <Row label={level?.is_break ? "Break" : "Blinds"}>
               {level ? `${level.small_blind}/${level.big_blind}${level.ante ? ` (${level.ante})` : ""}` : "—"}
+            </Row>
+            <Row label="Level ends">
+              <span className="font-mono tabular-nums">{levelClock || "—"}</span>
             </Row>
             <Row label="Next level">
               {nextLevel
@@ -125,6 +167,19 @@ export default function TournamentInfoPanel({ tournament, username }) {
                 ) : (
                   <span>{paidPlaces} paid</span>
                 )}
+              </Row>
+            )}
+            {prizeNow && (
+              <Row label="Your prize now">
+                <span className="text-[#d9c07a]">{withMoney(prizeNow)}</span>
+              </Row>
+            )}
+            {nextPrize && (
+              <Row label="Next jump">
+                <span className="text-[#d9c07a]">{withMoney(nextPrize)}</span>
+                <span className="text-(--color-text-muted)">
+                  {` · ${remaining - 1}${remaining - 1 === 1 ? "st" : remaining - 1 === 2 ? "nd" : remaining - 1 === 3 ? "rd" : "th"}`}
+                </span>
               </Row>
             )}
           </div>

@@ -256,7 +256,11 @@ export default function SandboxPanel() {
               <Pick value={config.stackSize} onChange={(v) => patch({ stackSize: v })}
                 options={[["short", "Short"], ["normal", "Normal"], ["deep", "Millions"]]} />
             </Row>
-            <Row label="Active tables">
+            <Row label="Buy-in (cents)">
+            <Num value={config.buyInCents} min={0} step={100}
+              onChange={(v) => patch({ buyInCents: v })} />
+          </Row>
+          <Row label="Active tables">
               <Num value={config.tableCount} min={1} max={12} onChange={(v) => patch({ tableCount: v })} />
             </Row>
             <p className={NOTE}>

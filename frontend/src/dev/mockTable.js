@@ -143,10 +143,13 @@ export function buildTournament(config, players, heroName) {
     players_per_table: config.capacity,
     starting_stack: 30_000,
     levels,
+    // `place`, as the real payout rows use — the info panel and the settlement
+    // ledger both key off it.
+    buy_in_cents: config.buyInCents,
     payout_structure: [
-      { position: 1, percentage: 50 },
-      { position: 2, percentage: 30 },
-      { position: 3, percentage: 20 },
+      { place: 1, label: "1st", percentage: 50 },
+      { place: 2, label: "2nd", percentage: 30 },
+      { place: 3, label: "3rd", percentage: 20 },
     ],
     players: players.map((p) => ({
       username: p.name,

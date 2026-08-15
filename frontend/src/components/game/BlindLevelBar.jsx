@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
 import useGameStore from "../../store/gameStore";
+import { formatClock, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
 
 // Chips/BB display and the turn-cue sound switch. Both preferences persist.
@@ -54,23 +54,7 @@ function DisplayToggles() {
 
 export default function BlindLevelBar() {
   const level = useGameStore((s) => s.level);
-  const isPaused = useGameStore((s) => s.isPaused);
-  const [remaining, setRemaining] = useState(null);
-
-  useEffect(() => {
-    if (!level || !level.remaining_seconds) {
-      setRemaining(null);
-      return;
-    }
-    setRemaining(level.remaining_seconds);
-    const interval = setInterval(() => {
-      setRemaining((prev) => {
-        if (isPaused) return prev;
-        return prev != null && prev > 0 ? prev - 1 : 0;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isPaused, level]);
+  const remaining = useLevelCountdown();
 
   if (!level) {
     return (
@@ -83,12 +67,6 @@ export default function BlindLevelBar() {
 
   const isTimed = level.duration_minutes != null;
   const isBreak = Boolean(level.is_break);
-
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  };
 
   return (
     <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
@@ -103,7 +81,7 @@ export default function BlindLevelBar() {
         <span className="text-(--color-text-muted)">
           {isTimed
             ? remaining != null
-              ? formatTime(remaining)
+              ? formatClock(remaining)
               : `${level.duration_minutes}:00`
             : `Hand ${level.hands_in_level || 0} / ${level.duration_hands}`}
         </span>

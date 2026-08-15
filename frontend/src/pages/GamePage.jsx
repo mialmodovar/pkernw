@@ -10,6 +10,7 @@ import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
 import StartCountdown from "../components/game/StartCountdown";
+import RebuyPrompt from "../components/game/RebuyPrompt";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
 import ActionPanel, { ActionCountdownBadge } from "../components/game/ActionPanel";
@@ -394,6 +395,13 @@ export default function GamePage() {
           </>
         )}
         <StartCountdown myUserId={user?.id} />
+        {/* Over the table rather than instead of it: the hand that busted you
+            is still worth looking at while you decide. */}
+        <RebuyPrompt
+          tournamentId={id}
+          myUserId={user?.id}
+          startingChips={tournament?.starting_chips}
+        />
         <BreakOverlay level={level} nextLevel={nextLevel} />
         {isPaused && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">

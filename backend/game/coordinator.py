@@ -57,6 +57,9 @@ class MultiTableTournamentCoordinator:
         auto_remove_offline_seconds: int = 0,
         bounty: Optional[BountyConfig] = None,
         showdown_seconds: Optional[float] = None,
+        allow_rebuys: bool = False,
+        max_rebuys: int = 0,
+        rebuy_level: int = 0,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
@@ -74,6 +77,13 @@ class MultiTableTournamentCoordinator:
         self.showdown_seconds = float(
             self.INTER_HAND_SECONDS if showdown_seconds is None else max(1.0, showdown_seconds)
         )
+        # Enough of the rebuy rules to know whether busting somebody is worth
+        # holding the table for. The REST endpoint stays the authority on
+        # whether a particular rebuy is allowed; this only decides whether to
+        # wait and who to ask.
+        self.allow_rebuys = bool(allow_rebuys)
+        self.max_rebuys = max(0, max_rebuys or 0)
+        self.rebuy_level = max(0, rebuy_level or 0)
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -107,6 +117,11 @@ class MultiTableTournamentCoordinator:
         self._show_open = False
         self._show_deadline = 0.0
         self._shown_this_hand: set[int] = set()
+        # A separate deadline from the one above: the reveal window is capped
+        # against a player showing card after card to stall the table, and a
+        # rebuy has nothing to do with that cap.
+        self._rebuy_deadline = 0.0
+        self._rebuy_pending: set[int] = set()
         self.is_paused = False
         self._paused_at: Optional[float] = None
         # Set once the winner is being decided, so a rebuy can't slip in after
@@ -242,6 +257,10 @@ class MultiTableTournamentCoordinator:
                     is_final=remaining_count <= 1,
                 )
 
+            # Offered before the pause below, so the wait it asks for is the
+            # wait the table actually takes.
+            await self._offer_rebuys(busted)
+
             self._check_chip_total(f"after hand {self._hands_played + 1}")
             self._hands_in_level += 1
             self._hands_played += 1
@@ -283,6 +302,10 @@ class MultiTableTournamentCoordinator:
     # The default pause between hands, when a tournament does not say. Long
     # enough to read the result and to look at anything somebody showed.
     INTER_HAND_SECONDS = 5.0
+    # How long the table waits for somebody who just busted to decide whether
+    # they are buying back in. Being told to rebuy and then watching the next
+    # hand start without you is the same as not being offered.
+    REBUY_WINDOW_SECONDS = 10.0
     # Ten players each showing in turn should not stall the tournament, so the
     # extensions are capped at a multiple of the pause rather than unbounded.
     MAX_GAP_MULTIPLIER = 3
@@ -301,15 +324,49 @@ class MultiTableTournamentCoordinator:
         try:
             while True:
                 now = time.monotonic()
-                deadline = min(
-                    self._show_deadline,
-                    started + self.showdown_seconds * self.MAX_GAP_MULTIPLIER,
+                deadline = max(
+                    min(self._show_deadline, started + self.showdown_seconds * self.MAX_GAP_MULTIPLIER),
+                    # Capped on its own terms rather than by the reveal cap,
+                    # which exists to stop a player stalling a card at a time.
+                    min(self._rebuy_deadline, started + self.REBUY_WINDOW_SECONDS),
                 )
                 if now >= deadline:
                     return
                 await asyncio.sleep(min(0.25, deadline - now))
         finally:
             self._show_open = False
+
+    def _can_rebuy(self, player: EnginePlayer) -> bool:
+        """Whether it is worth holding the table open for this player.
+
+        The same three questions the rebuy endpoint asks, so the table never
+        waits on an offer that would be refused: rebuys are allowed at all, this
+        player has one left, and the rebuy period has not closed.
+        """
+        if not self.allow_rebuys or self._finishing:
+            return False
+        if getattr(player, "_rebuy_count", 0) >= self.max_rebuys:
+            return False
+        return self.current_blind_level_number <= self.rebuy_level
+
+    async def _offer_rebuys(self, busted: List[EnginePlayer]) -> None:
+        """Hold the table while whoever just busted decides."""
+        candidates = [player for player in busted if self._can_rebuy(player)]
+        if not candidates:
+            return
+
+        self._rebuy_pending = {player._user_id for player in candidates}
+        self._rebuy_deadline = time.monotonic() + self.REBUY_WINDOW_SECONDS
+        await self.broadcast_tournament(
+            "rebuy_window",
+            {
+                "seconds": int(self.REBUY_WINDOW_SECONDS),
+                # Sent to the whole tournament rather than the table: a busted
+                # player holds no seat, so the table they were at is no longer
+                # theirs to be addressed on.
+                "user_ids": sorted(self._rebuy_pending),
+            },
+        )
 
     async def show_cards(self, user_id: int, indices: List[int]) -> bool:
         """Show one or both of your cards to the table, after the hand.
@@ -512,6 +569,11 @@ class MultiTableTournamentCoordinator:
         # looks like a rebuy that did not work.
         player._waiting_for_hand = True
         self._seat_waiting_player(player)
+        # The table was holding for this decision, and it has been made. Once
+        # everybody it was waiting on has bought back in, it stops waiting.
+        self._rebuy_pending.discard(user_id)
+        if not self._rebuy_pending:
+            self._rebuy_deadline = 0.0
 
         await self.persist_player_states(list(self._players_by_id.values()))
         await self.broadcast_tournament(
@@ -597,6 +659,7 @@ class MultiTableTournamentCoordinator:
             runtime_player.is_eliminated = record["is_eliminated"]
             runtime_player.finish_position = record["finish_position"] or 0
             runtime_player.time_bank_seconds_remaining = record["time_bank_seconds_remaining"] or 0
+            runtime_player._rebuy_count = record.get("rebuy_count") or 0
             runtime_player._user_id = record["user_id"]
             runtime_player._table_id = record["table_id"]
             runtime_player._table_number = record["table_number"] or 1

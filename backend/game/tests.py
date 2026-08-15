@@ -13,7 +13,7 @@ from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 from .coordinator import MultiTableTournamentCoordinator
 from .consumers import (
     CHAT_MESSAGE_BUDGET, MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues,
-    _media_presence, _request_action,
+    _media_presence, _player_channels, _request_action,
 )
 
 User = get_user_model()
@@ -1037,3 +1037,49 @@ class GifIdTests(TestCase):
 		from game.giphy import clean_gif_id
 
 		self.assertIsNone(clean_gif_id("a" * 65))
+
+
+class TimeBankWhileDisconnectedTests(TestCase):
+	"""A time bank is time to think, and somebody whose connection dropped is
+	not thinking with it."""
+
+	def _scenario(self, connected, base_timer=1, bank=4):
+		async def run_scenario():
+			tournament_id = 998
+			user_id = 321
+			key = (tournament_id, user_id)
+			_action_queues[key] = asyncio.Queue()
+			if connected:
+				_player_channels[key] = "a-channel"
+
+			player = Player("away player", 1000)
+			player._user_id = user_id
+			player._seat = 0
+			player.time_bank_seconds_remaining = bank
+
+			try:
+				return await _request_action(
+					tournament_id,
+					1,
+					player,
+					{"valid_actions": ["fold", "check"], "action_timer_seconds": base_timer},
+				), player
+			finally:
+				_action_queues.pop(key, None)
+				_player_channels.pop(key, None)
+
+		return async_to_sync(run_scenario)()
+
+	def test_a_disconnected_player_keeps_their_bank(self):
+		(action, _amount), player = self._scenario(connected=False)
+
+		# Their turn still ends with the base timer — one dropped connection
+		# must not hold up everyone else for as long as it stays dropped.
+		self.assertEqual(action, "check")
+		self.assertEqual(player.time_bank_seconds_remaining, 4)
+
+	def test_a_connected_player_who_sits_there_spends_it(self):
+		(action, _amount), player = self._scenario(connected=True, base_timer=0, bank=1)
+
+		self.assertEqual(action, "check")
+		self.assertEqual(player.time_bank_seconds_remaining, 0)

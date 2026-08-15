@@ -1,5 +1,5 @@
 import useGameStore from "../../store/gameStore";
-import { formatClock, useLevelCountdown } from "./useLevelCountdown";
+import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
 
 // Chips/BB display and the turn-cue sound switch. Both preferences persist.
@@ -78,12 +78,14 @@ export default function BlindLevelBar() {
       </span>
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
         <DisplayToggles />
-        <span className="text-(--color-text-muted)">
-          {isTimed
-            ? remaining != null
-              ? formatClock(remaining)
-              : `${level.duration_minutes}:00`
-            : `Hand ${level.hands_in_level || 0} / ${level.duration_hands}`}
+        {/* What is left, not what has gone: a timed level says how long you
+            have, and a level counted in hands should answer the same question
+            rather than make you subtract. The tally is still in the tooltip. */}
+        <span
+          className="text-(--color-text-muted)"
+          title={isTimed ? undefined : `Hand ${level.hands_in_level || 0} of ${level.duration_hands}`}
+        >
+          {levelRemainingLabel(level, remaining)}
         </span>
       </div>
     </div>

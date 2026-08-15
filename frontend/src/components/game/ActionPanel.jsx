@@ -263,10 +263,10 @@ export default function ActionPanel({
                 onChange={(e) => setRaiseText(e.target.value)}
                 onBlur={commitRaiseText}
                 onKeyDown={(e) => { if (e.key === "Enter") commitRaiseText(); }}
-                // A decimal keypad on a phone, and no native spinner: see
-                // .no-spinner in index.css for why the arrows had to go.
+                // A decimal keypad on a phone. The spinner is gone for every
+                // .input-field number input — see index.css.
                 inputMode="decimal"
-                className={`input-field no-spinner text-sm text-right font-mono rounded py-1.5 md:py-1 ${useBBControls ? "w-20 pr-7 pl-1.5" : "w-20 px-1.5"}`}
+                className={`input-field text-sm text-right font-mono rounded py-1.5 md:py-1 ${useBBControls ? "w-20 pr-7 pl-1.5" : "w-20 px-1.5"}`}
               />
               {useBBControls && (
                 <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs font-semibold text-(--color-text-muted)">

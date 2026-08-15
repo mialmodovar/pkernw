@@ -16,7 +16,7 @@ from .serializers import (
 )
 
 # Import shared runner reference from consumers (will be populated at runtime)
-from game.consumers import _tournament_runners, late_registration_open
+from game.consumers import _tournament_runners, late_registration_open, stop_tournament_engine
 
 
 def _start_due_scheduled_tournaments():
@@ -350,25 +350,36 @@ def quit_tournament(request, pk):
 @api_view(["DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def delete_tournament(request, pk):
-    """Let the host discard a tournament that never started.
+    """Let the host discard a tournament that is not being played.
 
-    Only before the first hand: once play begins the tournament owns results
-    and hand history that other players have a claim on.
+    Before the first hand, or while paused. A paused tournament is one the host
+    has already stopped, and a night that breaks up half way through should not
+    leave a game nobody can get rid of. A running one is still refused: players
+    are in hands, and the rows would go out from under them.
+
+    Deleting a paused tournament takes its hand history with it. Nothing owed is
+    lost — the ledger is only written when a tournament finishes — but the hands
+    that were played are gone, which is why this is the host's call and nobody
+    else's.
     """
     try:
         tournament = Tournament.objects.get(pk=pk, host=request.user)
     except Tournament.DoesNotExist:
         return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
 
-    if tournament.status != "lobby":
+    if tournament.status not in ("lobby", "paused"):
         return Response(
-            {"error": "Cannot delete a tournament that has already started"},
+            {"error": "Only a tournament in the lobby or paused can be deleted"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # An engine should never be running for a lobby tournament, but if one is,
-    # deleting the rows from under it would leave it writing to nothing.
-    if pk in _tournament_runners:
+    if tournament.status == "paused":
+        # The engine is alive and waiting to be resumed. Stop it before the
+        # rows go, or it wakes up and writes to a tournament that is not there.
+        stop_tournament_engine(pk)
+    elif pk in _tournament_runners:
+        # An engine should never be running for a lobby tournament, but if one
+        # is, deleting the rows from under it would leave it writing to nothing.
         return Response(
             {"error": "Tournament is still running"},
             status=status.HTTP_400_BAD_REQUEST,

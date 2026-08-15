@@ -109,6 +109,8 @@ const useGameStore = create((set) => ({
   // Between hands you may show what you had. The server decides whether a
   // reveal is allowed; this is only whether to offer it.
   showCardsOpen: false,
+  // { userIds, endsAt } while the table waits for a busted player to rebuy.
+  rebuyWindow: null,
   isPaused: false,
   standings: null, // final standings when tournament finishes
   lastElimination: null, // { seat, name, finish_position, reason }
@@ -242,6 +244,8 @@ const useGameStore = create((set) => ({
           allInEquity: null,
           countdown: null,
           showCardsOpen: false,
+          // The wait is over either way: the next hand is being dealt.
+          rebuyWindow: null,
           holeCards: [],
           handStrength: null,
           actionOnSeat: null,
@@ -571,6 +575,18 @@ const useGameStore = create((set) => ({
         }));
         break;
 
+      // The table is holding for whoever just busted to decide. Stored with
+      // the moment it ends rather than a count, so a component that mounts
+      // part way through it picks up the real time left.
+      case "rebuy_window":
+        set({
+          rebuyWindow: {
+            userIds: data.user_ids || [],
+            endsAt: Date.now() + (data.seconds || 0) * 1000,
+          },
+        });
+        break;
+
       // Somebody knocked somebody out. Carries the eliminator's chosen GIF,
       // which the table plays in the middle — see FinisherOverlay.
       case "player_knockout":
@@ -706,7 +722,7 @@ const useGameStore = create((set) => ({
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
       bountyFlash: null, gifBubbles: {}, finisher: null, equityShake: null,
-      readyUserIds: [], readyTotal: 0, showCardsOpen: false,
+      readyUserIds: [], readyTotal: 0, showCardsOpen: false, rebuyWindow: null,
     }),
 }));
 

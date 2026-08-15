@@ -46,7 +46,12 @@ export default function LobbyPage() {
   };
   const onDelete = async (tournament) => {
     const seated = tournament.player_count || 0;
-    const warning = seated > 1
+    // A paused tournament has been played, so the warning says what that
+    // costs rather than the one about seats nobody has taken yet.
+    const warning = tournament.status === "paused"
+      ? `Delete "${tournament.name}"? It is paused mid-play — the hands already `
+        + `played are lost, and the ${seated} players in it lose the tournament.`
+      : seated > 1
       ? `Delete "${tournament.name}"? ${seated} players are registered and will lose their seats.`
       : `Delete "${tournament.name}"? This cannot be undone.`;
     if (!window.confirm(warning)) return;

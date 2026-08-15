@@ -3,7 +3,7 @@ import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 import { formatEuros } from "./formatMoney";
 import { entryCount, payoutLabel } from "./prizePool";
-import { formatClock, useLevelCountdown } from "./useLevelCountdown";
+import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 
 function Row({ label, children }) {
   return (
@@ -97,9 +97,9 @@ export default function TournamentInfoPanel({ tournament, username }) {
       ? "Break"
       : `L${level.blind_level_number || 1} · ${level.small_blind}/${level.big_blind}`
     : "—";
-  const levelClock = levelRemaining != null
-    ? formatClock(levelRemaining)
-    : level?.duration_minutes != null ? `${level.duration_minutes}:00` : null;
+  // Works for both kinds of level: a clock for a timed one, hands remaining
+  // for one counted in hands, which used to show nothing at all here.
+  const levelClock = levelRemainingLabel(level, levelRemaining);
 
   // Closed it is a single button: this is reference you want between hands, not
   // something worth a corner of the felt every hand.

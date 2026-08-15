@@ -45,3 +45,26 @@ export function formatClock(seconds) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+/**
+ * How much of this level is left, however the level measures itself.
+ *
+ * A level counted in hands had no answer to this at all: the panel showed a
+ * dash and the bar showed how many hands had been played, which is the one
+ * number you can work out for yourself. What you actually want to know is the
+ * same thing the clock tells you on a timed level — how long you have before
+ * the blinds go up — so both kinds say that, in their own units.
+ */
+export function levelRemainingLabel(level, remainingSeconds) {
+  if (!level) return null;
+
+  if (level.duration_minutes != null) {
+    return formatClock(remainingSeconds != null ? remainingSeconds : level.duration_minutes * 60);
+  }
+
+  const total = level.duration_hands;
+  if (!total) return null;
+  const left = Math.max(0, total - (level.hands_in_level || 0));
+  if (left === 0) return "blinds up next";
+  return left === 1 ? "last hand" : `${left} hands`;
+}

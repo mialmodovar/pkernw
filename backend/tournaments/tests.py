@@ -2083,3 +2083,175 @@ class RebuySeatVisibilityTests(TestCase):
 		async_to_sync(coordinator._rebalance_tables)()
 
 		self.assertFalse(busted._waiting_for_hand)
+
+
+class DeletePausedTournamentTests(APITestCase):
+	"""A night that breaks up half way through should not leave a game nobody
+	can get rid of."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="del_host", password="secret123", is_staff=True)
+		self.other = User.objects.create_user(username="del_other", password="secret123")
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _tournament(self, status_value):
+		return Tournament.objects.create(host=self.host, name="Night", status=status_value)
+
+	def test_the_host_can_delete_a_paused_tournament(self):
+		tournament = self._tournament("paused")
+
+		response = self.client.delete(reverse("tournament-delete", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		self.assertFalse(Tournament.objects.filter(id=tournament.id).exists())
+
+	def test_deleting_a_paused_tournament_stops_its_engine_first(self):
+		"""Left running, it wakes up and writes to rows that are not there."""
+		tournament = self._tournament("paused")
+		_tournament_runners[tournament.id] = object()
+
+		response = self.client.delete(reverse("tournament-delete", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		self.assertNotIn(tournament.id, _tournament_runners)
+
+	def test_a_running_tournament_is_still_refused(self):
+		tournament = self._tournament("running")
+
+		response = self.client.delete(reverse("tournament-delete", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())
+
+	def test_a_finished_tournament_is_still_refused(self):
+		tournament = self._tournament("finished")
+
+		response = self.client.delete(reverse("tournament-delete", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_only_the_host_can_delete_a_paused_tournament(self):
+		tournament = self._tournament("paused")
+		self.client.force_authenticate(self.other)
+
+		response = self.client.delete(reverse("tournament-delete", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.assertTrue(Tournament.objects.filter(id=tournament.id).exists())
+
+
+class RebuyWindowTests(TestCase):
+	"""Being offered a rebuy on a screen that arrives once the next hand has
+	started is the same as not being offered one."""
+
+	def _coordinator(self, broadcasts=None, **kwargs):
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture(event_type, payload):
+			if broadcasts is not None:
+				broadcasts.append((event_type, payload))
+
+		settings = dict(allow_rebuys=True, max_rebuys=2, rebuy_level=4)
+		settings.update(kwargs)
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=capture,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+			**settings,
+		)
+
+	def _busted(self, coordinator, tp_id=1, rebuys_used=0):
+		player = EnginePlayer(name=f"p{tp_id}", chips=0)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._table_number = 1
+		player._rebuy_count = rebuys_used
+		player.is_eliminated = True
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_busting_out_holds_the_table_and_asks(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		player = self._busted(coordinator)
+
+		async_to_sync(coordinator._offer_rebuys)([player])
+
+		event_type, payload = broadcasts[-1]
+		self.assertEqual(event_type, "rebuy_window")
+		self.assertEqual(payload["user_ids"], [11])
+		self.assertGreater(coordinator._rebuy_deadline - time.monotonic(), 5)
+
+	def test_nothing_is_held_when_rebuys_are_off(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts, allow_rebuys=False)
+		player = self._busted(coordinator)
+
+		async_to_sync(coordinator._offer_rebuys)([player])
+
+		self.assertEqual(broadcasts, [])
+		self.assertEqual(coordinator._rebuy_deadline, 0.0)
+
+	def test_a_player_out_of_rebuys_is_not_waited_for(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts, max_rebuys=1)
+		player = self._busted(coordinator, rebuys_used=1)
+
+		async_to_sync(coordinator._offer_rebuys)([player])
+
+		self.assertEqual(broadcasts, [])
+
+	def test_the_table_does_not_wait_once_the_rebuy_period_has_closed(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts, rebuy_level=1)
+		# Four levels, so the index below really is the fourth blind level —
+		# current_blind_level_number clamps to the last level that exists.
+		coordinator.levels = [
+			{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}
+			for _ in range(4)
+		]
+		coordinator._level_index = 3   # level 4, past the cutoff
+		player = self._busted(coordinator)
+
+		async_to_sync(coordinator._offer_rebuys)([player])
+
+		self.assertEqual(broadcasts, [])
+
+	def test_the_wait_ends_as_soon_as_everybody_has_decided(self):
+		coordinator = self._coordinator([])
+		player = self._busted(coordinator)
+		async_to_sync(coordinator._offer_rebuys)([player])
+		self.assertTrue(coordinator._rebuy_pending)
+
+		async_to_sync(coordinator.apply_rebuy)(11, 10_000)
+
+		self.assertEqual(coordinator._rebuy_pending, set())
+		self.assertEqual(coordinator._rebuy_deadline, 0.0)
+
+	def test_two_players_busting_together_are_both_asked(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		first = self._busted(coordinator, 1)
+		second = self._busted(coordinator, 2)
+
+		async_to_sync(coordinator._offer_rebuys)([first, second])
+
+		_, payload = broadcasts[-1]
+		self.assertEqual(payload["user_ids"], [11, 22])
+		# And one of them coming back does not end the other's window.
+		async_to_sync(coordinator.apply_rebuy)(11, 10_000)
+		self.assertEqual(coordinator._rebuy_pending, {22})
+		self.assertGreater(coordinator._rebuy_deadline, 0.0)

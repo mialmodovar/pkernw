@@ -363,16 +363,22 @@ button:disabled {
   100%    { opacity: 0; }
 }
 
-/* The raise field already has a slider and a pair of −/+ buttons beside it, so
-   the browser's own spinner is a third way to do the same thing — and it eats
-   the right-hand end of a field narrow enough that "2.5 BB" needs all of it,
-   hiding the decimal behind the arrows. */
+/* No native spinners on number fields, anywhere.
+   Every numeric input in the app is narrow — a blind level, a duration, a raise
+   in big blinds — and the browser's arrows take their width out of the digits,
+   which is how "2.5 BB" ended up with the decimal hidden behind them. The
+   fields that need stepping have real buttons of their own beside them.
+   Applied to the shared .input-field rather than to each input, so the next
+   number field added anywhere gets it without having to remember. */
+.input-field[type="number"]::-webkit-outer-spin-button,
+.input-field[type="number"]::-webkit-inner-spin-button,
 .no-spinner::-webkit-outer-spin-button,
 .no-spinner::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
+.input-field[type="number"],
 .no-spinner {
   -moz-appearance: textfield;
   appearance: textfield;

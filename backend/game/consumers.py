@@ -65,6 +65,35 @@ def late_registration_open(tournament) -> bool:
     return runner.current_blind_level_number <= tournament.late_reg_level
 
 
+def stop_tournament_engine(tournament_id: int) -> bool:
+    """Stop the engine for a tournament, called from outside the event loop.
+
+    Cancelling is what `_run_tournament` treats as a shutdown rather than an
+    ending: it leaves the tournament's status alone and clears both registries
+    on its way out. Used when the host discards a paused tournament, where the
+    engine is alive and waiting to be resumed.
+
+    `Task.cancel` is not safe to call across threads, and the view calling this
+    runs in a worker thread rather than on the loop the task belongs to, so the
+    cancellation is handed to that loop to perform.
+    """
+    task = _game_tasks.get(tournament_id)
+    had_engine = task is not None or tournament_id in _tournament_runners
+
+    if task is not None:
+        try:
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        except RuntimeError:
+            # The loop is already gone, so the task cannot still be running.
+            pass
+
+    # Cleared here as well as in the task's own teardown: the deletion that
+    # follows must not race a registry that still names this tournament.
+    _game_tasks.pop(tournament_id, None)
+    _tournament_runners.pop(tournament_id, None)
+    return had_engine
+
+
 def _tournament_group_name(tournament_id: int) -> str:
     return f"tournament_{tournament_id}"
 
@@ -170,6 +199,7 @@ def _db_get_player_records(tournament_id):
             "is_eliminated",
             "finish_position",
             "time_bank_seconds_remaining",
+            "rebuy_count",
             "bounty_cents",
             "bounty_won_cents",
             "knockouts",
@@ -319,31 +349,47 @@ async def _request_action(
                 break
 
     try:
-        elapsed = 0.0
+        elapsed = 0.0        # the whole turn, which the base timer runs on
+        bank_spent = 0.0     # only the part of it the bank actually paid for
         action = None
         amount = 0
 
-        while elapsed < total_timeout:
+        while True:
             if is_paused is not None and is_paused():
                 await asyncio.sleep(0.25)
                 continue
 
-            wait_slice = min(0.25, total_timeout - elapsed)
+            past_base = elapsed >= base_timer
+            # A time bank is time to think, and somebody whose connection has
+            # dropped is not thinking with it. It stops being spent while they
+            # are away, and is still there when they get back.
+            #
+            # Their turn still ends when the base timer does, though: freezing
+            # the clock outright would let one dropped connection hold up every
+            # other player at the table for as long as it stayed dropped.
+            connected = _player_channels.get(key) is not None
+            if past_base and (not connected or bank_spent >= bank_remaining):
+                break
+
+            wait_slice = 0.25
             started_at = time.monotonic()
             try:
                 action, amount = await asyncio.wait_for(queue.get(), timeout=wait_slice)
                 elapsed += time.monotonic() - started_at
                 break
             except asyncio.TimeoutError:
-                elapsed += time.monotonic() - started_at
+                waited = time.monotonic() - started_at
+                elapsed += waited
+                if past_base and connected:
+                    bank_spent += waited
 
         if action is None:
             raise asyncio.TimeoutError
 
-        bank_used = min(bank_remaining, max(0, math.ceil(elapsed - base_timer)))
-        player.time_bank_seconds_remaining = bank_remaining - bank_used
+        player.time_bank_seconds_remaining = max(0, bank_remaining - math.ceil(bank_spent))
     except asyncio.TimeoutError:
-        player.time_bank_seconds_remaining = 0
+        # Whatever of the bank went unspent stays theirs — see above.
+        player.time_bank_seconds_remaining = max(0, bank_remaining - math.ceil(bank_spent))
         action = "check" if "check" in valid else "fold"
         amount = 0
     except Exception:
@@ -703,6 +749,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             auto_remove_offline_seconds=tournament.auto_remove_offline_seconds,
             bounty=BountyConfig.from_tournament(tournament),
             showdown_seconds=tournament.showdown_seconds,
+            allow_rebuys=tournament.allow_rebuys,
+            max_rebuys=tournament.max_rebuys,
+            rebuy_level=tournament.rebuy_level,
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,
@@ -790,6 +839,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "is_eliminated": record["is_eliminated"],
                 "finish_position": record["finish_position"],
                 "time_bank_seconds_remaining": record["time_bank_seconds_remaining"],
+                "rebuy_count": record["rebuy_count"],
                 "bounty_cents": record["bounty_cents"],
                 "bounty_won_cents": record["bounty_won_cents"],
                 "knockouts": record["knockouts"],

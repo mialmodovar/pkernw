@@ -118,9 +118,13 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
             Leave
           </button>
         )}
-        {t.is_host && t.status === "lobby" && onDelete && (
+        {/* Paused counts as well: a night that breaks up half way through
+            should not leave a game nobody can get rid of. */}
+        {t.is_host && (t.status === "lobby" || t.status === "paused") && onDelete && (
           <button onClick={() => onDelete(t)}
-            title="Delete this tournament — only possible before it starts"
+            title={t.status === "paused"
+              ? "Delete this paused tournament — the hands played are lost"
+              : "Delete this tournament — only possible before it starts"}
             aria-label={`Delete ${t.name}`}
             className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
                        transition-colors text-(--color-accent-link)">

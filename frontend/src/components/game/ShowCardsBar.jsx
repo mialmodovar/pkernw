@@ -25,9 +25,14 @@ export default function ShowCardsBar({ myCards, mySeat }) {
   const alreadyPublic = useGameStore((s) => (
     mySeat == null ? false : Boolean(s.players.find((p) => p.seat === mySeat)?.cards?.length)
   ));
+  // An all-in runout turns every hand in it face up before the board is even
+  // out — going all in preflop means the table has been looking at your cards
+  // for three streets. Checked separately from the seat above so that holds
+  // even if a seat is missing from a reading.
+  const runoutRevealed = useGameStore((s) => Boolean(s.allInEquity?.length));
 
   const cards = myCards || [];
-  if (!open || alreadyPublic || cards.length === 0) return null;
+  if (!open || alreadyPublic || runoutRevealed || cards.length === 0) return null;
 
   const show = (indices) => send({ type: "show_cards", cards: indices });
 

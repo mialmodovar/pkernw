@@ -36,7 +36,7 @@ const clearStoredTheme = () => {
 };
 
 const isDefault = (theme) =>
-  theme.preset === DEFAULT_THEME.preset && theme.accent === DEFAULT_THEME.accent;
+  Object.keys(DEFAULT_THEME).every((key) => theme[key] === DEFAULT_THEME[key]);
 
 // Dragging the colour input fires a change per pixel of travel. The paint is
 // immediate either way; only the PATCH waits for you to settle on a colour.
@@ -81,7 +81,7 @@ const useThemeStore = create((set) => ({
         writeStoredTheme(next);
         return next;
       }
-      if (!isDefault(state)) schedulePush({ preset: state.preset, accent: state.accent });
+      if (!isDefault(state)) schedulePush(normalizeTheme(state));
       return state;
     }),
 

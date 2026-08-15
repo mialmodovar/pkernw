@@ -14,6 +14,9 @@ AVAILABLE_AVATARS = [
 # cannot park an unknown preset name in the profile.
 AVAILABLE_THEME_PRESETS = ["burgundy", "midnight", "slate"]
 
+# Likewise PATTERNS in frontend/src/theme/themes.js.
+AVAILABLE_CARD_PATTERNS = ["weave", "crosshatch", "pinstripe", "grid", "gradient", "solid"]
+
 HEX_COLOUR = r"^#[0-9a-fA-F]{6}$"
 
 
@@ -57,3 +60,4 @@ class ThemeUpdateSerializer(serializers.Serializer):
 
     preset = serializers.ChoiceField(choices=AVAILABLE_THEME_PRESETS, default="burgundy")
     accent = serializers.RegexField(HEX_COLOUR, allow_null=True, default=None)
+    pattern = serializers.ChoiceField(choices=AVAILABLE_CARD_PATTERNS, default="weave")

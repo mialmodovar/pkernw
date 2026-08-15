@@ -17,12 +17,67 @@
  */
 
 export const DEFAULT_PRESET = "burgundy";
+export const DEFAULT_PATTERN = "weave";
 
-export const DEFAULT_THEME = { preset: DEFAULT_PRESET, accent: null };
+export const DEFAULT_THEME = {
+  preset: DEFAULT_PRESET,
+  accent: null,
+  pattern: DEFAULT_PATTERN,
+};
+
+/** Card-back patterns, as templates rather than finished artwork.
+ *
+ * Each one is built from the two colours the current preset gives its deck, so
+ * every pattern works under every preset and the two settings stay independent
+ * — pick a weave under Burgundy, keep the weave when you switch to Slate.
+ *
+ * All of them are pure repeating gradients on purpose: those tile from
+ * background-image alone, with no background-size to carry, so a pattern stays
+ * a single token. `ink` is the figure, `base` the ground.
+ *
+ * Mirrored by name in backend/accounts/serializers.py.
+ */
+export const PATTERNS = {
+  weave: {
+    label: "Weave",
+    build: (base, ink) =>
+      `repeating-linear-gradient(45deg, ${ink} 0 3px, ${base} 3px 6px)`,
+  },
+  crosshatch: {
+    label: "Crosshatch",
+    build: (base, ink) =>
+      `repeating-linear-gradient(45deg, ${ink} 0 1.5px, transparent 1.5px 5px), ` +
+      `repeating-linear-gradient(-45deg, ${ink} 0 1.5px, transparent 1.5px 5px), ` +
+      `linear-gradient(${base}, ${base})`,
+  },
+  pinstripe: {
+    label: "Pinstripe",
+    build: (base, ink) =>
+      `repeating-linear-gradient(90deg, ${ink} 0 2px, ${base} 2px 5px)`,
+  },
+  grid: {
+    label: "Grid",
+    build: (base, ink) =>
+      `repeating-linear-gradient(0deg, ${ink} 0 1.5px, transparent 1.5px 6px), ` +
+      `repeating-linear-gradient(90deg, ${ink} 0 1.5px, transparent 1.5px 6px), ` +
+      `linear-gradient(${base}, ${base})`,
+  },
+  gradient: {
+    label: "Gradient",
+    build: (base, ink) => `linear-gradient(160deg, ${ink}, ${base})`,
+  },
+  solid: {
+    label: "Solid",
+    build: (base) => `linear-gradient(${base}, ${base})`,
+  },
+};
+
+export const PATTERN_NAMES = Object.keys(PATTERNS);
 
 export const PRESETS = {
   burgundy: {
     label: "Burgundy",
+    cardBack: { base: "#4a1019", ink: "#5e1523" },
     tokens: {
       "--color-surface": "rgba(38, 24, 27, 0.85)",
       "--color-surface-raised": "rgba(56, 34, 38, 0.9)",
@@ -38,7 +93,6 @@ export const PRESETS = {
       "--felt-bg":
         "radial-gradient(ellipse 62% 62% at 50% 34%, rgba(134, 34, 47, 0.6), rgba(58, 16, 23, 0.92) 55%, rgba(12, 7, 9, 0.99) 100%), " +
         "linear-gradient(180deg, #2a1015, #120809)",
-      "--card-back-bg": "repeating-linear-gradient(45deg, #5e1523 0 3px, #4a1019 3px 6px)",
       "--card-back-edge": "rgba(214, 199, 190, 0.45)",
       "--card-back-pip": "rgba(224, 210, 200, 0.55)",
       "--panel-floating-bg": "#23161a",
@@ -47,6 +101,7 @@ export const PRESETS = {
 
   midnight: {
     label: "Midnight Green",
+    cardBack: { base: "#0e3524", ink: "#14472f" },
     tokens: {
       "--color-surface": "rgba(24, 32, 28, 0.85)",
       "--color-surface-raised": "rgba(34, 46, 40, 0.9)",
@@ -62,7 +117,6 @@ export const PRESETS = {
       "--felt-bg":
         "radial-gradient(ellipse 62% 62% at 50% 34%, rgba(34, 120, 74, 0.58), rgba(14, 58, 36, 0.92) 55%, rgba(6, 14, 10, 0.99) 100%), " +
         "linear-gradient(180deg, #0e3122, #050f0a)",
-      "--card-back-bg": "repeating-linear-gradient(45deg, #14472f 0 3px, #0e3524 3px 6px)",
       "--card-back-edge": "rgba(199, 214, 203, 0.45)",
       "--card-back-pip": "rgba(210, 224, 214, 0.55)",
       "--panel-floating-bg": "#14201a",
@@ -71,6 +125,7 @@ export const PRESETS = {
 
   slate: {
     label: "Slate Blue",
+    cardBack: { base: "#1a2843", ink: "#233559" },
     tokens: {
       "--color-surface": "rgba(26, 30, 40, 0.85)",
       "--color-surface-raised": "rgba(38, 44, 58, 0.9)",
@@ -86,7 +141,6 @@ export const PRESETS = {
       "--felt-bg":
         "radial-gradient(ellipse 62% 62% at 50% 34%, rgba(58, 86, 148, 0.55), rgba(26, 40, 72, 0.92) 55%, rgba(7, 10, 18, 0.99) 100%), " +
         "linear-gradient(180deg, #16203a, #080b14)",
-      "--card-back-bg": "repeating-linear-gradient(45deg, #233559 0 3px, #1a2843 3px 6px)",
       "--card-back-edge": "rgba(195, 203, 218, 0.45)",
       "--card-back-pip": "rgba(208, 215, 228, 0.55)",
       "--panel-floating-bg": "#171b26",
@@ -128,7 +182,15 @@ const withAlpha = (hex, alpha) => `rgba(${toRgb(hex).join(", ")}, ${alpha})`;
 export function normalizeTheme(theme) {
   const preset = PRESETS[theme?.preset] ? theme.preset : DEFAULT_PRESET;
   const accent = isHexColour(theme?.accent) ? theme.accent.toLowerCase() : null;
-  return { preset, accent };
+  const pattern = PATTERNS[theme?.pattern] ? theme.pattern : DEFAULT_PATTERN;
+  return { preset, accent, pattern };
+}
+
+/** The card back a preset/pattern pair produces. Exported so the settings panel
+ *  can draw a swatch of each option in the colours actually in play. */
+export function cardBackImage(preset, pattern) {
+  const { base, ink } = (PRESETS[preset] || PRESETS[DEFAULT_PRESET]).cardBack;
+  return (PATTERNS[pattern] || PATTERNS[DEFAULT_PATTERN]).build(base, ink);
 }
 
 /** The preset's tokens, with the accent family swapped out if one is set.
@@ -138,8 +200,11 @@ export function normalizeTheme(theme) {
  * a nine-stop felt gradient from one hex reliably produces mud, and the felt is
  * the largest surface on screen to get wrong. */
 export function resolveTokens(theme) {
-  const { preset, accent } = normalizeTheme(theme);
-  const tokens = PRESETS[preset].tokens;
+  const { preset, accent, pattern } = normalizeTheme(theme);
+  const tokens = {
+    ...PRESETS[preset].tokens,
+    "--card-back-bg": cardBackImage(preset, pattern),
+  };
   if (!accent) return tokens;
 
   return {

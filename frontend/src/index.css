@@ -108,6 +108,27 @@ button.panel:hover:not(:disabled) {
   background: linear-gradient(160deg, rgba(74, 46, 51, 0.95), rgba(20, 13, 15, 0.7));
 }
 
+/* A raised panel with nothing showing through it.
+   Note this cannot be done by adding a background-color utility: the `background`
+   shorthand above sets background-color back to transparent, and these rules are
+   unlayered, so they outrank anything Tailwind emits into its utilities layer.
+   The fix is to paint the same gradient over an opaque final layer instead.
+   Popovers need it — they sit over the card's own text, and a translucent
+   settings panel is one you have to read twice. Must stay below the hover rule
+   above, which it ties with on specificity and beats only on source order. */
+.panel-solid {
+  background:
+    linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65)),
+    var(--panel-floating-bg);
+  backdrop-filter: none;
+}
+
+button.panel-solid:hover:not(:disabled) {
+  background:
+    linear-gradient(160deg, rgba(74, 46, 51, 0.95), rgba(20, 13, 15, 0.7)),
+    var(--panel-floating-bg);
+}
+
 /* Anything clickable says so, and nothing disabled pretends to be. */
 button:not(:disabled),
 [role="button"]:not([aria-disabled="true"]) {

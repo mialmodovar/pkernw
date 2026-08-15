@@ -7,6 +7,7 @@ import ChatPanel from "../components/game/ChatPanel";
 import api from "../api/http";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
+import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
 import ActionPanel from "../components/game/ActionPanel";
 import BlindLevelBar from "../components/game/BlindLevelBar";
@@ -56,6 +57,11 @@ export default function GamePage() {
   const [playerStats, setPlayerStats] = useState({});
   const [inspecting, setInspecting] = useState(null);
   const compact = useCompactLayout();
+  // The layout sandbox renders this very page with no server behind it. Each
+  // network call below is skipped and its result handed over instead.
+  const sandbox = useSandboxStore((s) => s.active);
+  const sandboxTournament = useSandboxStore((s) => s.tournament);
+  const sandboxStats = useSandboxStore((s) => s.statsByName);
 
   const loadTournament = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -64,27 +70,36 @@ export default function GamePage() {
 
   // Cameras and microphones, kept in step with the table. Entirely separate
   // from the game: it reads the table, never writes to it.
-  useTableMedia();
+  useTableMedia(!sandbox);
 
   useEffect(() => {
+    if (sandbox) return undefined;
     reset();
     connect(id);
     const unsub = onMessage(handleEvent);
     const unsubStatus = onStatus(setConnectionStatus);
     return () => { unsub(); unsubStatus(); disconnect(); };
-  }, [id, handleEvent, reset, setConnectionStatus]);
+  }, [sandbox, id, handleEvent, reset, setConnectionStatus]);
 
   // Chip counts drive the rank, average stack and chip leader, and they only
   // live in the DB, so refresh them periodically rather than once on mount.
   useEffect(() => {
+    if (sandbox) {
+      setTournament(sandboxTournament);
+      return undefined;
+    }
     loadTournament();
     const id = setInterval(loadTournament, 8000);
     return () => clearInterval(id);
-  }, [loadTournament]);
+  }, [sandbox, sandboxTournament, loadTournament]);
 
   // Reads on the other players. Lifetime figures, so they only move slowly —
   // the tournament poll is often enough.
   useEffect(() => {
+    if (sandbox) {
+      setPlayerStats(sandboxStats);
+      return undefined;
+    }
     let cancelled = false;
     const load = () => api.get(`/tournaments/${id}/player-stats/`)
       .then(({ data }) => {
@@ -95,13 +110,13 @@ export default function GamePage() {
     load();
     const timer = setInterval(load, 30000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [id]);
+  }, [sandbox, sandboxStats, id]);
 
   // An elimination changes all of those at once. Without this the panel showed
   // a live "players left" beside a stale "your rank 4 of 4".
   useEffect(() => {
-    if (lastElimination) loadTournament();
-  }, [lastElimination, loadTournament]);
+    if (lastElimination && !sandbox) loadTournament();
+  }, [sandbox, lastElimination, loadTournament]);
 
   useEffect(() => {
     if (!tableAssignmentNotice) return undefined;
@@ -160,6 +175,12 @@ export default function GamePage() {
   );
   const handleAdminControl = async (control) => {
     setAdminError("");
+    if (sandbox) {
+      if (control === "pause" || control === "resume") {
+        useSandboxStore.getState().patch({ paused: control === "pause" });
+      }
+      return;
+    }
     try {
       await api.post(`/tournaments/${id}/${control}/`);
       await loadTournament();

@@ -12,7 +12,7 @@ import { handleSignal, reannounce, reconcile, setMyUserId, teardown } from "./pe
  * each, everything funnels into one question: who should I be connected to
  * now? The answer is recomputed on every change and the connections follow.
  */
-export default function useTableMedia() {
+export default function useTableMedia(enabled = true) {
   const myUserId = useAuthStore((state) => state.user?.id ?? null);
   const players = useGameStore((state) => state.players);
   const myTableNumber = useGameStore((state) => state.currentTableNumber);
@@ -25,7 +25,9 @@ export default function useTableMedia() {
 
   useEffect(() => { setMyUserId(myUserId); }, [myUserId]);
 
-  useEffect(() => onMessage((message) => {
+  useEffect(() => {
+    if (!enabled) return undefined;
+    return onMessage((message) => {
     switch (message.type) {
       case "media_roster":
         roster.current = message.peers;
@@ -46,40 +48,44 @@ export default function useTableMedia() {
       default:
         return;
     }
-    reconcile(desiredPeers(
-      useGameStore.getState().players,
-      roster.current,
-      myUserId,
-      useGameStore.getState().currentTableNumber,
-    ));
-  }), [myUserId]);
+      reconcile(desiredPeers(
+        useGameStore.getState().players,
+        roster.current,
+        myUserId,
+        useGameStore.getState().currentTableNumber,
+      ));
+    });
+  }, [enabled, myUserId]);
 
   // The roster changed above; here it is the table itself that moved.
   useEffect(() => {
+    if (!enabled) return;
     reconcile(desiredPeers(players, roster.current, myUserId, myTableNumber));
-  }, [players, myTableNumber, myUserId]);
+  }, [enabled, players, myTableNumber, myUserId]);
 
   // While we were disconnected the server forgot our presence and told the
   // table, so every peer has already hung up. Start again rather than nurse
   // connections whose other end is gone.
   useEffect(() => {
+    if (!enabled) return;
     const isConnected = connectionStatus === "open";
     if (isConnected && wasConnected.current === false) {
       roster.current = [];
       reannounce();
     }
     wasConnected.current = isConnected;
-  }, [connectionStatus]);
+  }, [enabled, connectionStatus]);
 
   // Leaving the page has to release the devices — a camera light left on after
   // the game is the complaint nobody forgets. pagehide covers the cases where
   // the cleanup below never runs, which is most of mobile.
   useEffect(() => {
+    if (!enabled) return undefined;
     const release = () => teardown();
     window.addEventListener("pagehide", release);
     return () => {
       window.removeEventListener("pagehide", release);
       release();
     };
-  }, []);
+  }, [enabled]);
 }

@@ -107,7 +107,15 @@ export function isOpen() {
   return ws != null && ws.readyState === WebSocket.OPEN;
 }
 
+// The layout sandbox runs the real page with no socket behind it. Rather than
+// teach every caller about that, it takes delivery of what would have been sent.
+let interceptor = null;
+export function setSendInterceptor(fn) {
+  interceptor = fn;
+}
+
 export function send(data) {
+  if (interceptor) return interceptor(data);
   if (isOpen()) {
     ws.send(JSON.stringify(data));
     return true;

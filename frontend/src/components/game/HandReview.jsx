@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../../api/http";
+import useSandboxStore from "../../dev/sandboxStore";
 import { SUIT_COLOR, CARD_FACE, parseCard } from "./cardStyles";
 import { Suit } from "./PlayingCard";
 
@@ -99,14 +100,21 @@ function Hand({ hand }) {
 export default function HandReview({ tournamentId, onClose }) {
   const [hands, setHands] = useState(null);
   const [error, setError] = useState("");
+  const sandboxHands = useSandboxStore((s) => (s.active ? s.hands : undefined));
 
   useEffect(() => {
+    // In the layout sandbox there is no server to ask; the panel supplies the
+    // hands instead, including "none generated yet", which is its own layout.
+    if (sandboxHands !== undefined) {
+      setHands(sandboxHands);
+      return undefined;
+    }
     let cancelled = false;
     api.get(`/tournaments/${tournamentId}/hands/`, { params: { limit: 5 } })
       .then(({ data }) => { if (!cancelled) setHands(data); })
       .catch(() => { if (!cancelled) setError("Could not load the hand history."); });
     return () => { cancelled = true; };
-  }, [tournamentId]);
+  }, [tournamentId, sandboxHands]);
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">

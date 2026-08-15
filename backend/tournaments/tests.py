@@ -834,10 +834,12 @@ class PreflopStatsTests(TestCase):
 			tournament=self.tournament, hand_number=number, level_index=0,
 			dealer_seat=dealer_seat, status="complete",
 		)
-		for name, action in actions:
+		for entry in actions:
+			# ("hero", "call") is preflop; a third item names another street.
+			name, action, street = entry if len(entry) == 3 else (*entry, "preflop")
 			player = self.players[name]
 			self.HandAction.objects.create(
-				hand=hand, player=player, seat=player.seat_at_table, street="preflop", action=action,
+				hand=hand, player=player, seat=player.seat_at_table, street=street, action=action,
 			)
 		return hand
 
@@ -881,6 +883,71 @@ class PreflopStatsTests(TestCase):
 		self._hand(1, 0, [("villain", "blind"), ("third", "blind"), ("third", "raise"), ("hero", "raise")])
 
 		self.assertEqual(self._stats("hero")["ats_chances"], 0)
+
+	def test_answering_a_three_bet_is_one_decision_split_three_ways(self):
+		# hero opens, third 3-bets, hero folds.
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("hero", "raise"),
+		                  ("third", "raise"), ("hero", "fold")])
+		# The same, but hero calls.
+		self._hand(2, 0, [("hero", "blind"), ("villain", "blind"), ("hero", "raise"),
+		                  ("third", "raise"), ("hero", "call")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["vs_three_bet_chances"], 2)
+		self.assertEqual(hero["fold_to_three_bet_pct"], 50.0)
+		self.assertEqual(hero["call_three_bet_pct"], 50.0)
+		self.assertEqual(hero["four_bet_pct"], 0.0)
+		# Facing the open is not facing a 3-bet.
+		self.assertEqual(self._stats("third")["vs_three_bet_chances"], 0)
+
+	def test_raising_over_a_three_bet_is_a_four_bet_and_the_reply_is_measured(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("hero", "raise"),
+		                  ("third", "raise"), ("hero", "raise"), ("third", "fold")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["four_bet_pct"], 100.0)
+		third = self._stats("third")
+		self.assertEqual(third["vs_four_bet_chances"], 1)
+		self.assertEqual(third["fold_to_four_bet_pct"], 100.0)
+
+	def test_a_continuation_bet_is_the_preflop_raiser_betting_the_flop_first(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "fold"),
+		                  ("hero", "raise"), ("villain", "call"),
+		                  ("hero", "bet", "flop"), ("villain", "fold", "flop")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["cbet_chances"], 1)
+		self.assertEqual(hero["cbet_pct"], 100.0)
+		self.assertEqual(hero["saw_flop_pct"], 100.0)
+
+		villain = self._stats("villain")
+		self.assertEqual(villain["fold_to_cbet_chances"], 1)
+		self.assertEqual(villain["fold_to_cbet_pct"], 100.0)
+		# Only the last preflop raiser can continuation bet.
+		self.assertEqual(villain["cbet_chances"], 0)
+
+	def test_checking_the_flop_as_the_raiser_is_a_missed_continuation_bet(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "fold"),
+		                  ("hero", "raise"), ("villain", "call"),
+		                  ("villain", "check", "flop"), ("hero", "check", "flop")])
+
+		hero = self._stats("hero")
+		self.assertEqual(hero["cbet_chances"], 1)
+		self.assertEqual(hero["cbet_pct"], 0.0)
+		# Nobody bet, so nobody had a c-bet to fold to.
+		self.assertEqual(self._stats("villain")["fold_to_cbet_chances"], 0)
+
+	def test_aggression_is_the_share_of_postflop_actions_that_were_bets(self):
+		self._hand(1, 0, [("hero", "blind"), ("villain", "blind"), ("third", "fold"),
+		                  ("hero", "raise"), ("villain", "call"),
+		                  ("hero", "bet", "flop"), ("villain", "call", "flop"),
+		                  ("hero", "bet", "turn"), ("villain", "call", "turn")])
+
+		# Two bets, no calls, and the preflop raise is not counted.
+		self.assertEqual(self._stats("hero")["aggression_pct"], 100.0)
+		self.assertEqual(self._stats("hero")["postflop_actions"], 2)
+		self.assertEqual(self._stats("villain")["aggression_pct"], 0.0)
+		self.assertEqual(self._stats("villain")["postflop_actions"], 2)
 
 
 class LedgerTests(TestCase):

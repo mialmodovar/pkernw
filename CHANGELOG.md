@@ -9,6 +9,15 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A player's card reads them in one word, and in a lot more numbers.** Tapping
+  a seat used to give four preflop percentages and leave the interpreting to
+  you. It now names the style — Nit, Rock, TAG, LAG, Calling station, Maniac —
+  with the reasoning on hover, and only once there are twelve hands behind it,
+  because below that the label describes the deck rather than the player. Under
+  it: what they do when the pot is 3-bet or 4-bet into them (fold, call or raise
+  again), how often they see a flop, how often they continuation bet, how often
+  they fold to one, and what share of their postflop actions are aggressive.
+  Every number still carries the sample it came from.
 - **The tournament checks its own chip total after every hand.** Chips are the
   whole ledger: if the total can drift, a final standing means nothing. Every
   legitimate change — a rebuy adding a stack, an absent player being removed

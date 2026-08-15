@@ -30,8 +30,7 @@ def my_stats(request):
         "cashes": cashes,
         "total_rebuys": total_rebuys,
         "hands_played": preflop.get("hands", 0),
-        "vpip_pct": preflop.get("vpip_pct", 0),
-        "pfr_pct": preflop.get("pfr_pct", 0),
-        "three_bet_pct": preflop.get("three_bet_pct", 0),
-        "ats_pct": preflop.get("ats_pct", 0),
+        # Everything the miner knows, so a player can read the same numbers
+        # about themselves that the table shows about everyone else.
+        **preflop,
     })

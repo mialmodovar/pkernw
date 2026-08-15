@@ -39,16 +39,29 @@ export default function FinisherOverlay() {
       role="status"
     >
       {/* Two GIFs when two players share the knockout, side by side and each
-          smaller, so a split pot still fits across the felt. */}
-      <div className="flex items-start justify-center gap-2 max-w-[86%]">
+          narrower, so a split pot still fits across the felt.
+
+          Sized in container widths rather than percentages. A percentage width
+          resolves against this row, and the row is a flex item that shrinks to
+          fit its contents — so the image asked to be a fraction of a box whose
+          size was its own, and collapsed to almost nothing. Everything else on
+          the felt is measured in cqw against the table for the same reason. */}
+      <div className="flex items-start justify-center gap-2 w-full px-4">
         {finisher.players.map((one, index) => (
           <img
             key={`${one.gifId}-${index}`}
             src={gifFullUrl(one.gifId)}
             alt=""
+            // The height cap is in cqw too, not cqh: the table is a container
+            // sized on its inline axis, so cqh is not available to it. The
+            // frame holds a 5:3 aspect, which makes 22cqw about a third of its
+            // height — enough to keep the GIF clear of the board below it.
             className={`${
-              finisher.players.length > 1 ? "max-w-[42%] max-h-[34%]" : "max-w-[min(52%,18rem)] max-h-[40%]"
-            } rounded-lg border-2 border-(--color-highlight) shadow-2xl shadow-black/70`}
+              finisher.players.length > 1
+                ? "max-w-[clamp(4.5rem,26cqw,13rem)] max-h-[18cqw]"
+                : "max-w-[clamp(7rem,40cqw,22rem)] max-h-[22cqw]"
+            } w-auto h-auto rounded-lg border-2 border-(--color-highlight)
+              shadow-2xl shadow-black/70`}
           />
         ))}
       </div>

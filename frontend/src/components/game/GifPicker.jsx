@@ -77,21 +77,27 @@ export default function GifPicker({ onPick, onClose, title = "Send a GIF" }) {
       ) : gifs.length === 0 ? (
         <p className="text-[11px] text-(--color-text-muted) py-2">Nothing for that.</p>
       ) : (
-        <div className="grid grid-cols-3 gap-1 max-h-52 overflow-y-auto">
+        // The square is on a plain box inside each button, not on the button
+        // itself: WebKit does not lay a button out from its aspect-ratio the
+        // way it does a div, so the cells came out the wrong height and the
+        // rows sat on top of each other — while Chromium looked fine. The rows
+        // are pinned to the same height as well, so a slow image cannot
+        // reflow the grid under the pointer as it lands.
+        <div className="grid grid-cols-3 auto-rows-[4.1rem] gap-1 max-h-52 overflow-y-auto">
           {gifs.map((gif) => (
             <button
               key={gif.id}
               type="button"
               onClick={() => onPick(gif.id)}
               title={gif.title}
-              className="aspect-square rounded overflow-hidden border border-(--color-border)
+              className="block h-full w-full rounded overflow-hidden border border-(--color-border)
                          hover:border-(--color-highlight) transition-colors"
             >
               <img
                 src={gifPreviewUrl(gif.id)}
                 alt={gif.title}
                 loading="lazy"
-                className="w-full h-full object-cover"
+                className="block w-full h-full object-cover"
               />
             </button>
           ))}

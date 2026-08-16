@@ -133,6 +133,27 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
                   {profile.display_name || profile.username}
                 </h2>
                 <Presence profile={profile} />
+                {/* Who they play with, and a way into it. Same tab here,
+                    unlike the card at the table: there is no hand to walk out
+                    of from the lobby. */}
+                {profile.clubs?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {profile.clubs.map((club) => (
+                      <Link
+                        key={club.slug}
+                        to={`/clubs/${club.slug}`}
+                        onClick={onClose}
+                        title={`Open ${club.name}`}
+                        className="panel-raised rounded-full pl-1 pr-2 py-0.5 flex items-center gap-1
+                                   text-[10px] text-(--color-silver) border border-transparent
+                                   hover:border-(--color-highlight) transition-colors"
+                      >
+                        <span className="text-xs leading-none">{club.emoji}</span>
+                        <span className="max-w-[7rem] truncate">{club.name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
               <button
                 type="button"

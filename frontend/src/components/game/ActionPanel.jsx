@@ -13,7 +13,7 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 // sized off the window rather than pinned to a pixel count. On a laptop that is
 // a comfortable target; on a large screen it grows with everything else instead
 // of staying a chip in the corner.
-const BTN = "flex-1 min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
+const BTN = "flex-auto min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
   "px-[clamp(0.4rem,1.1vw,1.5rem)] py-[clamp(0.55rem,1vw,1rem)] " +
   "text-[clamp(0.8rem,1.05vw,1.15rem)]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";

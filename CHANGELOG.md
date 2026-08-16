@@ -9,6 +9,44 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Side bets: the folded players get to call the hand.** Folding is the dullest
+  thing that happens at a poker table — you are still there, still waiting, and
+  now with nothing to think about. Back somebody to take the pot you got out of
+  and find out at showdown whether you read it right. One call a hand and it
+  cannot be moved, so backing somebody on the flop means something; the book
+  shuts the moment the cards turn face up, because calling a hand you can
+  already read is not calling anything. Your pick folding after you backed them
+  is simply wrong, which is the risk of calling it early. The card in the
+  corner takes the call, holds it, and reads the results out to the whole table.
+- **Coins, and a shelf to spend them on.** Side bets are played for coins: 500
+  to open an account and 200 more once a day. A calendar day rather than a
+  rolling twenty-four hours, so "tomorrow" is an answer rather than "at 03:47".
+  A call pays by how many players were still in when you made it — six-handed
+  on the flop pays six, heads-up on the river pays two — and the odds are fixed
+  at the moment you call, which is what makes calling early worth anything.
+  Coins buy new throwables: everything already in use stays free, and there are
+  seven more to save up for. They are their own currency and buy nothing that
+  money buys; Calotes settles real debts between friends and is kept well away
+  from a game of guessing who wins a pot.
+- **The best hand you have ever turned over, on your own stats, and clickable.**
+  Only showdowns count — a monster everybody folded to was never seen and is on
+  record nowhere. Clicking it replays the hand it was made in, however long ago
+  that was.
+- **How long is left to register, in minutes.** "Until level 4" is a fact about
+  the schedule; how long you have is the thing you were asking. Counted across
+  the levels between here and there, breaks included, since twenty minutes of
+  break is twenty more minutes you can still register in. A level counted in
+  hands has no clock, so those still say which level it closes on rather than
+  invent a number.
+- **How the tournament is going, without opening anything.** Players left of how
+  many sat down, what an average stack has grown to, how many places pay and the
+  registration clock — on the table's header, on the tournament lobby's banner
+  and in the list at home, worked out in one place so the three cannot drift.
+- **Throwables you can aim.** Pick something up and the cursor becomes a
+  crosshair, with a dashed line curving from your own face to wherever you are
+  pointing along the arc the object will actually fly. Whoever would catch it
+  wears a ring with their name under it, so "can I hit them" is answered before
+  you click. Clicking empty felt puts the thing down.
 - **Your good cards catch the light.** A premium holding before the flop — tens
   or better, AK, AQs, KQs — and anything better than one pair once the board is
   out, and your two cards pick up a gold edge and a slow sheen. Only your own
@@ -42,6 +80,30 @@ remembering.
   range before anything is committed.
 
 ### Changed
+- **The table's navigation makes sense now.** Home is a house, up beside your
+  avatar, in the same place on every screen — leaving is about you, not about
+  this hand. The tournament's name is in the top-left corner, since it is
+  possible to be in two. Info, hand history and the lobby are one group in the
+  row below, because all three are "step away from the hand for a moment", and
+  they have icons. Chips/BB and the sound toggle moved down beside Sit out,
+  where the other things that change what the felt does live.
+- **A hand replays street by street.** The history used to be one list of
+  actions with three headings dropped into it and the board drawn once at the
+  top, so a bet on the turn was a name and a number with no cards anywhere near
+  it. Each street now carries the board the players were looking at when they
+  acted, with the cards that street turned over lit up. The showdown leads with
+  whoever was paid, and every card that made a hand is ringed.
+- **An all-in sounds like a pulse.** Two thumps to a beat, quickening — a steady
+  heart is calm and one that is speeding up is not. It starts when the chips go
+  in rather than when somebody calls, so a shove everyone folds to is no longer
+  the loudest thing a player can do in silence.
+- **The home stats say the four things worth knowing.** Tournaments, cashes with
+  the rate beside them, everything won, and your best hand. A cash in four is a
+  different player from a cash in forty and the count alone could not tell you
+  which. The rate counts the nights that finished, so a tournament still in play
+  does not drag it down while you sit in it.
+- **A tournament you are in the middle of has the button back to your seat**,
+  right there in the list at home. It was two clicks and a page in between.
 - **The hand that ends a tournament stays on screen.** The standings replaced
   the table the instant the last pot was awarded, so the hand you just lost — or
   won — everything on was gone before you could look at it. The table now holds
@@ -70,6 +132,15 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **A hand's history put players in the wrong seats.** Every action was recorded
+  against the seat that player is sitting in *now*, and a seat moves when tables
+  rebalance — so a replay could show somebody acting from a seat they only
+  reached two hands later, and match them against another player's showdown
+  cards. The hand records its own seats; those are the ones that come back.
+- **The best-hand preview opened inside the panel it came from.** Every frosted
+  panel makes a stacking context, which no z-index climbs out of, so a dialog
+  declared full-screen was pinned into a column of the lobby and laid over the
+  tiles behind it.
 - **A busted player can buy back in from anywhere the tournament is.** The rebuy
   was only ever offered on the two screens the table itself puts up: the strip
   that appears for ten seconds after you go out, and the elimination screen

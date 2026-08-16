@@ -88,10 +88,10 @@ export default function LobbyPage() {
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <StatsPanel />
-        <CoinPanel />
         <CalotesPanel />
         <WatchPanel />
         <ClubPanel onClubsLoaded={onClubsLoaded} />
+        <CoinPanel />
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">

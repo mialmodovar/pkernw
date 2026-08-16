@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { gifFullUrl } from "../../api/giphy";
 import useGameStore from "../../store/gameStore";
+import { playFinisherSound } from "./sounds";
 
 /** Long enough for a GIF to land, short enough that the next hand is not held
  *  hostage to it. The table waits three seconds between hands anyway. */
@@ -23,7 +24,11 @@ export default function FinisherOverlay() {
   const finisher = useGameStore((s) => s.finisher);
   const riverShownAt = useGameStore((s) => s.riverShownAt);
   const clearFinisher = useGameStore((s) => s.clearFinisher);
+  const soundEnabled = useGameStore((s) => s.soundEnabled);
   const finisherId = finisher?.id ?? null;
+  // Held apart from `finisher` so the sound effect below depends on the list
+  // itself: it is the same object for as long as one knockout is on screen.
+  const players = finisher?.players ?? null;
   // Which finisher has waited out the river. Null until it has, so the hold is
   // never skipped by a render that happens in the middle of it.
   const [readyId, setReadyId] = useState(null);
@@ -51,6 +56,15 @@ export default function FinisherOverlay() {
     const timer = setTimeout(() => clearFinisher(readyId), PLAY_MS);
     return () => clearTimeout(timer);
   }, [readyId, clearFinisher]);
+
+  // The sting goes with the picture, not with the knockout: it fires when the
+  // GIF actually appears, after the wait for the river. A split pot plays both
+  // players' sounds, which is loud and correct — they both did it. Muting the
+  // table mutes this too; it is the loudest thing the table does.
+  useEffect(() => {
+    if (readyId == null || !soundEnabled || !players) return;
+    for (const one of players) playFinisherSound(one.sound);
+  }, [readyId, players, soundEnabled]);
 
   if (!finisher || readyId !== finisherId) return null;
 

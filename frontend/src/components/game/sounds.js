@@ -294,6 +294,62 @@ export function playSplat(itemId) {
   play(LANDINGS[landingFor(itemId) || "splat"]);
 }
 
+/**
+ * The stings a knockout finisher can carry.
+ *
+ * A GIF landing in silence is half a joke. These are chosen with the GIF and
+ * travel as a name, never a file — the server keeps the same list in
+ * game/finishers.py, and anything it does not recognise arrives as silence.
+ * Louder than the table's own sounds, because this one is a punchline, but
+ * still short: it plays over somebody's worst moment of the night.
+ */
+const FINISHER_STINGS = {
+  airhorn: (ctx, now) => {
+    [0, 0.16, 0.32].forEach((offset) => {
+      tone(ctx, {
+        freq: 420, start: now + offset, duration: 0.14, peak: 0.16,
+        type: "sawtooth", endFreq: 380,
+      });
+      tone(ctx, {
+        freq: 632, start: now + offset, duration: 0.14, peak: 0.1,
+        type: "sawtooth", endFreq: 570,
+      });
+    });
+  },
+  boom: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.6, peak: 0.3, frequency: 140, Q: 0.3 });
+    tone(ctx, { freq: 80, start: now, duration: 0.7, peak: 0.24, type: "sine", endFreq: 28 });
+  },
+  fanfare: (ctx, now) => {
+    [523, 659, 784, 1047].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.09, duration: 0.3, peak: 0.11, type: "triangle" });
+    });
+  },
+  // Three notes falling: the sound of somebody's night ending.
+  sting: (ctx, now) => {
+    [660, 550, 440].forEach((freq, index) => {
+      tone(ctx, {
+        freq, start: now + index * 0.13, duration: 0.24, peak: 0.12,
+        type: "square", endFreq: freq * 0.94,
+      });
+    });
+  },
+  slam: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.12, peak: 0.3, frequency: 900, Q: 0.7 });
+    tone(ctx, { freq: 180, start: now, duration: 0.28, peak: 0.2, type: "square", endFreq: 50 });
+  },
+};
+
+/** Whether a name is one of ours. "none" is a choice, not a mistake. */
+export function finisherSoundExists(name) {
+  return Boolean(FINISHER_STINGS[name]);
+}
+
+export function playFinisherSound(name) {
+  const sting = FINISHER_STINGS[name];
+  if (sting) play(sting);
+}
+
 /** Which sound an action at the table makes. */
 export function playAction({ action, isAllIn }) {
   // The chips going in, and then your pulse under them. It starts the moment

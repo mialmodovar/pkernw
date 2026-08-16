@@ -36,7 +36,14 @@ const clearStoredTheme = () => {
 };
 
 const isDefault = (theme) =>
-  Object.keys(DEFAULT_THEME).every((key) => theme[key] === DEFAULT_THEME[key]);
+  Object.keys(DEFAULT_THEME).every((key) => (
+    // Two empty arrays are never the same object, and the finisher list is one.
+    // The only default list is an empty one, so its length settles it — without
+    // this, a fresh install reads as "customised" and pushes itself up.
+    Array.isArray(DEFAULT_THEME[key])
+      ? (theme[key] || []).length === DEFAULT_THEME[key].length
+      : theme[key] === DEFAULT_THEME[key]
+  ));
 
 // Dragging the colour input fires a change per pixel of travel. The paint is
 // immediate either way; only the PATCH waits for you to settle on a colour.
@@ -54,7 +61,11 @@ const schedulePush = (theme) => {
       preset: theme.preset,
       accent: theme.accent,
       pattern: theme.pattern,
-      finisher_gif_id: theme.finisherGifId,
+      // The first of the list, still sent on its own: a client older than this
+      // one reads that field, and so does a profile that has never been saved
+      // since the list existed.
+      finisher_gif_id: theme.finishers?.[0]?.gifId ?? theme.finisherGifId,
+      finishers: (theme.finishers || []).map((one) => ({ gif_id: one.gifId, sound: one.sound })),
     }).catch(() => {});
   }, PUSH_DELAY_MS);
 };

@@ -3,8 +3,11 @@ import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
 import GifPicker from "../game/GifPicker";
 import { gifPreviewUrl } from "../../api/giphy";
+import { playFinisherSound } from "../game/sounds";
 import {
   ACCENT_SWATCHES,
+  FINISHER_SOUNDS,
+  MAX_FINISHERS,
   PATTERNS,
   PATTERN_NAMES,
   PRESETS,
@@ -13,6 +16,16 @@ import {
   effectiveAccent,
   resolveTokens,
 } from "../../theme/themes";
+
+/** What each sting is called, for people who are not going to guess from the
+ *  name of a waveform. */
+const SOUND_LABELS = {
+  airhorn: "Air horn",
+  boom: "Boom",
+  fanfare: "Fanfare",
+  sting: "Sad trombone",
+  slam: "Slam",
+};
 
 /** A miniature of what the preset does to the table: the actual felt gradient
  *  with the actual card back lying on it. Cheaper to read than three colour
@@ -53,13 +66,34 @@ function SectionLabel({ children, action }) {
 }
 
 export default function ThemeSettings({ onClose }) {
-  const { preset, accent, pattern, finisherGifId, update } = useThemeStore();
+  const { preset, accent, pattern, finishers, update } = useThemeStore();
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
   const [listOpen, setListOpen] = useState(false);
-  const [finisherOpen, setFinisherOpen] = useState(false);
+  // Which slot the picker is filling, or null for closed. A number rather than
+  // a flag because "add another" and "choose your first" open the same picker.
+  const [finisherOpen, setFinisherOpen] = useState(null);
   const currentAccent = effectiveAccent({ preset, accent });
+
+  // The list is always saved whole, and the single id goes with it so a client
+  // that has not been updated still finds a finisher where it looks for one.
+  const saveFinishers = (next) => update({
+    finishers: next,
+    finisherGifId: next[0]?.gifId ?? null,
+  });
+  const addFinisher = (gifId) => {
+    if (finishers.some((one) => one.gifId === gifId)) return;
+    saveFinishers([...finishers, { gifId, sound: "none" }].slice(0, MAX_FINISHERS));
+  };
+  const removeFinisher = (index) => saveFinishers(finishers.filter((_, i) => i !== index));
+  const setFinisherSound = (index, sound) => {
+    saveFinishers(finishers.map((one, i) => (i === index ? { ...one, sound } : one)));
+    // Played as you pick it: choosing a sound blind from a list of five names
+    // is choosing at random.
+    playFinisherSound(sound);
+  };
+  const previewFinisherSound = (sound) => playFinisherSound(sound);
 
   // A settings panel that cannot be dismissed from the keyboard is a trap.
   // Escape backs out one level at a time, so it closes the open dropdown rather
@@ -68,7 +102,7 @@ export default function ThemeSettings({ onClose }) {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (listOpen) setListOpen(false);
-      else if (finisherOpen) setFinisherOpen(false);
+      else if (finisherOpen !== null) setFinisherOpen(null);
       else onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -248,64 +282,102 @@ export default function ThemeSettings({ onClose }) {
         </p>
       </div>
 
-      {/* Your finisher. Not a colour, but it belongs with the rest of how you
+      {/* Your finishers. Not a colour, but they belong with the rest of how you
           show up at a table, and this is where a player already comes to set
-          that. */}
+          that. Three of them, because the same clip every single time is funny
+          twice — the table picks between them on each knockout. */}
       <div className="mt-3 pt-3 border-t border-(--color-border)">
         <SectionLabel
           action={
-            finisherGifId && (
+            finishers.length < MAX_FINISHERS && (
               <button
-                onClick={() => update({ finisherGifId: null })}
+                onClick={() => setFinisherOpen(finishers.length)}
                 className="text-[0.65rem] text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
               >
-                Remove
+                {finishers.length ? "Add another" : "Choose one"}
               </button>
             )
           }
         >
-          Finisher
+          Finishers {finishers.length > 0 && `(${finishers.length}/${MAX_FINISHERS})`}
         </SectionLabel>
 
-        <div className="relative flex items-center gap-2">
-          <button
-            onClick={() => setFinisherOpen((open) => !open)}
-            aria-expanded={finisherOpen}
-            className="flex items-center gap-2 p-1.5 rounded panel-raised panel-solid text-left flex-1 min-w-0"
-          >
-            {finisherGifId ? (
+        <div className="space-y-1.5">
+          {finishers.map((one, index) => (
+            <div key={one.gifId} className="flex items-center gap-2">
               <img
-                src={gifPreviewUrl(finisherGifId)}
-                alt="Your finisher"
+                src={gifPreviewUrl(one.gifId)}
+                alt=""
                 className="w-10 h-7 object-cover rounded shrink-0 border border-black/40"
               />
-            ) : (
+              {/* The sound that goes with this one. A name, never a file: the
+                  table synthesises all of them, so choosing one costs nothing
+                  to load and cannot arrive late. */}
+              <select
+                value={one.sound}
+                onChange={(event) => setFinisherSound(index, event.target.value)}
+                aria-label={`Sound for finisher ${index + 1}`}
+                className="input-field rounded px-1.5 py-1 text-xs flex-1 min-w-0 transition-colors"
+              >
+                {FINISHER_SOUNDS.map((name) => (
+                  <option key={name} value={name}>
+                    {name === "none" ? "No sound" : SOUND_LABELS[name] || name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => previewFinisherSound(one.sound)}
+                disabled={one.sound === "none"}
+                title="Hear it"
+                aria-label={`Hear the sound for finisher ${index + 1}`}
+                className="px-1.5 py-1 rounded panel-raised text-xs text-(--color-text-muted)
+                           hover:text-(--color-silver) transition-colors disabled:opacity-30"
+              >
+                {"▶"}
+              </button>
+              <button
+                onClick={() => removeFinisher(index)}
+                title="Remove this finisher"
+                aria-label={`Remove finisher ${index + 1}`}
+                className="px-1.5 py-1 rounded text-xs text-(--color-text-muted)
+                           hover:text-(--color-accent-link) transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+
+          {finishers.length === 0 && (
+            <button
+              onClick={() => setFinisherOpen(0)}
+              className="flex items-center gap-2 p-1.5 rounded panel-raised panel-solid text-left w-full"
+            >
               <span className="w-10 h-7 rounded shrink-0 border border-dashed border-(--color-border)
                                flex items-center justify-center text-[0.6rem] text-(--color-text-muted)">
                 none
               </span>
-            )}
-            <span className="text-sm text-(--color-silver) flex-1 truncate">
-              {finisherGifId ? "Change GIF" : "Choose a GIF"}
-            </span>
-          </button>
-
-          {finisherOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setFinisherOpen(false)} />
-              <div className="absolute right-0 top-full z-20 mt-1">
-                <GifPicker
-                  title="Search for your finisher"
-                  onPick={(id) => { update({ finisherGifId: id }); setFinisherOpen(false); }}
-                  onClose={() => setFinisherOpen(false)}
-                />
-              </div>
-            </>
+              <span className="text-sm text-(--color-silver) flex-1 truncate">Choose a GIF</span>
+            </button>
           )}
         </div>
 
+        {finisherOpen !== null && (
+          <div className="relative">
+            <div className="fixed inset-0 z-10" onClick={() => setFinisherOpen(null)} />
+            <div className="absolute right-0 top-full z-20 mt-1">
+              <GifPicker
+                title="Search for a finisher"
+                onPick={(id) => { addFinisher(id); setFinisherOpen(null); }}
+                onClose={() => setFinisherOpen(null)}
+              />
+            </div>
+          </div>
+        )}
+
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
-          Plays in the middle of the table whenever you knock somebody out.
+          {finishers.length > 1
+            ? "One of these plays in the middle of the table whenever you knock somebody out — whichever the table picks."
+            : "Plays in the middle of the table whenever you knock somebody out."}
         </p>
       </div>
     </div>

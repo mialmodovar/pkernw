@@ -2,7 +2,7 @@ import PlayingCard, { CardBack } from "./PlayingCard";
 
 export default function HoleCards({
   cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine,
-  hideUntilHover = false, size = "seat",
+  hideUntilHover = false, size = "seat", onShowCard = null,
 }) {
   if (eliminated) return null;
   // A card you chose to show stands up out of the pair, so at a glance you can
@@ -59,18 +59,36 @@ export default function HoleCards({
     );
   }
   const winners = new Set(winningCards || []);
+  const face = (card, index) => (
+    <PlayingCard
+      key={index}
+      card={card}
+      size={size}
+      winning={winners.has(card)}
+      shine={shine}
+      className={lift(card)}
+    />
+  );
+  // Between hands, your own cards are the button for showing them. The bar in
+  // the action panel could do it before and still can, but a player reaching to
+  // turn one over reaches for the card, not for a row of labels somewhere else
+  // on the screen. One card at a time, which is the move worth making — both at
+  // once is what the bar's "Both" is for.
   const faces = (
     <>
-      {cards.map((card, index) => (
-        <PlayingCard
+      {cards.map((card, index) => (onShowCard ? (
+        <button
           key={index}
-          card={card}
-          size={size}
-          winning={winners.has(card)}
-          shine={shine}
-          className={lift(card)}
-        />
-      ))}
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onShowCard(index); }}
+          title={`Show ${card} to the table`}
+          aria-label={`Show ${card} to the table`}
+          className="rounded transition-transform hover:-translate-y-[12%] cursor-pointer
+                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)"
+        >
+          {face(card, index)}
+        </button>
+      ) : face(card, index)))}
     </>
   );
 
@@ -86,13 +104,16 @@ export default function HoleCards({
       // meant. `peer/hand` is how the read on the hand, which lives outside
       // this component, lifts with them without widening what triggers it.
       <div className="group/cards peer/hand relative flex gap-0.5 cursor-pointer"
-        title="Hold to see your hand">
+        title={onShowCard ? "Hold to see your hand, click a card to show it" : "Hold to see your hand"}>
         <div className="flex gap-0.5 opacity-0 transition-opacity duration-150
                         group-hover/cards:opacity-100 group-active/cards:opacity-100">
           {faces}
         </div>
         <div aria-hidden="true"
-          className="absolute inset-0 flex gap-0.5 transition-opacity duration-150
+          // Transparent to the pointer: it fades out under your cursor but it
+          // is still lying there, and it was catching the click meant for the
+          // card underneath. The hover target is the box around both.
+          className="pointer-events-none absolute inset-0 flex gap-0.5 transition-opacity duration-150
                      group-hover/cards:opacity-0 group-active/cards:opacity-0">
           <CardBack size={size} />
           <CardBack size={size} />

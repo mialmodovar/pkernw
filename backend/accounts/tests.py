@@ -58,6 +58,46 @@ class FinisherGifTests(APITestCase):
 		self.user.profile.refresh_from_db()
 		self.assertIsNone(self.user.profile.theme["finisher_gif_id"])
 
+	def test_three_finishers_are_saved_with_their_sounds(self):
+		response = self._patch(finishers=[
+			{"gif_id": "aaa111", "sound": "airhorn"},
+			{"gif_id": "bbb222", "sound": "boom"},
+			{"gif_id": "ccc333"},
+		])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["finishers"], [
+			{"gif_id": "aaa111", "sound": "airhorn"},
+			{"gif_id": "bbb222", "sound": "boom"},
+			{"gif_id": "ccc333", "sound": "none"},
+		])
+
+	def test_a_fourth_finisher_is_refused(self):
+		response = self._patch(finishers=[{"gif_id": f"gif{index}"} for index in range(4)])
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_url_or_an_invented_sound_never_reaches_another_screen(self):
+		"""These play on other people's tables, so neither is corrected — the
+		GIF is dropped and the sound falls back to silence."""
+		response = self._patch(finishers=[
+			{"gif_id": "https://evil.example/x.gif", "sound": "airhorn"},
+			{"gif_id": "good111", "sound": "../../etc/passwd"},
+		])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(
+			self.user.profile.theme["finishers"], [{"gif_id": "good111", "sound": "none"}],
+		)
+
+	def test_the_same_gif_twice_is_kept_once(self):
+		self._patch(finishers=[{"gif_id": "same11"}, {"gif_id": "same11", "sound": "boom"}])
+
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["finishers"], [{"gif_id": "same11", "sound": "none"}])
+
 
 class WatchingTests(APITestCase):
 	"""Keeping an eye on other players."""

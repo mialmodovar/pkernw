@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -10,6 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from tournaments.bounties import BountyConfig, split_knockout
 
 from .engine.hand import HandEngine, cards_to_list
+from .finishers import DEFAULT_SOUND, pick_finisher
 from .levelclock import seconds_until_level_ends
 from .sidebets import record_for, settle as settle_side_bets, updated_records
 from sidegames.games import PLAYER_BET, clean_stake
@@ -53,6 +55,11 @@ class RuntimeTable:
 
 
 class MultiTableTournamentCoordinator:
+    # Which of a player's finishers plays for a given knockout. A seam rather
+    # than a bare call to random, so a test can say which one it wants and the
+    # engine stays as predictable as the rest of it.
+    _choose_finisher = staticmethod(random.choice)
+
     def __init__(
         self,
         tournament_id: int,
@@ -924,6 +931,7 @@ class MultiTableTournamentCoordinator:
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
             runtime_player._avatar_url = record.get("avatar_url")
             runtime_player._finisher_gif_id = record.get("finisher_gif_id")
+            runtime_player._finishers = record.get("finishers") or []
             runtime_player.chips = record["chips"]
             # Only read in on the first sight of a player. This runs before
             # every hand and the DB write happens after it, so re-reading here
@@ -1475,12 +1483,30 @@ class MultiTableTournamentCoordinator:
                     {
                         "seat": eliminator._seat,
                         "name": eliminator.name,
-                        "finisher_gif_id": getattr(eliminator, "_finisher_gif_id", None),
+                        **self._finisher_for(eliminator),
                     }
                     for eliminator in eliminators
                 ],
             },
         )
+
+    def _finisher_for(self, player) -> dict:
+        """Which of this player's finishers plays for this knockout.
+
+        Chosen here rather than on each client: everybody at the table has to
+        watch the same clip, and eight browsers rolling their own dice would
+        put eight different GIFs over the same knockout.
+        """
+        finishers = getattr(player, "_finishers", None) or []
+        chosen = pick_finisher(finishers, self._choose_finisher)
+        if chosen is None:
+            # Nothing in the list, but an older profile may still carry the one
+            # id that came before it.
+            return {
+                "finisher_gif_id": getattr(player, "_finisher_gif_id", None),
+                "finisher_sound": DEFAULT_SOUND,
+            }
+        return {"finisher_gif_id": chosen["gif_id"], "finisher_sound": chosen["sound"]}
 
     async def _pay_bounty(
         self,

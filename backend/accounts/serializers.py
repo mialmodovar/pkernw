@@ -1,6 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from game.finishers import MAX_FINISHERS, clean_finisher
 from game.giphy import GIF_ID_PATTERN, clean_gif_id
 
 from .avatars import avatar_url
@@ -125,8 +126,27 @@ class ThemeUpdateSerializer(serializers.Serializer):
     finisher_gif_id = serializers.RegexField(
         GIF_ID_PATTERN.pattern, allow_null=True, allow_blank=True, default=None,
     )
+    # The same thing, plural, and each with a sound. Kept beside the single id
+    # above rather than replacing it: a client that has not been updated still
+    # sends one, and a profile saved before this existed still has one.
+    finishers = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list, max_length=MAX_FINISHERS,
+    )
 
     def validate_finisher_gif_id(self, value):
         # An empty string is how the client says "no finisher", and it should
         # land in the profile as a null rather than as a blank to test for.
         return clean_gif_id(value)
+
+    def validate_finishers(self, value):
+        """Cleaned here rather than trusted: these are played on other people's
+        screens, so an id that is not an id and a sound that is not one of ours
+        are dropped rather than stored."""
+        cleaned = []
+        seen = set()
+        for entry in value:
+            finisher = clean_finisher(entry)
+            if finisher and finisher["gif_id"] not in seen:
+                seen.add(finisher["gif_id"])
+                cleaned.append(finisher)
+        return cleaned[:MAX_FINISHERS]

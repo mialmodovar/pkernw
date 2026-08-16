@@ -2232,6 +2232,85 @@ class KnockoutAnnouncementTests(TestCase):
 
 		self.assertEqual(broadcasts, [])
 
+	def test_the_table_picks_which_finisher_plays_and_says_its_sound(self):
+		"""Chosen here rather than on each client: eight browsers rolling their
+		own dice would put eight different GIFs over the same knockout."""
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		# Whichever the dice would have given, this test says the last one.
+		coordinator._choose_finisher = lambda options: options[-1]
+		victim = self._player(coordinator, 1, "victim")
+		one = self._player(coordinator, 2, "one", gif="legacy")
+		one._finishers = [
+			{"gif_id": "aaa", "sound": "airhorn"},
+			{"gif_id": "bbb", "sound": "boom"},
+		]
+
+		async_to_sync(coordinator._announce_knockout)(victim, [one])
+
+		_, payload = broadcasts[0]
+		self.assertEqual(payload["eliminators"][0]["finisher_gif_id"], "bbb")
+		self.assertEqual(payload["eliminators"][0]["finisher_sound"], "boom")
+
+	def test_a_profile_saved_before_the_list_existed_still_plays(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		victim = self._player(coordinator, 1, "victim")
+		one = self._player(coordinator, 2, "one", gif="oldone")
+
+		async_to_sync(coordinator._announce_knockout)(victim, [one])
+
+		_, payload = broadcasts[0]
+		self.assertEqual(payload["eliminators"][0]["finisher_gif_id"], "oldone")
+		self.assertEqual(payload["eliminators"][0]["finisher_sound"], "none")
+
+
+class FinisherListTests(TestCase):
+	"""What comes off a profile, and what the table is allowed to play."""
+
+	def test_the_single_id_that_came_before_is_folded_in(self):
+		from game.finishers import finisher_list
+
+		self.assertEqual(
+			finisher_list({"finisher_gif_id": "abc123"}),
+			[{"gif_id": "abc123", "sound": "none"}],
+		)
+
+	def test_the_list_wins_over_the_single_id(self):
+		from game.finishers import finisher_list
+
+		self.assertEqual(
+			finisher_list({"finisher_gif_id": "old", "finishers": [{"gif_id": "new1"}]}),
+			[{"gif_id": "new1", "sound": "none"}],
+		)
+
+	def test_rubbish_is_dropped_rather_than_corrected(self):
+		from game.finishers import finisher_list
+
+		self.assertEqual(
+			finisher_list({"finishers": [
+				{"gif_id": "http://evil.example/x.gif"},
+				{"gif_id": "fine11", "sound": "not a sound"},
+			]}),
+			[{"gif_id": "fine11", "sound": "none"}],
+		)
+
+	def test_no_more_than_three_and_no_duplicates(self):
+		from game.finishers import finisher_list
+
+		listed = finisher_list({"finishers": [
+			{"gif_id": "one"}, {"gif_id": "one"}, {"gif_id": "two"},
+			{"gif_id": "three"}, {"gif_id": "four"},
+		]})
+
+		self.assertEqual([one["gif_id"] for one in listed], ["one", "two", "three"])
+
+	def test_a_profile_with_nothing_chosen_plays_nothing(self):
+		from game.finishers import finisher_list, pick_finisher
+
+		self.assertEqual(finisher_list({}), [])
+		self.assertIsNone(pick_finisher([], lambda options: options[0]))
+
 
 class RebuySeatVisibilityTests(TestCase):
 	"""A rebuy you cannot see looks like a rebuy that did not work."""

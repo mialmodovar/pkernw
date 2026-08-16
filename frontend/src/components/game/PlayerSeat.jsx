@@ -8,6 +8,7 @@ import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import { useShowCardsOffer } from "./showCards";
 import { formatEuros } from "./formatMoney";
 import { vpipTone } from "./playerProfile";
 import { positionHint } from "./tablePositions";
@@ -97,6 +98,9 @@ export default function PlayerSeat({
   const liveStream = myStream || (media?.video && media.videoFlowing !== false ? media.stream : null);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
+  // Your own hand, between hands: the same offer the action panel's bar makes,
+  // asked once so the two cannot disagree about whether you may show.
+  const showOffer = useShowCardsOffer(isMe ? player.seat : null, isMe ? myCards : null);
   const bountyFlash = useBountyFlash(p.seat);
   const bountyCents = p.bounty_cents || 0;
   const borderColor = p.is_disconnected
@@ -200,6 +204,9 @@ export default function PlayerSeat({
         // at showdown it belongs to the table, and covering it then would be
         // hiding it from you alone.
         hideUntilHover={coverHand}
+        // Between hands, your own cards are how you show them. Null for
+        // everybody else's seat, and null for your own until the window opens.
+        onShowCard={showOffer.canShow ? (index) => showOffer.show([index]) : null}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}

@@ -9,6 +9,21 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Three finishers instead of one, and each of them makes a noise.** The same
+  clip over every knockout is funny twice. You can keep up to three now, and the
+  table picks between them each time you put somebody out — picked by the engine
+  rather than by each browser, so everyone at the table watches the same one.
+  Each carries a sound chosen with it: an air horn, a boom, a fanfare, a sad
+  trombone or a slam, all synthesised like the rest of the table's noises, so
+  there is nothing to download and nothing to fail. Picking one plays it, so you
+  are not choosing from a list of names. A finisher chosen before any of this
+  existed keeps working and is folded into the list the next time you save.
+- **Show a card by turning it over.** The only way to show a hand you did not
+  have to was a row of buttons in the action panel, which is not where anybody's
+  hand is. Between hands your own cards lift under the cursor and clicking one
+  shows it to the table. The bar is still there — it is what tells you the
+  window is open, and it is where "both" lives — and both routes now ask the
+  same question about whether you may show, so they cannot disagree.
 - **Everything you throw now lands with its own sound.** A brick and a rose
   arriving with the same wet thud was the joke falling flat — half of throwing
   something is what it sounds like when it hits. An egg cracks, a beer breaks,

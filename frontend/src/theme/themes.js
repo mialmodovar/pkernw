@@ -27,7 +27,18 @@ export const DEFAULT_THEME = {
   // A Giphy id, never a URL — see api/giphy.js. Null is "no finisher", which is
   // what everyone starts with.
   finisherGifId: null,
+  // The same thing, plural: up to three, each with a sound, and the table picks
+  // one per knockout. The single id above is what a profile saved before this
+  // existed still carries, and is folded into the list on the way in.
+  finishers: [],
 };
+
+/** How many finishers a player may keep. Matches game/finishers.py. */
+export const MAX_FINISHERS = 3;
+
+/** The stings the table can play with a finisher. Matches sounds.js, and the
+ *  server's list in game/finishers.py — a name, never a file. */
+export const FINISHER_SOUNDS = ["none", "airhorn", "boom", "fanfare", "sting", "slam"];
 
 /** Card-back patterns, as templates rather than finished artwork.
  *
@@ -456,7 +467,32 @@ export function normalizeTheme(theme) {
   // place the two names meet, so both spellings are accepted on the way in.
   const rawGif = theme?.finisherGifId ?? theme?.finisher_gif_id ?? null;
   const finisherGifId = GIF_ID.test(String(rawGif || "")) ? String(rawGif) : null;
-  return { preset, accent, pattern, finisherGifId };
+  return { preset, accent, pattern, finisherGifId, finishers: normalizeFinishers(theme) };
+}
+
+/**
+ * The finisher list, from whichever shape it arrived in.
+ *
+ * Both spellings again, and the single id folded in when there is no list —
+ * a player who chose a finisher before this existed keeps it, and the next
+ * time they change anything it is saved back in the new shape.
+ */
+export function normalizeFinishers(theme) {
+  const raw = theme?.finishers;
+  const list = Array.isArray(raw) ? raw : [];
+  const cleaned = [];
+  const seen = new Set();
+  for (const entry of list) {
+    const item = typeof entry === "string" ? { gifId: entry } : (entry || {});
+    const gifId = String(item.gifId ?? item.gif_id ?? "");
+    if (!GIF_ID.test(gifId) || seen.has(gifId)) continue;
+    seen.add(gifId);
+    cleaned.push({ gifId, sound: FINISHER_SOUNDS.includes(item.sound) ? item.sound : "none" });
+    if (cleaned.length >= MAX_FINISHERS) break;
+  }
+  if (cleaned.length) return cleaned;
+  const legacy = theme?.finisherGifId ?? theme?.finisher_gif_id ?? null;
+  return GIF_ID.test(String(legacy || "")) ? [{ gifId: String(legacy), sound: "none" }] : [];
 }
 
 /** The card back a preset/pattern pair produces. Exported so the settings panel

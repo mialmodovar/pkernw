@@ -26,6 +26,7 @@ from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 from .models import Hand, HandAction
 
 from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
+from .finishers import finisher_list
 from .giphy import clean_gif_id as _clean_gif_id
 from .throwables import clean_item as _clean_item
 from .throwables import is_free as _is_free_item
@@ -1125,6 +1126,10 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 # re-checked here: a profile written before the rule existed,
                 # or by hand, must not reach the table unchecked.
                 "finisher_gif_id": _clean_gif_id((record["user__profile__theme"] or {}).get("finisher_gif_id")),
+                # Everything they have chosen, cleaned the same way and in the
+                # same breath — the table picks one of these per knockout, so
+                # the same clip does not play every time somebody busts.
+                "finishers": finisher_list(record["user__profile__theme"]),
                 "table_id": record["table_id"],
                 "table_number": record["table__table_number"],
                 "seat": record["seat"],

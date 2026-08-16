@@ -716,9 +716,16 @@ const useGameStore = create((set) => ({
           // A split pot has two people knocking one out, and both of them own
           // the moment. Only those who chose a finisher appear; if nobody did,
           // there is nothing to play.
+          // The engine picks which of a player's finishers this one is, so
+          // everybody at the table watches the same clip — and it names the
+          // sound that goes with it.
           const playing = (data.eliminators || [])
             .filter((one) => one.finisher_gif_id)
-            .map((one) => ({ gifId: one.finisher_gif_id, name: one.name }));
+            .map((one) => ({
+              gifId: one.finisher_gif_id,
+              sound: one.finisher_sound || "none",
+              name: one.name,
+            }));
           if (!playing.length) return {};
           return {
             finisher: {

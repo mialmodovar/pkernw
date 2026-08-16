@@ -12,6 +12,8 @@ from accounts.avatars import avatar_url
 from clubs.models import Club, Season
 from clubs.permissions import is_club_staff
 
+from .permissions import can_manage_tournament
+
 from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
@@ -216,6 +218,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
     is_host      = serializers.SerializerMethodField()
+    can_manage   = serializers.SerializerMethodField()
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
     my_rebuy_count = serializers.SerializerMethodField()
@@ -278,6 +281,16 @@ class TournamentListSerializer(serializers.ModelSerializer):
             return False
         return tournament.host_id == request.user.id
 
+    def get_can_manage(self, tournament):
+        """Whether to draw the buttons that run this tournament.
+
+        Not the same question as `is_host`, which is whose night it is and gets
+        printed. This is what the endpoints actually enforce, so the card cannot
+        offer a button the server would refuse — or hide one it would allow.
+        """
+        request = self.context.get("request")
+        return can_manage_tournament(request.user if request else None, tournament)
+
     def get_late_registration_open(self, tournament):
         return _late_registration_open(tournament)
 
@@ -313,7 +326,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
         model = Tournament
         fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
-                  "is_host",
+                  "is_host", "can_manage",
                   "winner_name", "my_finish_position", "my_rebuy_count",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
                   "late_registration_open", "late_registration_seconds_left",
@@ -342,6 +355,13 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     # Read from the engine rather than the column, and served at all: the lobby
     # has always drawn a current level and never had one to draw.
     current_level_index = serializers.SerializerMethodField()
+    # The same question the start/pause/resume endpoints ask, so this page draws
+    # the buttons it will actually be allowed to press.
+    can_manage = serializers.SerializerMethodField()
+
+    def get_can_manage(self, tournament):
+        request = self.context.get("request")
+        return can_manage_tournament(request.user if request else None, tournament)
 
     def get_late_registration_open(self, tournament):
         return _late_registration_open(tournament)
@@ -362,7 +382,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "late_registration_open", "late_registration_seconds_left",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open",
-                  "current_level_index",
+                  "current_level_index", "can_manage",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",

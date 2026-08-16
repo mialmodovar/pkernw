@@ -209,7 +209,7 @@ export default function TournamentCard({
         )}
         {/* Paused counts as well: a night that breaks up half way through
             should not leave a game nobody can get rid of. */}
-        {t.is_host && t.status === "lobby" && onEdit && (
+        {t.can_manage && t.status === "lobby" && onEdit && (
           <button onClick={() => onEdit(t)}
             title="Change this tournament — only until it starts"
             aria-label={`Edit ${t.name}`}
@@ -218,7 +218,7 @@ export default function TournamentCard({
             Edit
           </button>
         )}
-        {t.is_host && (t.status === "lobby" || t.status === "paused") && onDelete && (
+        {t.can_manage && (t.status === "lobby" || t.status === "paused") && onDelete && (
           <button onClick={() => onDelete(t)}
             title={t.status === "paused"
               ? "Delete this paused tournament — the hands played are lost"

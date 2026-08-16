@@ -1,6 +1,40 @@
 from rest_framework import permissions
 
 
+def is_superuser(user):
+    """The account that owns the installation.
+
+    Kept apart from `is_staff` on purpose. Staff is a job — it opens
+    tournaments and runs clubs — while a superuser is whoever administers the
+    whole thing, and there is no room above them to appeal to when a night goes
+    wrong at two in the morning. They get the host's controls everywhere.
+    """
+    return bool(user and user.is_authenticated and user.is_superuser)
+
+
+def can_manage_tournament(user, tournament):
+    """Whether this person may run this tournament: start, pause, resume, skip
+    a level, edit it, delete it.
+
+    Three ways in. Whoever created it, obviously. Anybody who helps run the club
+    whose night it is, because a co-organiser should be able to start the game
+    when the host is stuck in traffic. And the superuser, over anything at all —
+    including a tournament with no club behind it, which used to answer to its
+    host and to nobody else.
+    """
+    if tournament is None or not (user and user.is_authenticated):
+        return False
+    if is_superuser(user):
+        return True
+    if tournament.host_id == user.id:
+        return True
+    # Imported here rather than at the top: clubs imports from tournaments in
+    # places, and this is the edge that would close the loop.
+    from clubs.permissions import is_club_staff
+
+    return bool(tournament.club_id and is_club_staff(user, tournament.club))
+
+
 class StaffCreatesTournaments(permissions.BasePermission):
     """Anyone signed in can browse and join; only staff can open a tournament.
 
@@ -23,4 +57,9 @@ class StaffCreatesTournaments(permissions.BasePermission):
         # club in the payload is one of theirs.
         from clubs.permissions import staffs_any_club
 
+        # A superuser whose staff flag has been turned off is still the person
+        # who owns the installation, and saying no to them here would be a
+        # lock they hold the key to.
+        if is_superuser(request.user):
+            return True
         return bool(request.user.is_staff) or staffs_any_club(request.user)

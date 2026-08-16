@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import CreateTournamentForm from "../components/lobby/CreateTournamentModal";
 import useLobbyStore from "../store/lobbyStore";
 import useAuthStore from "../store/authStore";
+import { runsThePlace } from "../components/auth/runsThePlace";
 
 export default function CreateTournamentPage() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function CreateTournamentPage() {
   // Hiding the button is presentation; this is the actual gate on the route.
   // The server refuses regardless, but landing on a form that cannot submit is
   // a poor way to find that out.
-  if (user && !user.is_staff) {
+  if (user && !runsThePlace(user)) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
         <h1 className="text-xl font-bold text-(--color-silver)">Staff only</h1>

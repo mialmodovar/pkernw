@@ -966,6 +966,122 @@ class TournamentPermissionTests(APITestCase):
 		self.assertTrue(self.client.get(reverse("me")).data["is_staff"])
 
 
+class SuperuserRunsAnythingTests(APITestCase):
+	"""The superuser has the host's controls over every tournament.
+
+	Not the staff flag, which is a job — opening tournaments, running clubs.
+	This is whoever administers the installation, and there is nobody above them
+	to appeal to when a table is stuck at two in the morning.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="su_host", password="secret123", is_staff=True)
+		self.boss = User.objects.create_superuser(username="su_boss", password="secret123")
+		self.player = User.objects.create_user(username="su_player", password="secret123")
+		# Deliberately no club: a club night already answered to its organisers,
+		# and a tournament with no club behind it answered to its host alone.
+		self.tournament = Tournament.objects.create(
+			host=self.host, name="Not my game", status="lobby", club=None,
+		)
+		for index, user in enumerate([self.host, self.player]):
+			TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user, seat=index, seat_at_table=index, chips=10000,
+			)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_the_superuser_can_start_somebody_elses_tournament(self):
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.post(
+			reverse("tournament-start", kwargs={"pk": self.tournament.id}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+
+	def test_the_superuser_can_pause_and_resume_it(self):
+		self.tournament.status = "running"
+		self.tournament.save(update_fields=["status"])
+		self.client.force_authenticate(self.boss)
+
+		paused = self.client.post(reverse("tournament-pause", kwargs={"pk": self.tournament.id}))
+		self.assertEqual(paused.status_code, status.HTTP_200_OK)
+
+		resumed = self.client.post(reverse("tournament-resume", kwargs={"pk": self.tournament.id}))
+		self.assertEqual(resumed.status_code, status.HTTP_200_OK)
+
+	def test_the_superuser_can_edit_the_blind_structure(self):
+		"""This one asked for the host by name, so even a club's own organisers
+		could start a tournament they were not allowed to fix a typo in."""
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.put(
+			reverse("tournament-levels", kwargs={"pk": self.tournament.id}),
+			[{"small_blind": 25, "big_blind": 50, "duration_minutes": 10}],
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self.tournament.levels.count(), 1)
+
+	def test_the_superuser_can_delete_it(self):
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.delete(
+			reverse("tournament-delete", kwargs={"pk": self.tournament.id}),
+		)
+
+		self.assertIn(response.status_code, (status.HTTP_200_OK, status.HTTP_204_NO_CONTENT))
+		self.assertFalse(Tournament.objects.filter(pk=self.tournament.id).exists())
+
+	def test_an_ordinary_player_still_cannot(self):
+		self.client.force_authenticate(self.player)
+
+		response = self.client.post(
+			reverse("tournament-start", kwargs={"pk": self.tournament.id}),
+		)
+
+		# Refused as "not found or not yours to run", which is what these
+		# endpoints have always answered rather than confirming it exists.
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "lobby")
+
+	def test_staff_who_are_not_the_host_still_cannot_run_a_clubless_tournament(self):
+		"""Staff is a job, not ownership of everybody's night. Only the
+		superuser reaches over the host of a tournament with no club."""
+		other_staff = User.objects.create_user(
+			username="su_other", password="secret123", is_staff=True,
+		)
+		self.client.force_authenticate(other_staff)
+
+		response = self.client.post(
+			reverse("tournament-start", kwargs={"pk": self.tournament.id}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "lobby")
+
+	def test_the_payload_says_who_may_run_it_so_the_buttons_match(self):
+		self.client.force_authenticate(self.boss)
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": self.tournament.id}))
+		self.assertTrue(detail.data["can_manage"])
+		# Still not their night: whose it is and who may run it are two
+		# different questions, and only one of them gets printed.
+		listed = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+		row = next(r for r in listed.data if r["id"] == self.tournament.id)
+		self.assertTrue(row["can_manage"])
+		self.assertFalse(row["is_host"])
+
+		self.client.force_authenticate(self.player)
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": self.tournament.id}))
+		self.assertFalse(detail.data["can_manage"])
+
+
 class PreflopStatsTests(TestCase):
 	"""The definitions are what make these numbers comparable, so they are
 	pinned here rather than left to whoever reads the query next."""

@@ -4,6 +4,7 @@ import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
+import { runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
@@ -112,7 +113,7 @@ export default function LobbyPage() {
         <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex flex-wrap gap-3 items-center">
-            {(user?.is_staff || staffsAClub) && (
+            {(runsThePlace(user) || staffsAClub) && (
               <>
                 <button onClick={() => navigate("/dev/table")}
                   title="Open the game table with mock players, for layout work"

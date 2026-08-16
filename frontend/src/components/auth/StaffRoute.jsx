@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import useAuthStore from "../../store/authStore";
+import { runsThePlace } from "./runsThePlace";
 
 /** Signed in and staff, matching what the server means by staff elsewhere.
  *
@@ -10,6 +11,6 @@ import useAuthStore from "../../store/authStore";
 export default function StaffRoute({ children }) {
   const user = useAuthStore((s) => s.user);
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.is_staff) return <Navigate to="/" replace />;
+  if (!runsThePlace(user)) return <Navigate to="/" replace />;
   return children;
 }

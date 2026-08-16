@@ -181,7 +181,11 @@ export default function TournamentSetupPage() {
 
   if (!tournament) return <p className="text-center mt-10 text-(--color-text-muted)">Loading...</p>;
 
-  const isHost = tournament.host_name === user?.username;
+  // Whose night it is and who may run it are two different questions, and only
+  // the second decides what buttons to draw. The server answers it — host, club
+  // organiser, or the superuser — so this page never offers one the endpoint
+  // would refuse.
+  const canManage = Boolean(tournament.can_manage);
   const me = tournament.players?.find((p) => p.username === user?.username) || null;
   const joined = Boolean(me);
   const scheduledStart = tournament.scheduled_start_at ? new Date(tournament.scheduled_start_at) : null;
@@ -306,7 +310,7 @@ export default function TournamentSetupPage() {
 
         <div className="flex flex-wrap gap-2 w-full lg:w-auto">
           <TournamentActions
-            tournament={tournament} joined={joined} me={me} isHost={isHost}
+            tournament={tournament} joined={joined} me={me} canManage={canManage}
             scheduledStartPending={scheduledStartPending} id={id} navigate={navigate}
             handleJoin={handleJoin} handleStart={handleStart} handleResume={handleResume}
             handleRebuy={handleRebuy}
@@ -601,7 +605,7 @@ export default function TournamentSetupPage() {
 }
 
 function TournamentActions({
-  tournament, joined, me, isHost, scheduledStartPending, id, navigate,
+  tournament, joined, me, canManage, scheduledStartPending, id, navigate,
   handleJoin, handleStart, handleResume, handleRebuy,
 }) {
   const seatedInPlay = me && !me.is_eliminated
@@ -634,7 +638,7 @@ function TournamentActions({
       {!joined && tournament.status === "lobby" && (
         <button onClick={handleJoin} className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">Join</button>
       )}
-      {isHost && tournament.status === "lobby" && tournament.players.length >= 2 && (
+      {canManage && tournament.status === "lobby" && tournament.players.length >= 2 && (
         <button
           onClick={handleStart}
           disabled={Boolean(scheduledStartPending)}
@@ -643,7 +647,7 @@ function TournamentActions({
           {scheduledStartPending ? "Scheduled" : "Start Tournament"}
         </button>
       )}
-      {isHost && tournament.status === "paused" && (
+      {canManage && tournament.status === "paused" && (
         <button onClick={handleResume} className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
           Resume
         </button>

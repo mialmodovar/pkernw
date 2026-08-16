@@ -1,10 +1,20 @@
 """Who may do what inside a club.
 
 A ladder, not a set of flags: an owner can do anything staff can. Site staff
-(`is_staff`) sit above all of it — they run the installation, not a community.
+(`is_staff`) sit above all of it — they run the installation, not a community —
+and the superuser sits above them, whatever their other flags say.
 """
 
 from .models import Membership
+
+
+def _runs_the_place(user):
+    """Site staff, or the superuser. Neither is a member of anything."""
+    if not user or not user.is_authenticated:
+        return False
+    # A superuser is normally staff as well, but the flags are separate and a
+    # superuser with the staff box unticked still owns the installation.
+    return bool(user.is_staff or user.is_superuser)
 
 
 def role_in(user, club):
@@ -21,14 +31,14 @@ def is_member(user, club):
 
 def is_club_staff(user, club):
     """May organise: create tournaments, run leagues, edit the club."""
-    if user and user.is_authenticated and user.is_staff:
+    if _runs_the_place(user):
         return True
     return role_in(user, club) in (Membership.OWNER, Membership.STAFF)
 
 
 def is_club_owner(user, club):
     """May change who else is staff, and hand the club over."""
-    if user and user.is_authenticated and user.is_staff:
+    if _runs_the_place(user):
         return True
     return role_in(user, club) == Membership.OWNER
 

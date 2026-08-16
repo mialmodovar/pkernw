@@ -9,6 +9,18 @@ remembering.
 ## Unreleased
 
 ### Added
+- **The superuser has the host's controls over every tournament.** Not the staff
+  flag — staff is a job, opening tournaments and running clubs, and it should
+  not carry ownership of everybody else's night. This is the account that
+  administers the installation, and there is nobody above them to appeal to when
+  a table is stuck at two in the morning. They can start, pause, resume, skip a
+  level, edit or delete any tournament, including one with no club behind it,
+  which until now answered to its host and to nobody else. Editing the blind
+  structure asked for the host by name, so even a club's own organisers could
+  start a tournament they were not allowed to fix a typo in; that goes through
+  the same rule as everything else now. The lobby and the table draw their
+  buttons from what the server says it will allow rather than from a name
+  comparison, so neither can offer a control that then refuses to work.
 - **Three finishers instead of one, and each of them makes a noise.** The same
   clip over every knockout is funny twice. You can keep up to three now, and the
   table picks between them each time you put somebody out — picked by the engine

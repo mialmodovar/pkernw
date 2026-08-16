@@ -230,7 +230,11 @@ export default function GamePage() {
   const nextLevel = level?.level_index != null
     ? tournament?.levels?.[level.level_index + 1]
     : null;
-  const isHost = tournament?.host_name === user?.username;
+  // Who may pause the night, skip a level or resume it. The server's answer
+  // rather than a name comparison: the host, whoever helps run the club, and
+  // the superuser — a table stuck at two in the morning should be fixable by
+  // whoever is actually around to fix it.
+  const canManage = Boolean(tournament?.can_manage);
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
   // Your seat is live, so the lobby gets a window of its own: leaving this tab
   // drops the table socket, and a hand does not wait for you to read standings.
@@ -344,7 +348,7 @@ export default function GamePage() {
         onHome={() => navigate("/")}
         controls={(
           <div className="flex items-center gap-2">
-            {isHost && (tournamentStatus === "paused" ? (
+            {canManage && (tournamentStatus === "paused" ? (
               <button
                 onClick={() => handleAdminControl("resume")}
                 className="btn-accent px-2 py-0.5 rounded text-xs font-semibold transition-colors"
@@ -359,7 +363,7 @@ export default function GamePage() {
                 Pause
               </button>
             ))}
-            {isHost && (
+            {canManage && (
               <button
                 onClick={() => handleAdminControl("skip-level")}
                 className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"

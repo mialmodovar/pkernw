@@ -6,11 +6,10 @@ from django.db import transaction
 from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 from accounts.models import AvatarImage
-from clubs.permissions import is_club_staff
 
 from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentPlayer, BlindLevel
-from .permissions import StaffCreatesTournaments
+from .permissions import StaffCreatesTournaments, can_manage_tournament
 from .serializers import (
     TournamentListSerializer,
     TournamentDetailSerializer,
@@ -44,18 +43,13 @@ def _start_due_scheduled_tournaments():
 def manageable_tournament(user, pk):
     """The tournament, if this person may run it — otherwise None.
 
-    The host, or anybody who helps run the club whose night it is. A
-    co-organiser should be able to start the game when whoever created it is
-    stuck in traffic, which is the whole point of a club having staff.
+    Who that is lives in permissions.can_manage_tournament, since the same
+    question is asked by the payload the lobby draws its buttons from.
     """
     tournament = Tournament.objects.filter(pk=pk).select_related("club").first()
     if tournament is None:
         return None
-    if tournament.host_id == user.id:
-        return tournament
-    if tournament.club_id and is_club_staff(user, tournament.club):
-        return tournament
-    return None
+    return tournament if can_manage_tournament(user, tournament) else None
 
 
 def _get_table_assignment(tournament, global_seat):
@@ -288,9 +282,15 @@ def blind_levels(request, pk):
         levels = tournament.levels.all()
         return Response(BlindLevelSerializer(levels, many=True).data)
 
-    # PUT — replace entire structure (host only, lobby only)
-    if tournament.host != request.user:
-        return Response({"error": "Only host can edit"}, status=status.HTTP_403_FORBIDDEN)
+    # PUT — replace the whole structure, before the first hand. Whoever may run
+    # the tournament may shape it: the host, the club's organisers, and the
+    # superuser. This asked for the host alone, which left a co-organiser able
+    # to start a tournament they could not fix a typo in.
+    if not can_manage_tournament(request.user, tournament):
+        return Response(
+            {"error": "Only the host can edit this tournament"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     if tournament.status != "lobby":
         return Response({"error": "Cannot edit after start"}, status=status.HTTP_400_BAD_REQUEST)
 

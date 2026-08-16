@@ -62,6 +62,12 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [customLevels, setCustomLevels] = useState(null); // null = use server default
   const [error, setError] = useState("");
   const [gameType, setGameType] = useState("nlh");
+  // Which club's night this is, and which of its leagues it counts for. Both
+  // optional: a tournament with no club is the one-off this app started with.
+  const [staffedClubs, setStaffedClubs] = useState([]);
+  const [clubId, setClubId] = useState("");
+  const [clubLeagues, setClubLeagues] = useState([]);
+  const [seasonId, setSeasonId] = useState("");
   // Most tournaments are one of three, and answering thirty questions to get
   // one of them is the reason hosts reuse whatever they made last time. Quick
   // asks the two that matter and derives the rest; advanced is the whole form,
@@ -86,6 +92,33 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
     // been typed since, so the id is the whole dependency.
     if (editingId != null) applyTemplate(String(editingId), { keepName: false });
   }, [editingId]);
+
+  // Only clubs you help run: a night is organised, not just attended.
+  useEffect(() => {
+    let cancelled = false;
+    api.get("/clubs/")
+      .then(({ data }) => {
+        if (cancelled) return;
+        setStaffedClubs(data.filter((club) => club.my_role === "owner" || club.my_role === "staff"));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // The leagues of whichever club is chosen, so "counts for" can offer them.
+  useEffect(() => {
+    if (!clubId) { setClubLeagues([]); return undefined; }
+    const club = staffedClubs.find((one) => String(one.id) === String(clubId));
+    if (!club) return undefined;
+    let cancelled = false;
+    api.get(`/clubs/${club.slug}/`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setClubLeagues(data.leagues.filter((league) => !league.is_archived && league.open_season_id));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [clubId, staffedClubs]);
 
   useEffect(() => {
     if (editingId != null) return undefined;   // nothing to copy from, it is the one being edited
@@ -117,6 +150,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
           setScheduledStart(toDatetimeLocalValue(new Date(data.scheduled_start_at)));
         }
       }
+      setClubId(data.club || "");
+      setSeasonId(data.season || "");
       setChips(data.starting_chips);
       setMaxPlayers(data.max_players);
       setPlayersPerTable(data.players_per_table);
@@ -281,6 +316,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
     };
     payload.game_type = gameType;
+    payload.club = clubId || null;
+    payload.season = clubId && seasonId ? seasonId : null;
     if (editing) {
       // The money is not the host's to change once people have joined on it,
       // and the server refuses it regardless — see LOCKED_AFTER_CREATION.
@@ -373,6 +410,49 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
         <input className="input-field w-full px-3 py-2 rounded transition-colors"
           value={name} onChange={(e) => setName(e.target.value)} placeholder="My Tournament" />
       </div>
+
+      {staffedClubs.length > 0 && (
+        <div className="panel-raised rounded-lg p-3 space-y-2">
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-(--color-text-muted)">Club</span>
+            <select
+              className="input-field px-2 py-1 rounded flex-1 transition-colors disabled:opacity-50"
+              value={clubId}
+              disabled={Boolean(editing)}
+              onChange={(event) => { setClubId(event.target.value); setSeasonId(""); }}
+            >
+              <option value="">No club — a one-off</option>
+              {staffedClubs.map((club) => (
+                <option key={club.id} value={club.id}>{club.emoji} {club.name}</option>
+              ))}
+            </select>
+          </label>
+
+          {clubId && (
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-(--color-text-muted)">Counts for</span>
+              <select
+                className="input-field px-2 py-1 rounded flex-1 transition-colors disabled:opacity-50"
+                value={seasonId}
+                disabled={Boolean(editing)}
+                onChange={(event) => setSeasonId(event.target.value)}
+              >
+                <option value="">Nothing — just a club night</option>
+                {clubLeagues.map((league) => (
+                  <option key={league.id} value={league.open_season_id}>{league.emoji} {league.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {editing && (
+            <p className="text-[11px] text-(--color-text-muted)">
+              Which club and table a night belongs to is fixed once it exists —
+              results may already be counted.
+            </p>
+          )}
+        </div>
+      )}
 
       <label className="flex items-center justify-between gap-3 text-sm">
         <span className="text-(--color-text-muted)">Game</span>

@@ -112,6 +112,18 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
       <div className="min-w-0 flex-1 basis-48">
         <div className="flex items-center gap-2 min-w-0">
           <StatusPill tournament={t} />
+          {/* Whose night this is, and whether it moves a table. One glyph and a
+              tooltip: the club page is where the detail belongs. */}
+          {t.club_emoji && (
+            <span
+              title={t.league_name
+                ? `${t.club_name} · counts for ${t.league_name}`
+                : `${t.club_name} · does not count for a league`}
+              className="shrink-0 text-sm leading-none"
+            >
+              {t.club_emoji}
+            </span>
+          )}
           <h3 className="font-semibold text-sm text-(--color-silver) truncate">{t.name}</h3>
           {t.is_joined && !isFinished && (
             <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-(--color-highlight-text)">

@@ -93,10 +93,16 @@ export function buildPlayers(config, heroName) {
       ? base
       : 0;
 
+    const name = isHero ? heroName : pool[index % pool.length];
+
     return {
       seat,
       user_id: 900 + seat,
-      name: isHero ? heroName : pool[index % pool.length],
+      name,
+      // The real table sends both: a display name to read and a login name to
+      // file things under. The sandbox has no accounts, so they are the same
+      // string — but the lookups it exercises are keyed on this one.
+      username: name,
       avatar: AVATARS[index % AVATARS.length],
       chips: state === "allin" ? 0 : Math.round(base + vary(seat, 17) * base * 0.06),
       bet,
@@ -164,7 +170,7 @@ export function buildTournament(config, players, heroName) {
 /** Stands in for the player-stats endpoint. */
 export function buildStats(players) {
   return Object.fromEntries(players.map((p, index) => [
-    p.name,
+    p.username,
     {
       username: p.name,
       hands: 40 + index * 137,

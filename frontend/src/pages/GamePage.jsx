@@ -533,7 +533,8 @@ export default function GamePage() {
       {inspecting && (
         <PlayerStatsCard
           player={inspecting}
-          stats={playerStats[inspecting.name]}
+          // Filed under the login name — `name` is the one they can change.
+          stats={playerStats[inspecting.username]}
           isMe={inspecting.username === user?.username}
           onClose={() => setInspecting(null)}
         />

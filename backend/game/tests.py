@@ -1168,6 +1168,75 @@ class ChipDriftDetectionTests(TestCase):
 
         self.assertFalse(printed.called)
 
+    def test_the_report_names_the_stack_that_moved(self):
+        """The amount alone says a defect happened; the stacks say where."""
+        coordinator = self._coordinator()
+        coordinator._check_chip_total("baseline")
+        coordinator._players_by_id[1].chips += 250
+
+        with patch("builtins.print") as printed:
+            coordinator._check_chip_total("in a test")
+
+        message = printed.call_args[0][0]
+        self.assertIn("p1=1250 (+250)", message)
+        self.assertIn("p0=1000 (+0)", message)
+
+
+class HandSnapshotTests(CoordinatorHarness, TestCase):
+    """A written hand carries the stacks it opened and closed with.
+
+    Without them a chip appearing between hands leaves no trace: the action
+    list records what was bet, never what anybody actually held.
+    """
+
+    def test_a_persisted_hand_records_opening_and_closing_stacks(self):
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+
+        written = []
+
+        async def persist_hand(payload):
+            written.append(payload)
+
+        coordinator.persist_hand = persist_hand
+
+        async_to_sync(coordinator._broadcast_to_table)(
+            1, "hand_started", {"hand_number": 4, "dealer_seat": 0},
+        )
+        async_to_sync(coordinator._broadcast_to_table)(
+            1, "action_taken", {"seat": 0, "action": "bet", "amount": 100},
+        )
+        async_to_sync(coordinator._broadcast_to_table)(
+            1,
+            "hand_complete",
+            {"stacks": [
+                {"seat": 0, "chips": 900},
+                {"seat": 1, "chips": 1100},
+                {"seat": 2, "chips": 1000},
+            ]},
+        )
+
+        result = written[0]["result"]
+        self.assertEqual(
+            result["opening_stacks"],
+            [
+                {"seat": 0, "tp_id": 1, "chips": 1000},
+                {"seat": 1, "tp_id": 2, "chips": 1000},
+                {"seat": 2, "tp_id": 3, "chips": 1000},
+            ],
+        )
+        self.assertEqual(
+            result["closing_stacks"],
+            [
+                {"seat": 0, "tp_id": 1, "chips": 900},
+                {"seat": 1, "tp_id": 2, "chips": 1100},
+                {"seat": 2, "tp_id": 3, "chips": 1000},
+            ],
+        )
+
 
 class GifIdTests(TestCase):
 	"""A GIF is an id, never a URL. Everything else about the feature rests on

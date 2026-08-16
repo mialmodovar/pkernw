@@ -168,6 +168,9 @@ class MultiTableTournamentCoordinator:
         # legitimately enter or leave. See _check_chip_total.
         self._expected_chip_total = 0
         self._chip_total_known = False
+        # Every stack as of the last check, so drift can name the seat it
+        # appeared in rather than only the amount.
+        self._stacks_at_last_check: Dict[int, int] = {}
 
     @property
     def current_blind_level_number(self) -> int:
@@ -1112,7 +1115,19 @@ class MultiTableTournamentCoordinator:
             state["bb_seat"] = None
             state["bets"] = {}
             state["history"] = []
-            state["result"] = {}
+            # Taken before the antes, so this is what everyone brought to the
+            # hand. Chips that appear between hands show up as a gap against
+            # the previous hand's closing stacks.
+            table_for_hand = self._tables.get(table_number)
+            state["result"] = {
+                "opening_stacks": [
+                    {"seat": player._seat, "tp_id": player._tp_id, "chips": player.chips}
+                    for player in sorted(
+                        table_for_hand.players if table_for_hand else [],
+                        key=lambda item: item._seat,
+                    )
+                ]
+            }
             state["level_index"] = self._level_index
         elif event_type == "blinds_posted":
             # Blinds sit in front of the players as street bets, not yet in the pot.
@@ -1166,13 +1181,20 @@ class MultiTableTournamentCoordinator:
                     player._seat: player._tp_id
                     for player in (table_for_hand.players if table_for_hand else [])
                 }
+                result = {
+                    **state.get("result", {}),
+                    "closing_stacks": [
+                        {**row, "tp_id": seat_to_tp.get(row.get("seat"))}
+                        for row in (payload or {}).get("stacks", [])
+                    ],
+                }
                 await self.persist_hand({
                     "hand_number": state.get("hand_number", 0),
                     "level_index": state.get("level_index", self._level_index),
                     "dealer_seat": state.get("dealer_seat") or 0,
                     "community_cards": state.get("community_cards", []),
                     "pot_total": state.get("pot", 0) + sum(state.get("bets", {}).values()),
-                    "result": state.get("result", {}),
+                    "result": result,
                     "actions": [
                         {**item, "tp_id": seat_to_tp.get(item.get("seat"))}
                         for item in state.get("history", [])
@@ -1255,13 +1277,24 @@ class MultiTableTournamentCoordinator:
         `_expected_chip_total`, so anything else is a defect and says so here
         rather than quietly settling into someone's stack.
         """
+        previous = self._stacks_at_last_check
+        self._stacks_at_last_check = {
+            player._tp_id: player.chips for player in self._players_by_id.values()
+        }
         actual = self._chip_total()
         if actual == self._expected_chip_total:
             return
         drift = actual - self._expected_chip_total
+        rows = []
+        for player in sorted(self._players_by_id.values(), key=lambda item: item._tp_id):
+            name = getattr(player, "_username", player.name)
+            was = previous.get(player._tp_id)
+            moved = "" if was is None else f" ({player.chips - was:+d})"
+            rows.append(f"{name}={player.chips}{moved}")
         print(
             f"CHIP DRIFT in tournament {self.tournament_id} {when}: "
-            f"expected {self._expected_chip_total}, found {actual} ({drift:+d})",
+            f"expected {self._expected_chip_total}, found {actual} ({drift:+d}) "
+            f"stacks: {', '.join(rows)}",
             flush=True,
         )
         # Report once per divergence, then track from the new total, so a single

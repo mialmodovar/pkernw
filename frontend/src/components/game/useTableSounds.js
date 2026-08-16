@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { onMessage } from "../../api/socket";
-import { playAction, playSplat, playThrow } from "./sounds";
+import useGameStore from "../../store/gameStore";
+import { playAction, playDeal, playSplat, playThrow } from "./sounds";
 import { throwableFor } from "./throwables";
 
 /** Gives every action at the table a sound.
@@ -21,6 +22,12 @@ export default function useTableSounds(enabled) {
         // whenever everyone folded to it.
         case "action_taken":
           return playAction({ action: message.action, isAllIn: message.is_all_in });
+        // The hand being dealt. Counted off the seats that are actually in it,
+        // so a three-handed table sounds like three players and not like nine.
+        case "hand_started":
+          return playDeal(
+            useGameStore.getState().players.filter((p) => !p.is_eliminated).length,
+          );
         case "item_thrown":
           playThrow();
           // Timed to the flight in ThrownItem: the splat belongs to the moment

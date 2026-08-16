@@ -307,6 +307,40 @@ button:disabled {
   transform-style: preserve-3d;
 }
 
+/* A hand tidying itself: the big card slides across to the front. The pair is
+   the same width, so the distance is exactly one card and the gap between them
+   — no measuring, and it lands wherever the table has been sized to. */
+@keyframes card-swap-right {
+  from { transform: translateX(calc(-100% - 0.125rem)); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes card-swap-left {
+  from { transform: translateX(calc(100% + 0.125rem)); }
+  to   { transform: translateX(0); }
+}
+
+.animate-card-swap-right { animation: card-swap-right 0.3s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.animate-card-swap-left  { animation: card-swap-left  0.3s cubic-bezier(0.2, 0.8, 0.3, 1); }
+
+/* Your own two, pitched across the felt. Comes in from the middle of the table
+   where the dealer is, rather than fading up under your name — the second one
+   a beat behind the first, because that is how they arrive. */
+@keyframes hole-card-deal {
+  from { opacity: 0; transform: translate(var(--deal-from-x, 0), var(--deal-from-y, -220%)) scale(0.7) rotate(var(--deal-spin, -12deg)); }
+  to   { opacity: 1; transform: translate(0, 0) scale(1) rotate(0); }
+}
+
+.animate-hole-card-deal {
+  animation: hole-card-deal 0.42s cubic-bezier(0.2, 0.75, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-swap-right,
+  .animate-card-swap-left { animation: none; }
+  .animate-hole-card-deal { animation: fade-in 0.15s ease-out backwards; }
+}
+
 /* Chips being pushed forward into the bet. */
 /* A bet arriving. Pushed forward from its owner rather than fading up out of
    the felt — chips come from somewhere, and --push-x is which way that is.

@@ -25,6 +25,10 @@ Definitions, so the numbers mean the same thing everywhere they are shown:
 - **Aggression**: of their postflop bets, raises and calls, the share that were
   bets or raises. A share rather than the usual bets-per-call ratio, so that a
   player who has never called still has a readable number.
+- **Bad beats**: showdowns they lost holding three of a kind or better. Not the
+  jackpot definition — nobody here is drawing to aces full — and not "was a
+  favourite and lost", which would need the equity at the time and is not
+  recorded. It is the count of the hands people actually talk about afterwards.
 
 Percentages are over the opportunities for that statistic, not over all hands,
 which is what makes them comparable between players.
@@ -35,7 +39,13 @@ all-in has no decision to make and is not counted as having passed one up.
 
 from collections import defaultdict
 
-from .models import HandAction
+from .engine.evaluator import THREE_OF_A_KIND
+from .models import Hand, HandAction
+
+# Strong enough that losing with it is a story. Trips rather than the full
+# house a casino's jackpot wants: this is a home game, and a counter that never
+# moves is not a counter.
+BAD_BEAT_FROM = THREE_OF_A_KIND
 
 VOLUNTARY = {"call", "bet", "raise"}
 FORCED = {"blind", "ante"}
@@ -98,6 +108,7 @@ def compute_player_stats(user_ids):
 
     tally = {user_id: _empty() for user_id in user_ids}
     wanted = set(user_ids)
+    _count_bad_beats(hand_ids, by_hand, tally, wanted)
 
     for actions in by_hand.values():
         preflop = [a for a in actions if a["street"] == "preflop"]
@@ -244,6 +255,39 @@ def _count_postflop(preflop, actions, tally, wanted):
             tally[user_id]["postflop_calls"] += 1
 
 
+def _count_bad_beats(hand_ids, by_hand, tally, wanted):
+    """Showdowns these players lost while holding a big hand.
+
+    Read from the hand's stored result rather than from its actions: who turned
+    what over, and who was paid, are both written down when the hand ends. The
+    seat is the seat as it was for that hand, which is also what the recorded
+    actions carry — a player's seat moves when tables rebalance, so nothing
+    here may look at where they are sitting now.
+    """
+    results = Hand.objects.filter(id__in=hand_ids).values_list("id", "result")
+    for hand_id, result in results:
+        showdown = (result or {}).get("showdown") or []
+        # One entry means everybody else folded: there was no showdown, and
+        # winning a pot uncontested is not a beat of any kind.
+        if len(showdown) < 2:
+            continue
+        paid = {award.get("seat") for award in (result or {}).get("awards") or []}
+        # Seats belong to the hand, so the mapping comes from the hand's own
+        # recorded actions.
+        user_by_seat = {
+            entry["seat"]: entry["player__user_id"]
+            for entry in by_hand.get(hand_id, [])
+            if entry["seat"] is not None
+        }
+        for entry in showdown:
+            user_id = user_by_seat.get(entry.get("seat"))
+            if user_id not in wanted or entry.get("seat") in paid:
+                continue
+            score = entry.get("score") or []
+            if score and score[0] >= BAD_BEAT_FROM:
+                tally[user_id]["bad_beats"] += 1
+
+
 def _empty():
     return {
         "hands": 0, "vpip": 0, "pfr": 0,
@@ -255,12 +299,14 @@ def _empty():
         "cbet": 0, "cbet_chances": 0,
         "fold_to_cbet": 0, "fold_to_cbet_chances": 0,
         "postflop_aggressive": 0, "postflop_calls": 0,
+        "bad_beats": 0,
     }
 
 
 def _as_percentages(counts):
     return {
         "hands": counts["hands"],
+        "bad_beats": counts["bad_beats"],
         "vpip_pct": _percentage(counts["vpip"], counts["hands"]),
         "pfr_pct": _percentage(counts["pfr"], counts["hands"]),
         "three_bet_pct": _percentage(counts["three_bet"], counts["three_bet_chances"]),

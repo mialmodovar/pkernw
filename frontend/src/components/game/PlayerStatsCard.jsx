@@ -117,6 +117,7 @@ function StatRow({ row, stats, hands, above }) {
  */
 export default function PlayerStatsCard({ player, stats, onClose, isMe = false }) {
   const hands = stats?.hands ?? 0;
+  const badBeats = stats?.bad_beats ?? 0;
   const profile = playerProfile(stats);
   // Who they are away from this table: whether you are watching them, and the
   // clubs you are both allowed to know about. One request, since both live on
@@ -149,6 +150,18 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
             <p className="font-semibold text-(--color-silver) truncate">{player.name}</p>
             <p className="text-xs text-(--color-text-muted)">
               {hands ? `${hands.toLocaleString()} hands recorded` : "No hands recorded yet"}
+              {/* Beside the hand count rather than down among the percentages:
+                  it is not a tendency you read them by, it is a thing that
+                  happened to them, and it is the first thing anybody wants to
+                  hear about. */}
+              {badBeats > 0 && (
+                <Tip text={`${badBeats} showdown${badBeats === 1 ? "" : "s"} lost holding `
+                  + "three of a kind or better"}>
+                  <span className="ml-1.5 text-(--color-accent-link) font-semibold cursor-help">
+                    {"\u{1F494}"} {badBeats} bad beat{badBeats === 1 ? "" : "s"}
+                  </span>
+                </Tip>
+              )}
             </p>
             {/* Their clubs, and a way into one. Opened in a tab of its own on
                 purpose: following a link out of here mid-hand would leave the

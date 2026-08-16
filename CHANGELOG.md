@@ -9,6 +9,26 @@ remembering.
 ## Unreleased
 
 ### Added
+- **The table sounds like a table being dealt.** Every hand now opens with the
+  cards going round — one flick per card, two rounds of them, at the pace a
+  dealer actually pitches, and counted off the seats that are in the hand so a
+  three-handed table does not sound like a full one. Your own two come in from
+  the middle of the felt rather than fading up under your name, the second a
+  beat behind the first.
+- **Your hand sorts itself, big card first.** The deck deals in the order it
+  deals, so half your hands arrived as "9♦ A♠" — which is not how anybody holds
+  cards. They land as dealt, and then the big one slides across to the front,
+  because watching it happen is better than never having seen the order it came
+  in. Only your own hand does the shuffle: somebody else's is turned over at
+  showdown already in order, and rearranging itself half a second later would
+  read as a fault. Which card is which is unchanged underneath — showing "the
+  first card" still shows the card the deck gave you first.
+- **A bad beat counter on every player's card.** Beside their hand count, in
+  the profile that opens when you tap a seat: how many showdowns they have lost
+  holding three of a kind or better. Not the jackpot definition — nobody here
+  is drawing to aces full — and not "was a favourite and lost", which would
+  need the equity at the time and is not recorded. It is the count of the hands
+  people actually talk about afterwards.
 - **A way to wipe the history and keep the players.** `manage.py purge_history`
   deletes every tournament, hand, seat and settled debt, and touches no
   accounts, profiles, pictures, clubs, leagues or coin balances — for starting a

@@ -3190,3 +3190,98 @@ class PurgeHistoryTests(TestCase):
 		self._run(yes=True, before="2000-01-01")
 
 		self.assertEqual(Tournament.objects.count(), 1)
+
+
+class BadBeatTests(TestCase):
+	"""Losing a showdown with a big hand — the one people talk about after."""
+
+	def setUp(self):
+		from game.models import Hand, HandAction
+
+		self.Hand, self.HandAction = Hand, HandAction
+		self.host = User.objects.create_user(username="bb_host", password="x")
+		self.tournament = Tournament.objects.create(host=self.host, name="Beats", status="running")
+		self.players = {}
+		for seat, name in enumerate(["hero", "villain"]):
+			user = User.objects.create_user(username=f"bb_{name}", password="x")
+			self.players[name] = TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user, seat=seat, seat_at_table=seat, chips=1000,
+			)
+
+	def _hand(self, number, showdown, awards):
+		hand = self.Hand.objects.create(
+			tournament=self.tournament, hand_number=number, level_index=0, dealer_seat=0,
+			status="complete", result={"showdown": showdown, "awards": awards},
+		)
+		for player in self.players.values():
+			self.HandAction.objects.create(
+				hand=hand, player=player, seat=player.seat_at_table,
+				street="preflop", action="call",
+			)
+		return hand
+
+	def _beats(self, name):
+		from game.hand_stats import compute_player_stats
+
+		user_id = self.players[name].user_id
+		return compute_player_stats([user_id])[user_id]["bad_beats"]
+
+	def test_losing_a_showdown_with_a_full_house_counts(self):
+		self._hand(
+			1,
+			showdown=[
+				{"seat": 0, "score": [6, 9, 2], "hand_name": "Full House"},
+				{"seat": 1, "score": [7, 5], "hand_name": "Four of a Kind"},
+			],
+			awards=[{"seat": 1, "amount": 2000}],
+		)
+
+		self.assertEqual(self._beats("hero"), 1)
+		# The player who won it did not take a beat, whatever they held.
+		self.assertEqual(self._beats("villain"), 0)
+
+	def test_losing_with_a_small_hand_is_just_losing(self):
+		self._hand(
+			1,
+			showdown=[
+				{"seat": 0, "score": [1, 14], "hand_name": "One Pair"},
+				{"seat": 1, "score": [2, 9, 4], "hand_name": "Two Pair"},
+			],
+			awards=[{"seat": 1, "amount": 2000}],
+		)
+
+		self.assertEqual(self._beats("hero"), 0)
+
+	def test_trips_is_where_it_starts(self):
+		self._hand(
+			1,
+			showdown=[
+				{"seat": 0, "score": [3, 7], "hand_name": "Three of a Kind"},
+				{"seat": 1, "score": [4, 10], "hand_name": "Straight"},
+			],
+			awards=[{"seat": 1, "amount": 2000}],
+		)
+
+		self.assertEqual(self._beats("hero"), 1)
+
+	def test_a_split_pot_is_not_a_beat(self):
+		self._hand(
+			1,
+			showdown=[
+				{"seat": 0, "score": [6, 9, 2], "hand_name": "Full House"},
+				{"seat": 1, "score": [6, 9, 2], "hand_name": "Full House"},
+			],
+			awards=[{"seat": 0, "amount": 1000}, {"seat": 1, "amount": 1000}],
+		)
+
+		self.assertEqual(self._beats("hero"), 0)
+
+	def test_everybody_folding_is_not_a_showdown(self):
+		"""A hand won uncontested records one entry, and nobody was beaten."""
+		self._hand(
+			1,
+			showdown=[{"seat": 1, "score": [7, 5], "hand_name": "Four of a Kind"}],
+			awards=[{"seat": 1, "amount": 2000}],
+		)
+
+		self.assertEqual(self._beats("hero"), 0)

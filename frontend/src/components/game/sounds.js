@@ -196,6 +196,29 @@ export function playHeartbeat({ beats = 5 } = {}) {
   });
 }
 
+/**
+ * Cards going round the table.
+ *
+ * One flick per card, two rounds of them, at the pace a dealer actually pitches
+ * — a card every seventy milliseconds or so, and a short gap between the first
+ * round and the second. Each one is a scrape of filtered noise: card on felt,
+ * nothing more. Quiet, because this fires at the start of every single hand.
+ */
+export function playDeal(players = 2) {
+  // A nine-handed table is eighteen cards and a second and a half of rattling.
+  // Enough of them to hear a table being dealt is the point, not a headcount.
+  const seats = Math.max(1, Math.min(9, players));
+  play((ctx, now) => {
+    for (let round = 0; round < 2; round += 1) {
+      for (let seat = 0; seat < seats; seat += 1) {
+        const at = now + round * (seats * 0.07 + 0.09) + seat * 0.07;
+        noise(ctx, { start: at, duration: 0.045, peak: 0.075, frequency: 2600, Q: 0.9 });
+        noise(ctx, { start: at + 0.01, duration: 0.03, peak: 0.03, frequency: 700, Q: 0.6 });
+      }
+    }
+  });
+}
+
 /** Something leaving your hand: air, and not much of it. */
 export function playThrow() {
   play((ctx, now) => {

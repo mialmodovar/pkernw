@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 
+import { highToLow } from "./cardOrder";
 import PlayingCard, { CardBack } from "./PlayingCard";
 
 /** How long a selection waits before it forgets it was made. On a phone the
  *  gesture for peeking at your own hand is a tap, and a tap that leaves "Show"
  *  sitting over your cards until you deal with it is a trap. */
 const PICKED_MS = 6000;
+
+/** How long the hand sits as it was dealt before it tidies itself. Long enough
+ *  to see it arrive that way, short enough that you are not reading a hand
+ *  backwards while deciding what to do with it. */
+const TIDY_MS = 550;
 
 export default function HoleCards({
   cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine,
@@ -26,6 +32,19 @@ export default function HoleCards({
   useEffect(() => {
     if (!onShowCards) setPicked([]);
   }, [onShowCards]);
+
+  // A hand arrives in the order it was dealt and then shuffles itself big-card
+  // first, which is what every player does by hand the moment they look. Held
+  // for a beat so the tidy is something you watch happen rather than a pair
+  // that was mysteriously never in the order it was dealt.
+  const dealt = (cards || []).join(",");
+  const [tidy, setTidy] = useState(false);
+  useEffect(() => {
+    setTidy(false);
+    if (!dealt) return undefined;
+    const timer = setTimeout(() => setTidy(true), TIDY_MS);
+    return () => clearTimeout(timer);
+  }, [dealt]);
 
   if (eliminated) return null;
   // A card you chose to show stands up out of the pair, so at a glance you can
@@ -106,25 +125,59 @@ export default function HoleCards({
     setPicked([]);
     onShowCards(wanted);
   };
+  // Where each card is drawn, which is not where it was dealt. `position` is
+  // the dealt one all the way through — the server is told to show card 0, and
+  // card 0 is the card the deck gave you first, whichever end of the pair it
+  // has ended up at.
+  // Somebody else's hand is turned over already in order — there is no moment
+  // of it arriving for you to watch, and a pair that rearranged itself half a
+  // second after a showdown would just look like a glitch. Only your own does
+  // the arrive-then-tidy.
+  const sorted = isMe ? tidy : true;
+  const order = sorted ? highToLow(cards) : cards.map((_, index) => index);
+  // Which way a card had to travel to get where it is now, for the slide. Only
+  // your own hand does this: everybody else's arrives already in order, at
+  // showdown, with nothing to watch.
+  const swap = (place, position) => {
+    if (!isMe || !tidy || place === position) return "";
+    return place > position ? "animate-card-swap-right" : "animate-card-swap-left";
+  };
   const faces = (
     <>
-      {cards.map((card, index) => (onShowCards ? (
-        <button
-          key={index}
-          type="button"
-          onClick={(event) => { event.stopPropagation(); toggle(index); }}
-          title={picked.includes(index)
-            ? `${card} is picked — press Show, or click it again to put it back`
-            : `Pick ${card} to show the table`}
-          aria-pressed={picked.includes(index)}
-          aria-label={`Pick ${card} to show the table`}
-          className={`rounded transition-transform cursor-pointer
-                      focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
-                      ${picked.includes(index) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
-        >
-          {face(card, index)}
-        </button>
-      ) : face(card, index)))}
+      {order.map((position, place) => {
+        const card = cards[position];
+        const inner = onShowCards ? (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); toggle(position); }}
+            title={picked.includes(position)
+              ? `${card} is picked — press Show, or click it again to put it back`
+              : `Pick ${card} to show the table`}
+            aria-pressed={picked.includes(position)}
+            aria-label={`Pick ${card} to show the table`}
+            className={`block rounded transition-transform cursor-pointer
+                        focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
+                        ${picked.includes(position) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
+          >
+            {face(card, position)}
+          </button>
+        ) : face(card, position);
+        // Keyed on the card so the pair is moved rather than rebuilt when it
+        // sorts itself — a rebuilt card would blink instead of sliding. The
+        // deal comes first and the swap replaces it: changing which animation
+        // is named is what makes the browser run the second one.
+        const arriving = isMe && !tidy ? "animate-hole-card-deal" : swap(place, position);
+        return (
+          <span
+            key={card}
+            className={arriving}
+            // Pitched from the middle of the table, the second a beat later.
+            style={isMe && !tidy ? { animationDelay: `${place * 90}ms` } : undefined}
+          >
+            {inner}
+          </span>
+        );
+      })}
     </>
   );
 

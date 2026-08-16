@@ -28,6 +28,25 @@ class TournamentCreationTests(APITestCase):
 	def tearDown(self):
 		_tournament_runners.clear()
 
+	def test_a_tournament_seats_eight_a_table_unless_told_otherwise(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			{
+				"name": "Thursday",
+				"starting_chips": 20000,
+				"max_players": 16,
+				# Both cutoffs off, so the one blind level below is enough for this
+				# to be a valid tournament — the point here is the seating.
+				"late_reg_level": 0,
+				"rebuy_level": 0,
+				"levels": [{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_minutes": 10}],
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).players_per_table, 8)
+
 	def test_create_tournament_with_frontend_config_fields(self):
 		scheduled_start_at = timezone.now() + timedelta(days=1)
 		response = self.client.post(

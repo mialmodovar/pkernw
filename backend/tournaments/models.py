@@ -36,7 +36,11 @@ class Tournament(models.Model):
     # and a rounding error here is somebody's actual euro.
     buy_in_cents   = models.IntegerField(default=0)
     max_players    = models.IntegerField(default=9)
-    players_per_table = models.IntegerField(default=9)
+    # Eight, not nine. A full ring of nine is a lot of seats to read at once,
+    # and on the felt it is the difference between a nameplate you can see and
+    # one squeezed against its neighbours. Nine is still available for anyone
+    # who wants it.
+    players_per_table = models.IntegerField(default=8)
     late_reg_level = models.IntegerField(default=4)    # late registration open through this level (0 = disabled)
     allow_rebuys   = models.BooleanField(default=True)
     max_rebuys     = models.IntegerField(default=2)    # per player

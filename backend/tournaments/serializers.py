@@ -274,7 +274,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         max_players = attrs.get("max_players", getattr(self.instance, "max_players", 9))
-        players_per_table = attrs.get("players_per_table", getattr(self.instance, "players_per_table", 9))
+        players_per_table = attrs.get("players_per_table", getattr(self.instance, "players_per_table", 8))
         allow_rebuys = attrs.get("allow_rebuys", getattr(self.instance, "allow_rebuys", True))
         max_rebuys = attrs.get("max_rebuys", getattr(self.instance, "max_rebuys", 2))
         late_reg_level = attrs.get("late_reg_level", getattr(self.instance, "late_reg_level", 4))

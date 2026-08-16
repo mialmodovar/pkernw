@@ -25,7 +25,9 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [scheduledStart, setScheduledStart] = useState(() => toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000)));
   const [chips, setChips] = useState(10000);
   const [maxPlayers, setMaxPlayers] = useState(9);
-  const [playersPerTable, setPlayersPerTable] = useState(9);
+  // Eight by default, matching the server's own default (see
+  // tournaments/models.py): a nine-handed table is a lot of seats to read.
+  const [playersPerTable, setPlayersPerTable] = useState(8);
   const [lateRegEnabled, setLateRegEnabled] = useState(true);
   const [lateRegLevel, setLateRegLevel] = useState(4);
   const [allowRebuys, setAllowRebuys] = useState(true);

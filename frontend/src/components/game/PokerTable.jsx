@@ -141,6 +141,12 @@ function betPosition(index, capacity, geometry, frame) {
   return {
     left: `${50 + (x - (x / reach) * step) / wide}%`,
     top: `${50 + (y - (y / reach) * step)}%`,
+    // Which way the pot lies, horizontally, so the chips can be hung off the
+    // point rather than centred on it. The row of markers and the amount is
+    // wide and short: centred, its far end reaches back over the face of the
+    // player it belongs to, which is what put "BB 1.0 BB" on somebody's
+    // avatar even once the point itself was clear.
+    towardsPot: x / reach,
   };
 }
 
@@ -319,8 +325,17 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const pos = betPosition(visualIdx, slots, geometry, frameSize);
         return (
           <div key={`bet-${seat}`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1"
-            style={{ top: pos.top, left: pos.left }}>
+            className="absolute z-10 flex items-center gap-1 whitespace-nowrap"
+            style={{
+              top: pos.top,
+              left: pos.left,
+              // Centred for a seat at the top or bottom, where there is nothing
+              // to the side of it; hung off the point for a seat on the side,
+              // so it always grows towards the pot and never back over its
+              // owner. A seat directly above or below lands at -50%, which is
+              // where it always was.
+              transform: `translate(${-50 + 50 * (pos.towardsPot ?? 0)}%, -50%)`,
+            }}>
             <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
             {p.bet > 0 && (
               <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/70

@@ -20,6 +20,8 @@ import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
 import FinisherOverlay from "./FinisherOverlay";
+import ThrownItem from "./ThrownItem";
+import AimOverlay from "./AimOverlay";
 
 
 // Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,

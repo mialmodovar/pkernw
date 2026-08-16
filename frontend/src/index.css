@@ -220,30 +220,46 @@ button:disabled {
   text-decoration: underline;
 }
 
-/* The table area measures itself, so the felt can be told to fit inside it.
-   The table stays exactly 900px wide whenever there is room — the common case,
-   and stable — and only starts shrinking when the window is too short to hold
-   it. That is what keeps the game on one screen without scrolling, without the
-   table resizing every time the window height twitches. */
+/* The table area measures itself, so the felt can be told to fit inside it. */
 .table-area {
   container-type: size;
 }
 
+/* The frame is the seat ring's box, not the felt: a seat is centred on the ring
+   and hangs outside it, which is why the height is the area's height less a
+   seat's worth of margin at the top and at the bottom. Without that margin the
+   top row's cards and the bottom row's nameplates are clipped by the bars above
+   and below.
+
+   Width is whatever the room allows. It used to stop at 900px, which left a
+   small table marooned in the middle of a wide window; now it grows sideways
+   the way the phone layout grows downwards. The growth does stop, but at a
+   ratio rather than a pixel count: past two and a half times its height the
+   felt is more corridor than table, with the end seats a long way from the
+   board and from each other. */
 .table-frame {
-  /* The 0.82 is the seats: they hang off the rim, above the top of the felt and
-     below the bottom of it, so the felt cannot have the whole height to itself. */
-  width: min(900px, 100%, calc(100cqh * 5 / 3 * 0.82));
-  aspect-ratio: 5 / 3;
+  --seat-safe: 4.5rem;
+  /* The seats at the ends of the ring hang off the sides in the same way, and
+     by less — half a nameplate rather than a whole seat, and the ring is
+     already 8% of the width in from the edge there. */
+  --side-safe: 3rem;
+  --frame-height: max(16rem, calc(100cqh - 2 * var(--seat-safe)));
+  width: calc(100% - 2 * var(--side-safe));
+  height: var(--frame-height);
+  max-width: calc(var(--frame-height) * 2.5);
 }
 
 /* Portrait phones. The table runs down the screen rather than across it, so the
-   frame takes the whole area and PokerTable bends the seat ring onto the long
-   vertical sides. Everything on the felt is sized in cqw, so it follows. */
+   frame takes the area's whole width and PokerTable bends the seat ring onto
+   the long vertical sides. Everything on the felt is sized in cqw, so it
+   follows. The margin is smaller because the seats are: a phone cannot spare
+   4.5rem twice, and does not need to. */
 @media (max-width: 767px) {
   .table-frame {
+    --seat-safe: 1.5rem;
     width: 100%;
-    height: 100%;
-    aspect-ratio: auto;
+    height: calc(100% - 2 * var(--seat-safe));
+    max-width: none;
   }
 }
 

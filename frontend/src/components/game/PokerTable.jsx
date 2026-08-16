@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from "react";
+
 import useGameStore from "../../store/gameStore";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
@@ -24,8 +26,46 @@ import FinisherOverlay from "./FinisherOverlay";
 // `power` bends the ellipse towards a stadium: below 1 it pushes slots off the
 // arc and onto the long sides, which is what makes a tall phone table read as a
 // poker table instead of a ring of nameplates.
-const LANDSCAPE = { radiusX: 42, radiusY: 38, power: 1 };
 const PORTRAIT = { radiusX: 35, radiusY: 36, power: 0.7 };
+
+// The shape a 5:3 table has always had, and the point at which the ring starts
+// needing help.
+const CLASSIC_ASPECT = 5 / 3;
+
+/** The seat ring for a table of a given width-to-height ratio.
+ *
+ * The frame is no longer a fixed 900×540: it fills the room it is given, so on
+ * a wide window the felt is a long oval. Sampling an ellipse at equal angles
+ * crowds the slots towards the two ends of its long axis, which on a stretched
+ * table means clusters at the far left and right with nobody along the near and
+ * far rails. The same bend the phone layout uses fixes it — pushed a little
+ * harder the wider the table gets — and at the classic ratio nothing bends at
+ * all, so an ordinary window looks exactly as it did.
+ */
+function landscapeGeometry(aspect) {
+  const stretch = Math.max(0, aspect - CLASSIC_ASPECT);
+  return { radiusX: 42, radiusY: 38, power: Math.max(0.72, 1 - stretch * 0.28) };
+}
+
+/** How wide the frame currently is against how tall, measured rather than
+ *  assumed: it is CSS that decides, from the space left over by everything
+ *  above and below the table. */
+function useFrameAspect(ref) {
+  const [aspect, setAspect] = useState(CLASSIC_ASPECT);
+
+  useLayoutEffect(() => {
+    const frame = ref.current;
+    if (!frame || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setAspect(width / height);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return aspect;
+}
 
 function bend(value, power) {
   return power === 1 ? value : Math.sign(value) * Math.abs(value) ** power;
@@ -77,7 +117,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // The whole table takes the hit, so the board, the seats and the chips move
   // together — shaking one of them would read as a glitch in that element.
   const quake = useEquityQuake();
-  const geometry = compact ? PORTRAIT : LANDSCAPE;
+  const frame = useRef(null);
+  const aspect = useFrameAspect(frame);
+  // The phone shape is fixed — the frame there is always the tall one — so only
+  // the landscape ring is read off the measurement.
+  const geometry = compact ? PORTRAIT : landscapeGeometry(aspect);
 
   // Winners are known from pot_awarded; their best five get the gold ring, and
   // the losing hands dim so the eye goes to what actually won.
@@ -120,7 +164,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Sized by .table-frame, and itself a size container so everything sitting on
   // the felt is measured against the felt rather than against the window.
   return (
-    <div className={`@container table-frame relative mx-auto ${quake}`}>
+    <div ref={frame} className={`@container table-frame relative mx-auto ${quake}`}>
       {/* Felt */}
       <div className={`felt absolute ${
         compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]"

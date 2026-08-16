@@ -147,7 +147,7 @@ function DisplayToggles() {
   );
 }
 
-export default function BlindLevelBar({ hostControls = null }) {
+export default function BlindLevelBar({ controls = null }) {
   const level = useGameStore((s) => s.level);
   const remaining = useLevelCountdown();
 
@@ -156,7 +156,7 @@ export default function BlindLevelBar({ hostControls = null }) {
       <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-(--color-text-muted)">Waiting for level info...</span>
-          {hostControls}
+          {controls}
         </div>
         <DisplayToggles />
       </div>
@@ -177,7 +177,7 @@ export default function BlindLevelBar({ hostControls = null }) {
             : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
           {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
         </span>
-        {hostControls}
+        {controls}
       </div>
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
         <DisplayToggles />

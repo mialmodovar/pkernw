@@ -199,6 +199,9 @@ export default function GamePage() {
     : null;
   const isHost = tournament?.host_name === user?.username;
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
+  // Your seat is live, so the lobby gets a window of its own: leaving this tab
+  // drops the table socket, and a hand does not wait for you to read standings.
+  const amPlaying = watching == null && mySeat !== null && !myEliminationFinish;
 
   const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
@@ -304,9 +307,27 @@ export default function GamePage() {
         </div>
       )}
       <BlindLevelBar
-        hostControls={isHost ? (
+        controls={(
           <div className="flex items-center gap-2">
-            {tournamentStatus === "paused" ? (
+            {amPlaying ? (
+              <a
+                href={`/tournament/${id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Opens in a new window so you keep your seat"
+                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+              >
+                Lobby ↗
+              </a>
+            ) : watching == null && (
+              <button
+                onClick={() => navigate(`/tournament/${id}`)}
+                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+              >
+                Lobby
+              </button>
+            )}
+            {isHost && (tournamentStatus === "paused" ? (
               <button
                 onClick={() => handleAdminControl("resume")}
                 className="btn-accent px-2 py-0.5 rounded text-xs font-semibold transition-colors"
@@ -320,16 +341,18 @@ export default function GamePage() {
               >
                 Pause
               </button>
+            ))}
+            {isHost && (
+              <button
+                onClick={() => handleAdminControl("skip-level")}
+                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
+              >
+                Skip Level
+              </button>
             )}
-            <button
-              onClick={() => handleAdminControl("skip-level")}
-              className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-            >
-              Skip Level
-            </button>
             {adminError && <span className="text-xs text-[#c76b7a]">{adminError}</span>}
           </div>
-        ) : null}
+        )}
       />
 
       {tableAssignmentNotice && (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import useAuthStore from "../store/authStore";
@@ -132,16 +132,19 @@ export default function TournamentSetupPage() {
   const [tournament, setTournament] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
+  const lastStatus = useRef(null);
 
   const load = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
-    // Straight to your seat once it starts — but only if you still hold one.
-    // The table refuses a playing socket from anyone not seated, and somebody
-    // who is out (or never entered) wants this page, where the stacks and
-    // standings keep refreshing and every table can be watched.
+    // Straight to your seat when it starts under you, and only then. Arriving
+    // at a tournament that is already running means you came here on purpose —
+    // sending you back to the table on every poll made this page unreachable
+    // for anyone still in it.
+    const startedJustNow = lastStatus.current === "lobby" && data.status === "running";
+    lastStatus.current = data.status;
     const mine = data.players?.find((p) => p.username === user?.username);
-    if (data.status === "running" && mine && !mine.is_eliminated) navigate(`/tournament/${id}/play`);
+    if (startedJustNow && mine && !mine.is_eliminated) navigate(`/tournament/${id}/play`);
   }, [id, navigate, user?.username]);
 
   useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [load]);
@@ -157,7 +160,8 @@ export default function TournamentSetupPage() {
   if (!tournament) return <p className="text-center mt-10 text-(--color-text-muted)">Loading...</p>;
 
   const isHost = tournament.host_name === user?.username;
-  const joined = tournament.players?.some((p) => p.username === user?.username);
+  const me = tournament.players?.find((p) => p.username === user?.username) || null;
+  const joined = Boolean(me);
   const scheduledStart = tournament.scheduled_start_at ? new Date(tournament.scheduled_start_at) : null;
   const scheduledStartPending = scheduledStart && scheduledStart > new Date();
 
@@ -222,7 +226,7 @@ export default function TournamentSetupPage() {
 
         <div className="flex flex-wrap gap-2 w-full lg:w-auto">
           <TournamentActions
-            tournament={tournament} joined={joined} isHost={isHost}
+            tournament={tournament} joined={joined} me={me} isHost={isHost}
             scheduledStartPending={scheduledStartPending} id={id} navigate={navigate}
             handleJoin={handleJoin} handleStart={handleStart} handleResume={handleResume}
           />
@@ -234,9 +238,11 @@ export default function TournamentSetupPage() {
         <p className="text-sm text-[#c76b7a] mt-3">This tournament needs at least one playable blind level.</p>
       )}
 
-      <div className="grid gap-4 mt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-        {/* What is happening now */}
-        <div className="space-y-4">
+      <div className="grid gap-4 mt-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        {/* The reference column: what this tournament is, what it pays, and the
+            structure it runs on. All of it worth a look, none of it worth the
+            width of the page. */}
+        <div className="space-y-4 min-w-0">
           <Panel title="Tournament">
             <div className="divide-y divide-[rgba(196,178,165,0.1)]">
               <Fact label="Players left">{alive.length} of {tournament.players.length}</Fact>
@@ -277,11 +283,9 @@ export default function TournamentSetupPage() {
               </Fact>
             </div>
           </Panel>
-        </div>
 
-        {/* What it pays */}
-        <Panel title={payouts.length ? `Prize pool · ${payouts.length} places paid` : "Prize pool"}
-               className="self-start">
+          {/* What it pays */}
+          <Panel title={payouts.length ? `Prize pool · ${payouts.length} places paid` : "Prize pool"}>
           {payouts.length > 0 ? (
             <ul className="divide-y divide-[rgba(196,178,165,0.1)] max-h-[26rem] overflow-y-auto">
               {payouts.map((row) => (
@@ -306,10 +310,69 @@ export default function TournamentSetupPage() {
               ? `Prize pool ${(potCents / 100).toFixed(2)}€ so far · settle up in Calotes, payments happen outside this app.`
               : "Percentages only — payments happen outside this app."}
           </p>
-        </Panel>
+          </Panel>
 
-        {/* Who is in it */}
-        <section className="panel rounded-lg self-start">
+          {/* Ante rides with the blinds rather than taking a column of its own:
+              this is a sidebar now, not the full width of the page. */}
+          <Panel title="Blind structure">
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+                  <tr className="border-b border-(--color-border)">
+                    <th className="text-left font-normal px-3 py-1.5 w-20">Level</th>
+                    <th className="text-left font-normal px-1 py-1.5">Blinds</th>
+                    <th className="text-right font-normal px-3 py-1.5">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[rgba(196,178,165,0.1)]">
+                  {levels.map((level, index) => {
+                    const isNow = started && index === tournament.current_level_index;
+                    const number = levels.slice(0, index + 1).filter((item) => !item.is_break).length;
+                    return (
+                      <tr key={level.id} className={isNow ? "bg-(--color-accent-soft)" : ""}>
+                        <td className="px-3 py-1.5 text-(--color-silver) whitespace-nowrap">
+                          {level.is_break ? "Break" : number}
+                          {isNow && <span className="text-[10px] text-[#d9c07a]"> · now</span>}
+                        </td>
+                        <td className="px-1 py-1.5 text-(--color-silver)">
+                          {level.is_break ? <span className="text-(--color-text-muted)">Pause in play</span>
+                            : `${level.small_blind} / ${level.big_blind}`}
+                          {!level.is_break && level.ante > 0 && (
+                            <span className="text-(--color-text-muted)"> · {level.ante} ante</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-(--color-text-muted) whitespace-nowrap">
+                          {levelDuration(level)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </div>
+
+        {/* The felt, and who is on it */}
+        <div className="space-y-4 min-w-0">
+          {liveTables.length > 0 && (
+            <Panel title="Tables · pick one to watch">
+              <div className="grid gap-3 p-3 sm:grid-cols-2">
+                {liveTables.map((table) => (
+                  <WatchableTable
+                    key={table.id}
+                    table={table}
+                    players={alive
+                      .filter((player) => player.table_number === table.table_number)
+                      .sort((a, b) => a.seat_at_table - b.seat_at_table)}
+                    onWatch={() => navigate(`/tournament/${id}/watch/${table.table_number}`)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          <section className="panel rounded-lg">
           <div className="px-3 py-2 border-b border-(--color-border) flex items-center gap-2">
             <h2 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-silver) flex-1">
               Players
@@ -365,71 +428,29 @@ export default function TournamentSetupPage() {
               </tbody>
             </table>
           </div>
-        </section>
-      </div>
-
-      {liveTables.length > 0 && (
-        <Panel title="Tables · pick one to watch" className="mt-4">
-          <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
-            {liveTables.map((table) => (
-              <WatchableTable
-                key={table.id}
-                table={table}
-                players={alive
-                  .filter((player) => player.table_number === table.table_number)
-                  .sort((a, b) => a.seat_at_table - b.seat_at_table)}
-                onWatch={() => navigate(`/tournament/${id}/watch/${table.table_number}`)}
-              />
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {/* The whole structure, as a table rather than a long list */}
-      <Panel title="Blind structure" className="mt-4">
-        <div className="max-h-72 overflow-y-auto">
-          <table className="w-full text-sm">
-            <thead className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
-              <tr className="border-b border-(--color-border)">
-                <th className="text-left font-normal px-3 py-1.5 w-24">Level</th>
-                <th className="text-left font-normal px-3 py-1.5">Blinds</th>
-                <th className="text-left font-normal px-3 py-1.5">Ante</th>
-                <th className="text-right font-normal px-3 py-1.5">Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(196,178,165,0.1)]">
-              {levels.map((level, index) => {
-                const isNow = started && index === tournament.current_level_index;
-                const number = levels.slice(0, index + 1).filter((item) => !item.is_break).length;
-                return (
-                  <tr key={level.id} className={isNow ? "bg-(--color-accent-soft)" : ""}>
-                    <td className="px-3 py-1.5 text-(--color-silver)">
-                      {level.is_break ? "Break" : `Level ${number}`}
-                      {isNow && <span className="text-[10px] text-[#d9c07a]"> · now</span>}
-                    </td>
-                    <td className="px-3 py-1.5 text-(--color-silver)">
-                      {level.is_break ? <span className="text-(--color-text-muted)">Pause in play</span>
-                        : `${level.small_blind} / ${level.big_blind}`}
-                    </td>
-                    <td className="px-3 py-1.5 text-(--color-text-muted)">{level.ante || "—"}</td>
-                    <td className="px-3 py-1.5 text-right text-(--color-text-muted)">{levelDuration(level)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          </section>
         </div>
-      </Panel>
+      </div>
     </div>
   );
 }
 
 function TournamentActions({
-  tournament, joined, isHost, scheduledStartPending, id, navigate,
+  tournament, joined, me, isHost, scheduledStartPending, id, navigate,
   handleJoin, handleStart, handleResume,
 }) {
+  const seatedInPlay = me && !me.is_eliminated
+    && (tournament.status === "running" || tournament.status === "paused");
   return (
     <>
+      {seatedInPlay && (
+        <button
+          onClick={() => navigate(`/tournament/${id}/play`)}
+          className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors"
+        >
+          Back to your table
+        </button>
+      )}
       {!joined && tournament.status === "lobby" && (
         <button onClick={handleJoin} className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">Join</button>
       )}
@@ -445,11 +466,6 @@ function TournamentActions({
       {isHost && tournament.status === "paused" && (
         <button onClick={handleResume} className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
           Resume
-        </button>
-      )}
-      {joined && tournament.status === "paused" && (
-        <button onClick={() => navigate(`/tournament/${id}/play`)} className="btn-secondary px-4 py-2 rounded font-semibold text-sm transition-colors">
-          Open Table
         </button>
       )}
       <button onClick={() => navigate("/")} className="btn-secondary px-4 py-2 rounded text-sm transition-colors">

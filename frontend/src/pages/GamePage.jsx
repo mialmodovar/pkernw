@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { connect, disconnect, onMessage, onStatus, send, retry } from "../api/socket";
 import useTableMedia from "../media/useTableMedia";
@@ -128,6 +128,19 @@ export default function GamePage() {
     if (lastElimination && !sandbox) loadTournament();
   }, [sandbox, lastElimination, loadTournament]);
 
+  // A tournament that was already over when the table was opened has no hand to
+  // play or watch, only a result — send them back rather than seat them at an
+  // empty table waiting for players. Judged on arrival, so a tournament that
+  // ends while you are sitting there still gets its final hand and standings.
+  const wasOverOnArrival = useRef(null);
+  useEffect(() => {
+    if (sandbox || !tournament) return;
+    if (wasOverOnArrival.current === null) {
+      wasOverOnArrival.current = tournament.status === "finished";
+    }
+    if (wasOverOnArrival.current) navigate("/", { replace: true });
+  }, [sandbox, tournament, navigate]);
+
   useEffect(() => {
     if (!tableAssignmentNotice) return undefined;
     const timeout = setTimeout(dismissTableAssignmentNotice, 7000);
@@ -215,6 +228,8 @@ export default function GamePage() {
   // Already told they are out, so there is no hand left for them to watch: the
   // standings can take over the moment they arrive.
   const eliminationShowing = Boolean(myEliminationFinish) && eliminationReady && !spectating;
+
+  if (wasOverOnArrival.current) return null;
 
   if (standings && (standingsReady || eliminationShowing)) {
     return (
@@ -389,14 +404,16 @@ export default function GamePage() {
             </FloatingPanel>
             {/* Collapsed, it still shows whose clock is running — and it opens
                 itself when the action reaches you, then folds back after. */}
-            <FloatingPanel
-              id="action" title="Actions" anchor="bottom-right"
-              defaultWidth={512} minWidth={320} minHeight={132}
-              expandWhen={isMyTurn}
-              badge={<ActionCountdownBadge />}
-            >
-              {actionPanel(true)}
-            </FloatingPanel>
+            {!spectating && (
+              <FloatingPanel
+                id="action" title="Actions" anchor="bottom-right"
+                defaultWidth={512} minWidth={320} minHeight={132}
+                expandWhen={isMyTurn}
+                badge={<ActionCountdownBadge />}
+              >
+                {actionPanel(true)}
+              </FloatingPanel>
+            )}
           </>
         )}
         <StartCountdown myUserId={user?.id} />
@@ -418,7 +435,7 @@ export default function GamePage() {
 
       {/* A phone gets a band of its own under the felt — an overlay here would
           sit on top of the hero's own cards. */}
-      {compact && (
+      {compact && !spectating && (
         <div className="shrink-0 px-1 pb-safe">
           {actionPanel()}
         </div>

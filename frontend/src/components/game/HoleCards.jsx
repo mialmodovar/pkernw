@@ -2,29 +2,30 @@ import { useEffect, useState } from "react";
 
 import PlayingCard, { CardBack } from "./PlayingCard";
 
-/** How long a card stays armed before it forgets it was asked. On a phone the
- *  gesture for peeking at your own hand is a tap, and a tap that leaves "Show?"
- *  sitting there until you deal with it is a trap. */
-const ARMED_MS = 4000;
+/** How long a selection waits before it forgets it was made. On a phone the
+ *  gesture for peeking at your own hand is a tap, and a tap that leaves "Show"
+ *  sitting over your cards until you deal with it is a trap. */
+const PICKED_MS = 6000;
 
 export default function HoleCards({
   cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine,
-  hideUntilHover = false, size = "seat", onShowCard = null, confirmShow = false,
+  hideUntilHover = false, size = "seat", onShowCards = null,
 }) {
-  // Which card has been asked about but not yet shown. Mid-hand only: showing
-  // a card while the others are still deciding is worth doing on purpose and
-  // catastrophic by accident, and on a phone the peek gesture is the same tap.
-  const [armed, setArmed] = useState(null);
+  // Which cards you have picked to show, by position. Picking is not showing:
+  // the button that appears over them is what turns them over, so one stray
+  // thumb on a phone — where peeking at your own hand is the same tap — cannot
+  // put your ace on the felt. It is also how you show both: pick both.
+  const [picked, setPicked] = useState([]);
 
   useEffect(() => {
-    if (armed == null) return undefined;
-    const timer = setTimeout(() => setArmed(null), ARMED_MS);
+    if (!picked.length) return undefined;
+    const timer = setTimeout(() => setPicked([]), PICKED_MS);
     return () => clearTimeout(timer);
-  }, [armed]);
+  }, [picked]);
 
   useEffect(() => {
-    if (!onShowCard || !confirmShow) setArmed(null);
-  }, [onShowCard, confirmShow]);
+    if (!onShowCards) setPicked([]);
+  }, [onShowCards]);
 
   if (eliminated) return null;
   // A card you chose to show stands up out of the pair, so at a glance you can
@@ -91,47 +92,56 @@ export default function HoleCards({
       className={lift(card)}
     />
   );
-  // Between hands, your own cards are the button for showing them. The bar in
-  // the action panel could do it before and still can, but a player reaching to
-  // turn one over reaches for the card, not for a row of labels somewhere else
-  // on the screen. One card at a time, which is the move worth making — both at
-  // once is what the bar's "Both" is for.
-  // Between hands a click shows the card. While the hand is live it asks
-  // first — the second click on the same card is the one that turns it over.
-  const press = (index) => {
-    if (!confirmShow) return onShowCard(index);
-    if (armed !== index) return setArmed(index);
-    setArmed(null);
-    return onShowCard(index);
+  // Your own cards are how you show them. The bar in the action panel could do
+  // it before and still can, but a player reaching to turn one over reaches for
+  // the card, not for a row of labels somewhere else on the screen. Pick either
+  // or both — showing one is a real move and so is showing the pair.
+  const toggle = (index) => setPicked((current) => (
+    current.includes(index)
+      ? current.filter((one) => one !== index)
+      : [...current, index].sort()
+  ));
+  const showPicked = () => {
+    const wanted = [...picked];
+    setPicked([]);
+    onShowCards(wanted);
   };
   const faces = (
     <>
-      {cards.map((card, index) => (onShowCard ? (
+      {cards.map((card, index) => (onShowCards ? (
         <button
           key={index}
           type="button"
-          onClick={(event) => { event.stopPropagation(); press(index); }}
-          title={armed === index
-            ? `Click again to show ${card} to the table`
-            : confirmShow ? `Show ${card} — asks first` : `Show ${card} to the table`}
-          aria-label={armed === index
-            ? `Confirm showing ${card} to the table`
-            : `Show ${card} to the table`}
-          className={`relative rounded transition-transform cursor-pointer
+          onClick={(event) => { event.stopPropagation(); toggle(index); }}
+          title={picked.includes(index)
+            ? `${card} is picked — press Show, or click it again to put it back`
+            : `Pick ${card} to show the table`}
+          aria-pressed={picked.includes(index)}
+          aria-label={`Pick ${card} to show the table`}
+          className={`rounded transition-transform cursor-pointer
                       focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
-                      ${armed === index ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
+                      ${picked.includes(index) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
         >
           {face(card, index)}
-          {armed === index && (
-            <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-1 rounded-full whitespace-nowrap
-                             bg-(--color-highlight) text-(--color-highlight-ink)
-                             text-[8px] font-extrabold leading-tight shadow shadow-black/60">
-              Show?
-            </span>
-          )}
         </button>
       ) : face(card, index)))}
     </>
+  );
+
+  // One button over the pair rather than a confirm on each card: showing both
+  // is a single move — "here, look" — and asking for it twice would turn it
+  // into two.
+  const showButton = onShowCards && picked.length > 0 && (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); showPicked(); }}
+      className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.5 rounded-full
+                 whitespace-nowrap bg-(--color-highlight) text-(--color-highlight-ink)
+                 text-[9px] font-extrabold leading-tight shadow shadow-black/60
+                 hover:brightness-110 transition-[filter]"
+    >
+      Show {picked.length === 2 ? "both" : cards[picked[0]]}
+    </button>
   );
 
   // Face down until you look. For anyone playing somewhere with people behind
@@ -146,7 +156,8 @@ export default function HoleCards({
       // meant. `peer/hand` is how the read on the hand, which lives outside
       // this component, lifts with them without widening what triggers it.
       <div className="group/cards peer/hand relative flex gap-0.5 cursor-pointer"
-        title={onShowCard ? "Hold to see your hand, click a card to show it" : "Hold to see your hand"}>
+        title={onShowCards ? "Hold to see your hand, click a card to pick it" : "Hold to see your hand"}>
+        {showButton}
         <div className="flex gap-0.5 opacity-0 transition-opacity duration-150
                         group-hover/cards:opacity-100 group-active/cards:opacity-100">
           {faces}
@@ -165,7 +176,8 @@ export default function HoleCards({
   }
 
   return (
-    <div className="flex gap-0.5">
+    <div className="relative flex gap-0.5">
+      {showButton}
       {faces}
     </div>
   );

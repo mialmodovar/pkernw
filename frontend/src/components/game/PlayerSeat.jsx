@@ -209,12 +209,9 @@ export default function PlayerSeat({
         // hiding it from you alone.
         hideUntilHover={coverHand}
         // Your own cards are how you show them — between hands, and mid-hand
-        // on the way to folding. Null for everybody else's seat.
-        onShowCard={showOffer.canShow ? (index) => showOffer.show([index]) : null}
-        // With the hand still running it asks before it turns anything over.
-        // The hand is over by the time the bar appears, and by then a click is
-        // just a click.
-        confirmShow={!showOffer.betweenHands}
+        // on the way to folding. Pick one or both; the button over them is
+        // what turns them over. Null for everybody else's seat.
+        onShowCards={showOffer.canShow ? showOffer.show : null}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}

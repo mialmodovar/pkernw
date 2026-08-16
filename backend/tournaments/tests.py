@@ -3092,3 +3092,101 @@ class PlayerAvatarTests(APITestCase):
 			response = self.client.get(reverse("tournament-detail", args=[self.tournament.id]))
 
 		self.assertEqual(len(response.data["players"]), 15)
+
+
+class PurgeHistoryTests(TestCase):
+	"""Wiping what was played must not touch who plays."""
+
+	def setUp(self):
+		from game.models import Hand, HandAction
+		from sidegames.models import Wallet
+
+		from .models import BlindLevel, LedgerEntry, Settlement
+
+		self.Hand, self.HandAction = Hand, HandAction
+		self.BlindLevel, self.LedgerEntry, self.Settlement = BlindLevel, LedgerEntry, Settlement
+		self.host = User.objects.create_user(username="purge_host", password="secret123")
+		self.other = User.objects.create_user(username="purge_other", password="secret123")
+		Wallet.objects.create(user=self.host, balance=500)
+
+		self.tournament = Tournament.objects.create(
+			host=self.host, name="Old night", status="finished", buy_in_cents=1000,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		table = self.tournament.ensure_table(1)
+		seat = TournamentPlayer.objects.create(
+			tournament=self.tournament, user=self.host, table=table,
+			seat=0, seat_at_table=0, chips=0, finish_position=1,
+		)
+		TournamentPlayer.objects.create(
+			tournament=self.tournament, user=self.other, table=table,
+			seat=1, seat_at_table=1, chips=0, finish_position=2, is_eliminated=True,
+		)
+		self.BlindLevel.objects.create(
+			tournament=self.tournament, level_number=1, small_blind=25, big_blind=50,
+			duration_minutes=10,
+		)
+		hand = Hand.objects.create(
+			tournament=self.tournament, hand_number=1, level_index=0, dealer_seat=0,
+			status="complete",
+		)
+		HandAction.objects.create(hand=hand, player=seat, seat=0, street="preflop", action="call")
+		self.LedgerEntry.objects.create(
+			tournament=self.tournament, user=self.host, stake_cents=1000, prize_cents=2000,
+		)
+		self.Settlement.objects.create(from_user=self.other, to_user=self.host, amount_cents=1000)
+
+	def _run(self, **options):
+		from django.core.management import call_command
+		from io import StringIO
+
+		out = StringIO()
+		call_command("purge_history", stdout=out, **options)
+		return out.getvalue()
+
+	def test_a_dry_run_deletes_nothing(self):
+		output = self._run()
+
+		self.assertIn("Nothing was deleted", output)
+		self.assertEqual(Tournament.objects.count(), 1)
+		self.assertEqual(self.Hand.objects.count(), 1)
+
+	def test_the_history_goes_and_the_players_stay(self):
+		self._run(yes=True)
+
+		self.assertEqual(Tournament.objects.count(), 0)
+		self.assertEqual(TournamentPlayer.objects.count(), 0)
+		self.assertEqual(self.BlindLevel.objects.count(), 0)
+		self.assertEqual(self.Hand.objects.count(), 0)
+		self.assertEqual(self.HandAction.objects.count(), 0)
+		self.assertEqual(self.LedgerEntry.objects.count(), 0)
+		# Nobody has to sign up again, and nobody loses their coins.
+		self.assertEqual(User.objects.filter(username__startswith="purge_").count(), 2)
+		self.assertEqual(self.host.wallet.balance, 500)
+
+	def test_settlements_go_with_the_debts_they_paid(self):
+		"""A payment with no debt behind it is not neutral: the balances read
+		it as money owed in the other direction."""
+		self._run(yes=True)
+
+		self.assertEqual(self.Settlement.objects.count(), 0)
+
+	def test_settlements_can_be_kept_on_purpose(self):
+		self._run(yes=True, keep_settlements=True)
+
+		self.assertEqual(self.Settlement.objects.count(), 1)
+
+	def test_a_running_tournament_stops_it(self):
+		from django.core.management.base import CommandError
+
+		self.tournament.status = "running"
+		self.tournament.save(update_fields=["status"])
+
+		with self.assertRaises(CommandError):
+			self._run(yes=True)
+		self.assertEqual(Tournament.objects.count(), 1)
+
+	def test_a_cutoff_leaves_everything_since_alone(self):
+		self._run(yes=True, before="2000-01-01")
+
+		self.assertEqual(Tournament.objects.count(), 1)

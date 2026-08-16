@@ -9,6 +9,15 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A way to wipe the history and keep the players.** `manage.py purge_history`
+  deletes every tournament, hand, seat and settled debt, and touches no
+  accounts, profiles, pictures, clubs, leagues or coin balances — for starting a
+  season over without asking anybody to sign up again. It reports what it would
+  delete and does nothing until told `--yes`, takes `--before` a date, and
+  refuses outright while a tournament is running, because the engine holds that
+  one in memory and deleting its rows would break the table under the players.
+  Settlements go with it: a payment with no debt behind it is not neutral, the
+  balances read it as money owed the other way.
 - **When you are behind in an all-in, the table says what you are drawing to.**
   Under your equity, a small bubble: how many cards still win it, and the first
   few of them by name. Only for whoever is behind — a hand in front is not
@@ -22,14 +31,15 @@ remembering.
   its price, and clicking it offers the purchase there and then — with your
   balance beside it, and the thing armed and ready to throw the moment it goes
   through. Two steps, so nothing spends 300 coins on one stray click.
-- **Show a card while the hand is still going.** Flashing the ace before you
-  muck it is half of why anybody plays with people they can see; it was only
-  possible after the hand, which is too late to be a bluff. Your own cards are
-  now clickable throughout. Mid-hand it asks first — the card lifts with a
-  "Show?" on it and the second click is the one that turns it over, because on
-  a phone the gesture for peeking at your own hand is the same tap, and this is
-  not something to do by accident. The row of buttons in the action panel still
-  waits for the hand to end: that one lives beside Fold.
+- **Show a card while the hand is still going, and show both if you like.**
+  Flashing the ace before you muck it is half of why anybody plays with people
+  they can see; it was only possible after the hand, which is too late to be a
+  bluff. Your own cards are now clickable throughout. Clicking one picks it —
+  click the other to pick that too — and a "Show" button appears over the pair
+  to turn over whatever you picked. Picking rather than showing on the first
+  click because on a phone the gesture for peeking at your own hand is the same
+  tap, and this is not something to do by accident. The row of buttons in the
+  action panel still waits for the hand to end: that one lives beside Fold.
 - **The superuser has the host's controls over every tournament.** Not the staff
   flag — staff is a job, opening tournaments and running clubs, and it should
   not carry ownership of everybody else's night. This is the account that

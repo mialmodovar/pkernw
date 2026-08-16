@@ -7,7 +7,8 @@ import json
 import math
 import time
 import traceback
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
+from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from django.db import transaction
@@ -244,7 +245,7 @@ def _db_get_user_table_record(tournament_id, user_id):
     return (
         TournamentPlayer.objects.filter(tournament_id=tournament_id, user_id=user_id)
         .select_related("table")
-        .values("table_id", "table__table_number")
+        .values("table_id", "table__table_number", "is_eliminated")
         .first()
     )
 
@@ -469,10 +470,15 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         self.tournament_id = int(self.scope["url_route"]["kwargs"]["tournament_id"])
         self.tournament_group = _tournament_group_name(self.tournament_id)
         self.current_table_number = None
+        self.is_spectator = False
 
         player_record = await _db_get_user_table_record(self.tournament_id, self.user.id)
-        if player_record is None:
-            await self.close()
+        # Nobody at all, or somebody who is out and has asked for a particular
+        # table: either way there is no seat to reconnect to, only the rail.
+        if player_record is None or (
+            player_record["is_eliminated"] and self._requested_spectator_table() is not None
+        ):
+            await self._connect_as_spectator()
             return
 
         self.current_table_number = player_record["table__table_number"]
@@ -503,6 +509,52 @@ class TournamentConsumer(AsyncWebsocketConsumer):
 
         await self._resend_pending_action()
 
+    def _requested_spectator_table(self) -> Optional[int]:
+        """The table this socket asked to watch, if it asked at all."""
+        query = parse_qs(self.scope.get("query_string", b"").decode())
+        if query.get("spectate", ["0"])[0] != "1":
+            return None
+        try:
+            return int(query.get("table", ["1"])[0])
+        except (TypeError, ValueError):
+            return 1
+
+    async def _connect_as_spectator(self):
+        """Seat someone behind the rail: they read the table and never write.
+
+        No entry in `_player_channels`, so the unicast that carries hole cards
+        has nowhere to reach them even if something tried.
+        """
+        table_number = self._requested_spectator_table()
+        if table_number is None:
+            await self.close()
+            return
+        tournament = await _db_get_tournament(self.tournament_id)
+        if tournament is None or tournament.status not in ("running", "paused"):
+            await self.close()
+            return
+
+        self.is_spectator = True
+        self.current_table_number = table_number
+        await self.channel_layer.group_add(self.tournament_group, self.channel_name)
+        await self.channel_layer.group_add(
+            _table_group_name(self.tournament_id, table_number),
+            self.channel_name,
+        )
+        await self.accept()
+        # The engine decides which table this really is — an unknown number
+        # falls back to a live one, and the groups have to follow that.
+        await self._send_snapshot()
+        if self.current_table_number != table_number:
+            await self.channel_layer.group_discard(
+                _table_group_name(self.tournament_id, table_number),
+                self.channel_name,
+            )
+            await self.channel_layer.group_add(
+                _table_group_name(self.tournament_id, self.current_table_number),
+                self.channel_name,
+            )
+
     async def _resend_pending_action(self):
         """Hand a reconnecting player back the decision they still owe.
 
@@ -526,6 +578,15 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, code):
+        if getattr(self, "is_spectator", False):
+            await self.channel_layer.group_discard(self.tournament_group, self.channel_name)
+            if self.current_table_number is not None:
+                await self.channel_layer.group_discard(
+                    _table_group_name(self.tournament_id, self.current_table_number),
+                    self.channel_name,
+                )
+            return
+
         key = (self.tournament_id, self.user.id)
         # A reconnect (or React StrictMode's double mount) can register the new
         # socket before this one tears down. If we have already been superseded,
@@ -561,6 +622,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 )
 
     async def receive(self, text_data):
+        # A spectator has no seat, no action queue and no voice at the table.
+        if self.is_spectator:
+            return
         try:
             data = json.loads(text_data)
         except ValueError:
@@ -825,7 +889,11 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         coordinator = _tournament_runners.get(self.tournament_id)
         if coordinator is None:
             return
-        snapshot = await coordinator.snapshot_for_user(self.user.id)
+        snapshot = (
+            await coordinator.snapshot_for_table(self.current_table_number)
+            if self.is_spectator
+            else await coordinator.snapshot_for_user(self.user.id)
+        )
         if snapshot is None:
             return
         self.current_table_number = snapshot.get("current_table_number")

@@ -19,6 +19,7 @@ let status = "connecting";
 let reconnectTimer = null;
 let attempts = 0;
 let currentTournamentId = null;
+let currentOptions = {};
 
 function setStatus(next) {
   if (status === next) return;
@@ -34,11 +35,17 @@ function reconnectDelay() {
   return capped * (0.75 + Math.random() * 0.5);
 }
 
-function open(tournamentId) {
+function open(tournamentId, options) {
   currentTournamentId = tournamentId;
+  currentOptions = options;
   const token = localStorage.getItem("access");
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${window.location.host}/ws/tournament/${tournamentId}/?token=${token}`;
+  // Watching from the rail is a different socket to playing: the server sends
+  // no hole cards down it and refuses anything sent up it.
+  const spectate = options.spectateTable != null
+    ? `&spectate=1&table=${encodeURIComponent(options.spectateTable)}`
+    : "";
+  const url = `${proto}://${window.location.host}/ws/tournament/${tournamentId}/?token=${token}${spectate}`;
 
   const socket = new WebSocket(url);
   ws = socket;
@@ -67,18 +74,18 @@ function open(tournamentId) {
     setStatus("reconnecting");
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      open(tournamentId);
+      open(tournamentId, options);
     }, reconnectDelay());
   };
 
   socket.onerror = () => socket.close();
 }
 
-export function connect(tournamentId) {
+export function connect(tournamentId, options = {}) {
   disconnect();
   attempts = 0;
   setStatus("connecting");
-  open(tournamentId);
+  open(tournamentId, options);
 }
 
 export function disconnect() {
@@ -100,7 +107,7 @@ export function disconnect() {
 /** Force an immediate retry after the backoff has given up. */
 export function retry() {
   if (currentTournamentId == null) return;
-  connect(currentTournamentId);
+  connect(currentTournamentId, currentOptions);
 }
 
 export function isOpen() {

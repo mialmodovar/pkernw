@@ -490,10 +490,29 @@ class MultiTableTournamentCoordinator:
             # An eliminated player holds no seat, so they had no table and got
             # no snapshot at all — a blank screen. Show them a live table
             # instead, so they can keep watching.
-            table = next(iter(sorted(self._tables.values(), key=lambda t: t.table_number)), None)
+            table = self._any_table()
         if table is None:
             return None
 
+        return self._table_snapshot(
+            table,
+            cards_to_list(player.hole_cards) if player.hole_cards else [],
+        )
+
+    async def snapshot_for_table(self, table_number: Optional[int]) -> Optional[dict]:
+        """The same view of a table, for someone watching from the rail.
+
+        No hole cards: a spectator only ever sees what the table shows.
+        """
+        table = self._tables.get(table_number) or self._any_table()
+        if table is None:
+            return None
+        return self._table_snapshot(table, [])
+
+    def _any_table(self):
+        return next(iter(sorted(self._tables.values(), key=lambda item: item.table_number)), None)
+
+    def _table_snapshot(self, table, hole_cards: List[str]) -> dict:
         state = self._table_states.get(table.table_number, {})
         bets = state.get("bets", {})
         return {
@@ -512,7 +531,7 @@ class MultiTableTournamentCoordinator:
             "sb_seat": state.get("sb_seat"),
             "bb_seat": state.get("bb_seat"),
             "action_on_seat": state.get("action_on_seat"),
-            "hole_cards": cards_to_list(player.hole_cards) if player.hole_cards else [],
+            "hole_cards": hole_cards,
             "current_table_number": table.table_number,
             "current_table_id": table.table_id,
             "table_count": len(self._tables),

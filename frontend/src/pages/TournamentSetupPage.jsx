@@ -61,6 +61,70 @@ function Panel({ title, children, className = "" }) {
   );
 }
 
+/** One running table, drawn as the felt it is so that clicking it to watch
+ *  needs no explaining. Seats sit on the ring in their real order, which is
+ *  what makes two tables tell themselves apart at a glance. */
+function WatchableTable({ table, players, onWatch }) {
+  const seats = Array.from(
+    { length: table.max_seats || players.length || 1 },
+    (_, index) => players.find((player) => player.seat_at_table === index) || null,
+  );
+  const chips = players.reduce((sum, player) => sum + player.chips, 0);
+
+  return (
+    <button
+      type="button"
+      onClick={onWatch}
+      className="group text-left rounded-lg border border-(--color-border) bg-black/20 p-3
+                 transition-colors hover:border-(--color-highlight-edge) hover:bg-black/30
+                 focus:outline-none focus-visible:border-(--color-highlight-edge)"
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-semibold text-(--color-silver)">Table {table.table_number}</span>
+        <span className="text-[10px] uppercase tracking-wide text-(--color-text-muted) group-hover:text-(--color-highlight-text)">
+          Watch
+        </span>
+      </div>
+
+      <div className="relative mt-2 aspect-[16/9]">
+        <div className="felt absolute inset-x-[14%] inset-y-[22%] rounded-[50%]" />
+        {seats.map((player, index) => {
+          // Seat 0 at the bottom, then round the ring — the same order the
+          // table itself deals in.
+          const angle = (index / seats.length) * 2 * Math.PI + Math.PI / 2;
+          return (
+            <span
+              key={index}
+              title={player ? `${player.username} · ${player.chips.toLocaleString()}` : "Empty seat"}
+              style={{
+                left: `${50 + 43 * Math.cos(angle)}%`,
+                top: `${50 + 39 * Math.sin(angle)}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+              className={`absolute grid h-6 w-6 place-items-center rounded-full border text-[10px] font-bold uppercase ${
+                player
+                  ? "border-(--color-border-strong) bg-black/70 text-(--color-silver)"
+                  : "border-dashed border-(--color-border) bg-black/30 text-(--color-text-muted)"
+              }`}
+            >
+              {player ? player.username.slice(0, 2) : ""}
+            </span>
+          );
+        })}
+      </div>
+
+      <p className="mt-1 text-[11px] text-(--color-text-muted) truncate">
+        {players.length
+          ? `${players.length}/${seats.length} seats · ${chips.toLocaleString()} chips`
+          : "No players seated"}
+      </p>
+      <p className="text-[11px] text-(--color-silver) truncate">
+        {players.map((player) => player.username).join(", ") || "—"}
+      </p>
+    </button>
+  );
+}
+
 export default function TournamentSetupPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -72,13 +136,12 @@ export default function TournamentSetupPage() {
   const load = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
-    // Straight to your seat once it starts — but only if it is your seat. The
-    // table refuses a socket from anyone not registered, so sending a visitor
-    // there is sending them to a page that cannot connect; somebody who came
-    // from a watch list wants this page, where the stacks and standings keep
-    // refreshing.
-    const seated = data.players?.some((p) => p.username === user?.username);
-    if (data.status === "running" && seated) navigate(`/tournament/${id}/play`);
+    // Straight to your seat once it starts — but only if you still hold one.
+    // The table refuses a playing socket from anyone not seated, and somebody
+    // who is out (or never entered) wants this page, where the stacks and
+    // standings keep refreshing and every table can be watched.
+    const mine = data.players?.find((p) => p.username === user?.username);
+    if (data.status === "running" && mine && !mine.is_eliminated) navigate(`/tournament/${id}/play`);
   }, [id, navigate, user?.username]);
 
   useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [load]);
@@ -117,6 +180,11 @@ export default function TournamentSetupPage() {
   const stacks = alive.map((p) => p.chips);
   const payouts = tournament.payout_structure || [];
   const started = tournament.status !== "lobby";
+  // Only a tournament in play has anything to watch, and only tables that are
+  // still dealing: a broken one keeps its row in the DB with nobody on it.
+  const liveTables = (tournament.status === "running" || tournament.status === "paused")
+    ? (tournament.tables || []).filter((table) => table.is_active)
+    : [];
   const buyInCents = tournament.buy_in_cents || 0;
   // The column only exists once there is money to show, so a friendly game
   // never grows an empty euro column.
@@ -299,6 +367,23 @@ export default function TournamentSetupPage() {
           </div>
         </section>
       </div>
+
+      {liveTables.length > 0 && (
+        <Panel title="Tables · pick one to watch" className="mt-4">
+          <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
+            {liveTables.map((table) => (
+              <WatchableTable
+                key={table.id}
+                table={table}
+                players={alive
+                  .filter((player) => player.table_number === table.table_number)
+                  .sort((a, b) => a.seat_at_table - b.seat_at_table)}
+                onWatch={() => navigate(`/tournament/${id}/watch/${table.table_number}`)}
+              />
+            ))}
+          </div>
+        </Panel>
+      )}
 
       {/* The whole structure, as a table rather than a long list */}
       <Panel title="Blind structure" className="mt-4">

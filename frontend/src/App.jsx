@@ -37,6 +37,7 @@ export default function App() {
       <Route path="/tournaments/:id/edit" element={<ProtectedRoute><EditTournamentPage /></ProtectedRoute>} />
       <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
       <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+      <Route path="/tournament/:id/watch/:watchTable" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
       <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

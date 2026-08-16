@@ -33,8 +33,11 @@ import { useCompactLayout } from "../components/game/useCompactLayout";
 const RESULT_DELAY_MS = 8000;
 
 export default function GamePage() {
-  const { id } = useParams();
+  const { id, watchTable } = useParams();
   const navigate = useNavigate();
+  // The watch route carries the table in its path, and that alone is what puts
+  // this page behind the rail: no seat, no cards, nothing to send.
+  const watching = watchTable != null ? Number(watchTable) : null;
   const user = useAuthStore((s) => s.user);
   const {
     handleEvent,
@@ -80,16 +83,16 @@ export default function GamePage() {
 
   // Cameras and microphones, kept in step with the table. Entirely separate
   // from the game: it reads the table, never writes to it.
-  useTableMedia(!sandbox);
+  useTableMedia(!sandbox && watching == null);
 
   useEffect(() => {
     if (sandbox) return undefined;
     reset();
-    connect(id);
+    connect(id, watching != null ? { spectateTable: watching } : {});
     const unsub = onMessage(handleEvent);
     const unsubStatus = onStatus(setConnectionStatus);
     return () => { unsub(); unsubStatus(); disconnect(); };
-  }, [sandbox, id, handleEvent, reset, setConnectionStatus]);
+  }, [sandbox, id, watching, handleEvent, reset, setConnectionStatus]);
 
   // Chip counts drive the rank, average stack and chip leader, and they only
   // live in the DB, so refresh them periodically rather than once on mount.
@@ -262,6 +265,18 @@ export default function GamePage() {
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
+      {watching != null && (
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
+                        bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
+          <span>Watching table {currentTableNumber ?? watching} — you are not in this hand.</span>
+          <button
+            onClick={() => navigate(`/tournament/${id}`)}
+            className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+          >
+            Back to tournament
+          </button>
+        </div>
+      )}
       {/* The tournament is over and the table is only still up so the last hand
           can be seen. Say so, and let anyone who has seen enough move on. */}
       {standings && !standingsReady && (
@@ -288,39 +303,34 @@ export default function GamePage() {
           </button>
         </div>
       )}
-      <BlindLevelBar />
-
-      {isHost && (
-        <div className="px-2 md:px-4 py-2 panel border-x-0 border-t-0 flex flex-wrap items-center justify-between gap-2 text-xs md:text-sm">
-          <div>
-            <span className="text-(--color-text-muted)">Host controls</span>
-            {adminError && <span className="ml-3 text-[#c76b7a]">{adminError}</span>}
-          </div>
-          <div className="flex gap-2">
+      <BlindLevelBar
+        hostControls={isHost ? (
+          <div className="flex items-center gap-2">
             {tournamentStatus === "paused" ? (
               <button
                 onClick={() => handleAdminControl("resume")}
-                className="btn-accent px-3 py-1 rounded font-semibold transition-colors"
+                className="btn-accent px-2 py-0.5 rounded text-xs font-semibold transition-colors"
               >
                 Resume
               </button>
             ) : (
               <button
                 onClick={() => handleAdminControl("pause")}
-                className="btn-secondary px-3 py-1 rounded font-semibold transition-colors"
+                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
               >
                 Pause
               </button>
             )}
             <button
               onClick={() => handleAdminControl("skip-level")}
-              className="btn-secondary px-3 py-1 rounded font-semibold transition-colors"
+              className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
             >
-              Skip Blind Level
+              Skip Level
             </button>
+            {adminError && <span className="text-xs text-[#c76b7a]">{adminError}</span>}
           </div>
-        </div>
-      )}
+        ) : null}
+      />
 
       {tableAssignmentNotice && (
         <div className="fixed top-14 left-1/2 z-30 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-xl panel-raised px-4 py-3 shadow-2xl shadow-black/60">
@@ -352,23 +362,43 @@ export default function GamePage() {
         <span className="truncate">{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
         <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
           <span className="hidden md:inline">{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
-          <button
-            onClick={() => setChatOpen(true)}
-            className="md:hidden btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors"
-          >
-            Chat
-          </button>
+          {watching != null && tableSummaries.length > 1 && (
+            <div className="flex items-center gap-1">
+              {tableSummaries.map((table) => (
+                <button
+                  key={table.table_number}
+                  onClick={() => navigate(`/tournament/${id}/watch/${table.table_number}`)}
+                  title={`Watch table ${table.table_number} · ${table.player_count} players`}
+                  className={`px-2 py-1 rounded text-xs font-semibold transition-colors ${
+                    table.table_number === currentTableNumber ? "btn-accent" : "btn-secondary"
+                  }`}
+                >
+                  T{table.table_number}
+                </button>
+              ))}
+            </div>
+          )}
+          {watching == null && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="md:hidden btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors"
+            >
+              Chat
+            </button>
+          )}
           <ActionHistory onReview={() => setReviewOpen(true)} />
-          <button
-            onClick={() => send({ type: "sit_out", value: !amSittingOut })}
-            title="You keep your seat and keep paying blinds; your turns pass automatically"
-            className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
-          >
-            {amSittingOut ? "Sit in" : "Sit out"}
-          </button>
+          {watching == null && (
+            <button
+              onClick={() => send({ type: "sit_out", value: !amSittingOut })}
+              title="You keep your seat and keep paying blinds; your turns pass automatically"
+              className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
+            >
+              {amSittingOut ? "Sit in" : "Sit out"}
+            </button>
+          )}
           <button
             onClick={() => navigate("/")}
-            title="Your seat is kept — you can come back to the table"
+            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back to the lobby"}
             className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
           >
             Lobby
@@ -393,21 +423,23 @@ export default function GamePage() {
                 dip into between hands, and open it sits over the corner of the
                 felt for the whole tournament whether anyone is talking or not.
                 The unread count on the collapsed bar is what says otherwise. */}
-            <FloatingPanel
-              id="chat" title="Table chat" anchor="bottom-left"
-              defaultWidth={288} defaultHeight={192} minWidth={180} minHeight={110}
-              defaultCollapsed
-              actions={<MediaControls />}
-              badge={<ChatUnreadBadge />}
-            >
-              <ChatPanel bare />
-            </FloatingPanel>
+            {watching == null && (
+              <FloatingPanel
+                id="chat" title="Table chat" anchor="bottom-left"
+                defaultWidth={288} defaultHeight={192} minWidth={180} minHeight={110}
+                defaultCollapsed
+                actions={<MediaControls />}
+                badge={<ChatUnreadBadge />}
+              >
+                <ChatPanel bare />
+              </FloatingPanel>
+            )}
             {/* Fixed in the bottom-right corner, with no title bar and nothing
                 to drag or fold. Everything else on the felt is arrangeable
                 because it is optional; this is where you act, and a control you
                 have to find — or worse, unfold, while the clock runs — is not
                 one you want to be looking for. */}
-            {!spectating && (
+            {!spectating && watching == null && (
               // As wide as its contents need and no wider: the buttons carry
               // amounts, and a deep-stacked table asks for more room than a
               // short-stacked one. The floor stops it shrinking to a nub
@@ -423,11 +455,13 @@ export default function GamePage() {
         <StartCountdown myUserId={user?.id} />
         {/* Over the table rather than instead of it: the hand that busted you
             is still worth looking at while you decide. */}
-        <RebuyPrompt
-          tournamentId={id}
-          myUserId={user?.id}
-          startingChips={tournament?.starting_chips}
-        />
+        {watching == null && (
+          <RebuyPrompt
+            tournamentId={id}
+            myUserId={user?.id}
+            startingChips={tournament?.starting_chips}
+          />
+        )}
         <BreakOverlay level={level} nextLevel={nextLevel} />
         {isPaused && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20">
@@ -439,7 +473,7 @@ export default function GamePage() {
 
       {/* A phone gets a band of its own under the felt — an overlay here would
           sit on top of the hero's own cards. */}
-      {compact && !spectating && (
+      {compact && !spectating && watching == null && (
         <div className="shrink-0 px-1 pb-safe">
           {actionPanel()}
         </div>

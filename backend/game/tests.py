@@ -17,6 +17,7 @@ from .consumers import (
 )
 
 User = get_user_model()
+from .engine.card import Card, Rank, Suit
 from .engine.hand import HandEngine
 from .engine.player import Player
 
@@ -119,6 +120,23 @@ class MultiTableTournamentCoordinatorTests(TestCase):
         self.assertEqual([table["table_number"] for table in coordinator.table_summaries()], [1, 2])
         self.assertEqual([table["player_count"] for table in coordinator.table_summaries()], [2, 2])
         self.assertEqual(self.assignments[-1]["active_table_numbers"], [1, 2])
+
+    def test_spectator_snapshot_shows_a_table_without_its_hole_cards(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(4)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+        for player in coordinator._players_by_user_id.values():
+            player.hole_cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+
+        snapshot = async_to_sync(coordinator.snapshot_for_table)(2)
+
+        self.assertEqual(snapshot["current_table_number"], 2)
+        self.assertEqual(snapshot["hole_cards"], [])
+        # A table that no longer exists still gets a live one to watch.
+        fallback = async_to_sync(coordinator.snapshot_for_table)(99)
+        self.assertIn(fallback["current_table_number"], (1, 2))
 
     def test_elimination_rebalance_moves_player_between_tables(self):
         records = [
@@ -753,6 +771,80 @@ class MediaSignallingTests(ConsumerTestBase):
 
             await ana_socket.disconnect()
             await bea_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+
+class SpectatorConnectionTests(ConsumerTestBase):
+    """The rail: anyone may watch a live table, and nobody may play from it."""
+
+    def _spectator_socket(self, user, query):
+        communicator = WebsocketCommunicator(
+            TournamentConsumer.as_asgi(), f"/ws/tournament/{self.tournament.id}/?{query}",
+        )
+        communicator.scope["user"] = user
+        communicator.scope["url_route"] = {"kwargs": {"tournament_id": str(self.tournament.id)}}
+        return communicator
+
+    def _running(self):
+        self.tournament.status = "running"
+        self.tournament.save(update_fields=["status"])
+
+    def test_a_stranger_is_refused_unless_they_ask_to_watch(self):
+        visitor = self._user("rail_nosy")
+        async_to_sync(sync_to_async(self._running))()
+
+        async def scenario():
+            socket = self._communicator(visitor)
+            connected, _ = await socket.connect()
+            self.assertFalse(connected)
+
+        async_to_sync(scenario)()
+
+    def test_a_stranger_may_watch_a_running_tournament(self):
+        visitor = self._user("rail_watcher")
+        async_to_sync(sync_to_async(self._running))()
+
+        async def scenario():
+            socket = self._spectator_socket(visitor, "spectate=1&table=2")
+            connected, _ = await socket.connect()
+            self.assertTrue(connected)
+            # No action channel, so nothing the engine unicasts can reach them.
+            self.assertNotIn((self.tournament.id, visitor.id), _player_channels)
+            await socket.send_json_to({"type": "player_action", "action": "fold"})
+            self.assertTrue(await socket.receive_nothing(timeout=0.2))
+            await socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_a_tournament_that_has_not_started_has_nothing_to_watch(self):
+        visitor = self._user("rail_early")
+
+        async def scenario():
+            socket = self._spectator_socket(visitor, "spectate=1&table=1")
+            connected, _ = await socket.connect()
+            self.assertFalse(connected)
+
+        async_to_sync(scenario)()
+
+    def test_a_busted_player_may_watch_a_table_other_than_their_own(self):
+        def setup():
+            user = self._seat("rail_busted", self.table_one, 0)
+            TournamentPlayer.objects.filter(tournament=self.tournament, user=user).update(
+                is_eliminated=True, finish_position=9,
+            )
+            self._running()
+            return user
+
+        busted = async_to_sync(sync_to_async(setup))()
+
+        async def scenario():
+            socket = self._spectator_socket(busted, "spectate=1&table=2")
+            connected, _ = await socket.connect()
+            self.assertTrue(connected)
+            # Watching, not seated: the action channel stays closed to them.
+            self.assertNotIn((self.tournament.id, busted.id), _player_channels)
+            await socket.disconnect()
 
         async_to_sync(scenario)()
 

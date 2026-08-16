@@ -3,29 +3,12 @@ import { createPortal } from "react-dom";
 import useGameStore from "../../store/gameStore";
 import useAuthStore from "../../store/authStore";
 import { send } from "../../api/socket";
+import { QUICK_MESSAGES, sendQuickMessage } from "./quickMessages";
 import { gifPreviewUrl } from "../../api/giphy";
 import GifPicker from "./GifPicker";
 import MediaControls from "./MediaControls";
 
 const MAX_CHARS = 240;
-
-/** The things actually said at a table, one tap away.
- *
- * Short on purpose. Anything longer than this is worth typing, and a wall of
- * canned sentences is how a chat starts sounding like a vending machine — but
- * "nh" while you are working out whether you were beaten is a message nobody
- * has time to type. The expansions are in the tooltips, since half of these are
- * only obvious if you already play. */
-const QUICK_MESSAGES = [
-  { text: "nh", hint: "Nice hand" },
-  { text: "gg", hint: "Good game" },
-  { text: "ty", hint: "Thank you" },
-  { text: "gl", hint: "Good luck" },
-  { text: "lol", hint: "Well then" },
-  { text: "brutal", hint: "That was rough" },
-  { text: "one time!", hint: "Come on, deck" },
-  { text: "sorry", hint: "Sorry — for the suckout you just put on somebody" },
-];
 
 /** How much you have missed while the chat was collapsed.
  *
@@ -83,10 +66,6 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
     // A closed socket swallows this; clearing anyway would lose what was typed.
     if (send({ type: "chat_message", text: text.slice(0, MAX_CHARS) })) setDraft("");
   };
-
-  // Straight out, without touching the draft: a canned line is a thing you say
-  // instead of typing, not a thing you type into what you were already saying.
-  const sendQuick = (text) => send({ type: "chat_message", text });
 
   // A GIF is its own message: sending it with whatever half-typed line is in
   // the box would post that line by surprise.
@@ -170,7 +149,7 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
               key={quick.text}
               type="button"
               title={quick.hint}
-              onClick={() => sendQuick(quick.text)}
+              onClick={() => sendQuickMessage(quick.text)}
               className="btn-secondary shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors"
             >
               {quick.text}

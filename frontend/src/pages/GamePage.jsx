@@ -408,7 +408,11 @@ export default function GamePage() {
                 have to find — or worse, unfold, while the clock runs — is not
                 one you want to be looking for. */}
             {!spectating && (
-              <div className="absolute bottom-2 right-2 z-20 w-[512px] max-w-[calc(100%-1rem)]">
+              // Wide enough for what is in it: the sizing column, the clock and
+              // three buttons whose labels carry a number — "Raise 1,450,000"
+              // is as long as this ever gets. Narrower, and the row squeezed
+              // the buttons until the amounts were the first thing to go.
+              <div className="absolute bottom-2 right-2 z-20 w-[44rem] max-w-[calc(100%-1rem)]">
                 {actionPanel()}
               </div>
             )}

@@ -14,9 +14,17 @@ const TICK_MS = 250;
 // purpose: red means running out of time in a way no other hue does, and a
 // green theme must not turn "you are nearly timed out" green.
 export function timerToneClass(countdown) {
-  if (countdown.inTimeBank) return "bg-(--color-danger-deep)";
-  if (countdown.displaySeconds != null && countdown.displaySeconds <= 3) return "bg-(--color-danger)";
-  return "bg-(--color-highlight)";
+  return `bg-(${timerToneVar(countdown)})`;
+}
+
+/** The same three tones as a custom property, for anything drawn rather than
+ *  filled — the ring around a seat's face is an SVG stroke, and a Tailwind
+ *  background class is no use to it. One source, so the bar in the action panel
+ *  and the ring on the felt can never disagree about when time is short. */
+export function timerToneVar(countdown) {
+  if (countdown.inTimeBank) return "--color-danger-deep";
+  if (countdown.displaySeconds != null && countdown.displaySeconds <= 3) return "--color-danger";
+  return "--color-highlight";
 }
 
 /**

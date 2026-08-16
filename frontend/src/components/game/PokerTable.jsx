@@ -4,7 +4,7 @@ import useGameStore from "../../store/gameStore";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
-import { timerToneClass, useActionCountdown } from "./useActionCountdown";
+import { timerToneVar, useActionCountdown } from "./useActionCountdown";
 import {
   faceUpFromRunout,
   holdFaceDown,
@@ -52,24 +52,25 @@ function landscapeGeometry(aspect) {
   return { radiusX: 42, radiusY: 38, power: Math.max(0.72, 1 - stretch * 0.28) };
 }
 
-/** How wide the frame currently is against how tall, measured rather than
- *  assumed: it is CSS that decides, from the space left over by everything
- *  above and below the table. */
-function useFrameAspect(ref) {
-  const [aspect, setAspect] = useState(CLASSIC_ASPECT);
+/** How big the frame currently is, measured rather than assumed: it is CSS
+ *  that decides, from the space left over by everything above and below the
+ *  table. The shape drives the seat ring; the size is what tells the chips how
+ *  far they have to sit from a face that does not shrink with the table. */
+function useFrameSize(ref) {
+  const [size, setSize] = useState({ width: 0, height: 0, aspect: CLASSIC_ASPECT });
 
   useLayoutEffect(() => {
     const frame = ref.current;
     if (!frame || typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      if (width > 0 && height > 0) setAspect(width / height);
+      if (width > 0 && height > 0) setSize({ width, height, aspect: width / height });
     });
     observer.observe(frame);
     return () => observer.disconnect();
   }, [ref]);
 
-  return aspect;
+  return size;
 }
 
 function bend(value, power) {
@@ -91,9 +92,17 @@ function slotPosition(index, capacity, geometry) {
   return pointAt(index, capacity, 1, geometry);
 }
 
-// How far in from a seat its chips sit, measured as a share of the table's
-// height so it is the same distance whichever way the seat lies.
+// How far in from a seat its chips sit, as a share of the table's height, so
+// it is the same distance whichever way the seat lies.
 const BET_INSET = 20;
+
+// The face, in pixels, as PlayerSeat sizes it: clamp(3.6rem, 11.75cqw, 6.25rem)
+// against the table's own width. It has a floor, which is the whole problem —
+// on a laptop the table shrinks and the face does not, so a step measured only
+// as a share of the table ends up landing on top of it.
+function seatFacePx(frameWidth) {
+  return Math.min(100, Math.max(57.6, 0.1175 * (frameWidth || 0)));
+}
 
 /**
  * Where a player's bet goes: just in front of them, on the felt.
@@ -108,18 +117,26 @@ const BET_INSET = 20;
  * both ways, since a percentage of the width and a percentage of the height
  * are not the same thing on a table this shape.
  */
-function betPosition(index, capacity, geometry, aspect) {
+function betPosition(index, capacity, geometry, frame) {
   if (capacity <= 0) return { top: "50%", left: "50%" };
 
   const seat = pointAt(index, capacity, 1, geometry);
-  const wide = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  const wide = Number.isFinite(frame?.aspect) && frame.aspect > 0 ? frame.aspect : 1;
   const x = (parseFloat(seat.left) - 50) * wide;
   const y = parseFloat(seat.top) - 50;
 
   const reach = Math.hypot(x, y);
   if (!reach) return { top: "50%", left: "50%" };
+
+  // Whichever is further: the share of the table, or enough pixels to clear
+  // the face and the chips themselves. On a 13" screen the second one wins,
+  // which is what stops the stack landing on somebody's avatar.
+  // Half the face, plus half the chip pill, plus a little air.
+  const clearance = frame?.height
+    ? ((seatFacePx(frame.width) * 0.5 + 22) / frame.height) * 100
+    : 0;
   // Never past the middle, however small the table gets.
-  const step = Math.min(BET_INSET, reach * 0.55);
+  const step = Math.min(Math.max(BET_INSET, clearance), reach * 0.55);
 
   return {
     left: `${50 + (x - (x / reach) * step) / wide}%`,
@@ -156,7 +173,8 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // together — shaking one of them would read as a glitch in that element.
   const quake = useEquityQuake();
   const frame = useRef(null);
-  const aspect = useFrameAspect(frame);
+  const frameSize = useFrameSize(frame);
+  const aspect = frameSize.aspect;
   // The phone shape is fixed — the frame there is always the tall one — so only
   // the landscape ring is read off the measurement.
   const geometry = compact ? PORTRAIT : landscapeGeometry(aspect);
@@ -262,7 +280,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 // the position, which every player in the hand has.
                 position={positions.get(p.seat) || null}
                 timerPct={isActive ? countdown.pct : 100}
-                timerTone={isActive ? timerToneClass(countdown) : undefined}
+                timerTone={isActive ? timerToneVar(countdown) : undefined}
                 // Past six seats the ring is too tight for a tile of its own,
                 // so the picture moves onto the nameplate instead. A phone is
                 // never wide enough for the tile.
@@ -298,7 +316,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const isSB = sbSeat === p.seat;
         const isBB = bbSeat === p.seat;
         if (!p.bet && !isDealer && !isSB && !isBB) return null;
-        const pos = betPosition(visualIdx, slots, geometry, aspect);
+        const pos = betPosition(visualIdx, slots, geometry, frameSize);
         return (
           <div key={`bet-${seat}`}
             className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1"

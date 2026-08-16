@@ -35,17 +35,49 @@ function useBountyFlash(seat) {
   return flashId != null && flashId !== spentId ? mine : null;
 }
 
-// Thin ring that drains while this seat is on the clock. Its colour comes from
-// the same helper the action panel uses, so a seat in its time bank reads red
-// there too rather than staying gold to the last second.
-function TimerRing({ pct, tone = "bg-(--color-highlight)" }) {
+// The ring is drawn on a 100-unit square whatever size the face is, so one set
+// of numbers works at every seat size.
+const RING_RADIUS = 47;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+/**
+ * The clock, drawn around the face of whoever is on it.
+ *
+ * A bar under the seat was a bar: it said how long was left but not, at a
+ * glance across the table, whose. Wrapped around the picture it is the same
+ * reading in the place you are already looking to see who is thinking.
+ *
+ * Its colour comes from the same helper the action panel uses, so a seat in its
+ * time bank reads red there too rather than staying gold to the last second.
+ */
+function TimerRing({ pct, tone = "--color-highlight" }) {
+  const left = Math.max(0, Math.min(100, pct));
   return (
-    <div className="w-full h-1 rounded-full overflow-hidden bg-black/50 border border-(--color-border)">
-      <div
-        className={`h-full transition-all duration-1000 ease-linear ${tone}`}
-        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+    <svg
+      viewBox="0 0 100 100"
+      aria-hidden="true"
+      // Just outside the face, and above it: the picture is a circle with its
+      // own border, and the ring reads as a second one closing in.
+      className="pointer-events-none absolute left-0 top-0 -translate-y-1/2 z-30
+                 w-[var(--seat-avatar)] h-[var(--seat-avatar)] scale-[1.16] overflow-visible"
+    >
+      <circle
+        cx="50" cy="50" r={RING_RADIUS}
+        fill="none" strokeWidth="5"
+        className="stroke-black/50"
       />
-    </div>
+      <circle
+        cx="50" cy="50" r={RING_RADIUS}
+        fill="none" strokeWidth="5" strokeLinecap="round"
+        // Starts at twelve o'clock and empties clockwise, the way every clock
+        // anybody has ever read does.
+        transform="rotate(-90 50 50)"
+        strokeDasharray={RING_LENGTH}
+        strokeDashoffset={RING_LENGTH * (1 - left / 100)}
+        style={{ stroke: `var(${tone})` }}
+        className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+      />
+    </svg>
   );
 }
 
@@ -324,6 +356,12 @@ export default function PlayerSeat({
     </span>
   );
 
+  // Outside the picture rather than inside it: the avatar clips its contents to
+  // a circle, which would cut the ring in half.
+  const faceTimer = isActive
+    ? <TimerRing key="face-timer" pct={timerPct ?? 100} tone={timerTone} />
+    : null;
+
   // Cards beside the avatar's upper half, plate under its lower half. The plate
   // is what sets where the seam is — the avatar is pinned to its top edge and
   // pulled up by half its own height — so the two rows meet at the middle of
@@ -347,11 +385,11 @@ export default function PlayerSeat({
       <div className="relative" style={{ paddingLeft: "calc(var(--seat-avatar) * 0.5)" }}>
         {plate}
         {face}
+        {faceTimer}
       </div>
     </div>
   );
 
-  const ring = isActive ? <TimerRing key="ring" pct={timerPct ?? 100} tone={timerTone} /> : null;
   // On the outer edge, against the nameplate, and only when there is a picture
   // to show — nobody's seat moves because someone else turned a camera on.
   // On a crowded table the picture rides in the avatar circle (see liveStream
@@ -361,8 +399,8 @@ export default function PlayerSeat({
       ? <SeatVideo key="video" peer={{ stream: myStream, video: true, status: "connected", videoFlowing: true }} name={p.name} mirrored muted />
       : media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
   const stack = topHalf
-    ? [ring, video, body, badges]
-    : [badges, body, video, ring];
+    ? [video, body, badges]
+    : [badges, body, video];
 
   // A phone has no room to spare: the seat ring runs down the long sides of the
   // screen, so a seat that grows sideways runs off it. The picture is still the

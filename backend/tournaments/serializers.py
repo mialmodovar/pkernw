@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 
+from accounts.avatars import avatar_url
 from game.consumers import late_registration_open as _late_registration_open
 
 from .bounties import BountyConfig, starting_bounty_cents
@@ -183,6 +184,32 @@ class TournamentListSerializer(serializers.ModelSerializer):
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
     late_registration_open = serializers.SerializerMethodField()
+    registered = serializers.SerializerMethodField()
+
+    def get_registered(self, tournament):
+        """Who is in it, as the faces the lobby draws.
+
+        A turnout of "6/18" says how full a tournament is; it does not say
+        whether the six are the people you play with. The same faces the watch
+        list uses, in seat order so the row does not reshuffle itself on every
+        refresh.
+        """
+        roster = []
+        for player in tournament.players.all():
+            user = player.user
+            profile = getattr(user, "profile", None)
+            # Reverse one-to-ones raise on access when there is no row, and the
+            # exception is an AttributeError precisely so this reads like this.
+            image = getattr(user, "avatar_image", None)
+            roster.append({
+                "username": user.username,
+                "avatar_emoji": (profile.avatar_emoji if profile else None) or "\U0001F0CF",
+                "avatar_url": avatar_url(user.id, image.updated_at if image else None),
+                # Dimmed rather than dropped: who played is part of what a
+                # finished tournament was.
+                "is_eliminated": player.is_eliminated,
+            })
+        return roster
 
     def _my_seat(self, tournament):
         request = self.context.get("request")
@@ -222,6 +249,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "showdown_seconds",
+                  "registered",
                   "auto_remove_offline_seconds", "created_at", "started_at", "finished_at")
 
 

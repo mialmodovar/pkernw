@@ -1,3 +1,5 @@
+import PlayerFaces from "./PlayerFaces";
+
 const formatTime = (value) => (value
   ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
   : null);
@@ -143,6 +145,9 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
           )}
         </p>
       </div>
+
+      {/* Who is in it, before the buttons that let you join them. */}
+      <PlayerFaces players={t.registered} />
 
       <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         {full && !t.is_joined && !isFinished && (

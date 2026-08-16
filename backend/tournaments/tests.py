@@ -28,6 +28,28 @@ class TournamentCreationTests(APITestCase):
 	def tearDown(self):
 		_tournament_runners.clear()
 
+	def test_the_lobby_list_carries_the_faces_of_whoever_is_registered(self):
+		from accounts.models import AvatarImage, Profile
+
+		rival = User.objects.create_user(username="rival", password="secret123")
+		Profile.objects.update_or_create(user=rival, defaults={"avatar_emoji": "\U0001F98A"})
+		AvatarImage.objects.create(user=self.user, data=b"\x89PNG\r\n\x1a\n", content_type="image/png")
+		tournament = Tournament.objects.create(host=self.user, name="Thursday", status="lobby")
+		TournamentPlayer.objects.create(tournament=tournament, user=self.user, seat=0, chips=1000)
+		TournamentPlayer.objects.create(tournament=tournament, user=rival, seat=1, chips=1000)
+
+		row = next(
+			entry for entry in self.client.get(reverse("tournament-list")).data
+			if entry["id"] == tournament.id
+		)
+
+		# Seat order, so the row does not reshuffle on every refresh.
+		self.assertEqual([player["username"] for player in row["registered"]], ["host", "rival"])
+		self.assertEqual(row["registered"][1]["avatar_emoji"], "\U0001F98A")
+		# An uploaded picture wins, and an emoji stands in where there is none.
+		self.assertIn(f"/api/auth/avatar/{self.user.id}/", row["registered"][0]["avatar_url"])
+		self.assertIsNone(row["registered"][1]["avatar_url"])
+
 	def test_a_tournament_seats_eight_a_table_unless_told_otherwise(self):
 		response = self.client.post(
 			reverse("tournament-list"),

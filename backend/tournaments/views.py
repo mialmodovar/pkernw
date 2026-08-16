@@ -3,8 +3,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from asgiref.sync import async_to_sync
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import F, Prefetch, Q
 from django.utils import timezone
+from accounts.models import AvatarImage
+
 from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .permissions import StaffCreatesTournaments
@@ -44,7 +46,31 @@ class TournamentListCreateView(generics.ListCreateAPIView):
     queryset = Tournament.objects.all().order_by("-created_at")
     permission_classes = [StaffCreatesTournaments]
 
+    # The faces on each card. Prefetched rather than looked up per tournament,
+    # which would be three queries a row on a page that lists thirty of them —
+    # and the avatar rows are loaded WITHOUT their bytes, since all the card
+    # needs from a picture is the stamp that makes up its URL.
+    ROSTER_PREFETCH = (
+        # The seats first, with their player and emoji in the same query, then
+        # the avatar rows hung off them. Order matters: a nested lookup like
+        # "players__user__profile" would claim `players` with a queryset of its
+        # own, and Django refuses to prefetch the same relation twice.
+        Prefetch(
+            "players",
+            queryset=TournamentPlayer.objects
+            .select_related("user", "user__profile")
+            .order_by("seat"),
+        ),
+        Prefetch(
+            "players__user__avatar_image",
+            queryset=AvatarImage.objects.only("user_id", "updated_at"),
+        ),
+    )
+
     def get_queryset(self):
+        return self._scoped_queryset().prefetch_related(*self.ROSTER_PREFETCH)
+
+    def _scoped_queryset(self):
         _start_due_scheduled_tournaments()
         scope = self.request.query_params.get("scope")
         user = self.request.user

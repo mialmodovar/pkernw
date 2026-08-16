@@ -2,6 +2,15 @@ import { useState } from "react";
 
 import useAuthStore from "../../store/authStore";
 
+/** Whitespace is not a name.
+ *
+ * Spaces at the ends go, runs of them inside collapse to one, and a box holding
+ * nothing but spaces is an empty box — which is how a player puts their display
+ * name down and goes back to their username. The server does this too; doing it
+ * here as well is what stops "  " looking like a change worth saving.
+ */
+const tidy = (value) => value.trim().replace(/\s+/g, " ");
+
 /**
  * The name everybody else reads.
  *
@@ -9,10 +18,6 @@ import useAuthStore from "../../store/authStore";
  * and the ledger are filed under, and what "did I win that one" is answered by —
  * renaming it would quietly rewrite last April. This is only the name on the
  * nameplate, and clearing it puts the username back.
- *
- * A plain field rather than something you click to unlock: it lives inside a
- * dialog you opened in order to change how you look, so there is nothing to
- * protect it from.
  */
 export default function DisplayNameField() {
   const user = useAuthStore((s) => s.user);
@@ -27,9 +32,8 @@ export default function DisplayNameField() {
   const [draft, setDraft] = useState(savedName);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
 
-  const dirty = draft.trim() !== savedName;
+  const dirty = tidy(draft) !== savedName;
 
   const save = async (event) => {
     event.preventDefault();
@@ -37,8 +41,7 @@ export default function DisplayNameField() {
     setBusy(true);
     setError(null);
     try {
-      await updateDisplayName(draft.trim());
-      setJustSaved(true);
+      await updateDisplayName(tidy(draft));
     } catch (failure) {
       const detail = failure?.response?.data?.display_name;
       setError(Array.isArray(detail) ? detail[0] : detail || "That could not be saved.");
@@ -53,14 +56,32 @@ export default function DisplayNameField() {
         Display name
       </label>
       <div className="mt-1 flex gap-1.5">
-        <input
-          id="display-name"
-          value={draft}
-          maxLength={24}
-          placeholder={user?.username}
-          onChange={(event) => { setDraft(event.target.value); setError(null); setJustSaved(false); }}
-          className="input-field min-w-0 flex-1 rounded px-2 py-1 text-sm transition-colors"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            id="display-name"
+            value={draft}
+            maxLength={24}
+            placeholder={user?.username}
+            onChange={(event) => { setDraft(event.target.value); setError(null); }}
+            className="input-field w-full rounded pl-2 pr-7 py-1 text-sm transition-colors"
+          />
+          {/* Emptying it is the way back to your username, so it is worth one
+              tap rather than a held backspace. Gone when there is nothing to
+              clear, so it never reads as a button that does nothing. */}
+          {draft && (
+            <button
+              type="button"
+              onClick={() => { setDraft(""); setError(null); }}
+              title="Clear"
+              aria-label="Clear display name"
+              className="absolute inset-y-0 right-1 my-auto w-5 h-5 flex items-center justify-center
+                         rounded text-xs leading-none text-(--color-text-muted)
+                         hover:text-(--color-silver) hover:bg-white/10 transition-colors"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <button
           type="submit"
           disabled={!dirty || busy}
@@ -74,7 +95,7 @@ export default function DisplayNameField() {
         <p role="alert" className="mt-1 text-[11px] text-(--color-accent-link)">{error}</p>
       ) : (
         <p className="mt-1 text-[11px] text-(--color-text-muted)">
-          {justSaved ? "Saved." : `Empty means ${user?.username}. You still log in as ${user?.username}.`}
+          You still log in as {user?.username}.
         </p>
       )}
     </form>

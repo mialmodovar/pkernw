@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { QUICK_MESSAGES, REACTIONS, sendQuickMessage } from "./quickMessages";
+import QuickMessageList from "./QuickMessageList";
+import { sendQuickMessage } from "./quickMessages";
 
 // The two buttons share a size and a shape; only what they open differs.
 const BUTTON = `flex items-center justify-center rounded-full border transition-colors
@@ -83,34 +84,11 @@ export default function SeatQuickChat() {
         // cards are, and a list of things to say is not worth covering them
         // with. The hero's seat is always the one at the bottom centre, so the
         // felt to its right is free.
-        <span className={`absolute left-full bottom-0 ml-1.5 z-40 flex flex-wrap gap-1
-                          p-1.5 rounded-lg panel-raised panel-solid shadow-xl shadow-black/60
-                          animate-fade-in ${panel === "emoji" ? "w-36" : "w-44"}`}>
-          {panel === "words"
-            ? QUICK_MESSAGES.map((quick) => (
-                <button
-                  key={quick.text}
-                  type="button"
-                  title={quick.hint}
-                  onClick={() => say(quick.text)}
-                  className="btn-secondary px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors"
-                >
-                  {quick.text}
-                </button>
-              ))
-            : REACTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => say(emoji)}
-                  aria-label={`React ${emoji}`}
-                  className="w-7 h-7 flex items-center justify-center rounded text-lg
-                             hover:bg-white/10 transition-colors"
-                >
-                  {emoji}
-                </button>
-              ))}
-        </span>
+        <QuickMessageList
+          kind={panel === "emoji" ? "reactions" : "words"}
+          onPick={say}
+          className="absolute left-full bottom-0 ml-1.5 z-40"
+        />
       )}
     </span>
   );

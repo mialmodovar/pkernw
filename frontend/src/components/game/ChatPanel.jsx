@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import useGameStore from "../../store/gameStore";
 import useAuthStore from "../../store/authStore";
 import { send } from "../../api/socket";
-import { QUICK_MESSAGES, sendQuickMessage } from "./quickMessages";
+import QuickMessageList from "./QuickMessageList";
+import { sendQuickMessage } from "./quickMessages";
 import { gifPreviewUrl } from "../../api/giphy";
 import GifPicker from "./GifPicker";
 import MediaControls from "./MediaControls";
@@ -42,9 +43,9 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
   const chat = useGameStore((s) => s.chat);
   const myUserId = useAuthStore((s) => s.user?.id);
   const [draft, setDraft] = useState("");
-  // Off by default: the panel is small, and the row costs a line of the
-  // conversation to show. The button next to it is how you get it back.
   const [quickOpen, setQuickOpen] = useState(false);
+  const [quickAt, setQuickAt] = useState(null);
+  const quickButton = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   // Where to draw the picker, measured from the button. It renders in a portal
   // rather than inside the panel: the chat body scrolls, and a floating panel
@@ -72,6 +73,24 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
   const sendGif = (gifId) => {
     send({ type: "chat_message", gif_id: gifId });
     setPickerOpen(false);
+  };
+
+  // Hung off its own button, and kept on screen near an edge — the same
+  // arithmetic the GIF picker does, for the same reason: this panel scrolls and
+  // clips, so anything opening out of it has to leave through a portal.
+  const toggleQuick = () => {
+    if (quickOpen) {
+      setQuickOpen(false);
+      return;
+    }
+    const rect = quickButton.current?.getBoundingClientRect();
+    if (rect) {
+      setQuickAt({
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - 184),
+        bottom: Math.max(8, window.innerHeight - rect.top + 6),
+      });
+    }
+    setQuickOpen(true);
   };
 
   const togglePicker = () => {
@@ -139,25 +158,6 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
         )}
       </div>
 
-      {quickOpen && (
-        // One line, scrolled sideways rather than wrapped: the panel is short,
-        // and a canned-message tray that eats half the conversation is worse
-        // than one you have to swipe.
-        <div className="flex gap-1 px-2 pt-1.5 overflow-x-auto border-t border-(--color-border)">
-          {QUICK_MESSAGES.map((quick) => (
-            <button
-              key={quick.text}
-              type="button"
-              title={quick.hint}
-              onClick={() => sendQuickMessage(quick.text)}
-              className="btn-secondary shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors"
-            >
-              {quick.text}
-            </button>
-          ))}
-        </div>
-      )}
-
       <form onSubmit={submit} className="flex gap-1.5 p-2 border-t border-(--color-border)">
         {pickerOpen && pickerAt && createPortal(
           <>
@@ -170,9 +170,19 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
           </>,
           document.body,
         )}
+        {quickOpen && quickAt && createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setQuickOpen(false)} />
+            <div className="fixed z-50" style={{ left: quickAt.left, bottom: quickAt.bottom }}>
+              <QuickMessageList onPick={(text) => { sendQuickMessage(text); setQuickOpen(false); }} />
+            </div>
+          </>,
+          document.body,
+        )}
         <button
+          ref={quickButton}
           type="button"
-          onClick={() => setQuickOpen((open) => !open)}
+          onClick={toggleQuick}
           title={quickOpen ? "Hide quick messages" : "Quick messages"}
           aria-label={quickOpen ? "Hide quick messages" : "Quick messages"}
           aria-expanded={quickOpen}

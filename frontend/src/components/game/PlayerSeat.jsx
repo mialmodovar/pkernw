@@ -152,17 +152,18 @@ export default function PlayerSeat({
   // leaves you hovering your own cards to read a showdown everybody else is
   // already looking at.
   const handIsPublic = Boolean(showdownEntry) || equity !== null || Boolean(raisedCards?.length);
-  // Your own cards, face down until you point at them. The whole column is the
-  // hover group, because what you hold and what it adds up to are the same
-  // secret: leaving "Two pair, aces and jacks" legible under a pair of card
-  // backs would be covering the cards and reading them out.
+  // Your own cards, face down until you point at them. What you hold and what
+  // it adds up to are the same secret — leaving "Two pair, aces and kings"
+  // legible under a pair of card backs would be covering the cards and reading
+  // them out — so the label lifts with them. The cards alone are what lifts
+  // them, though: see `peer/hand` in HoleCards.
   const coverHand = isMe && hideHand && !p.is_folded && !handIsPublic;
   const cards = (
-    <div key="cards" className={`flex flex-col items-start gap-1 ${coverHand ? "group/hand" : ""}`}>
-      {/* Cards and the button that speaks for them, on one line. What the hand
-          adds up to goes underneath both, full width — sharing a line with the
-          button had the label and the button jostling for the same corner. */}
-      <div className="flex items-end gap-1">
+    // Cards and label in a column, the buttons beside it rather than inside
+    // it: what the hand adds up to goes under the cards and never shares a
+    // line with the button that says "nh".
+    <div key="cards" className="flex items-start gap-1">
+      <div className="flex flex-col items-start gap-1">
       <HoleCards
         cards={isMe ? myCards : p.cards}
         folded={p.is_folded}
@@ -180,18 +181,13 @@ export default function PlayerSeat({
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
-      {/* Only at your own seat — you can only speak for yourself — and not on
-          a phone, where the seat has no room beside the cards for it and the
-          bar across the top carries the same list. */}
-      {isMe && !compact && <SeatQuickChat />}
-      </div>
       {/* Your own read on what you hold, under your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
         // Hidden by display rather than by opacity: a covered hand should not
         // leave a strip of nothing under the cards for the seat to float on.
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
                         bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
-                          coverHand ? "hidden group-hover/hand:block group-active/hand:block" : ""
+                          coverHand ? "hidden peer-hover/hand:block peer-active/hand:block" : ""
                         }`}>
           {handStrength}
         </div>
@@ -203,6 +199,12 @@ export default function PlayerSeat({
           {showdownEntry.hand_name}
         </div>
       )}
+      </div>
+      {/* Only at your own seat — you can only speak for yourself — and not on a
+          phone, where the seat has no room beside the cards for it and the bar
+          across the top carries the same list. Outside the column on purpose:
+          inside it, reaching for "nh" turned your own cards face up. */}
+      {isMe && !compact && <SeatQuickChat />}
     </div>
   );
 

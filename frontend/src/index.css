@@ -247,6 +247,12 @@ button:disabled {
   width: calc(100% - 2 * var(--side-safe));
   height: var(--frame-height);
   max-width: calc(var(--frame-height) * 2.5);
+  /* Sat half a margin higher than centre. The two ends of the table are not
+     symmetrical in what they carry: the near seat has its own cards, its hand
+     strength and the action panel under it, while the far seat has a nameplate
+     and nothing else. A margin-bottom rather than a transform, because the
+     frame is what the equity quake shakes and that is a transform of its own. */
+  margin-bottom: var(--seat-safe);
 }
 
 /* Portrait phones. The table runs down the screen rather than across it, so the

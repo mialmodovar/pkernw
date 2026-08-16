@@ -8,7 +8,14 @@ import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 // stray keystroke can't fold your hand. The mouse commits immediately.
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
-const BTN = "px-2.5 py-3 md:py-1.5 rounded font-semibold text-xs transition-colors min-w-0 md:min-w-[4.75rem] touch-manipulation";
+// The one control anybody aims at under time pressure, so it is the one that
+// gets the room: a single row of equal buttons across the whole panel, each
+// sized off the window rather than pinned to a pixel count. On a laptop that is
+// a comfortable target; on a large screen it grows with everything else instead
+// of staying a chip in the corner.
+const BTN = "flex-1 min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
+  "px-[clamp(0.4rem,1.1vw,1.5rem)] py-[clamp(0.55rem,1vw,1rem)] " +
+  "text-[clamp(0.8rem,1.05vw,1.15rem)]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";
 const STEPPER = "btn-secondary w-9 shrink-0 rounded text-base font-bold leading-none py-1.5 md:hidden touch-manipulation";
 
@@ -345,35 +352,38 @@ export default function ActionPanel({
         </div>
 
         {armed && (
-          <span className="text-xs text-(--color-highlight-text)">
+          <span className="hidden lg:block min-w-0 truncate text-xs text-(--color-highlight-text)">
             Press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
           </span>
         )}
 
-        {/* Commit cluster — the choices sit together, under the mouse or thumb */}
-        <div className="ml-auto flex flex-1 md:flex-none items-center gap-1.5">
+        {/* Commit cluster — the choices sit together, under the mouse or thumb,
+            always on one row: a decision that wraps onto a second line is one
+            where the button you meant to press moved while you were reaching
+            for it. */}
+        <div className="ml-auto flex flex-1 flex-nowrap items-stretch gap-2">
           {can.fold && (
             <button onClick={() => commit("fold")} disabled={locked}
-              className={`${BTN} flex-1 md:flex-none bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
+              className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
               Fold
             </button>
           )}
           {can.check && (
             <button onClick={() => commit("check")} disabled={locked}
-              className={`${BTN} flex-1 md:flex-none btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
+              className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
               Check
             </button>
           )}
           {can.call && (
             <button onClick={() => commit("call")} disabled={locked}
-              className={`${BTN} flex-1 md:flex-none btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
+              className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
               Call {fmt(ctx.to_call)}
             </button>
           )}
           {can.raise && (
             <button onClick={() => commit("raise")} disabled={locked}
-              className={`${BTN} flex-1 md:flex-none bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
+              className={`${BTN} bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
                           border border-(--color-highlight-text) text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
               Raise {fmt(raiseAmount)}

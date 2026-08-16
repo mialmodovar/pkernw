@@ -256,8 +256,12 @@ export default function ActionPanel({
     // Two blocks side by side rather than stacked: how much, on the left, and
     // what you are doing about it, on the right. Stacked, choosing an amount
     // changed the height of the block above the buttons and moved them under
-    // your hand. The phone keeps the stack — a band that narrow has no room
-    // for two columns.
+    // your hand.
+    //
+    // Only where two columns fit, though. The sizing block, the clock and three
+    // buttons carrying amounts come to about 700px, so below a wide window they
+    // go back to being stacked — a narrower window than that has nowhere to put
+    // the overflow but under the panel's own clipped edge.
     <div className={`${shell} overflow-hidden w-full`}>
       {/* Timer bar — regular clock first, then the time bank. Left exactly
           where it was: a full-width line above the decision. */}
@@ -268,11 +272,11 @@ export default function ActionPanel({
         />
       </div>
 
-      <div className="p-2 flex flex-col md:flex-row md:items-stretch gap-2 md:gap-3">
+      <div className="p-2 flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-3">
       {/* How much — on the left, and staying there */}
       {can.raise && maxRaise > minRaise && (
-        <div className="flex flex-col justify-center gap-1.5 min-w-0 md:w-[14.5rem] md:shrink-0">
-          <span className="text-center md:text-left text-xs text-(--color-text-muted) whitespace-nowrap">
+        <div className="flex flex-col justify-center gap-1.5 min-w-0 lg:w-[14.5rem] lg:shrink-0">
+          <span className="text-center lg:text-left text-xs text-(--color-text-muted) whitespace-nowrap">
             min {fmt(minRaise)} · max {fmt(maxRaise)}
           </span>
           <div className="grid grid-cols-4 gap-1.5">

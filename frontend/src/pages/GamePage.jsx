@@ -414,7 +414,7 @@ export default function GamePage() {
               // between hands, and the ceiling stops it hanging off the felt.
               // It grows leftwards from a pinned corner, so the buttons keep
               // the same right edge whatever the numbers do.
-              <div className="absolute bottom-2 right-2 z-20 w-max min-w-[38rem] max-w-[calc(100%-1rem)]">
+              <div className="absolute bottom-2 right-2 z-20 w-max max-w-[calc(100%-1rem)]">
                 {actionPanel()}
               </div>
             )}

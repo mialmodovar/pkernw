@@ -408,11 +408,13 @@ export default function GamePage() {
                 have to find — or worse, unfold, while the clock runs — is not
                 one you want to be looking for. */}
             {!spectating && (
-              // Wide enough for what is in it: the sizing column, the clock and
-              // three buttons whose labels carry a number — "Raise 1,450,000"
-              // is as long as this ever gets. Narrower, and the row squeezed
-              // the buttons until the amounts were the first thing to go.
-              <div className="absolute bottom-2 right-2 z-20 w-[44rem] max-w-[calc(100%-1rem)]">
+              // As wide as its contents need and no wider: the buttons carry
+              // amounts, and a deep-stacked table asks for more room than a
+              // short-stacked one. The floor stops it shrinking to a nub
+              // between hands, and the ceiling stops it hanging off the felt.
+              // It grows leftwards from a pinned corner, so the buttons keep
+              // the same right edge whatever the numbers do.
+              <div className="absolute bottom-2 right-2 z-20 w-max min-w-[38rem] max-w-[calc(100%-1rem)]">
                 {actionPanel()}
               </div>
             )}

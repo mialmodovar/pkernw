@@ -366,10 +366,18 @@ export default function ActionPanel({
           )}
           {can.raise && (
             <button onClick={() => commit("raise")} disabled={locked}
-              className={`${BTN} bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
+              className={`${BTN} grid place-items-center bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
                           border border-(--color-highlight-text) text-[#1a1208]
                           disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
-              Raise {fmt(raiseAmount)}
+              {/* The widest this button will ever have to be this hand, drawn
+                  invisibly under the real label in the same grid cell. Without
+                  it the panel resized on every step of the slider and the
+                  controls slid about under the hand dragging them; with it the
+                  room for the biggest raise available is taken up front. */}
+              <span aria-hidden="true" className="col-start-1 row-start-1 invisible">
+                Raise {fmt(maxRaise)}
+              </span>
+              <span className="col-start-1 row-start-1">Raise {fmt(raiseAmount)}</span>
             </button>
           )}
         </div>

@@ -61,6 +61,76 @@ function noise(ctx, { start, duration, peak, frequency, Q = 1 }) {
   source.start(start);
 }
 
+/**
+ * A rising wash of filtered noise — the sound a film uses to say something is
+ * coming. The band climbs and the level swells, so it reads as approach rather
+ * than as a burst.
+ */
+function riser(ctx, { start, duration, peak, fromFreq, toFreq, Q = 2.2 }) {
+  const frames = Math.floor(ctx.sampleRate * duration);
+  const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
+  const samples = buffer.getChannelData(0);
+  // Flat noise, not decaying: the shape comes from the envelope below, and a
+  // decaying buffer would fight the swell.
+  for (let i = 0; i < frames; i += 1) samples[i] = Math.random() * 2 - 1;
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(fromFreq, start);
+  filter.frequency.exponentialRampToValueAtTime(toFreq, start + duration);
+  filter.Q.value = Q;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + duration * 0.86);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  source.connect(filter).connect(gain).connect(ctx.destination);
+  source.start(start);
+  source.stop(start + duration + 0.02);
+}
+
+/**
+ * A held low note that opens up as it goes.
+ *
+ * Sine through a lowpass that sweeps upward, with a slow wobble on the pitch.
+ * The wobble is what keeps it from sounding like a test tone: nothing in a
+ * score is ever perfectly still.
+ */
+function drone(ctx, { start, duration, freq, peak, wobble = 3.5, rate = 5.5 }) {
+  const osc = ctx.createOscillator();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(freq, start);
+
+  const lfo = ctx.createOscillator();
+  lfo.type = "sine";
+  lfo.frequency.value = rate;
+  const lfoDepth = ctx.createGain();
+  lfoDepth.gain.value = wobble;
+  lfo.connect(lfoDepth).connect(osc.detune);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(220, start);
+  filter.frequency.linearRampToValueAtTime(1400, start + duration);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  // Slow in, hold, and out before the end — a swell rather than a note.
+  gain.gain.exponentialRampToValueAtTime(peak, start + duration * 0.45);
+  gain.gain.setValueAtTime(peak, start + duration * 0.78);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  osc.connect(filter).connect(gain).connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+  lfo.start(start);
+  lfo.stop(start + duration + 0.02);
+}
+
 function play(build) {
   try {
     const ctx = context();
@@ -169,22 +239,29 @@ export function playAllIn() {
  */
 export function playAllInTension() {
   play((ctx, now) => {
-    // The bed: two detuned lows, sliding up a little, wobbling against each
-    // other. The beat between them is most of the unease.
-    tone(ctx, { freq: 55, start: now, duration: 1.7, peak: 0.1, type: "sawtooth", endFreq: 82 });
-    tone(ctx, { freq: 55.9, start: now, duration: 1.7, peak: 0.08, type: "sawtooth", endFreq: 83.4 });
+    const length = 2.0;
 
-    // Three notes climbing out of it, each one shorter than the last.
-    [[0.15, 330], [0.62, 415], [1.05, 494]].forEach(([offset, freq], index) => {
+    // Two lows a fraction apart, swelling together. They drift in and out of
+    // phase with each other, and that slow beating is most of the unease —
+    // it is also why there are two of them rather than one louder one.
+    drone(ctx, { start: now, duration: length, freq: 46, peak: 0.11 });
+    drone(ctx, { start: now, duration: length, freq: 46.6, peak: 0.09, rate: 4.1, wobble: 4 });
+
+    // The wash climbing over them. Ends with the sound rather than before it,
+    // so nothing lands on silence.
+    riser(ctx, { start: now, duration: length, peak: 0.05, fromFreq: 260, toFreq: 2600 });
+
+    // A fifth held far back, barely there — enough that the low is a chord and
+    // not a hum, not enough to be a tune anybody could whistle.
+    drone(ctx, { start: now + 0.35, duration: length - 0.5, freq: 138, peak: 0.028, rate: 3.2 });
+
+    // Two slow heartbeats, the second closer than the first. Nothing else in
+    // here has a pulse, which is what makes these two count.
+    [0.25, 1.15].forEach((offset) => {
       tone(ctx, {
-        freq, start: now + offset, duration: 0.5 - index * 0.08,
-        peak: 0.05 + index * 0.015, type: "triangle",
+        freq: 58, start: now + offset, duration: 0.3,
+        peak: 0.075, type: "sine", endFreq: 32,
       });
-    });
-
-    // A heartbeat under it all.
-    [0.1, 0.75, 1.25].forEach((offset) => {
-      tone(ctx, { freq: 70, start: now + offset, duration: 0.14, peak: 0.12, type: "sine", endFreq: 45 });
     });
   });
 }

@@ -309,6 +309,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const pos = slotPosition(visualIdx, slots, geometry);
         const isMe = p != null && p.seat === mySeat;
         const isActive = p != null && actionOnSeat === p.seat;
+        const throwable = Boolean(aimingItem) && p != null && !isMe;
+        const throwAt = () => {
+          send({ type: "throw_item", item: aimingItem, at_user_id: p.user_id });
+          setAiming(null);
+        };
         return (
           <div key={seat}
             // Over its neighbours, and over the bets on the felt, for as long
@@ -317,7 +322,22 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             className={`absolute -translate-x-1/2 -translate-y-1/2 ${
               p && seatBubbles[p.user_id] ? "z-30" : ""
             }`}
-            style={{ top: pos.top, left: pos.left }}>
+            style={{ top: pos.top, left: pos.left }}
+            // The whole seat catches it, not just the nameplate: the crosshair
+            // is drawn around all of it, and a target you have to hit precisely
+            // is not the game being offered.
+            {...(throwable ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": `Throw at ${p.name}`,
+              onClick: throwAt,
+              onKeyDown: (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  throwAt();
+                }
+              },
+            } : {})}>
             {p ? (
               <PlayerSeat
                 player={p}
@@ -345,15 +365,13 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 topHalf={parseFloat(pos.top) < 50}
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}
+                // While aiming, the seat around it takes the click — see the
+                // wrapper. Leaving the plate's own handler on would open a
+                // stats card behind the thing you just threw.
                 onInspect={
-                  aimingItem && !isMe
-                    ? () => {
-                        send({ type: "throw_item", item: aimingItem, at_user_id: p.user_id });
-                        setAiming(null);
-                      }
-                    : onInspectPlayer ? () => onInspectPlayer(p) : undefined
+                  throwable || !onInspectPlayer ? undefined : () => onInspectPlayer(p)
                 }
-                aimed={Boolean(aimingItem) && !isMe}
+                aimed={throwable}
                 handStrength={isMe ? handStrength : null}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just

@@ -1453,6 +1453,116 @@ class BountyLedgerTests(TestCase):
 		self.assertEqual(entries[self.host.id].bounty_prize_cents, 0)
 
 
+class PkoPayloadTests(APITestCase):
+	"""What a progressive tournament tells the screens that draw it.
+
+	The arithmetic is settled above; this is about whether the numbers reach the
+	lobby at all, and whether they are the ones the table already shows.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="pko_host", password="secret123", is_staff=True)
+		self.bea = User.objects.create_user(username="pko_bea", password="secret123")
+		self.cid = User.objects.create_user(username="pko_cid", password="secret123")
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _played_out(self):
+		"""A finished 20€ PKO with a 10€ bounty, three players and one rebuy.
+
+		The rows are the ones the engine leaves behind: heads emptied into
+		whoever did the knocking, the winner's own head still carrying what they
+		collected onto it.
+		"""
+		t = Tournament.objects.create(
+			host=self.host,
+			name="PKO night",
+			status="finished",
+			buy_in_cents=2000,
+			bounty_mode="progressive",
+			bounty_cents=1000,
+			bounty_progressive_split_pct=50,
+			payout_structure=[
+				{"place": 1, "label": "1st", "percentage": 70},
+				{"place": 2, "label": "2nd", "percentage": 30},
+			],
+		)
+		# The host knocked cid out, then bea twice — bea rebought a fresh head
+		# in between, and the last one paid whole because it ended the night.
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.host, seat=0, chips=60000, finish_position=1,
+			bounty_cents=2000, bounty_won_cents=2000, knockouts=3,
+		)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.bea, seat=1, chips=0, finish_position=2,
+			is_eliminated=True, rebuy_count=1,
+		)
+		TournamentPlayer.objects.create(
+			tournament=t, user=self.cid, seat=2, chips=0, finish_position=3, is_eliminated=True,
+		)
+		return t
+
+	def test_the_detail_carries_every_number_a_result_is_drawn_from(self):
+		from tournaments.ledger import settle_tournament
+
+		t = self._played_out()
+		settle_tournament(t)
+
+		response = self.client.get(reverse("tournament-detail", kwargs={"pk": t.id}))
+		by_name = {p["username"]: p for p in response.data["players"]}
+
+		# Four entries at 20€: 40€ played for by placing, 40€ onto heads.
+		# The host takes 70% of the places and the whole bounty pool — 20€
+		# banked as cash and 20€ still sitting on their own head.
+		self.assertEqual(by_name["pko_host"]["bounty_prize_cents"], 4000)
+		self.assertEqual(by_name["pko_host"]["prize_cents"], 2800 + 4000)
+		self.assertEqual(by_name["pko_host"]["knockouts"], 3)
+		self.assertEqual(by_name["pko_bea"]["prize_cents"], 1200)
+		self.assertEqual(by_name["pko_bea"]["bounty_prize_cents"], 0)
+		# Everything the lobby needs to say what is being played for.
+		self.assertEqual(response.data["bounty_mode"], "progressive")
+		self.assertEqual(response.data["bounty_cents"], 1000)
+		self.assertEqual(response.data["bounty_progressive_split_pct"], 50)
+
+	def test_the_places_are_played_for_with_the_bounty_taken_out(self):
+		"""The half of the buy-in that went onto a head is not in the pot the
+		payout percentages divide, and a lobby that adds it back promises a
+		first prize that does not exist."""
+		from tournaments.bounties import BountyConfig, prize_pool_share_cents
+		from tournaments.ledger import settle_tournament
+		from tournaments.models import LedgerEntry
+
+		t = self._played_out()
+		settle_tournament(t)
+
+		entries = 4  # three players, one of whom rebought
+		placing_pot = prize_pool_share_cents(BountyConfig.from_tournament(t), t.buy_in_cents) * entries
+		self.assertEqual(placing_pot, 4000)
+
+		ledger = {e.user_id: e for e in LedgerEntry.objects.filter(tournament=t)}
+		places = sum(e.prize_cents - e.bounty_prize_cents for e in ledger.values())
+		self.assertEqual(places, placing_pot)
+		# And the whole night still balances: four buy-ins in, four out.
+		self.assertEqual(sum(e.stake_cents for e in ledger.values()), 8000)
+		self.assertEqual(sum(e.prize_cents for e in ledger.values()), 8000)
+
+	def test_a_running_tournament_shows_what_is_on_every_head(self):
+		"""Mid-flight there is no ledger yet, so the live columns are the answer
+		and they have to be in the payload."""
+		t = self._played_out()
+		t.status = "running"
+		t.save(update_fields=["status"])
+
+		response = self.client.get(reverse("tournament-detail", kwargs={"pk": t.id}))
+		host = next(p for p in response.data["players"] if p["username"] == "pko_host")
+
+		self.assertEqual(host["bounty_cents"], 2000)      # what they are worth
+		self.assertEqual(host["bounty_won_cents"], 2000)  # what they have banked
+		self.assertEqual(host["bounty_prize_cents"], 0)   # nothing settled yet
+
+
 class BountyConfigurationTests(APITestCase):
 	def setUp(self):
 		self.user = User.objects.create_user(username="ko_host", password="secret123", is_staff=True)

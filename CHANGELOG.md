@@ -146,6 +146,26 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **The tournament lobby promised a prize pool that did not exist.** It worked
+  the pot out as the buy-in times the number of names, which is wrong twice over
+  in a knockout tournament: half of every buy-in went onto somebody's head and
+  is paid out hand by hand rather than by placing, and a rebuy is another buy-in
+  the count never saw. A €20 PKO with a €10 bounty and three players advertised
+  a €60 pool and a €42 first prize, while the table's own panel — which has
+  always used the shared arithmetic — said €40 and €28, and €28 is what the
+  ledger pays. The lobby now uses that same helper, so the two screens cannot
+  disagree, and states the two pools as two: places and KO.
+- **A knockout tournament looked like an ordinary one from the lobby.** The page
+  listed rebuys, late registration, the time bank and the blinds, and said
+  nothing about the bounties — no mode, no amount, no KO pool, no knockouts —
+  on the one page a player who has just busted can still read. It now says what
+  the format is and what it does with your buy-in, and the players table carries
+  a KO column: what each player has taken off other people's heads, and what is
+  still riding on their own for somebody to come and collect.
+- **A finished knockout night was listed as worth half what it was.** The card
+  on the home page showed only the placing pool, so a €60 night read "€30". It
+  shows the whole night now, and while one is still running the two pools are
+  labelled — "€30 places · PKO €30" — instead of one figure called "pool".
 - **Your cards no longer shine while you are losing.** Once everybody is all in
   the hands turn face up, so the table knows exactly who is ahead — but the
   shine went on judging your cards against the board alone. A river that paired

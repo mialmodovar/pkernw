@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
+import { entryCount, payoutLabel, placingPoolCents } from "../components/game/prizePool";
+import { formatEuros } from "../components/game/formatMoney";
 import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
 import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
 import { useCountdown } from "../components/lobby/useCountdown";
@@ -36,9 +38,9 @@ const STATUS_STYLE = {
 };
 
 /** A headline number in the banner — the things you want before anything else. */
-function Headline({ label, value, tone = "text-(--color-silver)" }) {
+function Headline({ label, value, tone = "text-(--color-silver)", title }) {
   return (
-    <div className="text-right">
+    <div className="text-right" title={title}>
       <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">{label}</p>
       <p className={`text-lg font-bold leading-tight ${tone}`}>{value}</p>
     </div>
@@ -221,8 +223,20 @@ export default function TournamentSetupPage() {
   // The column only exists once there is money to show, so a friendly game
   // never grows an empty euro column.
   const anyPrizes = tournament.players.some((player) => player.prize_cents > 0);
-  // What the pot would be if everyone registered turns up — rebuys grow it further.
-  const potCents = buyInCents * tournament.players.length;
+  // Entries, not entrants: every rebuy is another buy-in in the pot. The same
+  // count the settlement ledger makes, and the same helper the table uses — this
+  // page used to multiply the buy-in by the number of names and call it the
+  // pot, which in a knockout tournament counted the bounties in twice over and
+  // promised a first prize nobody was going to be paid.
+  const entries = entryCount(tournament);
+  const potCents = placingPoolCents(tournament, entries);
+  const bountyOn = (tournament.bounty_mode || "none") !== "none" && (tournament.bounty_cents || 0) > 0;
+  const koPoolCents = bountyOn ? (tournament.bounty_cents || 0) * entries : 0;
+  // Settled, the ledger's split of the prize; before that, what they have
+  // actually taken off other people's heads.
+  const koWinnings = (player) => (player.bounty_prize_cents || player.bounty_won_cents || 0);
+  const anyKnockouts = bountyOn
+    && tournament.players.some((player) => koWinnings(player) > 0 || player.knockouts > 0);
 
   const visible = filter
     ? ranked.filter((p) => `${p.display_name || ""} ${p.username}`.toLowerCase()
@@ -268,7 +282,18 @@ export default function TournamentSetupPage() {
               </>
             )}
           <Headline label="Start stack" value={tournament.starting_chips.toLocaleString()} />
-          {buyInCents > 0 && <Headline label="Buy-in" value={`${(buyInCents / 100).toFixed(2)}€`} />}
+          {buyInCents > 0 && (
+            <Headline
+              label="Buy-in"
+              value={formatEuros(buyInCents)}
+              // In a knockout game half of it may never reach the places, and
+              // the number on its own does not say so.
+              title={bountyOn
+                ? `${formatEuros(buyInCents - tournament.bounty_cents)} to the places, `
+                  + `${formatEuros(tournament.bounty_cents)} onto your head`
+                : undefined}
+            />
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2 w-full lg:w-auto">
@@ -336,6 +361,18 @@ export default function TournamentSetupPage() {
                     + (inPlay ? (tournament.rebuys_open ? " · open now" : " · closed") : "")
                   : "Not allowed"}
               </Fact>
+              {/* The lobby knew about rebuys, late reg and the time bank and
+                  said nothing about the half of the buy-in riding on people's
+                  heads — on the one page a knocked-out player can still read. */}
+              <Fact label="Knockouts">
+                {bountyOn
+                  ? `${tournament.bounty_mode === "progressive" ? "Progressive" : "Fixed"} · `
+                    + `${formatEuros(tournament.bounty_cents)} of each buy-in onto your head`
+                    + (tournament.bounty_mode === "progressive"
+                      ? ` · ${tournament.bounty_progressive_split_pct}% of a bounty is cash, the rest onto yours`
+                      : "")
+                  : "No bounties"}
+              </Fact>
               <Fact label="Time bank">
                 {tournament.time_bank_seconds ? `${tournament.time_bank_seconds}s` : "None"}
               </Fact>
@@ -350,7 +387,7 @@ export default function TournamentSetupPage() {
           {/* Nothing configured means nothing to pay out, and an empty card
               only takes up the column. */}
           {payouts.length > 0 && (
-            <Panel title={`Prize pool · ${payouts.length} places paid`}>
+            <Panel title={`${bountyOn ? "Places" : "Prize pool"} · ${payouts.length} places paid`}>
               <ul className="divide-y divide-[rgba(196,178,165,0.1)] max-h-[26rem] overflow-y-auto">
                 {payouts.map((row) => (
                   <li key={row.place} className="flex justify-between px-3 py-1.5 text-sm">
@@ -359,7 +396,7 @@ export default function TournamentSetupPage() {
                       {row.percentage}%
                       {potCents > 0 && (
                         <span className="text-(--color-text-muted) font-normal ml-2">
-                          {(potCents * row.percentage / 10000).toFixed(2)}€
+                          {payoutLabel(tournament, row, entries)}
                         </span>
                       )}
                     </span>
@@ -368,7 +405,16 @@ export default function TournamentSetupPage() {
               </ul>
               <p className="px-3 py-2 border-t border-(--color-border) text-[11px] text-(--color-text-muted)">
                 {potCents > 0
-                  ? `Prize pool ${(potCents / 100).toFixed(2)}€ so far · settle up in Calotes, payments happen outside this app.`
+                  ? (bountyOn
+                    // Two pools, said as two, because the percentages above only
+                    // ever divide the first one. A single "prize pool" figure
+                    // with the bounties folded into it is the number this page
+                    // used to print, and it was never what anybody got paid.
+                    ? `Places ${formatEuros(potCents)} · KO pool ${formatEuros(koPoolCents)} · `
+                      + `${entries} ${entries === 1 ? "entry" : "entries"} at ${formatEuros(buyInCents)}, `
+                      + `${formatEuros(tournament.bounty_cents)} of each onto a head. `
+                      + "Settle up in Calotes, payments happen outside this app."
+                    : `Prize pool ${formatEuros(potCents)} so far · settle up in Calotes, payments happen outside this app.`)
                   : "Percentages only — payments happen outside this app."}
               </p>
             </Panel>
@@ -469,6 +515,7 @@ export default function TournamentSetupPage() {
                 <tr className="border-b border-(--color-border)">
                   <th className="text-left font-normal px-3 py-1.5 w-10">#</th>
                   <th className="text-left font-normal px-1 py-1.5">Player</th>
+                  {anyKnockouts && <th className="text-right font-normal px-3 py-1.5">KO</th>}
                   {anyPrizes && <th className="text-right font-normal px-3 py-1.5">Won</th>}
                   <th className="text-right font-normal px-3 py-1.5">Chips</th>
                 </tr>
@@ -500,9 +547,30 @@ export default function TournamentSetupPage() {
                           <span className="text-[10px] text-(--color-text-muted)"> · {player.rebuy_count}R</span>
                         )}
                       </td>
+                      {/* What they have taken off other people, and — while
+                          they are still in — what sits on their own head for
+                          somebody to come and take. In a progressive game that
+                          second number is the whole point of the format, and
+                          this page never showed it. */}
+                      {anyKnockouts && (
+                        <td className="px-3 py-1.5 text-right font-mono text-[#d9c07a] whitespace-nowrap"
+                          title={out
+                            ? `${player.knockouts || 0} knockouts`
+                            : `${player.knockouts || 0} knockouts · worth `
+                              + `${formatEuros(player.bounty_cents || 0)} to whoever busts them`}>
+                          {koWinnings(player) > 0 || player.knockouts > 0
+                            ? `${player.knockouts || 0} · ${formatEuros(koWinnings(player))}`
+                            : ""}
+                          {!out && (player.bounty_cents || 0) > 0 && (
+                            <span className="text-[10px] text-(--color-text-muted)">
+                              {` (${formatEuros(player.bounty_cents)})`}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       {anyPrizes && (
                         <td className="px-3 py-1.5 text-right font-mono text-emerald-400">
-                          {player.prize_cents > 0 ? `${(player.prize_cents / 100).toFixed(2)}€` : ""}
+                          {player.prize_cents > 0 ? formatEuros(player.prize_cents) : ""}
                         </td>
                       )}
                       <td className={`px-3 py-1.5 text-right font-mono ${out ? "text-(--color-text-muted)" : "text-[#d9c07a]"}`}>
@@ -512,7 +580,7 @@ export default function TournamentSetupPage() {
                   );
                 })}
                 {visible.length === 0 && (
-                  <tr><td colSpan={anyPrizes ? 4 : 3} className="px-3 py-3 text-(--color-text-muted)">No players match.</td></tr>
+                  <tr><td colSpan={3 + (anyPrizes ? 1 : 0) + (anyKnockouts ? 1 : 0)} className="px-3 py-3 text-(--color-text-muted)">No players match.</td></tr>
                 )}
               </tbody>
             </table>

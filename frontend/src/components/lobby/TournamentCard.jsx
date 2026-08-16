@@ -76,6 +76,10 @@ export default function TournamentCard({
   // counts, so this is entrants so far — the same basis the old card used, and
   // a figure that only ever grows.
   const poolCents = Math.max(0, buyInCents - (bountyOn ? (t.bounty_cents || 0) : 0)) * t.player_count;
+  // The other half of a knockout night. It is paid out hand by hand rather than
+  // by placing, which is why it is not in the pool above — but it is money, and
+  // a card that leaves it out says a KO night was worth half what it was.
+  const koPoolCents = bountyOn ? (t.bounty_cents || 0) * t.player_count : 0;
 
   const running = t.status === "running" || t.status === "paused";
   // How long it has been going, or how long it took. Neither can be read off
@@ -97,10 +101,12 @@ export default function TournamentCard({
     buyInCents > 0 ? euros(buyInCents) : "free",
     // Never the percentages: a share is a rule for splitting a pot, and the pot
     // is knowable here. Places paid is the count, the pool is the money.
-    poolCents > 0 ? `${euros(poolCents)} pool` : buyInCents > 0 ? null : "no prize",
+    poolCents > 0 ? `${euros(poolCents)} ${bountyOn ? "places" : "pool"}` : buyInCents > 0 ? null : "no prize",
     GAME_LABELS[t.game_type] || null,
     t.club_name ? (t.league_name || "club night") : null,
-    bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
+    // The format and what it is worth, in one fact — "PKO" on its own said the
+    // rules and left the money out.
+    bountyOn ? `${t.bounty_mode === "progressive" ? "PKO" : "KO"} ${euros(koPoolCents)}` : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
     // Only worth saying while you can still act on it, and in minutes once the
     // clock is running — "until level 4" is a fact about the schedule, and how
@@ -172,7 +178,10 @@ export default function TournamentCard({
                   of what anybody asks about a night that is over. */}
               {` · ${t.player_count} played`}
               {elapsed && ` · took ${elapsed}`}
-              {poolCents > 0 && ` · ${euros(poolCents)}`}
+              {/* Everything that was on the table, bounties included: on a night
+                  that is over, "€30" beside the winner's name is read as what
+                  the night was worth, not as one of its two pools. */}
+              {poolCents + koPoolCents > 0 && ` · ${euros(poolCents + koPoolCents)}`}
             </>
           ) : (
             <>

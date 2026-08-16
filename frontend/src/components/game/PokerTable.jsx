@@ -91,11 +91,40 @@ function slotPosition(index, capacity, geometry) {
   return pointAt(index, capacity, 1, geometry);
 }
 
-// Part way in from the seat towards the pot: on the felt, clear of the cards,
-// and unambiguous about whose bet it is.
-function betPosition(index, capacity, geometry) {
+// How far in from a seat its chips sit, measured as a share of the table's
+// height so it is the same distance whichever way the seat lies.
+const BET_INSET = 20;
+
+/**
+ * Where a player's bet goes: just in front of them, on the felt.
+ *
+ * Not a fraction of the way to the middle, which is what this used to be. The
+ * table is an ellipse and it is wider than it is tall, so scaling the radius
+ * put the chips of a seat on the side nearly twice as far from their owner as
+ * the chips of a seat at the top — they ended up adrift between the player and
+ * the pot, and whose bet they were stopped being obvious.
+ *
+ * The step is taken in a space where one unit is the same distance on screen
+ * both ways, since a percentage of the width and a percentage of the height
+ * are not the same thing on a table this shape.
+ */
+function betPosition(index, capacity, geometry, aspect) {
   if (capacity <= 0) return { top: "50%", left: "50%" };
-  return pointAt(index, capacity, 0.46, geometry);
+
+  const seat = pointAt(index, capacity, 1, geometry);
+  const wide = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  const x = (parseFloat(seat.left) - 50) * wide;
+  const y = parseFloat(seat.top) - 50;
+
+  const reach = Math.hypot(x, y);
+  if (!reach) return { top: "50%", left: "50%" };
+  // Never past the middle, however small the table gets.
+  const step = Math.min(BET_INSET, reach * 0.55);
+
+  return {
+    left: `${50 + (x - (x / reach) * step) / wide}%`,
+    top: `${50 + (y - (y / reach) * step)}%`,
+  };
 }
 
 function EmptySeat() {
@@ -269,7 +298,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const isSB = sbSeat === p.seat;
         const isBB = bbSeat === p.seat;
         if (!p.bet && !isDealer && !isSB && !isBB) return null;
-        const pos = betPosition(visualIdx, slots, geometry);
+        const pos = betPosition(visualIdx, slots, geometry, aspect);
         return (
           <div key={`bet-${seat}`}
             className="absolute -translate-x-1/2 -translate-y-1/2 z-10 flex items-center gap-1"

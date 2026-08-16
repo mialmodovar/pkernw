@@ -443,14 +443,19 @@ button:disabled {
 
 /* A GIF arriving over a seat. Pops in from the seat it belongs to, then simply
    sits there — it is a picture to look at, not another thing moving. */
-@keyframes gif-pop {
-  0%   { opacity: 0; transform: translate(-50%, 10px) scale(0.7); }
-  60%  { opacity: 1; transform: translate(-50%, 0) scale(1.06); }
-  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* A bubble arriving over a seat. The horizontal half-step these keyframes used
+   to carry belonged to a bubble centred with a -50% translate; the bubble now
+   hangs off the seat's left edge, and a translate in the animation only sent it
+   there and back on every message. Growing from its own corner is the whole
+   effect — see origin-bottom-left where it is used. */
+@keyframes seat-bubble-pop {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.7); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.animate-gif-pop {
-  animation: gif-pop 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
+.animate-seat-bubble {
+  animation: seat-bubble-pop 0.32s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 /* The finisher, over the middle of the table. Lands hard, holds, then goes. */
@@ -469,7 +474,7 @@ button:disabled {
 /* Both are decoration over a game somebody is trying to read. With motion
    reduced they appear and leave without the travel. */
 @media (prefers-reduced-motion: reduce) {
-  .animate-gif-pop { animation: fade-in 0.12s ease-out; }
+  .animate-seat-bubble { animation: fade-in 0.12s ease-out; }
   .animate-finisher { animation: fade-in 0.12s ease-out; }
 }
 

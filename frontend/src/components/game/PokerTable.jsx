@@ -110,6 +110,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
     dealerSeat, sbSeat, bbSeat, showdown, handStrength,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
+  // Who is currently saying something. A seat is its own stacking context — it
+  // is positioned and translated — so a bubble inside one cannot be lifted over
+  // the seat next door by any z-index of its own; the seat has to be lifted.
+  const seatBubbles = useGameStore((s) => s.seatBubbles);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
@@ -194,7 +198,12 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const isActive = p != null && actionOnSeat === p.seat;
         return (
           <div key={seat}
-            className="absolute -translate-x-1/2 -translate-y-1/2"
+            // Over its neighbours, and over the bets on the felt, for as long
+            // as it is holding a bubble — a speech balloon half behind the next
+            // player's nameplate reads as a rendering fault.
+            className={`absolute -translate-x-1/2 -translate-y-1/2 ${
+              p && seatBubbles[p.user_id] ? "z-30" : ""
+            }`}
             style={{ top: pos.top, left: pos.left }}>
             {p ? (
               <PlayerSeat

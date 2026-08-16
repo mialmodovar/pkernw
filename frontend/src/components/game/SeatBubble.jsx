@@ -41,7 +41,7 @@ export default function SeatBubble({ userId, name }) {
   if (!bubble) return null;
 
   return (
-    <div className="animate-gif-pop pointer-events-none absolute bottom-full left-0 mb-2 z-30 origin-bottom-left">
+    <div className="animate-seat-bubble pointer-events-none absolute bottom-full left-0 mb-2 z-30 origin-bottom-left">
       <div className="relative rounded-lg border border-(--color-border-strong) bg-(--color-surface-raised)
                       shadow-lg shadow-black/60 overflow-hidden">
         {isGif ? (

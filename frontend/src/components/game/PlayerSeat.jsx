@@ -84,7 +84,7 @@ function TimerRing({ pct, tone = "--color-highlight" }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength, shine, raisedCards, compactVideo, compact = false,
+  stats, onInspect, handStrength, shine, raisedCards, compact = false,
   backers = [],
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -92,10 +92,9 @@ export default function PlayerSeat({
   const toggleBB = useGameStore((s) => s.toggleBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
   const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
-  // Only used when the table is too crowded for a tile of its own.
-  const liveStream = compactVideo
-    ? (myStream || (media?.video && media.videoFlowing !== false ? media.stream : null))
-    : null;
+  // The picture always rides in the avatar circle, so a seat with a camera on
+  // is the same shape as one without.
+  const liveStream = myStream || (media?.video && media.videoFlowing !== false ? media.stream : null);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
   const bountyFlash = useBountyFlash(p.seat);
@@ -357,9 +356,8 @@ export default function PlayerSeat({
   // The face, big and round, on the left of the seat. It is the anchor the rest
   // of the seat is arranged around: the hole cards sit beside its top half and
   // the nameplate slides out from under its bottom half, so a seat reads as one
-  // person rather than as a column of parts. When the table is too crowded for
-  // a video tile of its own, this is where the camera goes — same circle, same
-  // place, whether it is a photo or a face that moves.
+  // person rather than as a column of parts. This is also where the camera
+  // goes — same circle, same place, whether it is a photo or a face that moves.
   const face = (
     <span
       title={p.name}
@@ -418,14 +416,12 @@ export default function PlayerSeat({
     </div>
   );
 
-  // On the outer edge, against the nameplate, and only when there is a picture
-  // to show — nobody's seat moves because someone else turned a camera on.
-  // On a crowded table the picture rides in the avatar circle (see liveStream
-  // above); everywhere else it gets its own tile on the outer edge.
-  const video = compactVideo ? null
-    : myStream
-      ? <SeatVideo key="video" peer={{ stream: myStream, video: true, status: "connected", videoFlowing: true }} name={p.name} mirrored muted />
-      : media ? <SeatVideo key="video" peer={media} name={p.name} /> : null;
+  // What is left for the outer edge once the picture moved into the circle: a
+  // peer who is only on the microphone, whose audio still has to be played, and
+  // the notices for a camera that is on but not getting through.
+  const video = liveStream || !media
+    ? null
+    : <SeatVideo key="video" peer={media} name={p.name} />;
   const stack = topHalf
     ? [video, body, badges]
     : [badges, body, video];

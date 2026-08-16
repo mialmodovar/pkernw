@@ -369,10 +369,6 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 position={positions.get(p.seat) || null}
                 timerPct={isActive ? countdown.pct : 100}
                 timerTone={isActive ? timerToneVar(countdown) : undefined}
-                // Past six seats the ring is too tight for a tile of its own,
-                // so the picture moves onto the nameplate instead. A phone is
-                // never wide enough for the tile.
-                compactVideo={compact || slots > 6}
                 topHalf={parseFloat(pos.top) < 50}
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}

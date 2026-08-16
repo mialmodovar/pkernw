@@ -23,7 +23,7 @@ from tournaments.models import BlindLevel, Tournament, TournamentPlayer
 
 from .models import Hand, HandAction
 
-from .coordinator import MultiTableTournamentCoordinator
+from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .giphy import clean_gif_id as _clean_gif_id
 
 
@@ -779,6 +779,10 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             time_bank_refill_level=tournament.time_bank_refill_level,
             rabbit_hunting_enabled=tournament.rabbit_hunting_enabled,
             auto_remove_offline_seconds=tournament.auto_remove_offline_seconds,
+            # Not a per-tournament setting: it is a rule about how long a table
+            # waits for somebody, and it comes out of whether the night is
+            # played for money.
+            offline_sit_out_seconds=offline_sit_out_seconds(tournament),
             bounty=BountyConfig.from_tournament(tournament),
             showdown_seconds=tournament.showdown_seconds,
             allow_rebuys=tournament.allow_rebuys,

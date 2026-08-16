@@ -10,7 +10,7 @@ from django.test import TestCase, TransactionTestCase
 
 from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 
-from .coordinator import MultiTableTournamentCoordinator
+from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .consumers import (
     CHAT_MESSAGE_BUDGET, MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues,
     _media_presence, _player_channels, _request_action,
@@ -249,6 +249,46 @@ class MultiTableTournamentCoordinatorTests(TestCase):
         self.assertTrue(player.is_eliminated)
         self.assertEqual(player.chips, 0)
         self.assertEqual(player.finish_position, 3)
+
+    def test_a_seat_sits_out_once_its_player_has_been_gone_too_long(self):
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)],
+            players_per_table=3,
+        )
+        coordinator.offline_sit_out_seconds = 180
+        self._sync_and_rebalance(coordinator)
+        coordinator._offline_since[100] = time.monotonic() - 181
+
+        async_to_sync(coordinator._sit_out_long_gone_players)()
+
+        player = coordinator._players_by_user_id[100]
+        self.assertTrue(player.is_sitting_out)
+        # Sitting out, not out: the seat and the stack are still theirs to
+        # come back to.
+        self.assertFalse(player.is_eliminated)
+        self.assertGreater(player.chips, 0)
+
+    def test_a_short_disconnection_plays_on(self):
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)],
+            players_per_table=3,
+        )
+        coordinator.offline_sit_out_seconds = 180
+        self._sync_and_rebalance(coordinator)
+        coordinator._offline_since[100] = time.monotonic() - 179
+
+        async_to_sync(coordinator._sit_out_long_gone_players)()
+
+        self.assertFalse(coordinator._players_by_user_id[100].is_sitting_out)
+
+    def test_a_night_played_for_money_waits_longer(self):
+        from tournaments.models import Tournament
+
+        free = Tournament(buy_in_cents=0)
+        stakes = Tournament(buy_in_cents=1000)
+
+        self.assertEqual(offline_sit_out_seconds(free), 180)
+        self.assertEqual(offline_sit_out_seconds(stakes), 300)
 
     def test_table_broadcast_wraps_list_payloads_with_table_metadata(self):
         coordinator = self._build_coordinator(

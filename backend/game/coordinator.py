@@ -22,6 +22,23 @@ PersistAssignmentsFn = Callable[[List[dict], List[int]], Awaitable[Dict[int, dic
 PersistPlayerStatesFn = Callable[[List[EnginePlayer]], Awaitable[None]]
 
 
+# How long a seat plays on without its player before the table stops dealing it
+# in. Most disconnections are a lift, a tunnel or a browser tab; the seat folds
+# its way through those and nobody notices. These are the point at which it is
+# no longer a blip, and a stack is quietly draining into an empty chair.
+OFFLINE_SIT_OUT_SECONDS = 180
+# Longer when the night is played for money. The stake is what makes a seat
+# worth waiting for, and being sat out by the software while you find a signal
+# is a harsher thing to come back to when it cost you real money.
+OFFLINE_SIT_OUT_SECONDS_FOR_MONEY = 300
+
+
+def offline_sit_out_seconds(tournament) -> int:
+    """How long this tournament waits for a disconnected player."""
+    has_money = (getattr(tournament, "buy_in_cents", 0) or 0) > 0
+    return OFFLINE_SIT_OUT_SECONDS_FOR_MONEY if has_money else OFFLINE_SIT_OUT_SECONDS
+
+
 @dataclass
 class RuntimeTable:
     table_number: int
@@ -55,6 +72,7 @@ class MultiTableTournamentCoordinator:
         time_bank_refill_level: Optional[int] = None,
         rabbit_hunting_enabled: bool = False,
         auto_remove_offline_seconds: int = 0,
+        offline_sit_out_seconds: int = 0,
         bounty: Optional[BountyConfig] = None,
         showdown_seconds: Optional[float] = None,
         allow_rebuys: bool = False,
@@ -70,6 +88,7 @@ class MultiTableTournamentCoordinator:
         self.time_bank_refill_level = time_bank_refill_level
         self.rabbit_hunting_enabled = rabbit_hunting_enabled
         self.auto_remove_offline_seconds = max(0, auto_remove_offline_seconds or 0)
+        self.offline_sit_out_seconds = max(0, offline_sit_out_seconds or 0)
         self.bounty = bounty or BountyConfig()
         # How long the table holds between hands. Configurable per tournament:
         # a table of friends reading each other's cards wants longer than one
@@ -179,6 +198,7 @@ class MultiTableTournamentCoordinator:
         while self._active_player_count() > 1:
             await self._wait_if_paused()
             await self._sync_players_from_db()
+            await self._sit_out_long_gone_players()
             await self._remove_timed_out_offline_players()
             await self._rebalance_tables()
 
@@ -1237,6 +1257,34 @@ class MultiTableTournamentCoordinator:
         for player in self._players_by_id.values():
             if not player.is_eliminated and player.chips > 0:
                 player.time_bank_seconds_remaining = self.time_bank_seconds
+
+    async def _sit_out_long_gone_players(self):
+        """Stop dealing somebody in once they have been gone long enough.
+
+        A dropped connection is not the same as leaving: the seat stays, and for
+        the first few minutes it plays on — the blinds go in and the turn folds
+        — because most disconnections last seconds and nobody wants to come back
+        to a seat that quit on their behalf. Past that, the same behaviour is
+        just a stack bleeding away to a browser that crashed, so the seat sits
+        out. It costs nothing to undo: the player sits back in when they return.
+
+        The wait is longer where there is money on the table (see
+        offline_sit_out_seconds below) — the more a hand is worth, the more
+        patience it is worth showing somebody whose train went into a tunnel.
+        """
+        if self.offline_sit_out_seconds <= 0 or not self._offline_since:
+            return
+
+        now = time.monotonic()
+        for user_id, disconnected_at in list(self._offline_since.items()):
+            if now - disconnected_at < self.offline_sit_out_seconds:
+                continue
+            player = self._players_by_user_id.get(user_id)
+            if player is None or player.is_eliminated or player.is_sitting_out:
+                continue
+            # Through set_sitting_out rather than the flag, so the table is told
+            # and every client shows the seat as sitting out.
+            await self.set_sitting_out(user_id, True)
 
     async def _remove_timed_out_offline_players(self):
         if self.auto_remove_offline_seconds <= 0 or not self._offline_since:

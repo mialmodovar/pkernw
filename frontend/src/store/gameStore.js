@@ -94,6 +94,11 @@ const useGameStore = create((set) => ({
   showdown: null,
   potAwards: null,
   rabbitCards: null,
+  // Held back until somebody asks. Knowing what would have come is a choice —
+  // for the player who folded the winner it is the last thing they want on
+  // screen, and it used to appear whether they liked it or not.
+  rabbitRevealed: false,
+  revealRabbit: () => set({ rabbitRevealed: true }),
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
   // The last card that changed the hand, for the table to shake on. Cleared by
@@ -257,6 +262,7 @@ const useGameStore = create((set) => ({
           showdown: null,
           potAwards: null,
           rabbitCards: null,
+          rabbitRevealed: false,
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
@@ -478,6 +484,7 @@ const useGameStore = create((set) => ({
       case "rabbit_hunt":
         set((s) => ({
           rabbitCards: data.cards || [],
+          rabbitRevealed: false,
           messages: data.cards?.length
             ? appendLog(s, entry(s, "info", `Rabbit hunt: ${data.cards.join(" ")}`))
             : s.messages,
@@ -748,7 +755,7 @@ const useGameStore = create((set) => ({
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,
-      potAwards: null, rabbitCards: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
+      potAwards: null, rabbitCards: null, rabbitRevealed: false, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,

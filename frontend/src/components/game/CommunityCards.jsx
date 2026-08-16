@@ -7,6 +7,9 @@ export default function CommunityCards({ winningCards, shiningCards }) {
   // been dealing these since rabbit hunting was added and nothing ever drew
   // them, so the setting appeared to do nothing at all.
   const rabbitCards = useGameStore((s) => s.rabbitCards);
+  // Asked for, never volunteered: see the store.
+  const rabbitRevealed = useGameStore((s) => s.rabbitRevealed);
+  const revealRabbit = useGameStore((s) => s.revealRabbit);
   const winners = new Set(winningCards || []);
   // The board half of a hand the hero's own cards made — see handShine.js. The
   // showdown ring takes over from it, and the two never overlap.
@@ -32,7 +35,22 @@ export default function CommunityCards({ winningCards, shiningCards }) {
 
       {/* What was never dealt, held apart from the real board and faded, so it
           can never be mistaken for a card anybody played. */}
-      {hasRabbit && (
+      {/* The offer, until it is taken. One button rather than the cards,
+          because somebody who just folded the winner may not want to know. */}
+      {hasRabbit && !rabbitRevealed && (
+        <button
+          type="button"
+          onClick={revealRabbit}
+          title="Show the cards that would have come"
+          className="ml-1 px-2 py-1 rounded-md text-xs font-semibold whitespace-nowrap
+                     panel-raised text-(--color-text-muted) border border-dashed border-(--color-border)
+                     hover:text-(--color-silver) hover:border-(--color-highlight) transition-colors"
+        >
+          🐇 Rabbit hunt
+        </button>
+      )}
+
+      {hasRabbit && rabbitRevealed && (
         <span className="flex items-center gap-1 ml-1 pl-2 border-l border-dashed border-(--color-border)">
           {rabbitCards.map((card) => (
             <span key={`rabbit-${card}`} className="opacity-40 saturate-50">

@@ -158,7 +158,11 @@ export default function PlayerSeat({
   // backs would be covering the cards and reading them out.
   const coverHand = isMe && hideHand && !p.is_folded && !handIsPublic;
   const cards = (
-    <div key="cards" className={`flex flex-col items-center gap-1 ${coverHand ? "group/hand" : ""}`}>
+    <div key="cards" className={`flex flex-col items-start gap-1 ${coverHand ? "group/hand" : ""}`}>
+      {/* Cards and the button that speaks for them, on one line. What the hand
+          adds up to goes underneath both, full width — sharing a line with the
+          button had the label and the button jostling for the same corner. */}
+      <div className="flex items-end gap-1">
       <HoleCards
         cards={isMe ? myCards : p.cards}
         folded={p.is_folded}
@@ -176,13 +180,18 @@ export default function PlayerSeat({
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
-      {/* Your own read on what you hold, next to your cards. */}
+      {/* Only at your own seat — you can only speak for yourself — and not on
+          a phone, where the seat has no room beside the cards for it and the
+          bar across the top carries the same list. */}
+      {isMe && !compact && <SeatQuickChat />}
+      </div>
+      {/* Your own read on what you hold, under your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
+        // Hidden by display rather than by opacity: a covered hand should not
+        // leave a strip of nothing under the cards for the seat to float on.
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
                         bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
-                          coverHand
-                            ? "opacity-0 transition-opacity duration-150 group-hover/hand:opacity-100 group-active/hand:opacity-100"
-                            : ""
+                          coverHand ? "hidden group-hover/hand:block group-active/hand:block" : ""
                         }`}>
           {handStrength}
         </div>
@@ -368,13 +377,9 @@ export default function PlayerSeat({
   // the picture however tall the cards happen to be.
   const body = (
     <div key="body" className="w-full">
-      <div className="flex items-end justify-start gap-1 min-h-[calc(var(--seat-avatar)/2)]"
+      <div className="flex items-end justify-start min-h-[calc(var(--seat-avatar)/2)]"
         style={{ paddingLeft: "calc(var(--seat-avatar) * 1.12)" }}>
         {cards}
-        {/* Only at your own seat — you can only speak for yourself — and not on
-            a phone, where the seat has no room beside the cards for it and the
-            bar across the top carries the same list. */}
-        {isMe && !compact && <SeatQuickChat />}
       </div>
       {/* The plate begins halfway across the picture rather than beside it, so
           its left edge and corners are behind the circle and what you see is a

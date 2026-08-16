@@ -19,6 +19,7 @@ from .consumers import (
 User = get_user_model()
 from .engine.card import Card, Rank, Suit
 from .levelclock import seconds_until_level_ends
+from .besthand import best_of
 from .sidebets import record_for, settle, updated_records
 from .engine.hand import HandEngine
 from .engine.player import Player
@@ -1522,3 +1523,36 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
 
         self.assertTrue(snapshot["side_bets"]["open"])
         self.assertEqual(snapshot["side_bets"]["bets"][0]["user_id"], 100)
+
+
+class BestHandRankingTests(TestCase):
+    """Which of two showdown hands was the better one."""
+
+    def test_a_better_category_wins(self):
+        flush = {"hand_name": "Flush", "score": [5, 14]}
+        straight = {"hand_name": "Straight", "score": [4, 14]}
+        self.assertEqual(best_of([straight, flush]), flush)
+
+    def test_the_score_separates_two_of_a_kind(self):
+        kings = {"hand_name": "Full House", "score": [6, 13, 10]}
+        aces = {"hand_name": "Full House", "score": [6, 14, 2]}
+        self.assertEqual(best_of([kings, aces]), aces)
+
+    def test_a_royal_flush_beats_a_straight_flush(self):
+        royal = {"hand_name": "Royal Flush", "score": [8, 14]}
+        steel = {"hand_name": "Straight Flush", "score": [8, 11]}
+        self.assertEqual(best_of([steel, royal]), royal)
+
+    def test_a_hand_recorded_before_scores_still_ranks_by_category(self):
+        old_flush = {"hand_name": "Flush"}
+        new_pair = {"hand_name": "One Pair", "score": [1, 14, 13, 12, 11]}
+        self.assertEqual(best_of([old_flush, new_pair]), old_flush)
+
+    def test_a_scored_hand_wins_a_tie_against_an_unscored_one(self):
+        # Neither is better on the evidence, and only one of them brought any.
+        old = {"hand_name": "Flush"}
+        new = {"hand_name": "Flush", "score": [5, 9, 7, 5, 4, 2]}
+        self.assertEqual(best_of([old, new]), new)
+
+    def test_nothing_shown_down_is_no_best_hand(self):
+        self.assertIsNone(best_of([]))

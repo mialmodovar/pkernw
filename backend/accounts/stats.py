@@ -5,7 +5,9 @@ from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from game.besthand import best_of
 from game.hand_stats import compute_player_stats
+from game.models import Hand, HandAction
 from tournaments.models import LedgerEntry, TournamentPlayer
 
 from .avatars import avatar_url
@@ -32,6 +34,17 @@ def player_summary(user):
         if tp.finish_position and tp.tournament.payout_structure
         and tp.finish_position <= len(tp.tournament.payout_structure)
     )
+    # In the money, out of the nights that actually finished. Counting a
+    # tournament still in play against you would make the number drop every
+    # time you sat down and climb again when you busted.
+    completed = sum(1 for tp in tps if tp.finish_position)
+
+    # What they have taken home, placings and bounties together. Not net —
+    # what a buy-in cost is the settlement ledger's business, and it has a
+    # panel of its own.
+    winnings_cents = (
+        LedgerEntry.objects.filter(user=user).aggregate(Sum("prize_cents"))["prize_cents__sum"] or 0
+    )
 
     # Preflop reads come from the shared miner, so the lobby and the table can
     # never disagree about what VPIP means.
@@ -41,11 +54,72 @@ def player_summary(user):
         "tournaments_played": tournaments_played,
         "best_finish": best_finish,
         "cashes": cashes,
+        "tournaments_completed": completed,
+        "itm_pct": round(cashes * 100 / completed) if completed else 0,
+        "winnings_cents": winnings_cents,
+        "best_hand": best_showdown_hand(user),
         "total_rebuys": total_rebuys,
         "hands_played": preflop.get("hands", 0),
         # Everything the miner knows, so a player can read the same numbers
         # about themselves that the table shows about everyone else.
         **preflop,
+    }
+
+
+def best_showdown_hand(user):
+    """The best hand this player has ever turned over.
+
+    Only hands that reached a showdown, which is the only place a hand is
+    written down at all — a monster that everyone folded to was never seen and
+    is not on record anywhere.
+
+    Two queries: which seat they were in for each of those hands, then the
+    hands themselves. The seat has to come from the actions because a player's
+    seat_at_table moves when tables rebalance, so the seat they showed down in
+    is not the seat they are in now.
+    """
+    seats = {}
+    for hand_id, seat in (
+        HandAction.objects
+        .filter(player__user=user, hand__status="complete", hand__result__has_key="showdown")
+        .values_list("hand_id", "seat")
+    ):
+        seats.setdefault(hand_id, seat)
+
+    if not seats:
+        return None
+
+    mine = []
+    for hand in (
+        Hand.objects
+        .filter(id__in=seats.keys())
+        .select_related("tournament")
+        .only("id", "hand_number", "community_cards", "result", "started_at",
+              "tournament__id", "tournament__name")
+    ):
+        seat = seats.get(hand.id)
+        entry = next(
+            (one for one in (hand.result or {}).get("showdown", []) if one.get("seat") == seat),
+            None,
+        )
+        if entry:
+            mine.append({**entry, "_hand": hand})
+
+    best = best_of(mine)
+    if best is None:
+        return None
+
+    hand = best["_hand"]
+    return {
+        "hand_id": hand.id,
+        "hand_number": hand.hand_number,
+        "name": best.get("hand_name"),
+        "cards": best.get("cards") or [],
+        "best_cards": best.get("best_cards") or [],
+        "community_cards": hand.community_cards or [],
+        "tournament_id": hand.tournament_id,
+        "tournament_name": hand.tournament.name,
+        "played_at": hand.started_at,
     }
 
 

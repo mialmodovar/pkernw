@@ -9,6 +9,9 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from game.models import Hand, HandAction
+from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
+
 from .avatars import AVATAR_MAX_BYTES
 from .models import AvatarImage, Profile
 
@@ -500,3 +503,136 @@ class ProfileClubTagTests(APITestCase):
 		self._club("Open House", True, self.them, self.me, other)
 
 		self.assertEqual(self._clubs_on(), ["Open House"])
+
+
+class BestHandStatTests(APITestCase):
+	"""The best hand a player has ever turned over, on their own stats."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="hero", password="secret123")
+		self.other = User.objects.create_user(username="villain", password="secret123")
+		self.client.force_authenticate(self.user)
+		self.tournament = Tournament.objects.create(host=self.user, name="Thursday", status="finished")
+
+	def _hand(self, *, number, seat, hand_name, score, cards, community):
+		"""One finished hand our player showed down in, from a seat of its own.
+
+		The seat goes on the action rather than on the player, which is what the
+		real thing does: a seat_at_table moves when tables rebalance, so the
+		seat somebody showed down in is not the seat they are in now.
+		"""
+		tp, _ = TournamentPlayer.objects.get_or_create(
+			tournament=self.tournament, user=self.user, defaults={"seat": 0, "chips": 0}
+		)
+		hand = Hand.objects.create(
+			tournament=self.tournament,
+			hand_number=number,
+			level_index=0,
+			dealer_seat=0,
+			community_cards=community,
+			status="complete",
+			result={"showdown": [
+				{"seat": seat, "cards": cards, "hand_name": hand_name, "score": score},
+				{"seat": 8, "cards": ["2h", "3d"], "hand_name": "High Card", "score": [0, 9]},
+			]},
+		)
+		HandAction.objects.create(hand=hand, player=tp, seat=seat, street="preflop", action="call", amount=20)
+		return hand
+
+	def test_the_best_of_several_showdowns_is_the_one_reported(self):
+		self._hand(number=1, seat=3, hand_name="Two Pair", score=[2, 10, 4, 13],
+			cards=["Th", "4s"], community=["Td", "4c", "Kh", "9s", "2d"])
+		monster = self._hand(number=2, seat=5, hand_name="Full House", score=[6, 12, 7],
+			cards=["Qh", "Qs"], community=["Qd", "7c", "7h", "2s", "3d"])
+
+		response = self.client.get(reverse("my_stats"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		best = response.data["best_hand"]
+		self.assertEqual(best["name"], "Full House")
+		self.assertEqual(best["hand_id"], monster.id)
+		self.assertEqual(best["cards"], ["Qh", "Qs"])
+		self.assertEqual(best["tournament_name"], "Thursday")
+
+	def test_somebody_elses_showdown_is_not_yours(self):
+		# The seat in the showdown is not the seat our player acted from, so
+		# nothing in this hand belongs to them.
+		self._hand(number=1, seat=3, hand_name="Two Pair", score=[2, 10, 4, 13],
+			cards=["Th", "4s"], community=["Td", "4c", "Kh", "9s", "2d"])
+		Hand.objects.filter(hand_number=1).update(
+			result={"showdown": [{"seat": 8, "cards": ["Ah", "As"], "hand_name": "Four of a Kind", "score": [7, 14, 9]}]}
+		)
+
+		response = self.client.get(reverse("my_stats"))
+
+		self.assertIsNone(response.data["best_hand"])
+
+	def test_a_player_who_has_never_shown_down_has_none(self):
+		response = self.client.get(reverse("my_stats"))
+		self.assertIsNone(response.data["best_hand"])
+
+	def test_the_hand_can_be_read_back_on_its_own(self):
+		monster = self._hand(number=2, seat=5, hand_name="Full House", score=[6, 12, 7],
+			cards=["Qh", "Qs"], community=["Qd", "7c", "7h", "2s", "3d"])
+
+		response = self.client.get(reverse("hand-detail", args=[monster.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["community_cards"], ["Qd", "7c", "7h", "2s", "3d"])
+		self.assertEqual(response.data["result"]["showdown"][0]["hand_name"], "Full House")
+
+
+class MoneyAndItmStatTests(APITestCase):
+	"""Cashes as a rate, and what has actually been taken home."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="hero", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def _played(self, *, name, finish, paid_places=2, prize_cents=0):
+		tournament = Tournament.objects.create(
+			host=self.user, name=name, status="finished",
+			payout_structure=[{"place": place + 1} for place in range(paid_places)],
+		)
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.user, seat=0, chips=0, finish_position=finish,
+		)
+		if prize_cents:
+			LedgerEntry.objects.create(
+				tournament=tournament, user=self.user, stake_cents=1000, prize_cents=prize_cents,
+			)
+		return tournament
+
+	def test_in_the_money_is_a_share_of_the_nights_that_finished(self):
+		self._played(name="one", finish=1, prize_cents=5000)
+		self._played(name="two", finish=2, prize_cents=2000)
+		self._played(name="three", finish=7)
+		self._played(name="four", finish=9)
+
+		stats = self.client.get(reverse("my_stats")).data
+
+		self.assertEqual(stats["cashes"], 2)
+		self.assertEqual(stats["tournaments_completed"], 4)
+		self.assertEqual(stats["itm_pct"], 50)
+
+	def test_a_tournament_still_in_play_counts_neither_way(self):
+		self._played(name="done", finish=1, prize_cents=5000)
+		running = Tournament.objects.create(host=self.user, name="tonight", status="running")
+		TournamentPlayer.objects.create(tournament=running, user=self.user, seat=0, chips=1000)
+
+		stats = self.client.get(reverse("my_stats")).data
+
+		self.assertEqual(stats["tournaments_played"], 2)
+		self.assertEqual(stats["tournaments_completed"], 1)
+		self.assertEqual(stats["itm_pct"], 100)
+
+	def test_winnings_are_everything_taken_home(self):
+		self._played(name="one", finish=1, prize_cents=5000)
+		self._played(name="two", finish=2, prize_cents=2000)
+
+		self.assertEqual(self.client.get(reverse("my_stats")).data["winnings_cents"], 7000)
+
+	def test_a_player_with_no_record_reads_zero_rather_than_dividing_by_it(self):
+		stats = self.client.get(reverse("my_stats")).data
+		self.assertEqual(stats["itm_pct"], 0)
+		self.assertEqual(stats["winnings_cents"], 0)

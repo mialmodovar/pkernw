@@ -33,6 +33,25 @@ def tournament_hands(request, pk):
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
+def hand_detail(request, pk):
+    """One hand, by id.
+
+    The review panel reads the last few hands of a tournament; this reads a
+    named one, however long ago it was — which is what "show me the best hand I
+    ever made" needs, since it is almost never among the last twenty.
+    """
+    hand = (
+        Hand.objects.filter(pk=pk, status="complete")
+        .prefetch_related("actions__player__user")
+        .first()
+    )
+    if hand is None:
+        return Response({"error": "Not found"}, status=404)
+    return Response(HandSerializer(hand).data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
 def tournament_player_stats(request, pk):
     """Lifetime preflop stats for everyone in this tournament.
 

@@ -519,6 +519,11 @@ class HandEngine:
                     "seat":      _seat_of(p),
                     "cards":     cards_to_list(p.hole_cards),
                     "hand_name": hand_name(score),
+                    # The score behind the name, so a hand written down now can
+                    # be ranked against another later — "Full House" alone
+                    # cannot say which of two full houses was bigger. Public
+                    # either way: these cards are face up.
+                    "score":     list(score),
                     # So the table can pick out the five cards that made it.
                     "best_cards": cards_to_list(best),
                 })

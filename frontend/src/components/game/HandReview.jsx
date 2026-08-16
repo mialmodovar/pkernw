@@ -12,7 +12,8 @@ const VERB = {
   bet: "bets", raise: "raises to", blind: "posts", ante: "antes",
 };
 
-function MiniCard({ card }) {
+/** One card, small enough to sit in a line of text. */
+export function MiniCard({ card }) {
   const parsed = parseCard(card);
   if (!parsed) return null;
   return (
@@ -26,7 +27,15 @@ function MiniCard({ card }) {
   );
 }
 
-function Hand({ hand }) {
+/**
+ * One finished hand, laid out whole: the board, what everybody did on each
+ * street, what was shown and who was paid.
+ *
+ * Exported because the lobby shows a single hand too — the best one you have
+ * ever made — and a second rendering of the same thing would drift from this
+ * one within a month.
+ */
+export function HandCard({ hand }) {
   const byStreet = STREETS.map((street) => ({
     street,
     items: (hand.actions || []).filter((a) => a.street === street),
@@ -140,7 +149,7 @@ export default function HandReview({ tournamentId, onClose }) {
               No completed hands yet.
             </p>
           )}
-          {hands?.map((hand) => <Hand key={hand.id} hand={hand} />)}
+          {hands?.map((hand) => <HandCard key={hand.id} hand={hand} />)}
         </div>
       </div>
     </div>

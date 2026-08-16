@@ -13,7 +13,7 @@ import StartCountdown from "../components/game/StartCountdown";
 import RebuyPrompt from "../components/game/RebuyPrompt";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
-import ActionPanel, { ActionCountdownBadge } from "../components/game/ActionPanel";
+import ActionPanel from "../components/game/ActionPanel";
 import BlindLevelBar from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
@@ -402,17 +402,15 @@ export default function GamePage() {
             >
               <ChatPanel bare />
             </FloatingPanel>
-            {/* Collapsed, it still shows whose clock is running — and it opens
-                itself when the action reaches you, then folds back after. */}
+            {/* Fixed in the bottom-right corner, with no title bar and nothing
+                to drag or fold. Everything else on the felt is arrangeable
+                because it is optional; this is where you act, and a control you
+                have to find — or worse, unfold, while the clock runs — is not
+                one you want to be looking for. */}
             {!spectating && (
-              <FloatingPanel
-                id="action" title="Actions" anchor="bottom-right"
-                defaultWidth={512} minWidth={320} minHeight={132}
-                expandWhen={isMyTurn}
-                badge={<ActionCountdownBadge />}
-              >
-                {actionPanel(true)}
-              </FloatingPanel>
+              <div className="absolute bottom-2 right-2 z-20 w-[512px] max-w-[calc(100%-1rem)]">
+                {actionPanel()}
+              </div>
             )}
           </>
         )}

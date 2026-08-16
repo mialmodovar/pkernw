@@ -15,7 +15,7 @@ import useGameStore from "../../store/gameStore";
  * The full elimination screen still follows, and still offers a rebuy — this is
  * the fast path, not the only one.
  */
-export default function RebuyPrompt({ tournamentId, myUserId, startingChips }) {
+export default function RebuyPrompt({ tournamentId, myUserId, startingChips, onRebought }) {
   const rebuyWindow = useGameStore((s) => s.rebuyWindow);
   const [left, setLeft] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -41,8 +41,10 @@ export default function RebuyPrompt({ tournamentId, myUserId, startingChips }) {
     setError("");
     try {
       await api.post(`/tournaments/${tournamentId}/rebuy/`);
-      // The seat comes back through the table roster, so there is nothing to
-      // set here — the prompt goes when the window closes.
+      // The seat comes back through the table roster on its own. The snapshot
+      // behind the elimination screen does not, so it is asked to catch up —
+      // otherwise it spends a few seconds still believing you are out.
+      onRebought?.();
     } catch (requestError) {
       setError(requestError.response?.data?.error || "Rebuy failed");
       setBusy(false);

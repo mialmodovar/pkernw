@@ -166,7 +166,18 @@ export default function GamePage() {
   const mySeatRecord = tournament?.players?.find((p) => p.username === user?.username);
   const myFinish = mySeatRecord?.is_eliminated ? mySeatRecord.finish_position : null;
   const eliminatedByEvent = lastElimination?.username === user?.username;
-  const myEliminationFinish = myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
+  // Back at the table with chips in front of you, whatever the last snapshot
+  // said. That snapshot is refetched every few seconds, so buying straight
+  // back in used to leave it claiming you were still out — long enough for the
+  // elimination screen to arrive and offer you a rebuy the server then refused
+  // on the grounds that you were not eliminated.
+  const myLiveSeat = players.find((p) => (
+    p.user_id != null && user?.id != null ? p.user_id === user.id : p.name === user?.username
+  ));
+  const backInPlay = Boolean(myLiveSeat && !myLiveSeat.is_eliminated && (myLiveSeat.chips ?? 0) > 0);
+  const myEliminationFinish = backInPlay
+    ? null
+    : myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
 
   // Let the hand finish playing out — the river, the showdown, the pot — before
   // taking the screen over.
@@ -498,6 +509,7 @@ export default function GamePage() {
             tournamentId={id}
             myUserId={user?.id}
             startingChips={tournament?.starting_chips}
+            onRebought={loadTournament}
           />
         )}
         <BreakOverlay level={level} nextLevel={nextLevel} />

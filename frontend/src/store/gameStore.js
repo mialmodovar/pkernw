@@ -109,6 +109,13 @@ const useGameStore = create((set) => ({
   // Between hands you may show what you had. The server decides whether a
   // reveal is allowed; this is only whether to offer it.
   showCardsOpen: false,
+  // Which cards each seat chose to show, by seat. Held apart from the seat's
+  // `cards` because the hero's two are always drawn from `holeCards`, so this
+  // is the only way to tell which of them the rest of the table can see.
+  shownCards: {},
+  // When the river landed, so anything that should follow it rather than land
+  // on top of it has something to count from.
+  riverShownAt: null,
   // { userIds, endsAt } while the table waits for a busted player to rebuy.
   rebuyWindow: null,
   isPaused: false,
@@ -244,6 +251,8 @@ const useGameStore = create((set) => ({
           allInEquity: null,
           countdown: null,
           showCardsOpen: false,
+          shownCards: {},
+          riverShownAt: null,
           // The wait is over either way: the next hand is being dealt.
           rebuyWindow: null,
           holeCards: [],
@@ -370,6 +379,7 @@ const useGameStore = create((set) => ({
           street: data.street,
           communityCards: data.cards || [],
           pot: data.pot || 0,
+          ...(data.street === "river" ? { riverShownAt: Date.now() } : {}),
           players: s.players.map((p) => ({ ...p, bet: 0 })),
           // Deliberately not cleared. During an all-in runout the next set of
           // equities arrives moments later, and blanking them in between made
@@ -449,6 +459,7 @@ const useGameStore = create((set) => ({
           players: s.players.map((p) =>
             (p.seat === data.seat ? { ...p, cards: data.cards } : p)
           ),
+          shownCards: { ...s.shownCards, [data.seat]: data.cards || [] },
           messages: appendLog(s, entry(s, "showdown",
             `${data.name} shows ${(data.cards || []).join(" ")}`)),
         }));
@@ -733,6 +744,7 @@ const useGameStore = create((set) => ({
       tableAssignmentNotice: null,
       bountyFlash: null, seatBubbles: {}, finisher: null, equityShake: null,
       readyUserIds: [], readyTotal: 0, showCardsOpen: false, rebuyWindow: null,
+      shownCards: {}, riverShownAt: null,
     }),
 }));
 

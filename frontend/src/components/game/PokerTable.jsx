@@ -107,7 +107,7 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity, statsByName, onInspectPlayer }) {
   const {
     players, actionOnSeat, holeCards, communityCards, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat, showdown, handStrength,
+    dealerSeat, sbSeat, bbSeat, showdown, handStrength, shownCards,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
   // Who is currently saying something. A seat is its own stacking context — it
@@ -232,6 +232,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
                 shine={isMe && heroShines && !p.is_folded}
+                // Only your own: the lift is there to tell you what you just
+                // put on display, and every other seat's cards are already
+                // face up by the time they are on the felt at all.
+                raisedCards={isMe ? shownCards[p.seat] : null}
                 compact={compact}
               />
             ) : (

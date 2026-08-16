@@ -21,8 +21,8 @@ import ThemeSettings from "../lobby/ThemeSettings";
  *
  * Drawn through a portal rather than in place. Every .panel carries a
  * backdrop-filter, and a backdrop filter makes a stacking context — so a panel
- * opened inside this bar was sealed into it, however high its z-index, and the
- * host controls below simply painted over the top. The portal takes it out of
+ * opened inside this bar was sealed into it, however high its z-index, and
+ * whatever sat below it simply painted over the top. The portal takes it out of
  * that box entirely.
  */
 function UserChip() {
@@ -147,14 +147,17 @@ function DisplayToggles() {
   );
 }
 
-export default function BlindLevelBar() {
+export default function BlindLevelBar({ hostControls = null }) {
   const level = useGameStore((s) => s.level);
   const remaining = useLevelCountdown();
 
   if (!level) {
     return (
       <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
-        <span className="text-(--color-text-muted)">Waiting for level info...</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-(--color-text-muted)">Waiting for level info...</span>
+          {hostControls}
+        </div>
         <DisplayToggles />
       </div>
     );
@@ -165,12 +168,17 @@ export default function BlindLevelBar() {
 
   return (
     <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
-      <span className="text-(--color-silver)">
-        {isBreak
-          ? `Break after level ${level.blind_level_number || 0}`
-          : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
-        {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
-      </span>
+      {/* Pausing and skipping a level are things you do to the clock, so they
+          sit with it rather than on a row of their own. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="text-(--color-silver)">
+          {isBreak
+            ? `Break after level ${level.blind_level_number || 0}`
+            : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
+          {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
+        </span>
+        {hostControls}
+      </div>
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
         <DisplayToggles />
         {/* What is left, not what has gone: a timed level says how long you

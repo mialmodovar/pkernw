@@ -118,23 +118,23 @@ const useGameStore = create((set) => ({
   // itself once the animation has run.
   bountyFlash: null,
   bountyFlashSequence: 0,
-  // A GIF said in chat also goes up over the sender's seat. Keyed by user id —
-  // seats move between tables, and one player can only be showing one at a
-  // time, so a newer GIF replaces theirs rather than queueing behind it.
-  gifBubbles: {},
-  gifBubbleSequence: 0,
+  // What somebody just said, over their seat: a GIF or a line of chat. Keyed by
+  // user id — seats move between tables — and one bubble per player, so the
+  // newest thing they said replaces the last rather than queueing behind it.
+  seatBubbles: {},
+  seatBubbleSequence: 0,
   // The knockout GIF playing in the middle of the table, if any.
   finisher: null,
   finisherSequence: 0,
   // Both are cleared by whatever is drawing them, once it has run its course.
   // The store holds no timers: a component that unmounts mid-animation would
   // leave one running with nothing to update.
-  clearGifBubble: (userId, id) => set((s) => {
-    const current = s.gifBubbles[userId];
+  clearSeatBubble: (userId, id) => set((s) => {
+    const current = s.seatBubbles[userId];
     if (!current || current.id !== id) return {};   // already replaced by a newer one
-    const next = { ...s.gifBubbles };
+    const next = { ...s.seatBubbles };
     delete next[userId];
-    return { gifBubbles: next };
+    return { seatBubbles: next };
   }),
   clearFinisher: (id) => set((s) => (s.finisher?.id === id ? { finisher: null } : {})),
   connectionStatus: "connecting", // connecting | open | reconnecting | failed
@@ -554,7 +554,12 @@ const useGameStore = create((set) => ({
         }));
         break;
 
-      case "chat_message":
+      case "chat_message": {
+        // A GIF or a line, whichever it was — and nothing at all for a message
+        // that is somehow neither.
+        const said = data.gif_id
+          ? { gifId: data.gif_id }
+          : data.text ? { text: data.text } : null;
         set((s) => ({
           chatSequence: s.chatSequence + 1,
           chat: [...s.chat, {
@@ -569,15 +574,16 @@ const useGameStore = create((set) => ({
             text: data.text,
             gifId: data.gif_id || null,
           }].slice(-100),
-          // A GIF is said to the table, not just to the chat panel, so it also
-          // goes up over the seat of whoever sent it. Keyed by user rather than
-          // seat: seats move between tables, and this outlives a hand.
-          gifBubbles: data.gif_id
-            ? { ...s.gifBubbles, [data.user_id]: { gifId: data.gif_id, id: s.gifBubbleSequence + 1 } }
-            : s.gifBubbles,
-          gifBubbleSequence: s.gifBubbleSequence + (data.gif_id ? 1 : 0),
+          // Anything said is said to the table, not just to a panel that may
+          // be folded away: it goes up over the seat it came from as well.
+          // Keyed by user rather than seat, since seats move between tables.
+          seatBubbles: said
+            ? { ...s.seatBubbles, [data.user_id]: { ...said, id: s.seatBubbleSequence + 1 } }
+            : s.seatBubbles,
+          seatBubbleSequence: s.seatBubbleSequence + (said ? 1 : 0),
         }));
         break;
+      }
 
       // The table is holding for whoever just busted to decide. Stored with
       // the moment it ends rather than a count, so a component that mounts
@@ -725,7 +731,7 @@ const useGameStore = create((set) => ({
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
-      bountyFlash: null, gifBubbles: {}, finisher: null, equityShake: null,
+      bountyFlash: null, seatBubbles: {}, finisher: null, equityShake: null,
       readyUserIds: [], readyTotal: 0, showCardsOpen: false, rebuyWindow: null,
     }),
 }));

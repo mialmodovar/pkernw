@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 
 import Avatar from "../Avatar";
 import HoleCards from "./HoleCards";
-import SeatGifBubble from "./SeatGifBubble";
+import SeatBubble from "./SeatBubble";
+import SeatQuickChat from "./SeatQuickChat";
 import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
@@ -308,9 +309,13 @@ export default function PlayerSeat({
   // the picture however tall the cards happen to be.
   const body = (
     <div key="body" className="w-full">
-      <div className="flex items-end justify-start min-h-[calc(var(--seat-avatar)/2)]"
+      <div className="flex items-end justify-start gap-1 min-h-[calc(var(--seat-avatar)/2)]"
         style={{ paddingLeft: "calc(var(--seat-avatar) * 1.12)" }}>
         {cards}
+        {/* Only at your own seat — you can only speak for yourself — and not on
+            a phone, where the seat has no room beside the cards for it and the
+            bar across the top carries the same list. */}
+        {isMe && !compact && <SeatQuickChat />}
       </div>
       {/* The plate begins halfway across the picture rather than beside it, so
           its left edge and corners are behind the circle and what you see is a
@@ -351,9 +356,9 @@ export default function PlayerSeat({
         p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
       }`}>
       {stack}
-      {/* Over the seat rather than only in the chat panel: a GIF is a reaction,
-          and a reaction belongs to the player it came from. */}
-      <SeatGifBubble userId={p.user_id} name={p.name} />
+      {/* Over the seat rather than only in the chat panel: what somebody says
+          at a table belongs to the player it came from. */}
+      <SeatBubble userId={p.user_id} name={p.name} />
     </div>
   );
 }

@@ -94,14 +94,32 @@ function slotPosition(index, capacity, geometry) {
 
 // How far in from a seat its chips sit, as a share of the table's height, so
 // it is the same distance whichever way the seat lies.
-const BET_INSET = 20;
+const BET_INSET = 24;
 
-// The face, in pixels, as PlayerSeat sizes it: clamp(3.6rem, 11.75cqw, 6.25rem)
-// against the table's own width. It has a floor, which is the whole problem —
-// on a laptop the table shrinks and the face does not, so a step measured only
-// as a share of the table ends up landing on top of it.
-function seatFacePx(frameWidth) {
-  return Math.min(100, Math.max(57.6, 0.1175 * (frameWidth || 0)));
+// The chip pill's own half-height, plus air between it and the seat.
+const BET_MARGIN = 26;
+
+/**
+ * Half the room a seat takes up, in pixels, along each axis.
+ *
+ * A seat is not its face: it is a box of cards, a nameplate and a picture, and
+ * PlayerSeat centres all of that on the point the ring puts it at. Clearing
+ * only the avatar left the chips of a seat on the side sitting on its cards —
+ * the box is up to 240px wide and the face is 100px of that.
+ *
+ * These mirror the clamps in PlayerSeat and PlayingCard. They are estimates of
+ * somebody else's CSS, so they are deliberately generous: the cost of being a
+ * little too clear is a chip stack sitting slightly further in, and the cost of
+ * being a little short is what this is fixing.
+ */
+function seatHalfSpanPx(frameWidth) {
+  const width = frameWidth || 0;
+  // w-[clamp(8.75rem,27cqw,15rem)]
+  const box = Math.min(240, Math.max(140, 0.27 * width));
+  // The cards beside the face — h-[clamp(2.14rem,7.04cqw,4.69rem)] — over the
+  // nameplate under it.
+  const cards = Math.min(75, Math.max(34, 0.0704 * width));
+  return { x: box / 2, y: (cards + 46) / 2 };
 }
 
 /**
@@ -129,12 +147,12 @@ function betPosition(index, capacity, geometry, frame) {
   if (!reach) return { top: "50%", left: "50%" };
 
   // Whichever is further: the share of the table, or enough pixels to clear
-  // the face and the chips themselves. On a 13" screen the second one wins,
-  // which is what stops the stack landing on somebody's avatar.
-  // Half the face, plus half the chip pill, plus a little air.
-  const clearance = frame?.height
-    ? ((seatFacePx(frame.width) * 0.5 + 22) / frame.height) * 100
-    : 0;
+  // the seat itself. Which of the two wins depends on the seat — a player on
+  // the side has a much wider box between them and the pot than one at the
+  // top, and the step has to be measured along the way it is travelling.
+  const half = seatHalfSpanPx(frame?.width);
+  const reachOut = (Math.abs(x / reach) * half.x + Math.abs(y / reach) * half.y) + BET_MARGIN;
+  const clearance = frame?.height ? (reachOut / frame.height) * 100 : 0;
   // Never past the middle, however small the table gets.
   const step = Math.min(Math.max(BET_INSET, clearance), reach * 0.55);
 

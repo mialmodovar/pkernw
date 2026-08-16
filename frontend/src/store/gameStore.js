@@ -98,7 +98,15 @@ const useGameStore = create((set) => ({
   // for the player who folded the winner it is the last thing they want on
   // screen, and it used to appear whether they liked it or not.
   rabbitRevealed: false,
-  revealRabbit: () => set({ rabbitRevealed: true }),
+  // The log line is written here rather than when the cards arrive: printing
+  // them on arrival put the run-out in the action history for everybody,
+  // which is the whole thing the button was added to stop.
+  revealRabbit: () => set((s) => ({
+    rabbitRevealed: true,
+    messages: s.rabbitCards?.length
+      ? appendLog(s, entry(s, "info", `Rabbit hunt: ${s.rabbitCards.join(" ")}`))
+      : s.messages,
+  })),
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
   // The last card that changed the hand, for the table to shake on. Cleared by
@@ -482,13 +490,8 @@ const useGameStore = create((set) => ({
         break;
 
       case "rabbit_hunt":
-        set((s) => ({
-          rabbitCards: data.cards || [],
-          rabbitRevealed: false,
-          messages: data.cards?.length
-            ? appendLog(s, entry(s, "info", `Rabbit hunt: ${data.cards.join(" ")}`))
-            : s.messages,
-        }));
+        // Held, not shown, and not written down either — see revealRabbit.
+        set({ rabbitCards: data.cards || [], rabbitRevealed: false });
         break;
 
       case "player_eliminated":

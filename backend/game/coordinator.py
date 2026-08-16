@@ -168,6 +168,15 @@ class MultiTableTournamentCoordinator:
                 count += 1
         return count
 
+    @property
+    def current_level_index(self) -> int:
+        """Where in the structure the tournament actually is, breaks included.
+
+        Persisted after every hand, but the engine is a hand ahead of the row it
+        writes, so anything asking from outside should ask here first.
+        """
+        return min(self._level_index, max(0, len(self.levels) - 1))
+
     def seconds_until_blind_level_ends(self, blind_level_number: int) -> Optional[int]:
         """How long until a given blind level is over, or None if it cannot be
         timed. Late registration is the caller: it closes at the end of a level,

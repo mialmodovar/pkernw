@@ -503,6 +503,87 @@ class RebuyTests(APITestCase):
 		self.assertEqual(seat.rebuy_count, 1)
 		self.assertIsNone(seat.finish_position)
 
+	def test_rebuy_is_refused_once_the_period_has_closed(self):
+		class LateRunner:
+			current_blind_level_number = 5
+
+			async def apply_rebuy(self, user_id, chips):  # pragma: no cover - never reached
+				raise AssertionError("the view should have refused before the engine")
+
+		tournament = self._tournament()
+		self._seat(tournament)
+		_tournament_runners[tournament.id] = LateRunner()
+
+		response = self.client.post(reverse("tournament-rebuy", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(response.data["error"], "Rebuy period has ended")
+
+	def test_the_lobby_is_told_whether_a_rebuy_would_be_taken(self):
+		"""The button a busted player is offered away from the table is drawn
+		from these two fields, so they have to agree with the endpoint."""
+		class FakeRunner:
+			current_blind_level_number = 1
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
+
+		tournament = self._tournament()
+		self._seat(tournament, rebuy_count=1)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
+		self.assertTrue(detail.data["rebuys_open"])
+
+		listed = self.client.get(reverse("tournament-list"), {"scope": "mine_active"})
+		row = next(r for r in listed.data if r["id"] == tournament.id)
+		self.assertTrue(row["rebuys_open"])
+		# Being out is what the list knows about you; the count is what says
+		# whether a capped tournament has one left to sell.
+		self.assertEqual(row["my_finish_position"], 3)
+		self.assertEqual(row["my_rebuy_count"], 1)
+
+	def test_the_lobby_is_told_when_the_rebuy_period_has_closed(self):
+		class LateRunner:
+			current_blind_level_number = 5
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
+
+		tournament = self._tournament()
+		self._seat(tournament)
+		_tournament_runners[tournament.id] = LateRunner()
+
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
+		self.assertFalse(detail.data["rebuys_open"])
+
+	def test_the_lobby_is_told_which_level_is_running(self):
+		"""It has always drawn a current level and never been served one, so a
+		running tournament read "Current level —" all night."""
+		class FakeRunner:
+			current_blind_level_number = 3
+			current_level_index = 2
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
+
+		tournament = self._tournament(current_level_index=0)
+		_tournament_runners[tournament.id] = FakeRunner()
+
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
+
+		# The engine's, not the column's: the row is written after a hand and
+		# the level can turn over in the middle of one.
+		self.assertEqual(detail.data["current_level_index"], 2)
+
+	def test_the_level_falls_back_to_the_column_with_no_engine(self):
+		tournament = self._tournament(status="paused", current_level_index=4)
+
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
+
+		self.assertEqual(detail.data["current_level_index"], 4)
+		self.assertFalse(detail.data["rebuys_open"])
+
 	def test_rebuy_is_refused_once_the_tournament_is_resolving(self):
 		class FinishingRunner:
 			current_blind_level_number = 1

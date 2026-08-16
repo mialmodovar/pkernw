@@ -1,5 +1,6 @@
 import { useState } from "react";
 import api from "../../api/http";
+import { rebuyLabel, rebuyOffer } from "../lobby/rebuyOffer";
 
 const ordinal = (n) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
@@ -20,17 +21,12 @@ export default function EliminationScreen({
   const entrants = tournament?.players?.length ?? 0;
   const payout = tournament?.payout_structure?.find((row) => row.place === finishPosition);
   const mySeat = tournament?.players?.find((p) => p.finish_position === finishPosition);
-  const rebuysUsed = mySeat?.rebuy_count ?? 0;
-  // Null is unlimited, so there is no number to count down from.
-  const rebuysCapped = tournament?.max_rebuys !== null && tournament?.max_rebuys !== undefined;
-  const rebuysLeft = rebuysCapped ? tournament.max_rebuys - rebuysUsed : Infinity;
-
-  // The blind-level cutoff is enforced server-side against the live engine, so
-  // offer the button whenever it's plausible and surface the refusal verbatim.
-  const canRebuy =
-    tournament?.allow_rebuys &&
-    rebuysLeft > 0 &&
-    ["running", "paused"].includes(tournament?.status);
+  // The same offer the lobby and the home list make, so busting out and then
+  // walking away from the table does not change the answer.
+  const offer = rebuyOffer(tournament, {
+    eliminated: true,
+    rebuysUsed: mySeat?.rebuy_count ?? 0,
+  });
 
   const handleRebuy = async () => {
     setError("");
@@ -72,17 +68,13 @@ export default function EliminationScreen({
         {error && <p className="mt-4 text-sm text-[#c76b7a]">{error}</p>}
 
         <div className="mt-6 flex flex-col gap-2">
-          {canRebuy && (
+          {offer && (
             <button
               onClick={handleRebuy}
               disabled={busy}
               className="btn-accent px-4 py-2.5 rounded font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {busy
-                ? "Rebuying..."
-                : `Rebuy — ${tournament.starting_chips.toLocaleString()} chips${
-                    rebuysCapped ? ` (${rebuysLeft} left)` : ""
-                  }`}
+              {busy ? "Rebuying..." : rebuyLabel(offer)}
             </button>
           )}
           {onSpectate && (

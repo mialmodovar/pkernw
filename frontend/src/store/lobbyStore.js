@@ -45,6 +45,15 @@ const useLobbyStore = create((set, get) => ({
     return data;
   },
 
+  // Buying back in after busting. The list is refetched because a rebuy moves
+  // your row from "out" to seated, and the caller sends you to the table on the
+  // strength of it.
+  rebuyTournament: async (id) => {
+    const { data } = await api.post(`/tournaments/${id}/rebuy/`);
+    await get().fetchLobbyData({ silent: true });
+    return data;
+  },
+
   deleteTournament: async (id) => {
     await api.delete(`/tournaments/${id}/delete/`);
     await get().fetchLobbyData();

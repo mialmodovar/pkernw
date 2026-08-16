@@ -414,7 +414,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
               <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70
                                border border-(--color-highlight-edge) shadow-lg shadow-black/60 animate-chip-in">
                 <ChipStack amount={p.bet} size={9} />
-                <span className="text-[10px] font-bold text-(--color-highlight-text) leading-none">
+                <span className="text-[12px] font-bold text-(--color-highlight-text) leading-none">
                   {formatChips(p.bet, showBB, bb)}
                 </span>
               </span>

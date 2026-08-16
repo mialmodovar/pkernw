@@ -49,6 +49,18 @@ export default function LobbyPage() {
   const onOpen = (id) => navigate(`/tournament/${id}`);
   const onOpenTable = (id) => navigate(`/tournament/${id}/play`);
   const onEdit = (tournament) => navigate(`/tournaments/${tournament.id}/edit`);
+  // A rebuy from here is a seat at a table that is already dealing, so it ends
+  // at the table. A refusal — the level ticked over while the list sat there —
+  // is worth saying out loud, because the button was offered.
+  const onRebuy = async (id) => {
+    try {
+      await useLobbyStore.getState().rebuyTournament(id);
+      navigate(`/tournament/${id}/play`);
+    } catch (e) {
+      window.alert(e.response?.data?.error || "Rebuy failed");
+      fetchLobbyData({ silent: true }).catch(() => {});
+    }
+  };
   const onQuit = async (id) => {
     if (!window.confirm("Unregister from this tournament? Your seat is freed for someone else.")) return;
     await useLobbyStore.getState().quitTournament(id);
@@ -115,6 +127,7 @@ export default function LobbyPage() {
             onQuit={onQuit}
             onDelete={onDelete}
             onEdit={onEdit}
+            onRebuy={onRebuy}
           />
         )}
       </main>

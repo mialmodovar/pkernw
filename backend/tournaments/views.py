@@ -20,7 +20,12 @@ from .serializers import (
 )
 
 # Import shared runner reference from consumers (will be populated at runtime)
-from game.consumers import _tournament_runners, late_registration_open, stop_tournament_engine
+from game.consumers import (
+    _tournament_runners,
+    late_registration_open,
+    rebuys_open,
+    stop_tournament_engine,
+)
 
 
 def _start_due_scheduled_tournaments():
@@ -325,7 +330,9 @@ def rebuy_tournament(request, pk):
     if runner is None:
         return Response({"error": "Tournament engine not running"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if runner.current_blind_level_number > tournament.rebuy_level:
+    # The same predicate the lobby is served, so a button that is offered is a
+    # button that works.
+    if not rebuys_open(tournament):
         return Response({"error": "Rebuy period has ended"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:

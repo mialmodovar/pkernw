@@ -91,6 +91,34 @@ def late_registration_seconds_left(tournament):
     return runner.seconds_until_blind_level_ends(tournament.late_reg_level)
 
 
+def rebuys_open(tournament) -> bool:
+    """Can a busted player still buy back in right now?
+
+    The same question the rebuy endpoint asks, so a lobby offering the button
+    and a server accepting it never disagree. As with late registration, only
+    the live runner knows the current blind level, so an engine that is not
+    booted counts as closed — the endpoint refuses on those grounds anyway.
+    """
+    if not tournament.allow_rebuys or tournament.status not in ("running", "paused"):
+        return False
+    runner = _tournament_runners.get(tournament.id)
+    if runner is None:
+        return False
+    return runner.current_blind_level_number <= tournament.rebuy_level
+
+
+def current_level_index(tournament) -> int:
+    """Which level the tournament is on, from the engine when there is one.
+
+    The column is written after every hand, which is close enough for a page
+    that reloads — but the runner is the one that just moved it, so it wins.
+    """
+    runner = _tournament_runners.get(tournament.id)
+    if runner is None:
+        return tournament.current_level_index
+    return getattr(runner, "current_level_index", tournament.current_level_index)
+
+
 def connected_user_ids() -> set:
     """Everybody with a table socket open right now.
 

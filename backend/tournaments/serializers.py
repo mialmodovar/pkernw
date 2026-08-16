@@ -3,8 +3,10 @@ from django.utils import timezone
 
 from accounts.avatars import avatar_url
 from accounts.naming import shown_name
+from game.consumers import current_level_index as _current_level_index
 from game.consumers import late_registration_open as _late_registration_open
 from game.consumers import late_registration_seconds_left as _late_registration_seconds_left
+from game.consumers import rebuys_open as _rebuys_open
 
 from accounts.avatars import avatar_url
 from clubs.models import Club, Season
@@ -216,8 +218,10 @@ class TournamentListSerializer(serializers.ModelSerializer):
     is_host      = serializers.SerializerMethodField()
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
+    my_rebuy_count = serializers.SerializerMethodField()
     late_registration_open = serializers.SerializerMethodField()
     late_registration_seconds_left = serializers.SerializerMethodField()
+    rebuys_open = serializers.SerializerMethodField()
     registered = serializers.SerializerMethodField()
 
     def get_registered(self, tournament):
@@ -250,7 +254,16 @@ class TournamentListSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if request is None or not request.user.is_authenticated:
             return None
-        return tournament.players.filter(user=request.user).first()
+        # The seats are already prefetched for the roster faces, so this scans
+        # rows in memory rather than asking again — three fields want the answer
+        # and the list draws thirty rows.
+        cache = self.context.setdefault("_my_seats", {})
+        if tournament.id not in cache:
+            cache[tournament.id] = next(
+                (seat for seat in tournament.players.all() if seat.user_id == request.user.id),
+                None,
+            )
+        return cache[tournament.id]
 
     def get_host_display_name(self, tournament):
         return shown_name(tournament.host.username, getattr(tournament.host, "profile", None)
@@ -271,6 +284,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
     def get_late_registration_seconds_left(self, tournament):
         return _late_registration_seconds_left(tournament)
 
+    def get_rebuys_open(self, tournament):
+        return _rebuys_open(tournament)
+
     def get_winner_name(self, tournament):
         winner = (
             tournament.players.filter(finish_position=1)
@@ -287,15 +303,21 @@ class TournamentListSerializer(serializers.ModelSerializer):
         seat = self._my_seat(tournament)
         return seat.finish_position if seat else None
 
+    def get_my_rebuy_count(self, tournament):
+        """How many of your rebuys are already spent — what a capped tournament
+        needs before it can offer you another one from the lobby list."""
+        seat = self._my_seat(tournament)
+        return seat.rebuy_count if seat else 0
+
     class Meta:
         model = Tournament
         fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
                   "is_host",
-                  "winner_name", "my_finish_position",
+                  "winner_name", "my_finish_position", "my_rebuy_count",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
                   "late_registration_open", "late_registration_seconds_left",
-                  "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
+                  "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
@@ -316,6 +338,10 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     levels    = BlindLevelSerializer(many=True, read_only=True)
     late_registration_open = serializers.SerializerMethodField()
     late_registration_seconds_left = serializers.SerializerMethodField()
+    rebuys_open = serializers.SerializerMethodField()
+    # Read from the engine rather than the column, and served at all: the lobby
+    # has always drawn a current level and never had one to draw.
+    current_level_index = serializers.SerializerMethodField()
 
     def get_late_registration_open(self, tournament):
         return _late_registration_open(tournament)
@@ -323,13 +349,20 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     def get_late_registration_seconds_left(self, tournament):
         return _late_registration_seconds_left(tournament)
 
+    def get_rebuys_open(self, tournament):
+        return _rebuys_open(tournament)
+
+    def get_current_level_index(self, tournament):
+        return _current_level_index(tournament)
+
     class Meta:
         model = Tournament
         fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "late_registration_open", "late_registration_seconds_left",
-                  "allow_rebuys", "max_rebuys", "rebuy_level",
+                  "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open",
+                  "current_level_index",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",

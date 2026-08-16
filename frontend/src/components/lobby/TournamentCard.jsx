@@ -1,4 +1,5 @@
 import PlayerFaces from "./PlayerFaces";
+import { rebuyOffer } from "./rebuyOffer";
 import { countdownLabel } from "./tournamentVitals";
 import { useCountdown } from "./useCountdown";
 
@@ -60,7 +61,9 @@ function StatusPill({ tournament: t }) {
 // tournament is something other than the default everybody assumes.
 const GAME_LABELS = { nlh: "NLH" };
 
-export default function TournamentCard({ tournament: t, onJoin, onOpen, onOpenTable, onQuit, onDelete, onEdit }) {
+export default function TournamentCard({
+  tournament: t, onJoin, onOpen, onOpenTable, onQuit, onDelete, onEdit, onRebuy,
+}) {
   const lateRegLeft = useCountdown(t.late_registration_seconds_left ?? null);
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
@@ -110,6 +113,13 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onOpenTa
   ].filter(Boolean);
 
   const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;
+  // Busted, but the tournament is still taking rebuys. Without this the only
+  // route back in was the elimination screen, which is gone the moment you
+  // close it — and this list was where you ended up instead.
+  const offer = rebuyOffer(t, {
+    eliminated: Boolean(t.my_finish_position),
+    rebuysUsed: t.my_rebuy_count ?? 0,
+  });
   // A seat you are still sitting in. Getting back to it took two clicks and a
   // page in between, which is a long way round for the one tournament on this
   // list that is actually waiting on you.
@@ -215,6 +225,14 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onOpenTa
             title="Straight back to your seat"
             className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
             Open table
+          </button>
+        )}
+        {offer && onRebuy && (
+          <button onClick={() => onRebuy(t.id)}
+            title={`Buy back in for ${offer.chips?.toLocaleString() ?? "the starting stack"} chips`
+              + (offer.capped ? ` · ${offer.left} left` : "")}
+            className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
+            Rebuy
           </button>
         )}
         {canJoin && (

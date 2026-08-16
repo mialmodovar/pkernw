@@ -70,6 +70,24 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **A busted player can buy back in from anywhere the tournament is.** The rebuy
+  was only ever offered on the two screens the table itself puts up: the strip
+  that appears for ten seconds after you go out, and the elimination screen
+  behind it. Close either one — press "Back home", or just reload — and a
+  tournament still selling rebuys had no way to take yours. Both the tournament
+  lobby and the home list now carry the button whenever the server would accept
+  it, and they ask the same question the endpoint does rather than guessing: the
+  running engine says whether the period is still open, so a button that is
+  offered is a button that works.
+- **The tournament lobby says which level is running.** It has always drawn a
+  "Current level" and was never served one — the field existed in the database
+  and was left out of the payload — so a running tournament read "Current level
+  —" all night, and the blind structure below never highlighted the row it was
+  on. Both now read from the live engine rather than the column, which is a hand
+  behind. The rebuy line says whether the window is open or closed, too.
+- **Stacks and bets are easier to read.** The chips or big blinds under each
+  player's name, and the figure on the chips they have pushed out, both went up
+  a notch — they are the numbers you read all night from across the table.
 - **Some players appeared as a black rectangle while seeing everyone else fine.**
   Three separate causes, all found by reproducing it: everyone pressing the
   camera button at the same moment.

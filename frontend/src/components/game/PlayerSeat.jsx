@@ -302,7 +302,9 @@ export default function PlayerSeat({
       )}
       <div className="min-w-0 flex-1 leading-tight">
         <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
-        <div className="text-[11px] text-(--color-text-muted)">
+        {/* A notch bigger than the rest of the plate's small print: a stack is
+            the number you read off somebody else's seat all night. */}
+        <div className="text-[13px] text-(--color-text-muted)">
           {p.is_eliminated ? (
             <span className="text-(--color-accent-link)">Out</span>
           ) : p.is_all_in ? (

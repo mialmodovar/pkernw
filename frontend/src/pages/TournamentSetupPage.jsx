@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
+import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
 import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
 import { useCountdown } from "../components/lobby/useCountdown";
 
@@ -185,6 +186,13 @@ export default function TournamentSetupPage() {
   const handleResume = async () => {
     try { await api.post(`/tournaments/${id}/resume/`); navigate(`/tournament/${id}/play`); } catch (e) { setError(e.response?.data?.error || "Error"); }
   };
+  // Buying back in puts you in a hand's time, so it goes where the hand is
+  // rather than leaving you on the page you bought it from.
+  const handleRebuy = async () => {
+    setError("");
+    try { await api.post(`/tournaments/${id}/rebuy/`); navigate(`/tournament/${id}/play`); }
+    catch (e) { setError(e.response?.data?.error || "Rebuy failed"); load(); }
+  };
 
   const levels = tournament.levels || [];
   const playableLevels = levels.filter((level) => !level.is_break).length;
@@ -268,6 +276,7 @@ export default function TournamentSetupPage() {
             tournament={tournament} joined={joined} me={me} isHost={isHost}
             scheduledStartPending={scheduledStartPending} id={id} navigate={navigate}
             handleJoin={handleJoin} handleStart={handleStart} handleResume={handleResume}
+            handleRebuy={handleRebuy}
           />
         </div>
       </header>
@@ -322,6 +331,9 @@ export default function TournamentSetupPage() {
               <Fact label="Rebuys">
                 {tournament.allow_rebuys
                   ? `${tournament.max_rebuys ?? "Unlimited"} through level ${tournament.rebuy_level}`
+                    // "Through level 4" is the rule; whether you can still act
+                    // on it is the thing somebody sitting out wants to know.
+                    + (inPlay ? (tournament.rebuys_open ? " · open now" : " · closed") : "")
                   : "Not allowed"}
               </Fact>
               <Fact label="Time bank">
@@ -514,10 +526,16 @@ export default function TournamentSetupPage() {
 
 function TournamentActions({
   tournament, joined, me, isHost, scheduledStartPending, id, navigate,
-  handleJoin, handleStart, handleResume,
+  handleJoin, handleStart, handleResume, handleRebuy,
 }) {
   const seatedInPlay = me && !me.is_eliminated
     && (tournament.status === "running" || tournament.status === "paused");
+  // Out, but the tournament is still selling seats to people who are out. This
+  // was the only page such a player could reach, and it had nothing for them.
+  const offer = rebuyOffer(tournament, {
+    eliminated: Boolean(me?.is_eliminated),
+    rebuysUsed: me?.rebuy_count ?? 0,
+  });
   return (
     <>
       {seatedInPlay && (
@@ -526,6 +544,15 @@ function TournamentActions({
           className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors"
         >
           Back to your table
+        </button>
+      )}
+      {offer && (
+        <button
+          onClick={handleRebuy}
+          title="Buy back in and take a seat again"
+          className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors"
+        >
+          {rebuyLabel(offer)}
         </button>
       )}
       {!joined && tournament.status === "lobby" && (

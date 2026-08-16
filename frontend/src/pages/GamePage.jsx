@@ -480,7 +480,11 @@ export default function GamePage() {
               // between hands, and the ceiling stops it hanging off the felt.
               // It grows leftwards from a pinned corner, so the buttons keep
               // the same right edge whatever the numbers do.
-              <div className="absolute bottom-2 right-2 z-20 w-max max-w-[calc(100%-1rem)]">
+              // Scaled down a little from the pinned corner it grows out of,
+              // so it keeps its right and bottom edges and takes slightly less
+              // of the felt back off the seat below it.
+              <div className="absolute bottom-2 right-2 z-20 w-max max-w-[calc(100%-1rem)]
+                              scale-95 origin-bottom-right">
                 {actionPanel()}
               </div>
             )}

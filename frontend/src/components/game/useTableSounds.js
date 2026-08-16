@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { onMessage } from "../../api/socket";
 import { playAction, playSplat, playThrow } from "./sounds";
+import { throwableFor } from "./throwables";
 
 /** Gives every action at the table a sound.
  *
@@ -23,8 +24,9 @@ export default function useTableSounds(enabled) {
         case "item_thrown":
           playThrow();
           // Timed to the flight in ThrownItem: the splat belongs to the moment
-          // it lands, not the moment it was thrown.
-          window.setTimeout(playSplat, 620);
+          // it lands, not the moment it was thrown. Smoke never lands, so it
+          // gets the exhale and nothing after it.
+          if (!throwableFor(message.item).smoke) window.setTimeout(playSplat, 620);
           return undefined;
         default:
           return undefined;

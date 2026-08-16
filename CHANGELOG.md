@@ -25,9 +25,11 @@ remembering.
   on the flop pays six, heads-up on the river pays two — and the odds are fixed
   at the moment you call, which is what makes calling early worth anything.
   Coins buy new throwables: everything already in use stays free, and there are
-  seven more to save up for. They are their own currency and buy nothing that
-  money buys; Calotes settles real debts between friends and is kept well away
-  from a game of guessing who wins a pot.
+  eight more to save up for — including a cigar, which is not thrown at all: it
+  is lit where you drew it and the smoke crosses on its own, hanging over the
+  whole path for a second before it thins out. They are their own currency and
+  buy nothing that money buys; Calotes settles real debts between friends and is
+  kept well away from a game of guessing who wins a pot.
 - **The best hand you have ever turned over, on your own stats, and clickable.**
   Only showdowns count — a monster everybody folded to was never seen and is on
   record nowhere. Clicking it replays the hand it was made in, however long ago

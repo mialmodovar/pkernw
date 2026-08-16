@@ -21,6 +21,10 @@ export const THROWABLES = [
   { id: "pie", glyph: "🥧", label: "Pie", splat: "💥", tint: "#e0c66b" },
   { id: "fish", glyph: "🐟", label: "Fish", splat: "💦", tint: "#dbe6f0" },
   { id: "brick", glyph: "🧱", label: "Brick", splat: "💢", tint: "#c3565f" },
+  // The one thing here that is not thrown. The cigar stays lit where you drew
+  // it and the smoke crosses on its own, so it needs a trail rather than a
+  // splat: see ThrownItem.
+  { id: "cigar", glyph: "🚬", label: "Cigar", splat: "💨", tint: "#b9b0a7", smoke: "💨" },
   { id: "bomb", glyph: "💣", label: "Bomb", splat: "💥", tint: "#c3565f" },
   { id: "crown", glyph: "👑", label: "Crown", splat: "✨", tint: "#e0c66b" },
 ];
@@ -41,4 +45,16 @@ export function throwableFor(id) {
  */
 export function throwLift(dx) {
   return Math.min(90, 26 + Math.abs(dx) * 0.18);
+}
+
+/**
+ * Where along that arc a throw is, as an offset from where it started.
+ *
+ * The same quadratic the aim line draws, so smoke laid down along the path
+ * lands on the dashes a player was pointing at rather than beside them. `t`
+ * runs 0 at the thrower to 1 at the target.
+ */
+export function throwPoint(dx, dy, t) {
+  const control = dy / 2 - throwLift(dx) * 2;
+  return { x: dx * t, y: 2 * (1 - t) * t * control + t * t * dy };
 }

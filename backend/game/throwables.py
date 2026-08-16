@@ -30,6 +30,7 @@ THROWABLE_PRICES = {
     "pie": 150,
     "fish": 150,
     "brick": 200,
+    "cigar": 250,
     "bomb": 300,
     "crown": 400,
 }

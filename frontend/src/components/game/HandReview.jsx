@@ -1,105 +1,8 @@
 import { useEffect, useState } from "react";
+
 import api from "../../api/http";
 import useSandboxStore from "../../dev/sandboxStore";
-import { SUIT_COLOR, CARD_FACE, parseCard } from "./cardStyles";
-import { Suit } from "./PlayingCard";
-
-const STREETS = ["preflop", "flop", "turn", "river"];
-const STREET_LABEL = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
-
-const VERB = {
-  fold: "folds", check: "checks", call: "calls",
-  bet: "bets", raise: "raises to", blind: "posts", ante: "antes",
-};
-
-/** One card, small enough to sit in a line of text. */
-export function MiniCard({ card }) {
-  const parsed = parseCard(card);
-  if (!parsed) return null;
-  return (
-    <span
-      className={`inline-flex flex-col items-center justify-center w-6 h-8 rounded text-[10px] font-bold ${CARD_FACE}`}
-      style={{ color: SUIT_COLOR[parsed.suit] || "#161616" }}
-    >
-      <span>{parsed.rank}</span>
-      <Suit suit={parsed.suit} className="w-2 h-2" />
-    </span>
-  );
-}
-
-/**
- * One finished hand, laid out whole: the board, what everybody did on each
- * street, what was shown and who was paid.
- *
- * Exported because the lobby shows a single hand too — the best one you have
- * ever made — and a second rendering of the same thing would drift from this
- * one within a month.
- */
-export function HandCard({ hand }) {
-  const byStreet = STREETS.map((street) => ({
-    street,
-    items: (hand.actions || []).filter((a) => a.street === street),
-  })).filter((group) => group.items.length);
-
-  const awards = hand.result?.awards || [];
-  const showdown = hand.result?.showdown || [];
-  // The showdown and awards only carry seats; the actions carry both, so use
-  // them to name people consistently throughout.
-  const nameBySeat = new Map((hand.actions || []).map((a) => [a.seat, a.username]));
-  const nameFor = (seat) => nameBySeat.get(seat) ?? `Seat ${seat}`;
-
-  return (
-    <div className="panel-raised rounded-lg p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-(--color-silver)">Hand #{hand.hand_number}</span>
-        <span className="text-xs text-(--color-highlight-text)">Pot {hand.pot_total?.toLocaleString()}</span>
-      </div>
-
-      {hand.community_cards?.length > 0 && (
-        <div className="flex gap-1 mt-2">
-          {hand.community_cards.map((c) => <MiniCard key={c} card={c} />)}
-        </div>
-      )}
-
-      <div className="mt-2 space-y-1.5 text-xs">
-        {byStreet.map((group) => (
-          <div key={group.street}>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-[#a8632c]">
-              {STREET_LABEL[group.street]}
-            </div>
-            {group.items.map((a, i) => (
-              <div key={i} className="pl-1.5 text-(--color-text-muted)">
-                <span className="text-(--color-silver)">{a.username}</span>{" "}
-                {VERB[a.action] || a.action}
-                {a.amount ? ` ${a.amount.toLocaleString()}` : ""}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {showdown.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-(--color-border) space-y-0.5 text-xs">
-          {showdown.map((entry) => (
-            <div key={entry.seat} className="text-(--color-silver)">
-              {nameFor(entry.seat)}: {entry.cards?.join(" ")} — {entry.hand_name}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {awards.length > 0 && (
-        <div className="mt-1.5 space-y-0.5 text-xs">
-          {awards.map((award, i) => (
-            <div key={i} className="text-(--color-highlight-text) font-semibold">
-              {nameFor(award.seat)} wins {award.amount?.toLocaleString()} ({award.description})
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import HandReplay from "./HandReplay";
 
 /**
  * Replays recently finished hands. The engine has always written nothing to the
@@ -149,7 +52,9 @@ export default function HandReview({ tournamentId, onClose }) {
               No completed hands yet.
             </p>
           )}
-          {hands?.map((hand) => <HandCard key={hand.id} hand={hand} />)}
+          {hands?.map((hand) => <div key={hand.id} className="panel-raised rounded-lg p-3">
+              <HandReplay hand={hand} />
+            </div>)}
         </div>
       </div>
     </div>

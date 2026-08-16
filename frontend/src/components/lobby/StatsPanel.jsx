@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import useStatsStore from "../../store/statsStore";
-import { MiniCard } from "../game/HandReview";
+import { MiniCard } from "../game/HandReplay";
 import { formatEuros } from "../game/formatMoney";
 import BestHandModal from "./BestHandModal";
 

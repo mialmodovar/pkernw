@@ -113,6 +113,7 @@ def best_showdown_hand(user):
     return {
         "hand_id": hand.id,
         "hand_number": hand.hand_number,
+        "seat": best.get("seat"),
         "name": best.get("hand_name"),
         "cards": best.get("cards") or [],
         "best_cards": best.get("best_cards") or [],

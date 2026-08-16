@@ -85,7 +85,7 @@ export default function LobbyPage() {
     // the browser chrome is part of the height and moves as you scroll.
     <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6
                     lg:h-[calc(100dvh-4rem)]">
-      <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
+      <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start lg:max-h-full lg:overflow-y-auto pr-1">
         <ProfileCard />
         <StatsPanel />
         <CalotesPanel />

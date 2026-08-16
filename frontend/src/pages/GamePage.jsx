@@ -421,10 +421,10 @@ export default function GamePage() {
           )}
           <button
             onClick={() => navigate("/")}
-            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back to the lobby"}
+            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back to every tournament"}
             className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
           >
-            Lobby
+            Home
           </button>
         </div>
       </div>

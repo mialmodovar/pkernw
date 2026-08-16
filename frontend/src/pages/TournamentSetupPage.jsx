@@ -61,10 +61,9 @@ function Panel({ title, children, className = "" }) {
   );
 }
 
-/** One running table, drawn as the felt it is so that clicking it to watch
- *  needs no explaining. Seats sit on the ring in their real order, which is
- *  what makes two tables tell themselves apart at a glance. */
-function WatchableTable({ table, players, onWatch }) {
+/** The table you picked from the list, drawn as the felt it is. Seats sit on
+ *  the ring in their real order, which is what tells two tables apart. */
+function TableCard({ table, players, onWatch }) {
   const seats = Array.from(
     { length: table.max_seats || players.length || 1 },
     (_, index) => players.find((player) => player.seat_at_table === index) || null,
@@ -72,18 +71,16 @@ function WatchableTable({ table, players, onWatch }) {
   const chips = players.reduce((sum, player) => sum + player.chips, 0);
 
   return (
-    <button
-      type="button"
-      onClick={onWatch}
-      className="group text-left rounded-lg border border-(--color-border) bg-black/20 p-3
-                 transition-colors hover:border-(--color-highlight-edge) hover:bg-black/30
-                 focus:outline-none focus-visible:border-(--color-highlight-edge)"
-    >
-      <div className="flex items-baseline justify-between gap-2">
+    <div className="rounded-lg border border-(--color-border) bg-black/20 p-3">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-(--color-silver)">Table {table.table_number}</span>
-        <span className="text-[10px] uppercase tracking-wide text-(--color-text-muted) group-hover:text-(--color-highlight-text)">
+        <button
+          type="button"
+          onClick={onWatch}
+          className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors"
+        >
           Watch
-        </span>
+        </button>
       </div>
 
       <div className="relative mt-2 aspect-[16/9]">
@@ -113,7 +110,7 @@ function WatchableTable({ table, players, onWatch }) {
         })}
       </div>
 
-      <p className="mt-1 text-[11px] text-(--color-text-muted) truncate">
+      <p className="mt-1 text-[11px] text-(--color-text-muted)">
         {players.length
           ? `${players.length}/${seats.length} seats · ${chips.toLocaleString()} chips`
           : "No players seated"}
@@ -121,7 +118,7 @@ function WatchableTable({ table, players, onWatch }) {
       <p className="text-[11px] text-(--color-silver) truncate">
         {players.map((player) => player.display_name || player.username).join(", ") || "—"}
       </p>
-    </button>
+    </div>
   );
 }
 
@@ -132,6 +129,7 @@ export default function TournamentSetupPage() {
   const [tournament, setTournament] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
+  const [pickedTable, setPickedTable] = useState(null);
   const lastStatus = useRef(null);
 
   const load = useCallback(async () => {
@@ -189,6 +187,11 @@ export default function TournamentSetupPage() {
   const liveTables = (tournament.status === "running" || tournament.status === "paused")
     ? (tournament.tables || []).filter((table) => table.is_active)
     : [];
+  const seatedAt = (tableNumber) => alive
+    .filter((player) => player.table_number === tableNumber)
+    .sort((a, b) => a.seat_at_table - b.seat_at_table);
+  // A table that breaks under you falls back to the first one still dealing.
+  const shownTable = liveTables.find((table) => table.table_number === pickedTable) || liveTables[0];
   const buyInCents = tournament.buy_in_cents || 0;
   // The column only exists once there is money to show, so a friendly game
   // never grows an empty euro column.
@@ -285,33 +288,32 @@ export default function TournamentSetupPage() {
             </div>
           </Panel>
 
-          {/* What it pays */}
-          <Panel title={payouts.length ? `Prize pool · ${payouts.length} places paid` : "Prize pool"}>
-          {payouts.length > 0 ? (
-            <ul className="divide-y divide-[rgba(196,178,165,0.1)] max-h-[26rem] overflow-y-auto">
-              {payouts.map((row) => (
-                <li key={row.place} className="flex justify-between px-3 py-1.5 text-sm">
-                  <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
-                  <span className="text-[#d9c07a] font-semibold">
-                    {row.percentage}%
-                    {potCents > 0 && (
-                      <span className="text-(--color-text-muted) font-normal ml-2">
-                        {(potCents * row.percentage / 10000).toFixed(2)}€
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-3 py-3 text-sm text-(--color-text-muted)">No payout structure configured.</p>
+          {/* Nothing configured means nothing to pay out, and an empty card
+              only takes up the column. */}
+          {payouts.length > 0 && (
+            <Panel title={`Prize pool · ${payouts.length} places paid`}>
+              <ul className="divide-y divide-[rgba(196,178,165,0.1)] max-h-[26rem] overflow-y-auto">
+                {payouts.map((row) => (
+                  <li key={row.place} className="flex justify-between px-3 py-1.5 text-sm">
+                    <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
+                    <span className="text-[#d9c07a] font-semibold">
+                      {row.percentage}%
+                      {potCents > 0 && (
+                        <span className="text-(--color-text-muted) font-normal ml-2">
+                          {(potCents * row.percentage / 10000).toFixed(2)}€
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="px-3 py-2 border-t border-(--color-border) text-[11px] text-(--color-text-muted)">
+                {potCents > 0
+                  ? `Prize pool ${(potCents / 100).toFixed(2)}€ so far · settle up in Calotes, payments happen outside this app.`
+                  : "Percentages only — payments happen outside this app."}
+              </p>
+            </Panel>
           )}
-          <p className="px-3 py-2 border-t border-(--color-border) text-[11px] text-(--color-text-muted)">
-            {potCents > 0
-              ? `Prize pool ${(potCents / 100).toFixed(2)}€ so far · settle up in Calotes, payments happen outside this app.`
-              : "Percentages only — payments happen outside this app."}
-          </p>
-          </Panel>
 
           {/* Ante rides with the blinds rather than taking a column of its own:
               this is a sidebar now, not the full width of the page. */}
@@ -357,18 +359,35 @@ export default function TournamentSetupPage() {
         {/* The felt, and who is on it */}
         <div className="space-y-4 min-w-0">
           {liveTables.length > 0 && (
-            <Panel title="Tables · pick one to watch">
-              <div className="grid gap-3 p-3 sm:grid-cols-2">
-                {liveTables.map((table) => (
-                  <WatchableTable
-                    key={table.id}
-                    table={table}
-                    players={alive
-                      .filter((player) => player.table_number === table.table_number)
-                      .sort((a, b) => a.seat_at_table - b.seat_at_table)}
-                    onWatch={() => navigate(`/tournament/${id}/watch/${table.table_number}`)}
-                  />
-                ))}
+            <Panel title="Tables">
+              <ul className="divide-y divide-[rgba(196,178,165,0.1)] border-b border-(--color-border)">
+                {liveTables.map((table) => {
+                  const seated = seatedAt(table.table_number);
+                  const picked = table.table_number === shownTable.table_number;
+                  return (
+                    <li key={table.id}>
+                      <button
+                        type="button"
+                        onClick={() => setPickedTable(table.table_number)}
+                        className={`w-full flex items-baseline justify-between gap-3 px-3 py-1.5 text-sm transition-colors ${
+                          picked
+                            ? "bg-(--color-accent-soft) text-(--color-silver)"
+                            : "text-(--color-text-muted) hover:bg-white/5"
+                        }`}
+                      >
+                        <span className="font-semibold">Table {table.table_number}</span>
+                        <span className="text-xs">{seated.length}/{table.max_seats} seated</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="p-3">
+                <TableCard
+                  table={shownTable}
+                  players={seatedAt(shownTable.table_number)}
+                  onWatch={() => navigate(`/tournament/${id}/watch/${shownTable.table_number}`)}
+                />
               </div>
             </Panel>
           )}

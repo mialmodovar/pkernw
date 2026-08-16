@@ -135,14 +135,25 @@ export default function GamePage() {
   // play or watch, only a result — send them back rather than seat them at an
   // empty table waiting for players. Judged on arrival, so a tournament that
   // ends while you are sitting there still gets its final hand and standings.
-  const wasOverOnArrival = useRef(null);
+  const arrivalStatus = useRef(null);
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
     if (sandbox || !tournament) return;
-    if (wasOverOnArrival.current === null) {
-      wasOverOnArrival.current = tournament.status === "finished";
+    if (arrivalStatus.current === null) arrivalStatus.current = tournament.status;
+    if (arrivalStatus.current === "finished") {
+      setLeaving(true);
+      navigate("/", { replace: true });
     }
-    if (wasOverOnArrival.current) navigate("/", { replace: true });
   }, [sandbox, tournament, navigate]);
+
+  // You cannot watch from the rail while you are still in it: the watch route
+  // would hide your own cards and buttons behind a spectator banner. Anyone
+  // still holding a seat goes to that seat instead.
+  useEffect(() => {
+    if (sandbox || watching == null || !tournament) return;
+    const mine = tournament.players?.find((p) => p.username === user?.username);
+    if (mine && !mine.is_eliminated) navigate(`/tournament/${id}/play`, { replace: true });
+  }, [sandbox, watching, tournament, user?.username, id, navigate]);
 
   useEffect(() => {
     if (!tableAssignmentNotice) return undefined;
@@ -235,7 +246,7 @@ export default function GamePage() {
   // standings can take over the moment they arrive.
   const eliminationShowing = Boolean(myEliminationFinish) && eliminationReady && !spectating;
 
-  if (wasOverOnArrival.current) return null;
+  if (leaving) return null;
 
   if (standings && (standingsReady || eliminationShowing)) {
     return (

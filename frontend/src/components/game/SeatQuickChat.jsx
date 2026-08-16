@@ -41,8 +41,16 @@ export default function SeatQuickChat() {
   // What is locked is shown anyway, greyed: a shelf you cannot see is a shelf
   // nobody buys from.
   const owns = useWalletStore((s) => s.owns);
+  const priceOf = useWalletStore((s) => s.priceOf);
+  const balance = useWalletStore((s) => s.balance);
+  const buyItem = useWalletStore((s) => s.buy);
   const setAiming = useGameStore((s) => s.setAiming);
   const setSeatPanelOpen = useGameStore((s) => s.setSeatPanelOpen);
+  // The locked one you have asked the price of, and how that went.
+  const [buying, setBuying] = useState(null);
+  const [buyError, setBuyError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const buyingItem = buying ? THROWABLES.find((one) => one.id === buying) : null;
 
   // The table lifts this seat over its neighbours while a panel is open. It
   // cannot be done from in here: the seat is translated into place and that
@@ -91,6 +99,28 @@ export default function SeatQuickChat() {
     setPanel(null);
   };
 
+  // Bought and straight into your hand: you were not shopping, you were trying
+  // to throw something at somebody, and the hand you wanted it for is still on.
+  const confirmBuy = async () => {
+    if (!buying) return;
+    setBusy(true);
+    setBuyError("");
+    const bought = await buyItem(buying);
+    setBusy(false);
+    if (!bought) {
+      setBuyError(useWalletStore.getState().error || "That purchase did not go through.");
+      return;
+    }
+    setBuying(null);
+    arm(buying);
+  };
+
+  // A panel that closes takes the half-finished purchase with it, rather than
+  // reopening later with a "Buy 300" you have forgotten agreeing to look at.
+  useEffect(() => {
+    if (!panel) { setBuying(null); setBuyError(""); }
+  }, [panel]);
+
   return (
     // Stacked rather than side by side: the room beside your cards is one
     // button wide, and the felt above it is empty.
@@ -129,27 +159,75 @@ export default function SeatQuickChat() {
       </button>
 
       {panel === "throw" && (
-        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-40 p-1.5 flex flex-wrap gap-1
+        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-44 p-1.5 flex flex-wrap gap-1
                          rounded-lg panel-raised panel-solid shadow-xl shadow-black/60 animate-fade-in">
           {THROWABLES.map((item) => {
             const owned = owns(item.id);
+            const price = priceOf(item.id);
             return (
               <button
                 key={item.id}
                 type="button"
-                disabled={!owned}
-                onClick={() => arm(item.id)}
+                onClick={() => (owned ? arm(item.id) : setBuying(item.id))}
                 title={owned
                   ? `Throw a ${item.label.toLowerCase()}`
-                  : `${item.label} — buy it in the lobby shop`}
-                className={`w-8 h-8 flex items-center justify-center rounded text-lg transition-colors ${
-                  owned ? "hover:bg-white/10" : "opacity-30 grayscale cursor-not-allowed"
-                }`}
+                  : `${item.label} — ${price} coins`}
+                className={`relative w-8 h-8 flex items-center justify-center rounded text-lg
+                            transition-colors hover:bg-white/10 ${
+                  owned ? "" : "opacity-45 grayscale hover:opacity-100 hover:grayscale-0"
+                } ${buying === item.id ? "ring-1 ring-(--color-highlight)" : ""}`}
               >
                 {item.glyph}
+                {/* The price, on the thing itself. A locked shelf that does not
+                    say what anything costs is a shelf you walk past. */}
+                {!owned && (
+                  <span className="absolute -bottom-0.5 right-0 px-0.5 rounded-sm bg-black/80
+                                   text-[8px] font-bold leading-tight text-(--color-highlight-text)">
+                    {price}
+                  </span>
+                )}
               </button>
             );
           })}
+
+          {/* Buying one where you wanted it, rather than leaving the table for
+              the lobby shop and coming back to a hand that has moved on. Two
+              steps on purpose: the first names the price, the second spends. */}
+          {buyingItem && (
+            <span className="w-full mt-1 pt-1.5 border-t border-(--color-border) flex flex-col gap-1">
+              <span className="flex items-center justify-between gap-1 text-[10px] text-(--color-silver)">
+                <span className="truncate">{buyingItem.glyph} {buyingItem.label}</span>
+                <span className="text-(--color-text-muted) shrink-0">
+                  you have {balance ?? "…"}
+                </span>
+              </span>
+              <span className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={confirmBuy}
+                  disabled={busy || (balance != null && balance < priceOf(buyingItem.id))}
+                  className="btn-accent flex-1 px-2 py-1 rounded text-[11px] font-bold transition-colors
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {busy ? "Buying…" : `Buy ${priceOf(buyingItem.id)}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setBuying(null); setBuyError(""); }}
+                  aria-label="Cancel"
+                  className="px-1.5 py-1 rounded text-[11px] text-(--color-text-muted)
+                             hover:text-(--color-silver) transition-colors"
+                >
+                  ✕
+                </button>
+              </span>
+              {(buyError || (balance != null && balance < priceOf(buyingItem.id))) && (
+                <span className="text-[10px] leading-snug text-[#c76b7a]">
+                  {buyError || "Not enough coins — claim today's in the lobby."}
+                </span>
+              )}
+            </span>
+          )}
         </span>
       )}
 

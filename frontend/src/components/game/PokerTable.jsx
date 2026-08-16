@@ -381,6 +381,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 isWinner={resultRevealed && winnerSeats.includes(p.seat)}
                 winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
                 equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
+                // What this seat is drawing to, when it is behind. Only your
+                // own is drawn — the felt has no room for nine of these, and
+                // it is your own draw you are counting.
+                outs={isMe ? (allInEquity?.find((e) => e.seat === p.seat)?.outs ?? null) : null}
                 showdownEntry={showdownBySeat.get(p.seat)}
                 faceDownAtShowdown={holdFaceDown({
                   seat: p.seat, revealedSeats, faceUpSeats, isMe,

@@ -2118,16 +2118,43 @@ class ShowCardsTests(TestCase):
 		self.assertEqual(len(payload["cards"]), 1)
 		self.assertEqual(payload["indices"], [1])
 
-	def test_showing_is_refused_while_a_hand_is_being_played(self):
-		"""Telling the table what you hold while people are still deciding is
-		not something live poker allows either."""
+	def test_a_card_can_be_flashed_while_the_hand_is_still_running(self):
+		"""This used to be refused, on the grounds that a casino refuses it.
+
+		It is a table of friends, and flashing the ace before you muck it is
+		half of why anybody plays with people they can see. Everyone at the
+		table watches it happen, which is the check that matters here.
+		"""
 		broadcasts = []
 		coordinator = self._coordinator(broadcasts)
 		self._seat_with_cards(coordinator)
 		coordinator._show_open = False
 
-		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [0, 1]))
-		self.assertEqual(broadcasts, [])
+		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
+		self.assertEqual(broadcasts[0][0], "cards_shown")
+
+	def test_a_card_shown_mid_hand_does_not_stretch_the_pause_after_it(self):
+		"""The pause is extended so a card shown late can still be looked at.
+		A card shown three streets earlier has been looked at already, and
+		pushing the deadline from there would quietly slow the table down."""
+		coordinator = self._coordinator([])
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = False
+		coordinator._show_deadline = 0.0
+
+		async_to_sync(coordinator.show_cards)(11, [0])
+
+		self.assertEqual(coordinator._show_deadline, 0.0)
+
+	def test_showing_is_still_once_a_hand_however_it_is_done(self):
+		coordinator = self._coordinator([])
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = False
+
+		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
+		# Mid-hand or in the pause afterwards, one card a hand is the cap.
+		coordinator._show_open = True
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [1]))
 
 	def test_showing_twice_in_one_hand_is_refused(self):
 		coordinator = self._coordinator([])

@@ -8,6 +8,7 @@ import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
+import OutsBubble from "./OutsBubble";
 import { useShowCardsOffer } from "./showCards";
 import { formatEuros } from "./formatMoney";
 import { vpipTone } from "./playerProfile";
@@ -83,7 +84,7 @@ function TimerRing({ pct, tone = "--color-highlight" }) {
 }
 
 export default function PlayerSeat({
-  player, isMe, isActive, myCards, isWinner, winAmount, equity,
+  player, isMe, isActive, myCards, isWinner, winAmount, equity, outs,
   position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
   stats, onInspect, handStrength, shine, raisedCards, compact = false,
   backers = [],
@@ -160,6 +161,9 @@ export default function PlayerSeat({
           {equity.toFixed(1)}%
         </div>
       )}
+      {/* Under the percentage, and only when you are behind: what the number is
+          made of. The server sends outs for nobody who is in front. */}
+      {!isWinner && <OutsBubble outs={outs} />}
     </div>
   );
 
@@ -204,9 +208,13 @@ export default function PlayerSeat({
         // at showdown it belongs to the table, and covering it then would be
         // hiding it from you alone.
         hideUntilHover={coverHand}
-        // Between hands, your own cards are how you show them. Null for
-        // everybody else's seat, and null for your own until the window opens.
+        // Your own cards are how you show them — between hands, and mid-hand
+        // on the way to folding. Null for everybody else's seat.
         onShowCard={showOffer.canShow ? (index) => showOffer.show([index]) : null}
+        // With the hand still running it asks before it turns anything over.
+        // The hand is over by the time the bar appears, and by then a click is
+        // just a click.
+        confirmShow={!showOffer.betweenHands}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}

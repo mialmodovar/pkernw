@@ -1816,3 +1816,70 @@ class ThrowableOwnershipTests(TransactionTestCase):
 		sent = self._throw(self.user, "bomb")
 		self.assertEqual(len(sent), 1)
 		self.assertEqual(sent[0][1]["item"], "bomb")
+
+
+class OutsTests(TestCase):
+	"""What a player behind is drawing to, beside the percentage.
+
+	A percentage says how likely; it does not say what you are waiting for. The
+	point of computing these against the evaluator rather than counting a suit
+	is that a card can complete your draw and still lose.
+	"""
+
+	def _cards(self, *pairs):
+		ranks = {
+			"2": Rank.TWO, "3": Rank.THREE, "4": Rank.FOUR, "5": Rank.FIVE, "6": Rank.SIX,
+			"7": Rank.SEVEN, "8": Rank.EIGHT, "9": Rank.NINE, "T": Rank.TEN, "J": Rank.JACK,
+			"Q": Rank.QUEEN, "K": Rank.KING, "A": Rank.ACE,
+		}
+		suits = {"h": Suit.HEARTS, "d": Suit.DIAMONDS, "c": Suit.CLUBS, "s": Suit.SPADES}
+		return [Card(ranks[text[0]], suits[text[1]]) for text in pairs]
+
+	def _outs(self, hero, villain, board):
+		from .engine.hand import _outs
+
+		return [
+			[str(card) for card in one]
+			for one in _outs([self._cards(*hero), self._cards(*villain)], self._cards(*board))
+		]
+
+	def test_a_flush_draw_counts_only_the_cards_that_actually_win(self):
+		"""Nine hearts left, but one of them fills the other hand up. Counting
+		the suit would promise a card that loses the pot."""
+		hero, villain = self._outs(["Ah", "Kh"], ["9s", "9c"], ["2h", "7h", "9d"])
+
+		self.assertEqual(hero, ["3♥", "4♥", "5♥", "6♥", "8♥", "T♥", "J♥", "Q♥"])
+		# The nine of hearts is the flush card that gives them quads instead.
+		self.assertNotIn("9♥", hero)
+		# And the hand in front is not drawing to anything.
+		self.assertEqual(villain, [])
+
+	def test_a_chop_counts_as_getting_there(self):
+		"""Half the pot back, from a hand that was losing, is a card you are
+		rooting for."""
+		hero, _ = self._outs(["Ac", "2d"], ["Ad", "3c"], ["Ah", "Ks", "7h"])
+
+		# Any king, seven or three pairs the board high enough to play it, and
+		# the kickers stop mattering.
+		self.assertIn("K♥", hero)
+
+	def test_nobody_is_drawing_before_the_flop(self):
+		"""Two cards to come is not an out, whatever anybody says at the table."""
+		hero, villain = self._outs(["Ah", "Kh"], ["9s", "9c"], [])
+
+		self.assertEqual(hero, [])
+		self.assertEqual(villain, [])
+
+	def test_nothing_is_coming_after_the_river(self):
+		hero, villain = self._outs(["Ah", "Kh"], ["9s", "9c"], ["2h", "7h", "9d", "4s", "Jc"])
+
+		self.assertEqual(hero, [])
+		self.assertEqual(villain, [])
+
+	def test_a_hand_level_at_the_top_is_not_behind(self):
+		"""Playing the same board is not losing, and there is nothing to draw
+		to when the pot is already going to be split."""
+		hero, villain = self._outs(["2c", "3d"], ["2h", "3s"], ["As", "Ks", "Qd"])
+
+		self.assertEqual(hero, [])
+		self.assertEqual(villain, [])

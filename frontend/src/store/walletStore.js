@@ -85,6 +85,10 @@ const useWalletStore = create((set, get) => ({
     // is offered; the server refuses what was never bought.
     return row ? row.owned : true;
   },
+
+  /** What one costs, or 0 for the ones everybody has. The till is the
+   *  server's; this is only so a price can be printed beside the thing. */
+  priceOf: (item) => get().items.find((one) => one.item === item)?.price ?? 0,
 }));
 
 export default useWalletStore;

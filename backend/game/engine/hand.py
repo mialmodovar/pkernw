@@ -54,6 +54,49 @@ def _monte_carlo_equity(
     return [w / total for w in wins]
 
 
+def _outs(hands: List[List[Card]], board: List[Card]) -> List[List[Card]]:
+    """The cards that would put each hand in front, one card from now.
+
+    A percentage says how likely you are to get there; it does not say what you
+    are waiting for, and "nine outs" is how anybody actually holds a draw in
+    their head. Behind on the turn with a flush draw, this is the nine hearts.
+
+    Only for whoever is behind — a hand already winning is not drawing to
+    anything, and listing the cards that keep it in front would be a different
+    idea wearing the same name. Chops count as getting there: half the pot
+    back from a hand that was losing is a card you are rooting for.
+
+    Exhaustive rather than sampled. It is one evaluation per remaining card per
+    hand — a few hundred, against the five thousand runouts above.
+    """
+    if not hands or not 3 <= len(board) <= 4:
+        # Nothing to draw to before the flop (two cards to come is not an out)
+        # and nothing left to come after the river.
+        return [[] for _ in hands]
+
+    dead = set(board)
+    for hand in hands:
+        dead.update(hand)
+    remaining = [card for card in _ALL_CARDS if card not in dead]
+
+    here = [evaluate(hand + board) for hand in hands]
+    leading = max(here)
+    # Everyone level at the top is ahead; nobody there is drawing.
+    behind = [index for index, score in enumerate(here) if score < leading]
+    if not behind:
+        return [[] for _ in hands]
+
+    outs: List[List[Card]] = [[] for _ in hands]
+    for card in remaining:
+        next_board = board + [card]
+        scores = [evaluate(hand + next_board) for hand in hands]
+        best = max(scores)
+        for index in behind:
+            if scores[index] == best:
+                outs[index].append(card)
+    return outs
+
+
 # ── Types for callbacks ──────────────────────────────────────────────────
 
 BroadcastFn     = Callable[[str, dict], Coroutine[Any, Any, None]]
@@ -221,10 +264,15 @@ class HandEngine:
                 active = [p for p in self.players if not p.is_folded]
                 hands  = [p.hole_cards for p in active]
                 equities = _monte_carlo_equity(hands, self.community_cards)
+                # What each player behind is waiting for, by name. Empty for
+                # whoever is in front, and before the flop, where "one card
+                # from now" is not a thing anybody is drawing to.
+                outs = _outs(hands, self.community_cards)
                 await self.broadcast("all_in_equity", [
                     {"seat": _seat_of(p), "equity": round(eq * 100, 1),
-                     "cards": cards_to_list(p.hole_cards)}
-                    for p, eq in zip(active, equities)
+                     "cards": cards_to_list(p.hole_cards),
+                     "outs": cards_to_list(player_outs)}
+                    for p, eq, player_outs in zip(active, equities, outs)
                 ])
                 await asyncio.sleep(3)
 
@@ -253,9 +301,13 @@ class HandEngine:
             active = [p for p in self.players if not p.is_folded]
             if len(active) > 1:
                 final = _monte_carlo_equity([p.hole_cards for p in active], self.community_cards)
+                # No outs on a finished board — nothing is coming. Sent all the
+                # same, so the client never has to tell "none left" apart from
+                # "this payload does not carry them".
                 await self.broadcast("all_in_equity", [
                     {"seat": _seat_of(p), "equity": round(eq * 100, 1),
-                     "cards": cards_to_list(p.hole_cards)}
+                     "cards": cards_to_list(p.hole_cards),
+                     "outs": []}
                     for p, eq in zip(active, final)
                 ])
 

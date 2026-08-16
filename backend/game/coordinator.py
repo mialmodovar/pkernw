@@ -439,16 +439,19 @@ class MultiTableTournamentCoordinator:
         )
 
     async def show_cards(self, user_id: int, indices: List[int]) -> bool:
-        """Show one or both of your cards to the table, after the hand.
+        """Show one or both of your cards to the table.
 
-        Only between hands: showing a card mid-hand tells the players still
-        deciding something they have no right to know, which is why live poker
-        does not allow it either.
+        Any time you are holding them: while the hand is running, on your way
+        to folding, or in the pause afterwards. A casino would not allow the
+        first of those — a card shown while other players are still deciding
+        tells them something they have not paid to know — and this is a table
+        of friends who want to flash the ace before they muck it. Whoever is at
+        the table can see who did it and when.
 
-        Once per hand, so the window cannot be held open indefinitely by one
-        player revealing a card at a time.
+        Once per hand either way, so the pause between hands cannot be held
+        open indefinitely by a player revealing a card at a time.
         """
-        if not self._show_open or user_id in self._shown_this_hand:
+        if user_id in self._shown_this_hand:
             return False
         player = self._players_by_user_id.get(user_id)
         if player is None or not player.hole_cards:
@@ -460,8 +463,14 @@ class MultiTableTournamentCoordinator:
             return False
 
         self._shown_this_hand.add(user_id)
-        # Everyone gets a full pause to look, including whoever shows last.
-        self._show_deadline = max(self._show_deadline, time.monotonic() + self.showdown_seconds)
+        # Everyone gets a full pause to look, including whoever shows last —
+        # but only when there is a pause on. Pushing the deadline out from the
+        # middle of a hand would silently lengthen the wait after it, for a
+        # card everybody had already finished looking at.
+        if self._show_open:
+            self._show_deadline = max(
+                self._show_deadline, time.monotonic() + self.showdown_seconds,
+            )
         await self._broadcast_to_table(
             player._table_number,
             "cards_shown",

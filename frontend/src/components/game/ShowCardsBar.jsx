@@ -18,10 +18,13 @@ import { useShowCardsOffer } from "./showCards";
  * what tells you the window is open at all.
  */
 export default function ShowCardsBar({ myCards, mySeat }) {
-  const { canShow, show } = useShowCardsOffer(mySeat, myCards);
+  const { canShow, betweenHands, show } = useShowCardsOffer(mySeat, myCards);
 
   const cards = myCards || [];
-  if (!canShow) return null;
+  // The cards themselves can be clicked mid-hand; this row waits for the hand
+  // to be over. It lives among Fold and Call, and a reveal button in that row
+  // while you are still deciding is a misclick with your stack on the line.
+  if (!canShow || !betweenHands) return null;
 
   return (
     // No frame of its own: it sits inside the action panel, which has one.

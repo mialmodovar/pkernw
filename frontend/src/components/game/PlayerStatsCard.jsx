@@ -11,20 +11,13 @@ import playerProfile, { PROFILE_MIN_HANDS } from "./playerProfile";
  * one belongs — the lobby's watch panel can add by name, but only if you can
  * remember the name.
  */
-function WatchToggle({ username, isMe }) {
-  const [watched, setWatched] = useState(null);   // null until we know
+function WatchToggle({ username, isMe, initial, onChange }) {
+  const [watched, setWatched] = useState(initial);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (isMe || !username) return undefined;
-    let cancelled = false;
-    api.get(`/auth/players/${encodeURIComponent(username)}/`)
-      .then(({ data }) => { if (!cancelled) setWatched(data.is_watched); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [username, isMe]);
+  useEffect(() => { setWatched(initial); }, [initial]);
 
-  if (isMe || watched === null) return null;
+  if (isMe || watched === null || watched === undefined) return null;
 
   const toggle = async () => {
     setBusy(true);
@@ -35,6 +28,7 @@ function WatchToggle({ username, isMe }) {
         await api.post("/auth/watching/", { username });
       }
       setWatched(!watched);
+      onChange?.(!watched);
     } catch {
       // Nothing lost: the button still says what the server last told us.
     } finally {
@@ -161,6 +155,20 @@ function StatRow({ row, stats, hands, above }) {
 export default function PlayerStatsCard({ player, stats, onClose, isMe = false }) {
   const hands = stats?.hands ?? 0;
   const profile = playerProfile(stats);
+  // Who they are away from this table: whether you are watching them, and the
+  // clubs you are both allowed to know about. One request, since both live on
+  // the same profile.
+  const [away, setAway] = useState(null);
+
+  useEffect(() => {
+    const username = player.username;
+    if (!username) return undefined;
+    let cancelled = false;
+    api.get(`/auth/players/${encodeURIComponent(username)}/`)
+      .then(({ data }) => { if (!cancelled) setAway(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [player.username]);
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4" onClick={onClose}>
@@ -179,8 +187,35 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
             <p className="text-xs text-(--color-text-muted)">
               {hands ? `${hands.toLocaleString()} hands recorded` : "No hands recorded yet"}
             </p>
+            {/* Their clubs, and a way into one. Opened in a tab of its own on
+                purpose: following a link out of here mid-hand would leave the
+                table to fold you while you read a league table. */}
+            {away?.clubs?.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {away.clubs.map((club) => (
+                  <a
+                    key={club.slug}
+                    href={`/clubs/${club.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Open ${club.name}`}
+                    className="panel-raised rounded-full pl-1 pr-2 py-0.5 flex items-center gap-1
+                               text-[10px] text-(--color-silver) hover:border-(--color-highlight)
+                               border border-transparent transition-colors"
+                  >
+                    <span className="text-xs leading-none">{club.emoji}</span>
+                    <span className="max-w-[7rem] truncate">{club.name}</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
-          <WatchToggle username={player.username} isMe={isMe} />
+          <WatchToggle
+            username={player.username}
+            isMe={isMe}
+            initial={away?.is_watched}
+            onChange={(next) => setAway((current) => ({ ...current, is_watched: next }))}
+          />
           <button onClick={onClose}
             className="btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors">
             Close

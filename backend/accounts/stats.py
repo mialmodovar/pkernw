@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Min, Sum
+from django.db.models import Min, Q, Sum
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes
@@ -81,6 +81,26 @@ def my_stats(request):
     return Response(player_summary(request.user))
 
 
+def shared_clubs(viewer, user):
+    """The clubs of theirs this viewer is allowed to know about.
+
+    A public club is public. A private one is only mentioned to somebody
+    already in it — otherwise a profile card would announce the existence of
+    every private club its owner has ever joined, which is the one thing
+    private means.
+    """
+    from clubs.models import Club
+
+    return [
+        {"name": club.name, "slug": club.slug, "emoji": club.emoji}
+        for club in Club.objects
+        .filter(memberships__user=user)
+        .filter(Q(is_public=True) | Q(memberships__user=viewer))
+        .distinct()
+        .order_by("name")
+    ]
+
+
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def player_profile(request, username):
@@ -99,6 +119,7 @@ def player_profile(request, username):
         # Where they are right now, so the card can offer to take you there
         # rather than only say how they did last month.
         **presence([user.id])[user.id],
+        "clubs": shared_clubs(request.user, user),
         "stats": player_summary(user),
         "recent": recent_results(user),
     })

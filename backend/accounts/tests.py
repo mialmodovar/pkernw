@@ -443,3 +443,60 @@ class AvatarImageTests(APITestCase):
 		response = self._upload(ONE_PIXEL_PNG)
 
 		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class ProfileClubTagTests(APITestCase):
+	"""The clubs shown on somebody's card, and the ones that are not."""
+
+	def setUp(self):
+		self.me = User.objects.create_user(username="tag_me", password="secret123")
+		self.them = User.objects.create_user(username="tag_them", password="secret123")
+		self.client.force_authenticate(self.me)
+
+	def _club(self, name, is_public, *members):
+		from clubs.models import Club, Membership
+
+		club = Club.objects.create(name=name, is_public=is_public, created_by=self.them)
+		for user in members:
+			Membership.objects.create(club=club, user=user)
+		return club
+
+	def _clubs_on(self, username="tag_them"):
+		response = self.client.get(reverse("player-profile", args=[username]))
+		return [club["name"] for club in response.data["clubs"]]
+
+	def test_a_public_club_is_on_the_card(self):
+		self._club("Open House", True, self.them)
+
+		self.assertEqual(self._clubs_on(), ["Open House"])
+
+	def test_a_private_club_is_not_announced_to_outsiders(self):
+		"""Otherwise a profile card lists every private club its owner has ever
+		joined, which is the one thing private means."""
+		self._club("Back Room", False, self.them)
+
+		self.assertEqual(self._clubs_on(), [])
+
+	def test_a_private_club_you_are_both_in_is_shown(self):
+		self._club("Back Room", False, self.them, self.me)
+
+		self.assertEqual(self._clubs_on(), ["Back Room"])
+
+	def test_the_tag_carries_what_it_takes_to_jump_there(self):
+		club = self._club("Open House", True, self.them)
+
+		response = self.client.get(reverse("player-profile", args=["tag_them"]))
+
+		tag = response.data["clubs"][0]
+		self.assertEqual(tag["slug"], club.slug)
+		self.assertEqual(tag["emoji"], club.emoji)
+
+	def test_somebody_in_no_clubs_has_no_tags(self):
+		self.assertEqual(self._clubs_on(), [])
+
+	def test_a_club_is_listed_once_however_many_people_are_in_it(self):
+		"""The membership join would otherwise repeat the club per member."""
+		other = User.objects.create_user(username="tag_other", password="secret123")
+		self._club("Open House", True, self.them, self.me, other)
+
+		self.assertEqual(self._clubs_on(), ["Open House"])

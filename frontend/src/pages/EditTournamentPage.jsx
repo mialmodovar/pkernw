@@ -56,7 +56,7 @@ export default function EditTournamentPage() {
           onClick={() => navigate("/")}
           className="btn-secondary mt-6 px-4 py-2 rounded font-semibold transition-colors"
         >
-          Back to tournaments
+          Back home
         </button>
       </div>
     );
@@ -70,7 +70,7 @@ export default function EditTournamentPage() {
           onClick={() => navigate("/")}
           className="text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
         >
-          Back to tournaments
+          Back home
         </button>
       </div>
       <CreateTournamentForm

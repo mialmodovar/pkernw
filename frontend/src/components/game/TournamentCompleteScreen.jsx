@@ -158,11 +158,11 @@ export default function TournamentCompleteScreen({
 
         <div className="flex flex-wrap gap-3 mt-6">
           <button onClick={onLeave} className="btn-accent flex-1 px-4 py-2.5 rounded font-semibold transition-colors">
-            Back to Lobby
+            Back home
           </button>
           {onViewTournament && (
             <button onClick={onViewTournament} className="btn-secondary px-4 py-2.5 rounded font-semibold transition-colors">
-              Tournament details
+              Tournament lobby
             </button>
           )}
         </div>

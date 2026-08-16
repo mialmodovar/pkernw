@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import Avatar from "../Avatar";
 import api from "../../api/http";
+import { GROUPS, THIN_SAMPLE } from "../game/playerRead";
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
@@ -43,6 +44,74 @@ function Presence({ profile }) {
       <span className="text-(--color-silver)">{tournament.name}</span>
       {tournament.status === "paused" && " (paused)"}
     </p>
+  );
+}
+
+/**
+ * The read: how they play, rather than how they have done.
+ *
+ * Folded away by default. The four tiles above answer the question somebody
+ * usually opens this card for — how are they doing — and a wall of percentages
+ * on top of that buries it. Whoever wants the read knows they want it.
+ */
+function GameStats({ stats }) {
+  const [open, setOpen] = useState(false);
+  const hands = stats?.hands ?? 0;
+
+  if (!hands) return null;
+
+  return (
+    <div className="mt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 text-[10px] uppercase
+                   tracking-wide text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
+      >
+        <span>Game stats</span>
+        <span className="flex items-center gap-1">
+          {hands < THIN_SAMPLE && <span className="normal-case tracking-normal">thin sample</span>}
+          <span className={`transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-3">
+          {GROUPS.map((group) => (
+            <div key={group.title}>
+              <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-1">
+                {group.title}
+              </p>
+              <div className="panel-raised rounded-lg divide-y divide-(--color-border)">
+                {group.rows.map((row) => {
+                  const value = stats[row.key];
+                  // A stat the server did not send is unknown, which is not
+                  // the same as zero.
+                  if (value == null) return null;
+                  const chances = row.chances ? stats[row.chances] : hands;
+                  return (
+                    <div key={row.key} className="px-3 py-1.5 flex items-center gap-2 text-xs">
+                      <span className="flex-1 min-w-0 truncate text-(--color-silver)" title={row.hint}>
+                        {row.label}
+                      </span>
+                      {/* How many chances it is out of, because a hundred
+                          percent of two is not a read. */}
+                      <span className="text-(--color-text-muted) tabular-nums">
+                        {chances != null ? `/${chances}` : ""}
+                      </span>
+                      <span className="w-10 text-right font-semibold tabular-nums text-(--color-highlight-text)">
+                        {Math.round(value)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -186,6 +255,8 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
               <Stat label="Cashes" value={stats.cashes} />
               <Stat label="Hands" value={(stats.hands_played || 0).toLocaleString()} />
             </div>
+
+            <GameStats stats={stats} />
 
             <h3 className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mt-4 mb-1">
               Last tournaments

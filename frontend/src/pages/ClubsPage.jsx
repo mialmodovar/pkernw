@@ -138,7 +138,7 @@ export default function ClubsPage() {
           onClick={() => navigate("/")}
           className="text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
         >
-          Back to tournaments
+          Back home
         </button>
         {!creating && (
           <button

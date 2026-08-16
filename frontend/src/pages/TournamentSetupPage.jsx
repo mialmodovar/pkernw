@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import useAuthStore from "../store/authStore";
 
@@ -268,6 +268,18 @@ export default function TournamentSetupPage() {
 
           <Panel title="Format">
             <div className="divide-y divide-[rgba(196,178,165,0.1)]">
+              {tournament.club_name && (
+                <Fact label="Club">
+                  {/* The page a player would go looking for after seeing this
+                      night belongs to somebody. */}
+                  <Link to={`/clubs/${tournament.club_slug}`} className="link-accent">
+                    {tournament.club_emoji} {tournament.club_name}
+                  </Link>
+                  {tournament.league_name
+                    ? ` · counts for ${tournament.league_name}`
+                    : " · does not count for a league"}
+                </Fact>
+              )}
               <Fact label="Seating">{tournament.players_per_table} per table</Fact>
               <Fact label="Late registration">
                 {tournament.late_reg_level > 0 ? `Through level ${tournament.late_reg_level}` : "Closed"}
@@ -489,7 +501,7 @@ function TournamentActions({
         </button>
       )}
       <button onClick={() => navigate("/")} className="btn-secondary px-4 py-2 rounded text-sm transition-colors">
-        Back to Lobby
+        Back home
       </button>
     </>
   );

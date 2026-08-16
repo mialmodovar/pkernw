@@ -325,7 +325,7 @@ export default function GamePage() {
                 href={`/tournament/${id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Opens in a new window so you keep your seat"
+                title="This tournament's lobby, in a new window so you keep your seat"
                 className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
               >
                 Lobby ↗
@@ -432,7 +432,7 @@ export default function GamePage() {
           )}
           <button
             onClick={() => navigate("/")}
-            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back to every tournament"}
+            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back home"}
             className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
           >
             Home

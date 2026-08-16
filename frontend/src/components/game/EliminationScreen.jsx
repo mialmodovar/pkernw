@@ -97,7 +97,7 @@ export default function EliminationScreen({
             onClick={onLeave}
             className="btn-secondary px-4 py-2.5 rounded font-semibold transition-colors"
           >
-            Back to Lobby
+            Back home
           </button>
         </div>
       </div>

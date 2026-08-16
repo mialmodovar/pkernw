@@ -93,6 +93,7 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
     // is knowable here. Places paid is the count, the pool is the money.
     poolCents > 0 ? `${euros(poolCents)} pool` : buyInCents > 0 ? null : "no prize",
     GAME_LABELS[t.game_type] || null,
+    t.club_name ? (t.league_name || "club night") : null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
     // Only worth saying while you can still act on it. Spelled out rather than
@@ -119,9 +120,11 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
               title={t.league_name
                 ? `${t.club_name} · counts for ${t.league_name}`
                 : `${t.club_name} · does not count for a league`}
-              className="shrink-0 text-sm leading-none"
+              className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded
+                         panel-raised text-[10px] font-semibold text-(--color-silver) max-w-[9rem]"
             >
-              {t.club_emoji}
+              <span className="text-xs leading-none">{t.club_emoji}</span>
+              <span className="truncate">{t.club_name}</span>
             </span>
           )}
           <h3 className="font-semibold text-sm text-(--color-silver) truncate">{t.name}</h3>

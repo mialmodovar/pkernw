@@ -7,6 +7,7 @@ import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
+import CoinPanel from "../components/lobby/CoinPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
 export default function LobbyPage() {
@@ -87,6 +88,7 @@ export default function LobbyPage() {
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <StatsPanel />
+        <CoinPanel />
         <CalotesPanel />
         <WatchPanel />
         <ClubPanel onClubsLoaded={onClubsLoaded} />

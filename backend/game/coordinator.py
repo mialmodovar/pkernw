@@ -12,6 +12,7 @@ from tournaments.bounties import BountyConfig, split_knockout
 from .engine.hand import HandEngine, cards_to_list
 from .levelclock import seconds_until_level_ends
 from .sidebets import record_for, settle as settle_side_bets, updated_records
+from sidegames.games import PLAYER_BET, clean_stake
 from .engine.player import Player as EnginePlayer
 
 
@@ -66,6 +67,12 @@ class MultiTableTournamentCoordinator:
         persist_player_states: PersistPlayerStatesFn,
         persist_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
         persist_hand: Optional[Callable[[dict], Awaitable[None]]] = None,
+        # The coin economy, injected the way every other database is: the
+        # coordinator runs in the event loop and owns no ORM. Both optional —
+        # without them the side games are played for nothing, which is what the
+        # coordinator's own tests want.
+        take_side_bet_stake: Optional[Callable[[int, str, int], Awaitable[bool]]] = None,
+        pay_side_bets: Optional[Callable[[list], Awaitable[dict]]] = None,
         level_index: int = 0,
         hands_in_level: int = 0,
         time_bank_seconds: int = 0,
@@ -115,6 +122,8 @@ class MultiTableTournamentCoordinator:
         self.persist_player_states = persist_player_states
         self.persist_progress = persist_progress
         self.persist_hand = persist_hand
+        self.take_side_bet_stake = take_side_bet_stake
+        self.pay_side_bets = pay_side_bets
 
         self._players_by_id: Dict[int, EnginePlayer] = {}
         self._players_by_user_id: Dict[int, EnginePlayer] = {}
@@ -494,11 +503,17 @@ class MultiTableTournamentCoordinator:
             "bets": {},
         }
 
-    async def place_side_bet(self, user_id: int, on_user_id: int) -> bool:
+    async def place_side_bet(self, user_id: int, on_user_id: int, stake=None) -> bool:
         """Back somebody to win the hand you are not in.
 
         Once only, and only while the hand is still a question: a bet cannot be
         moved once placed, or it would be worth nothing to have called it early.
+
+        The stake is taken now and the odds are fixed now — how many players
+        were still in when you called it. Calling six-handed on the flop pays
+        six; calling heads-up on the river pays two. That is what makes calling
+        early worth anything, and it only works if the odds are stamped at the
+        moment of the call rather than read again at the end.
         """
         bettor = self._players_by_user_id.get(user_id)
         pick = self._players_by_user_id.get(on_user_id)
@@ -520,24 +535,52 @@ class MultiTableTournamentCoordinator:
         if on_user_id not in book["dealt_in"] or pick.is_folded:
             return False
 
-        book["bets"][user_id] = on_user_id
+        wager = clean_stake(PLAYER_BET, stake if stake is not None else PLAYER_BET.min_stake)
+        if wager is None:
+            return False
+
+        odds = self._contender_count(table_number, book)
+        if odds < 2:
+            return False
+
+        # Coins leave the wallet now. A stake that is only collected when you
+        # lose is not a stake.
+        if self.take_side_bet_stake is not None:
+            if not await self.take_side_bet_stake(user_id, PLAYER_BET.id, wager):
+                return False
+
+        book["bets"][user_id] = {"on_user_id": on_user_id, "stake": wager, "odds": odds}
         await self._broadcast_to_table(
             table_number,
             "side_bet_placed",
-            self._side_bet_payload(user_id, on_user_id),
+            self._side_bet_payload(user_id, book["bets"][user_id]),
         )
         return True
 
-    def _side_bet_payload(self, user_id: int, on_user_id: int) -> dict:
+    def _contender_count(self, table_number: int, book: dict) -> int:
+        """How many players are still contesting this pot."""
+        return sum(
+            1
+            for user_id, player in self._players_by_user_id.items()
+            if player._table_number == table_number
+            and user_id in book["dealt_in"]
+            and not player.is_folded
+        )
+
+    def _side_bet_payload(self, user_id: int, bet: dict) -> dict:
         bettor = self._players_by_user_id.get(user_id)
-        pick = self._players_by_user_id.get(on_user_id)
+        pick = self._players_by_user_id.get(bet["on_user_id"])
         return {
             "user_id": user_id,
             "name": bettor.name if bettor else "",
             "seat": getattr(bettor, "_seat", None),
-            "on_user_id": on_user_id,
+            "on_user_id": bet["on_user_id"],
             "on_name": pick.name if pick else "",
             "on_seat": getattr(pick, "_seat", None),
+            "stake": bet["stake"],
+            "odds": bet["odds"],
+            # What it comes back as if the call is right, stake included.
+            "returns": PLAYER_BET.payout(bet["stake"], bet["odds"]),
         }
 
     def side_bets_at(self, table_number: int) -> dict:
@@ -548,8 +591,8 @@ class MultiTableTournamentCoordinator:
         return {
             "open": book["open"],
             "bets": [
-                self._side_bet_payload(user_id, on_user_id)
-                for user_id, on_user_id in book["bets"].items()
+                self._side_bet_payload(user_id, bet)
+                for user_id, bet in book["bets"].items()
             ],
         }
 
@@ -565,25 +608,37 @@ class MultiTableTournamentCoordinator:
             if player._table_number == table_number and getattr(player, "_seat", None) in seats
         }
 
-        results = settle_side_bets(book["bets"], winners)
+        picks = {user_id: bet["on_user_id"] for user_id, bet in book["bets"].items()}
+        results = settle_side_bets(picks, winners)
         self._side_bet_records = updated_records(self._side_bet_records, results)
+
+        settled = [
+            {
+                **self._side_bet_payload(one["user_id"], book["bets"][one["user_id"]]),
+                "correct": one["correct"],
+                "record": record_for(self._side_bet_records, one["user_id"]),
+            }
+            for one in results
+        ]
+
         book["open"] = False
         book["bets"] = {}
 
-        await self._broadcast_to_table(
-            table_number,
-            "side_bet_results",
-            {
-                "results": [
-                    {
-                        **self._side_bet_payload(one["user_id"], one["on_user_id"]),
-                        "correct": one["correct"],
-                        "record": record_for(self._side_bet_records, one["user_id"]),
-                    }
-                    for one in results
-                ],
-            },
-        )
+        # Coins back to whoever called it right, before the table is told —
+        # so the balance that arrives with the result is the balance they have.
+        if self.pay_side_bets is not None:
+            balances = await self.pay_side_bets([
+                {
+                    "user_id": one["user_id"],
+                    "game_id": PLAYER_BET.id,
+                    "returns": one["returns"] if one["correct"] else 0,
+                }
+                for one in settled
+            ])
+            for one in settled:
+                one["balance"] = (balances or {}).get(one["user_id"])
+
+        await self._broadcast_to_table(table_number, "side_bet_results", {"results": settled})
 
     # ─────────────────────────────────────────────────────────────────────────
     # Ready — the pre-tournament countdown, cut short by agreement

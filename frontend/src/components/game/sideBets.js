@@ -64,6 +64,20 @@ export function sideBetState({
   return { mode: null, results: null, contenders: [], myBet: null };
 }
 
+/**
+ * The stakes offered, which depend on what is in the wallet.
+ *
+ * A row of buttons rather than a slider: this is a decision taken mid-hand with
+ * one hand on the mouse, and three numbers you can hit are worth more than
+ * every number between them.
+ */
+export function stakeChoices(balance, { min = 5, max = 500 } = {}) {
+  const purse = Math.max(0, balance ?? 0);
+  return [min, 25, 50, 100, 250, max]
+    .filter((stake, index, all) => all.indexOf(stake) === index)
+    .filter((stake) => stake >= min && stake <= max && stake <= purse);
+}
+
 /** "3 of 7 called" — a record, in the one phrase that says what it is. */
 export function recordLabel(record) {
   if (!record?.called) return null;

@@ -4,6 +4,7 @@ import QuickMessageList from "./QuickMessageList";
 import useGameStore from "../../store/gameStore";
 import { sendQuickMessage } from "./quickMessages";
 import { THROWABLES } from "./throwables";
+import useWalletStore from "../../store/walletStore";
 
 // The two buttons share a size and a shape; only what they open differs.
 const BUTTON = `flex items-center justify-center rounded-full border transition-colors
@@ -37,6 +38,9 @@ export default function SeatQuickChat() {
   const [panel, setPanel] = useState(null);
   const wrapper = useRef(null);
   const aimingItem = useGameStore((s) => s.aimingItem);
+  // What is locked is shown anyway, greyed: a shelf you cannot see is a shelf
+  // nobody buys from.
+  const owns = useWalletStore((s) => s.owns);
   const setAiming = useGameStore((s) => s.setAiming);
 
   // Anywhere else on the table dismisses it. Without this the list sits open
@@ -117,18 +121,25 @@ export default function SeatQuickChat() {
       {panel === "throw" && (
         <span className="absolute left-full bottom-0 ml-1.5 z-40 w-40 p-1.5 flex flex-wrap gap-1
                          rounded-lg panel-raised panel-solid shadow-xl shadow-black/60 animate-fade-in">
-          {THROWABLES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => arm(item.id)}
-              title={`Throw a ${item.label.toLowerCase()}`}
-              className="w-8 h-8 flex items-center justify-center rounded text-lg
-                         hover:bg-white/10 transition-colors"
-            >
-              {item.glyph}
-            </button>
-          ))}
+          {THROWABLES.map((item) => {
+            const owned = owns(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={!owned}
+                onClick={() => arm(item.id)}
+                title={owned
+                  ? `Throw a ${item.label.toLowerCase()}`
+                  : `${item.label} — buy it in the lobby shop`}
+                className={`w-8 h-8 flex items-center justify-center rounded text-lg transition-colors ${
+                  owned ? "hover:bg-white/10" : "opacity-30 grayscale cursor-not-allowed"
+                }`}
+              >
+                {item.glyph}
+              </button>
+            );
+          })}
         </span>
       )}
 

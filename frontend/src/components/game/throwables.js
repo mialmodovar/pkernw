@@ -14,6 +14,15 @@ export const THROWABLES = [
   { id: "chicken", glyph: "🐔", label: "Chicken", splat: "🪶", tint: "#e0c66b" },
   { id: "rose", glyph: "🌹", label: "Rose", splat: "🌸", tint: "#c3565f" },
   { id: "snowball", glyph: "⚪", label: "Snowball", splat: "❄️", tint: "#dbe6f0" },
+  // Bought with coins. What they cost is the server's business (see the shop);
+  // this is only what they look like on the way over.
+  { id: "banana", glyph: "🍌", label: "Banana", splat: "💦", tint: "#e0c66b" },
+  { id: "ice", glyph: "🧊", label: "Ice cube", splat: "❄️", tint: "#dbe6f0" },
+  { id: "pie", glyph: "🥧", label: "Pie", splat: "💥", tint: "#e0c66b" },
+  { id: "fish", glyph: "🐟", label: "Fish", splat: "💦", tint: "#dbe6f0" },
+  { id: "brick", glyph: "🧱", label: "Brick", splat: "💢", tint: "#c3565f" },
+  { id: "bomb", glyph: "💣", label: "Bomb", splat: "💥", tint: "#c3565f" },
+  { id: "crown", glyph: "👑", label: "Crown", splat: "✨", tint: "#e0c66b" },
 ];
 
 const BY_ID = Object.fromEntries(THROWABLES.map((item) => [item.id, item]));

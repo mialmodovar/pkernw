@@ -101,6 +101,23 @@ class CoordinatorHarness:
         async def persist_player_states(players):
             return None
 
+        # A wallet per player, in memory. The real one is a database behind two
+        # callbacks; what the coordinator cares about is that a stake can be
+        # refused and a payout lands.
+        self.coins = {}
+
+        async def take_side_bet_stake(user_id, game_id, stake):
+            purse = self.coins.setdefault(user_id, 1000)
+            if purse < stake:
+                return False
+            self.coins[user_id] = purse - stake
+            return True
+
+        async def pay_side_bets(entries):
+            for entry in entries:
+                self.coins[entry["user_id"]] = self.coins.get(entry["user_id"], 0) + entry["returns"]
+            return dict(self.coins)
+
         return MultiTableTournamentCoordinator(
             tournament_id=1,
             players_per_table=players_per_table,
@@ -112,6 +129,8 @@ class CoordinatorHarness:
             load_players=load_players,
             persist_assignments=persist_assignments,
             persist_player_states=persist_player_states,
+            take_side_bet_stake=take_side_bet_stake,
+            pay_side_bets=pay_side_bets,
         )
 
     def _sync_and_rebalance(self, coordinator):
@@ -1241,7 +1260,7 @@ class ThrowableTests(TestCase):
 	def test_anything_else_is_not_a_throwable(self):
 		from game.throwables import clean_item
 
-		self.assertIsNone(clean_item("brick"))
+		self.assertIsNone(clean_item("grenade"))
 		self.assertIsNone(clean_item("<img src=x onerror=alert(1)>"))
 		self.assertIsNone(clean_item("https://example.test/nasty.gif"))
 		self.assertIsNone(clean_item(""))
@@ -1443,26 +1462,26 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
 
-        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
         self.assertEqual(coordinator.side_bets_at(1)["bets"][0]["on_user_id"], 101)
         self.assertIn("side_bet_placed", [event for _table, event, _payload in self.table_events])
 
     def test_a_player_still_in_the_hand_cannot_bet_on_it(self):
         coordinator = self._hand_in_progress()
-        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
 
     def test_you_cannot_back_somebody_who_has_folded(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
         self._fold(coordinator, 101)
-        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
 
     def test_a_call_cannot_be_taken_back(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
 
-        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101))
-        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 102))
+        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 102, 50))
         self.assertEqual(coordinator.side_bets_at(1)["bets"][0]["on_user_id"], 101)
 
     def test_the_book_shuts_when_the_cards_come_face_up(self):
@@ -1472,7 +1491,7 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
         async_to_sync(coordinator._hand_event)(1, "showdown", [])
 
         self.assertFalse(coordinator.side_bets_at(1)["open"])
-        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
 
     def test_an_all_in_runout_shuts_it_too(self):
         coordinator = self._hand_in_progress()
@@ -1480,12 +1499,12 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
 
         async_to_sync(coordinator._hand_event)(1, "all_in_equity", [])
 
-        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 50))
 
     def test_the_pot_settles_the_calls_and_moves_the_tally(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
-        async_to_sync(coordinator.place_side_bet)(100, 101)
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
 
         # Seat 1 is player 101 — the one that was backed.
         async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 1, "amount": 60}])
@@ -1503,7 +1522,7 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
     def test_backing_a_loser_is_recorded_as_a_miss(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
-        async_to_sync(coordinator.place_side_bet)(100, 101)
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
 
         async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 2, "amount": 60}])
 
@@ -1517,7 +1536,7 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
     def test_a_reconnecting_client_is_handed_the_open_book(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
-        async_to_sync(coordinator.place_side_bet)(100, 101)
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
 
         snapshot = async_to_sync(coordinator.snapshot_for_table)(1)
 
@@ -1556,3 +1575,147 @@ class BestHandRankingTests(TestCase):
 
     def test_nothing_shown_down_is_no_best_hand(self):
         self.assertIsNone(best_of([]))
+
+
+class SideBetStakeTests(CoordinatorHarness, TestCase):
+    """What a call costs, what it pays, and what happens when it cannot be paid."""
+
+    def _hand_in_progress(self, players=3):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(players)],
+            players_per_table=players,
+        )
+        self._sync_and_rebalance(coordinator)
+        coordinator._open_side_bets(coordinator._tables[1])
+        return coordinator
+
+    def _fold(self, coordinator, user_id):
+        coordinator._players_by_user_id[user_id].is_folded = True
+
+    def _results(self):
+        return [
+            payload for _table, event, payload in self.table_events
+            if event == "side_bet_results"
+        ][-1]["results"]
+
+    def test_the_stake_leaves_the_wallet_when_the_call_is_made(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
+
+        self.assertEqual(self.coins[100], 950)
+
+    def test_the_odds_are_how_many_were_still_in_when_you_called(self):
+        coordinator = self._hand_in_progress(players=3)
+        self._fold(coordinator, 100)
+
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
+
+        bet = coordinator.side_bets_at(1)["bets"][0]
+        # Two left of the three dealt in, so a right call doubles the stake.
+        self.assertEqual(bet["odds"], 2)
+        self.assertEqual(bet["returns"], 100)
+
+    def test_a_right_call_pays_the_odds(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
+
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 1, "amount": 60}])
+
+        # 1000 - 50 staked, + 100 back.
+        self.assertEqual(self.coins[100], 1050)
+        self.assertEqual(self._results()[0]["balance"], 1050)
+
+    def test_a_wrong_call_keeps_nothing(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        async_to_sync(coordinator.place_side_bet)(100, 101, 50)
+
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 2, "amount": 60}])
+
+        self.assertEqual(self.coins[100], 950)
+        # Still told what it left them with, which is the number they want.
+        self.assertEqual(self._results()[0]["balance"], 950)
+
+    def test_a_wallet_that_cannot_cover_it_makes_no_call(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        self.coins[100] = 10
+
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 500))
+        self.assertEqual(coordinator.side_bets_at(1)["bets"], [])
+        self.assertEqual(self.coins[100], 10)
+
+    def test_a_stake_outside_the_limits_is_refused_rather_than_trimmed(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        # Silently charging 500 for a request to bet 9,000 is charging somebody
+        # something they did not agree to.
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 9000))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101, 0))
+        # The wallet was never even opened: the stake is judged before anybody
+        # is charged anything.
+        self.assertNotIn(100, self.coins)
+
+    def test_the_last_two_standing_cannot_be_called_by_the_third(self):
+        # Heads-up with one folded player watching is still a call worth making;
+        # a single player left is not a question.
+        coordinator = self._hand_in_progress(players=3)
+        self._fold(coordinator, 100)
+        self._fold(coordinator, 101)
+
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 102, 50))
+
+
+class ThrowableOwnershipTests(TransactionTestCase):
+	"""A priced throwable cannot be thrown by somebody who has not bought it."""
+
+	def _throw(self, user, item):
+		from game.consumers import _tournament_runners
+
+		class Player:
+			def __init__(self, seat, table_number, name):
+				self._seat = seat
+				self._table_number = table_number
+				self.name = name
+
+		class Runner:
+			def get_runtime_player(self, user_id):
+				return Player(0 if user_id == user.id else 3, 1, f"p{user_id}")
+
+		sent = []
+
+		async def capture(tid, table, event_type, data):
+			sent.append((event_type, data))
+
+		consumer = TournamentConsumer()
+		consumer.tournament_id = 9911
+		consumer.user = user
+		consumer.shown_name = user.username
+
+		_tournament_runners[9911] = Runner()
+		with patch("game.consumers._broadcast_table", capture):
+			async_to_sync(consumer._throw_item)({"item": item, "at_user_id": user.id + 1})
+		_tournament_runners.pop(9911, None)
+		return sent
+
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username="thrower", password="secret123")
+
+	def test_a_free_one_needs_nothing(self):
+		self.assertEqual(len(self._throw(self.user, "tomato")), 1)
+
+	def test_a_priced_one_that_was_never_bought_goes_nowhere(self):
+		self.assertEqual(self._throw(self.user, "bomb"), [])
+
+	def test_and_lands_once_it_has_been(self):
+		from sidegames.shop import buy_throwable
+
+		buy_throwable(self.user, "bomb")
+
+		sent = self._throw(self.user, "bomb")
+		self.assertEqual(len(sent), 1)
+		self.assertEqual(sent[0][1]["item"], "bomb")

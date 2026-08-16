@@ -29,6 +29,7 @@ import { useCompactLayout } from "../components/game/useCompactLayout";
 import { InfoIcon, LobbyIcon } from "../components/game/icons";
 import TableVitals from "../components/game/TableVitals";
 import SideBetPanel from "../components/game/SideBetPanel";
+import useWalletStore from "../store/walletStore";
 
 // How long the table stays up after a hand ends your tournament — yours or
 // everyone's. The last hand is the one worth looking at, and a result screen
@@ -74,6 +75,10 @@ export default function GamePage() {
   const [playerStats, setPlayerStats] = useState({});
   const [inspecting, setInspecting] = useState(null);
   const compact = useCompactLayout();
+  // Coins and what they have bought. Read once on arrival: the side-bet card
+  // needs the balance and the throwable picker needs the shelf, and the table
+  // is often the first page anybody opens.
+  const fetchWallet = useWalletStore((s) => s.fetchWallet);
   // The layout sandbox renders this very page with no server behind it. Each
   // network call below is skipped and its result handed over instead.
   const sandbox = useSandboxStore((s) => s.active);
@@ -84,6 +89,8 @@ export default function GamePage() {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
   }, [id]);
+
+  useEffect(() => { fetchWallet(); }, [fetchWallet]);
 
   // Cameras and microphones, kept in step with the table. Entirely separate
   // from the game: it reads the table, never writes to it.

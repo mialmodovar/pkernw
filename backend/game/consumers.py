@@ -28,6 +28,7 @@ from .models import Hand, HandAction
 from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .giphy import clean_gif_id as _clean_gif_id
 from .throwables import clean_item as _clean_item
+from .throwables import is_free as _is_free_item
 
 
 _game_tasks: Dict[int, asyncio.Task] = {}
@@ -193,6 +194,51 @@ def _db_settle_tournament(tournament_id):
     from tournaments.ledger import settle_finished
 
     return settle_finished(tournament_id)
+
+
+@database_sync_to_async
+def _db_owns_throwable(user_id, item):
+    from django.contrib.auth import get_user_model
+    from sidegames.shop import owns_throwable
+
+    user = get_user_model().objects.filter(id=user_id).first()
+    return user is not None and owns_throwable(user, item)
+
+
+@database_sync_to_async
+def _db_take_side_bet_stake(user_id, game_id, stake):
+    """Take a side-game stake out of a wallet, or say it could not be paid."""
+    from django.contrib.auth import get_user_model
+    from sidegames.economy import spend
+
+    user = get_user_model().objects.filter(id=user_id).first()
+    if user is None:
+        return False
+    return spend(user, stake, "stake", memo=game_id) is not None
+
+
+@database_sync_to_async
+def _db_pay_side_bets(entries):
+    """Pay the winning calls, and report everybody's balance afterwards.
+
+    Losers are in the list too, with nothing to pay: their stake went when they
+    called, and they still want to see what it left them with.
+    """
+    from django.contrib.auth import get_user_model
+    from sidegames.economy import grant, wallet_for
+
+    balances = {}
+    users = get_user_model().objects.in_bulk([entry["user_id"] for entry in entries])
+    for entry in entries:
+        user = users.get(entry["user_id"])
+        if user is None:
+            continue
+        if entry["returns"] > 0:
+            wallet = grant(user, entry["returns"], "payout", memo=entry["game_id"])
+        else:
+            wallet = wallet_for(user)
+        balances[entry["user_id"]] = wallet.balance
+    return balances
 
 
 @database_sync_to_async
@@ -731,7 +777,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                     on_user_id = int(data.get("on_user_id"))
                 except (TypeError, ValueError):
                     return
-                await coordinator.place_side_bet(self.user.id, on_user_id)
+                await coordinator.place_side_bet(self.user.id, on_user_id, data.get("stake"))
         elif message_type == "chat_message":
             await self._send_chat(data)
         elif message_type == "throw_item":
@@ -754,6 +800,12 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         """
         item = _clean_item(data.get("item"))
         if item is None:
+            return
+
+        # Checked on the throw, not only in the shop: a price enforced at the
+        # till is a suggestion. The free ones need no lookup at all, which is
+        # most throws and all of the old ones.
+        if not _is_free_item(item) and not await _db_owns_throwable(self.user.id, item):
             return
 
         try:
@@ -1004,6 +1056,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             persist_player_states=lambda players: self._persist_player_states(players),
             persist_progress=lambda level_index, hands: _db_set_progress(self.tournament_id, level_index, hands),
             persist_hand=lambda payload: _db_save_hand(self.tournament_id, payload),
+            take_side_bet_stake=_db_take_side_bet_stake,
+            pay_side_bets=_db_pay_side_bets,
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
         )

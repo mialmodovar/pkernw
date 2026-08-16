@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { backersOf, contenders, isOnTheRail, recordLabel, sideBetState } from "./sideBets";
+import { backersOf, contenders, isOnTheRail, recordLabel, sideBetState, stakeChoices } from "./sideBets";
 
 const table = [
   { seat: 0, user_id: 10, name: "Ana" },
@@ -91,6 +91,25 @@ describe("sideBetState", () => {
     const watching = { players: table, mySeat: null, open: true, myUserId: null, canCall: false };
     expect(sideBetState(watching).mode).toBeNull();
     expect(sideBetState({ ...watching, results: [{ user_id: 11, correct: true }] }).mode).toBe("results");
+  });
+});
+
+describe("stakeChoices", () => {
+  it("offers the stakes inside the game's limits", () => {
+    expect(stakeChoices(1000)).toEqual([5, 25, 50, 100, 250, 500]);
+  });
+
+  it("offers nothing that cannot be paid for", () => {
+    expect(stakeChoices(60)).toEqual([5, 25, 50]);
+  });
+
+  it("offers nothing at all to an empty wallet", () => {
+    expect(stakeChoices(0)).toEqual([]);
+    expect(stakeChoices(null)).toEqual([]);
+  });
+
+  it("does not repeat a limit that is also one of the steps", () => {
+    expect(stakeChoices(1000, { min: 25, max: 100 })).toEqual([25, 50, 100]);
   });
 });
 

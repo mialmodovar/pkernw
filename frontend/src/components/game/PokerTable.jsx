@@ -229,12 +229,22 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
 
+  // Every other hand that is face up. In an all-in runout the cards are turned
+  // over before the board finishes, so from that moment the table knows exactly
+  // who is winning — and a shine that ignores it is telling somebody drawing
+  // dead that their river was good news.
+  const exposedHands = players
+    .filter((p) => p.seat !== mySeat && !p.is_folded && p.cards?.length === 2)
+    .map((p) => p.cards);
+
   // Your own good cards catch the light. Held back once the hands turn over,
   // where the gold ring on the winning five is the thing to look at.
-  const heroShines = showdown == null && handShines(holeCards, communityCards);
+  const heroShines = showdown == null && handShines(holeCards, communityCards, exposedHands);
   // A hand is five cards, not two. The board cards that make it up shine with
   // the hero's own, so what lights up is the hand rather than half of it.
-  const shiningBoard = heroShines ? shiningBoardCards(holeCards, communityCards) : [];
+  const shiningBoard = heroShines
+    ? shiningBoardCards(holeCards, communityCards, exposedHands)
+    : [];
 
   // Fall back to what the seat numbers imply until capacity is known.
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;

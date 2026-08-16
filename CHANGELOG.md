@@ -132,6 +132,13 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **Your cards no longer shine while you are losing.** Once everybody is all in
+  the hands turn face up, so the table knows exactly who is ahead — but the
+  shine went on judging your cards against the board alone. A river that paired
+  you lit up like good news while you were drawing dead to a set. Where the
+  other hands can be seen, they settle it: behind is dark, and so is a chop.
+  Nothing changes for an ordinary hand, where the cards are face down and there
+  is nothing to compare against.
 - **A hand's history put players in the wrong seats.** Every action was recorded
   against the seat that player is sitting in *now*, and a seat moves when tables
   rebalance — so a replay could show somebody acting from a seat they only

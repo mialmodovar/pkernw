@@ -90,3 +90,40 @@ describe("shiningBoardCards", () => {
       .toEqual(["3♦", "4♣", "5♥"]);
   });
 });
+
+describe("cards that are already face up", () => {
+  // An all-in runout turns everybody's hand over before the board finishes, so
+  // from that moment the shine has no excuse for guessing.
+  const board = ["Kh", "9c", "4d", "9s", "2h"];
+
+  it("stays dark when the hand it made is losing", () => {
+    // Two pair, kings and nines — and the other player has trip nines. The
+    // board pairing you is not good news when you are drawing dead.
+    expect(handShines(["Kd", "Qs"], board, [["9h", "9d"]])).toBe(false);
+    expect(shiningBoardCards(["Kd", "Qs"], board, [["9h", "9d"]])).toEqual([]);
+  });
+
+  it("shines when the same hand is winning", () => {
+    expect(handShines(["Kd", "Qs"], board, [["7h", "8d"]])).toBe(true);
+  });
+
+  it("counts a chopped pot as not worth lighting up", () => {
+    // Both playing the same two pair with the same kicker: nobody won.
+    expect(handShines(["Kd", "Qs"], board, [["Kc", "Qh"]])).toBe(false);
+  });
+
+  it("has no opinion when nothing is face up", () => {
+    // Which is every ordinary hand — the opponents' cards are face down and
+    // this test must not start guessing at them.
+    expect(handShines(["Kd", "Qs"], board, [])).toBe(true);
+    expect(handShines(["Kd", "Qs"], board, null)).toBe(true);
+  });
+
+  it("ignores a seat whose cards are only half known", () => {
+    expect(handShines(["Kd", "Qs"], board, [["9h"]])).toBe(true);
+  });
+
+  it("needs to beat every hand it can see, not just one of them", () => {
+    expect(handShines(["Kd", "Qs"], board, [["7h", "8d"], ["9h", "9d"]])).toBe(false);
+  });
+});

@@ -6,6 +6,11 @@
  * than a single pair, provided the hero's own cards are what made it, since a
  * board that pairs twice by itself is everybody's hand and nobody's news.
  *
+ * And once the opponents' cards are face up — an all-in runout, or a showdown —
+ * there is a better test than any of that available, so it is used: are you
+ * winning. A river that pairs you while you are drawing dead is not good news,
+ * and lighting it up like it was is the table lying to you.
+ *
  * The hand is evaluated here rather than read off the server's "Pair of Aces"
  * text, because the client already holds every card it needs and a phrase meant
  * for a human is a poor thing to branch on.
@@ -126,8 +131,15 @@ function compare(a, b) {
 
 /**
  * Should the hero's cards shine, holding these against this board?
+ *
+ * `opponentHands` is the other players' hole cards where they are known — face
+ * up for an all-in runout, or turned over at showdown. When it is known, it
+ * settles the question on its own: a hand that is behind does not shine,
+ * however pretty it is on its own terms. Being all in with two pair against a
+ * set is not a moment to celebrate, and a board card that improves you without
+ * putting you ahead is the emptiest news at the table.
  */
-export default function handShines(holeCards, communityCards) {
+export default function handShines(holeCards, communityCards, opponentHands = null) {
   const hole = toCards(holeCards);
   if (hole.length !== 2) return false;
 
@@ -137,10 +149,31 @@ export default function handShines(holeCards, communityCards) {
   const mine = bestFive([...hole, ...board]);
   if (!mine || mine[0] < TWO_PAIR) return false;
 
+  if (!leadsKnownHands(mine, board, opponentHands)) return false;
+
   // On the river the board alone can make five cards. If the hero's cards add
   // nothing to it, the hand belongs to the whole table and is no news.
   const theirs = bestFive(board);
   return !theirs || beatsTheBoard(mine, theirs);
+}
+
+/**
+ * Is the hero ahead of every hand that can be seen?
+ *
+ * True when there is nothing to compare against, which is every ordinary hand:
+ * the opponents' cards are face down and this test has no opinion. A tie counts
+ * as behind — a chopped pot is not a hand worth lighting up.
+ */
+function leadsKnownHands(mine, board, opponentHands) {
+  const known = (opponentHands || [])
+    .map((cards) => toCards(cards))
+    .filter((cards) => cards.length === 2);
+  if (!known.length) return true;
+
+  return known.every((theirs) => {
+    const score = bestFive([...theirs, ...board]);
+    return !score || compare(mine, score) > 0;
+  });
 }
 
 /**
@@ -154,8 +187,8 @@ export default function handShines(holeCards, communityCards) {
  * Returns the original strings that were passed in, so the caller can match
  * them against what it is rendering without parsing anything.
  */
-export function shiningBoardCards(holeCards, communityCards) {
-  if (!handShines(holeCards, communityCards)) return [];
+export function shiningBoardCards(holeCards, communityCards, opponentHands = null) {
+  if (!handShines(holeCards, communityCards, opponentHands)) return [];
 
   const hole = toCards(holeCards);
   const board = (communityCards || []).map((value) => ({ value, card: toCard(value) }))

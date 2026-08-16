@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
+import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
@@ -32,16 +33,29 @@ export default function LobbyPage() {
     return [...byId.values()];
   }, [mineActive, upcoming, past]);
 
+  // A seat of yours that has started, or was already running when you opened
+  // the app, takes you to the table — there is a hand waiting on you and this
+  // list is not where you can play it.
+  useAutoOpenTable({ tournaments, user, loading });
+
+  // Waiting on a tournament of your own to begin is the one thing on this page
+  // that is worth knowing about the second it happens, because it starts
+  // dealing you cards. The rest of the list can take its time.
+  const awaitingStart = tournaments.some((t) => t.is_joined && t.status === "lobby");
+
+  useEffect(() => { fetchLobbyData(); }, [fetchLobbyData]);
+
+  // Tournaments opening for late registration and seats freed by other players
+  // both happen with no action of your own, so keep the lists live. A failed
+  // tick is ignored because the next one recovers. Separate from the first load
+  // above so that changing pace does not put the loading placeholder back over
+  // a list that is already on screen.
   useEffect(() => {
-    fetchLobbyData();
-    // Tournaments opening for late registration and seats freed by other
-    // players both happen with no action of your own, so keep the lists live.
-    // A failed tick is ignored because the next one recovers.
     const id = setInterval(() => {
       fetchLobbyData({ silent: true }).catch(() => {});
-    }, 20000);
+    }, awaitingStart ? 4000 : 20000);
     return () => clearInterval(id);
-  }, [fetchLobbyData]);
+  }, [fetchLobbyData, awaitingStart]);
 
   const onJoin = async (id) => {
     await useLobbyStore.getState().joinTournament(id);

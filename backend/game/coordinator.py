@@ -1015,10 +1015,18 @@ class MultiTableTournamentCoordinator:
             )
             self._table_states.setdefault(table_number, {"community_cards": [], "pot": 0, "street": None, "hand_number": 0})
 
-        changed_players = [
-            player for player in active_players if old_assignments.get(player._tp_id) != (player._table_number, player._seat)
+        # A table, not a seat. Everybody below a busted seat shifts up one when
+        # the table closes ranks, and that was counting as a move: four players
+        # at one table, one busts, and the other three are told they have been
+        # moved to the table they are already sitting at. It also cost them
+        # their camera — this event makes a client leave its table group and
+        # forget its media presence, which is right when the table changes and
+        # pure damage when it does not.
+        moved_players = [
+            player for player in active_players
+            if old_assignments.get(player._tp_id, (None, None))[0] != player._table_number
         ]
-        for player in changed_players:
+        for player in moved_players:
             table = self._tables[player._table_number]
             await self.notify_user(
                 player._user_id,
@@ -1026,6 +1034,10 @@ class MultiTableTournamentCoordinator:
                     "type": "table_assignment",
                     "table_number": table.table_number,
                     "table_id": table.table_id,
+                    # Where they came from, or null for a player being seated
+                    # for the first time. Only the first of those is a move
+                    # worth putting a notice on the screen about.
+                    "from_table": old_assignments.get(player._tp_id, (None, None))[0],
                     "seat": player._seat,
                     "global_seat": player._global_seat,
                     "table_count": len(self._tables),

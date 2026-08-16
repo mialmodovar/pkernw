@@ -785,20 +785,31 @@ const useGameStore = create((set) => ({
         }));
         break;
 
-      case "table_assignment":
+      case "table_assignment": {
+        // Being seated is not being moved. A player joining, or coming back
+        // from a rebuy, arrives with no table behind them — the notice is for
+        // somebody who was at one table and is now at another, which is the
+        // only case where looking up and not recognising anyone needs
+        // explaining.
+        const moved = data.from_table != null && data.from_table !== data.table_number;
         set((s) => ({
           currentTableNumber: data.table_number ?? s.currentTableNumber,
           currentTableId: data.table_id ?? s.currentTableId,
           tableCount: data.table_count ?? s.tableCount,
           tableSummaries: data.table_summaries || s.tableSummaries,
-          tableAssignmentNotice: {
-            tableNumber: data.table_number,
-            seat: data.seat,
-            tableCount: data.table_count ?? s.tableCount,
-          },
-          messages: appendLog(s, entry(s, "info", `Moved to table ${data.table_number}, seat ${data.seat}`)),
+          tableAssignmentNotice: moved
+            ? {
+                tableNumber: data.table_number,
+                seat: data.seat,
+                tableCount: data.table_count ?? s.tableCount,
+              }
+            : s.tableAssignmentNotice,
+          messages: moved
+            ? appendLog(s, entry(s, "info", `Moved to table ${data.table_number}, seat ${data.seat}`))
+            : s.messages,
         }));
         break;
+      }
 
       case "table_rebalanced":
         set((s) => ({

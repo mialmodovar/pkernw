@@ -188,6 +188,34 @@ class MultiTableTournamentCoordinatorTests(CoordinatorHarness, TestCase):
         self.assertEqual(moved_payload["type"], "table_assignment")
         self.assertEqual(moved_payload["table_number"], 1)
         self.assertEqual(moved_payload["seat"], 2)
+        # Where they came from, so the client can tell a move from a seating.
+        self.assertEqual(moved_payload["from_table"], 2)
+
+    def test_closing_ranks_after_a_knockout_is_not_a_move(self):
+        """Four at one table, one busts, and the survivors shift up a seat.
+
+        Nobody went anywhere, but every seat index below the bust changed — and
+        that was being sent as a table assignment. On screen it was a "you were
+        moved to table 1" notice at the table you were already sitting at, and
+        underneath it made the client leave its own table group and forget its
+        camera.
+        """
+        records = [self._record(index, table_number=1, seat_at_table=index) for index in range(4)]
+        coordinator = self._build_coordinator(records, players_per_table=8)
+        self._sync_and_rebalance(coordinator)
+        self.notifications.clear()
+
+        # The second seat busts; the two below it close up.
+        self.records[1]["chips"] = 0
+        self.records[1]["is_eliminated"] = True
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual([table["player_count"] for table in coordinator.table_summaries()], [3])
+        self.assertEqual(self.notifications, [])
+        # The seats really did shift — this is not a test of nothing happening.
+        seats = {player._user_id: player._seat for player in coordinator._players_by_id.values()
+                 if not player.is_eliminated}
+        self.assertEqual(sorted(seats.values()), [0, 1, 2])
 
     def test_final_table_merge_deactivates_extra_tables(self):
         records = [

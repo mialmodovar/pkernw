@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
+import { claimEntryRedirect } from "../components/lobby/autoOpenTable";
 import { entryCount, payoutLabel, placingPoolCents } from "../components/game/prizePool";
 import { formatEuros } from "../components/game/formatMoney";
 import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
@@ -151,14 +152,21 @@ export default function TournamentSetupPage() {
   const load = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
-    // Straight to your seat when it starts under you, and only then. Arriving
-    // at a tournament that is already running means you came here on purpose —
-    // sending you back to the table on every poll made this page unreachable
-    // for anyone still in it.
+    // Straight to your seat when it starts under you — and when the app opened
+    // on this page with the tournament already running, which is what a link
+    // from the host in the middle of the night is. Not on every poll, though:
+    // walking in on a running tournament from inside the app means you came
+    // here on purpose, and bouncing you off made the page unreachable for
+    // anyone still in it.
     const startedJustNow = lastStatus.current === "lobby" && data.status === "running";
+    const firstLook = lastStatus.current === null;
     lastStatus.current = data.status;
     const mine = data.players?.find((p) => p.username === user?.username);
-    if (startedJustNow && mine && !mine.is_eliminated) navigate(`/tournament/${id}/play`);
+    if (!mine || mine.is_eliminated) return;
+    if (startedJustNow) navigate(`/tournament/${id}/play`);
+    else if (firstLook && data.status === "running" && claimEntryRedirect()) {
+      navigate(`/tournament/${id}/play`, { replace: true });
+    }
   }, [id, navigate, user?.username]);
 
   useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [load]);

@@ -9,6 +9,17 @@ remembering.
 ## Unreleased
 
 ### Added
+- **The app opens at your table when there is a hand waiting on you.** Being
+  registered in a tournament that is dealing and landing on a list with your own
+  game somewhere in it is the wrong place to be put: the blinds are going
+  through your stack while you find the button. Open the app — or log in, or
+  follow a link to a tournament already running — and if a seat of yours is live
+  you go straight to it. The same when one starts while you are looking at the
+  lobby, and the home list now checks every four seconds instead of twenty while
+  you are waiting on a start, because that is the one thing on the page worth
+  knowing the second it happens. It only ever happens on arrival or on a
+  tournament actually starting under you: pressing "Back home" from the table
+  leaves you at home, which it has to, or home is a page you cannot reach.
 - **Side bets: the folded players get to call the hand.** Folding is the dullest
   thing that happens at a poker table — you are still there, still waiting, and
   now with nothing to think about. Back somebody to take the pot you got out of
@@ -146,6 +157,16 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **"You were moved to table 1" at the table you were already sitting at.**
+  Four players, one busts, and the two below them shift up a seat as the table
+  closes ranks — which the engine was reporting as a table assignment, because
+  it compared seat numbers rather than tables. Everybody who moved up got a
+  move notice for a move that never happened. Underneath it was worse than
+  noise: that event tells a client to leave its table group and forget its
+  camera, so a knockout quietly dropped the survivors' video at the table they
+  had not left. Only a change of table counts now, and the payload says which
+  table you came from, so being seated for the first time is not announced as
+  having been moved either.
 - **The tournament lobby promised a prize pool that did not exist.** It worked
   the pot out as the buy-in times the number of names, which is wrong twice over
   in a knockout tournament: half of every buy-in went onto somebody's head and

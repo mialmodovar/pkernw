@@ -126,6 +126,14 @@ const useGameStore = create((set) => ({
   // Side bets: what the folded players have called this hand, whether calls
   // are still being taken, how the last one turned out, and how well everybody
   // has been calling them all tournament.
+  // Chips between two places on the table: bets on their way to the pot, or a
+  // pot on its way to whoever won it. The store holds what is moving and where
+  // from; how long it takes and when to stop is the component's business.
+  chipsInFlight: [],
+  chipFlightId: 0,
+  chipFlightKind: null,
+  clearChipFlight: () => set({ chipsInFlight: [], chipFlightKind: null }),
+
   sideBets: [],
   sideBetsOpen: false,
   sideBetResults: null,
@@ -304,6 +312,8 @@ const useGameStore = create((set) => ({
           sideBets: [],
           sideBetsOpen: true,
           sideBetResults: null,
+          chipsInFlight: [],
+          chipFlightKind: null,
           // The wait is over either way: the next hand is being dealt.
           rebuyWindow: null,
           holeCards: [],
@@ -431,6 +441,15 @@ const useGameStore = create((set) => ({
           communityCards: data.cards || [],
           pot: data.pot || 0,
           ...(data.street === "river" ? { riverShownAt: Date.now() } : {}),
+          // The bets are about to be zeroed, which used to be the whole of
+          // "the street ended": the chips in front of everybody vanished and
+          // the pot number jumped. Kept here for as long as it takes them to
+          // travel to the middle, so somebody can actually see the money go in.
+          chipsInFlight: s.players
+            .filter((p) => p.bet > 0)
+            .map((p) => ({ seat: p.seat, amount: p.bet })),
+          chipFlightId: s.chipFlightId + 1,
+          chipFlightKind: "collect",
           players: s.players.map((p) => ({ ...p, bet: 0 })),
           // Deliberately not cleared. During an all-in runout the next set of
           // equities arrives moments later, and blanking them in between made
@@ -484,6 +503,11 @@ const useGameStore = create((set) => ({
         set((s) => ({
           potAwards: awards,
           winnerSeats: seats,
+          // And back out again, to whoever won it. Slower and more of it than
+          // a collection: this is the moment the hand was played for.
+          chipsInFlight: awards.map((award) => ({ seat: award.seat, amount: award.amount })),
+          chipFlightId: s.chipFlightId + 1,
+          chipFlightKind: "award",
           messages: appendLog(s, ...awards.map((a) =>
             entry(s, "pot", `${nameFor(s, a.seat)} wins ${a.amount?.toLocaleString()} (${a.description})`))),
         }));

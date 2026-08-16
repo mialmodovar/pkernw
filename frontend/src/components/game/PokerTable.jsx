@@ -14,6 +14,7 @@ import {
 } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
+import ChipFlight from "./ChipFlight";
 import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
 import { formatChips } from "./formatChips";
@@ -190,6 +191,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const {
     players, actionOnSeat, holeCards, communityCards, winnerSeats, potAwards, allInEquity,
     dealerSeat, sbSeat, bbSeat, showdown, handStrength, shownCards, sideBets,
+    chipsInFlight, chipFlightId, chipFlightKind,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
   // Who is currently saying something. A seat is its own stacking context — it
@@ -262,6 +264,12 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
     };
   };
 
+  // The middle of the felt, where the pot is. Collections end here and awards
+  // start here.
+  const centre = frameSize.width && frameSize.height
+    ? { x: frameSize.width / 2, y: frameSize.height / 2 }
+    : null;
+
   // Rotate slots so the hero's seat lands on the bottom-centre position.
   const offset = mySeat ?? 0;
   const bySeat = new Map(players.map((p) => [p.seat, p]));
@@ -321,6 +329,18 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       {/* A knockout GIF, over the middle of the table. Sits inside the frame
           so it covers the felt and not the whole page. */}
       <FinisherOverlay />
+
+      {/* Money crossing the felt. Above the seats it passes and below the
+          panels, so a stack on its way to the pot is never behind a nameplate. */}
+      {chipsInFlight.length > 0 && (
+        <ChipFlight
+          entries={chipsInFlight}
+          kind={chipFlightKind}
+          flightId={chipFlightId}
+          seatPixel={seatPixel}
+          centre={centre}
+        />
+      )}
 
       {/* Community cards + pot */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
@@ -417,8 +437,16 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             }}>
             <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
             {p.bet > 0 && (
-              <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70
-                               border border-(--color-highlight-edge) shadow-lg shadow-black/60 animate-chip-in">
+              <span
+                key={`${p.seat}-${p.is_all_in ? "allin" : "bet"}`}
+                // Which way its owner is: the pill is hung towards the pot, so
+                // the chips push in from behind it. A seat at the top or bottom
+                // has no sideways component and simply comes up off the felt.
+                style={{ "--push-x": `${-(pos.towardsPot ?? 0) * 10}px` }}
+                className={`flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70
+                            border border-(--color-highlight-edge) shadow-lg shadow-black/60 ${
+                              p.is_all_in ? "animate-chip-shove" : "animate-chip-in"
+                            }`}>
                 <ChipStack amount={p.bet} size={9} />
                 <span className="text-[12px] font-bold text-(--color-highlight-text) leading-none">
                   {formatChips(p.bet, showBB, bb)}

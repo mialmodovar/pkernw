@@ -82,6 +82,18 @@ remembering.
   range before anything is committed.
 
 ### Changed
+- **Chips you can tell apart, and chips you can see move.** The seven
+  denominations were seven dark faces with a coloured rim, so on a dark felt at
+  the size they actually render — nine pixels beside a bet, fourteen by the pot
+  — the whole set read as grey dots, with black and silver indistinguishable.
+  The face carries the colour now, the rim scales with the chip instead of being
+  a fixed hairline, and each one has its own count of spots around the edge so
+  the set survives for anyone who cannot separate the red from the green. A
+  stack has a side and a lean, which is what makes it read as objects rather
+  than a column of rings. And the money moves: bets are pushed forward from
+  their owner, travel to the pot when the street ends and travel back out to
+  whoever won it — three of those had no animation at all, and the pot simply
+  changed number while the chips blinked out of existence.
 - **The table's navigation makes sense now.** Home is a house, up beside your
   avatar, in the same place on every screen — leaving is about you, not about
   this hand. The tournament's name is in the top-left corner, since it is

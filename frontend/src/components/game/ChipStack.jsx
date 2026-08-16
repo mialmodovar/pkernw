@@ -1,59 +1,66 @@
-// Casino-style denominations, largest first. Each chip in the stack is drawn
-// from the biggest denomination that still fits, so the colours read as an
-// amount at a glance rather than being decorative.
-const DENOMINATIONS = [
-  { value: 5000, ring: "#c9c3bd", face: "linear-gradient(145deg,#4a4a52,#232329)" }, // silver
-  { value: 1000, ring: "#e0c66b", face: "linear-gradient(145deg,#7a5f16,#3d2f0b)" }, // gold
-  { value: 500,  ring: "#8f7ab8", face: "linear-gradient(145deg,#4b3a6b,#241b34)" }, // purple
-  { value: 100,  ring: "#5b5b64", face: "linear-gradient(145deg,#2c2c33,#141418)" }, // black
-  { value: 25,   ring: "#4f8f6d", face: "linear-gradient(145deg,#27543f,#12261d)" }, // green
-  { value: 5,    ring: "#c3565f", face: "linear-gradient(145deg,#7a2129,#3a1014)" }, // red
-  { value: 1,    ring: "#b9b0a7", face: "linear-gradient(145deg,#5a544d,#2b2724)" }, // white
-];
-
-const MAX_CHIPS = 6;
-
-function chipsFor(amount) {
-  const chips = [];
-  let left = amount;
-  for (const denom of DENOMINATIONS) {
-    while (left >= denom.value && chips.length < MAX_CHIPS) {
-      chips.push(denom);
-      left -= denom.value;
-    }
-    if (chips.length >= MAX_CHIPS) break;
-  }
-  // Never render nothing for a live amount.
-  if (!chips.length && amount > 0) chips.push(DENOMINATIONS[DENOMINATIONS.length - 1]);
-  return chips;
-}
+import { chipLean, chipMetrics, chipsFor } from "./chips";
 
 /**
- * A small leaning stack of chips. Decorative — the exact figure is always
- * printed alongside it, since a stack can only ever approximate the amount.
+ * A leaning stack of chips, seen from slightly above.
+ *
+ * Decorative — the exact figure is always printed alongside, since a stack of
+ * six can only ever approximate an amount.
+ *
+ * Each chip is one element doing three jobs: the face is a radial gradient so
+ * it reads as a disc rather than a sticker, the rim is a conic-gradient with
+ * breaks in it (the spots on a real chip, and a cue that survives greyscale),
+ * and a hard box-shadow below it is the chip's own side, which is what makes a
+ * stack look like objects instead of a column of rings.
  */
 export default function ChipStack({ amount, size = 12 }) {
   if (!amount || amount <= 0) return null;
+
   const chips = chipsFor(amount);
-  const overlap = Math.round(size * 0.28);
+  const { rim, edge, overlap } = chipMetrics(size);
+  const leans = chips.map((_, index) => chipLean(index, size));
+  const sideways = Math.max(...leans.map(Math.abs), 0);
 
   return (
     <span
       className="relative inline-block shrink-0"
-      style={{ width: size, height: size + overlap * (chips.length - 1) }}
+      style={{
+        width: size + sideways * 2,
+        height: size + edge + overlap * (chips.length - 1),
+      }}
       aria-hidden="true"
     >
-      {chips.map((chip, i) => (
+      {chips.map((chip, index) => (
         <span
-          key={i}
+          key={index}
           className="absolute rounded-full"
           style={{
             width: size,
             height: size,
-            bottom: i * overlap,
-            background: chip.face,
-            border: `1.5px solid ${chip.ring}`,
-            boxShadow: "0 1px 2px rgba(0,0,0,0.6)",
+            left: sideways + leans[index],
+            bottom: index * overlap,
+            // The rim, with its spots: a ring of trim broken by the face colour
+            // at regular intervals. Painted as one background so a chip is one
+            // element however small it is drawn.
+            // `closest-side` matters: a circle gradient sizes itself to the
+            // farthest corner by default, so 100% would be the corner of the
+            // box rather than the edge of the chip and every rim would come
+            // out half again too thick.
+            background: `
+              radial-gradient(circle closest-side at 50% 34%,
+                rgba(255,255,255,0.3), rgba(255,255,255,0) 100%),
+              radial-gradient(circle closest-side at 50% 50%,
+                ${chip.face} 0 calc(100% - ${rim}px),
+                transparent calc(100% - ${rim}px)),
+              repeating-conic-gradient(from 0deg,
+                ${chip.trim} 0deg ${180 / chip.spots}deg,
+                ${chip.face} ${180 / chip.spots}deg ${360 / chip.spots}deg)
+            `,
+            // The side of the chip, and its shadow on whatever is beneath it.
+            boxShadow: `
+              0 ${edge}px 0 ${chip.edge},
+              0 ${edge + 1}px ${Math.max(2, edge)}px rgba(0,0,0,0.55),
+              inset 0 0 0 0.5px rgba(0,0,0,0.35)
+            `,
           }}
         />
       ))}

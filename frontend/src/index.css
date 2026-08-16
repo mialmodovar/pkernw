@@ -308,13 +308,65 @@ button:disabled {
 }
 
 /* Chips being pushed forward into the bet. */
+/* A bet arriving. Pushed forward from its owner rather than fading up out of
+   the felt — chips come from somewhere, and --push-x is which way that is.
+   Overshoots slightly and settles, which is what gives it weight. Under 250ms
+   because this fires on every single action at the table. */
 @keyframes chip-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.7); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  0%   { opacity: 0; transform: translate(var(--push-x, 0), 6px) scale(0.8); }
+  65%  { opacity: 1; transform: translate(0, -1px) scale(1.06); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1); }
 }
 
 .animate-chip-in {
-  animation: chip-in 0.22s ease-out;
+  animation: chip-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+/* The whole stack going in. Same journey, harder: it lands heavier and shakes
+   what it lands on. An all-in should not be the same gesture as a min-raise. */
+@keyframes chip-shove {
+  0%   { opacity: 0; transform: translate(calc(var(--push-x, 0px) * 1.6), 10px) scale(0.7); }
+  55%  { opacity: 1; transform: translate(0, -3px) scale(1.14); }
+  72%  { transform: translate(0, 1px) scale(0.97); }
+  86%  { transform: translate(0, -1px) scale(1.03); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+
+.animate-chip-shove {
+  animation: chip-shove 0.42s cubic-bezier(0.2, 0.85, 0.3, 1.1);
+}
+
+/* Chips crossing the felt: bets going to the pot, or a pot going to whoever
+   won it. Straight line — an arc would carry them over the seats in between,
+   and a chip passing across somebody's cards looks like it belongs to them.
+   They shrink slightly as they merge into what they are joining. */
+@keyframes chip-fly {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  80%  { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--fly-dx)), calc(-50% + var(--fly-dy))) scale(0.7);
+  }
+}
+
+.animate-chip-fly {
+  animation-name: chip-fly;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.25, 1);
+  animation-fill-mode: both;
+}
+
+/* Reduced motion: the chips still have to be seen to have moved, or the pot
+   goes back to changing by itself. They appear at both ends instead of
+   travelling between them. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-chip-in, .animate-chip-shove { animation: fade-in 0.12s ease-out; }
+  .animate-chip-fly {
+    animation: fade-in 0.12s ease-out, chip-fly-still 0.3s linear forwards;
+  }
+  @keyframes chip-fly-still {
+    to { opacity: 0; transform: translate(calc(-50% + var(--fly-dx)), calc(-50% + var(--fly-dy))); }
+  }
 }
 
 /* A holding worth looking at catches the light: a gold edge that breathes, and

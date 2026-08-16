@@ -28,6 +28,7 @@ import ConnectionBanner from "../components/game/ConnectionBanner";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 import { InfoIcon, LobbyIcon } from "../components/game/icons";
 import TableVitals from "../components/game/TableVitals";
+import SideBetPanel from "../components/game/SideBetPanel";
 
 // How long the table stays up after a hand ends your tournament — yours or
 // everyone's. The last hand is the one worth looking at, and a result screen
@@ -484,6 +485,7 @@ export default function GamePage() {
           open={infoOpen}
           onClose={() => setInfoOpen(false)}
         />
+        <SideBetPanel mySeat={mySeat} myUserId={user?.id} canCall={watching == null} />
         <PokerTable mySeat={mySeat} capacity={capacity}
           statsByName={playerStats}
           onInspectPlayer={setInspecting} />

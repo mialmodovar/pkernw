@@ -692,6 +692,18 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             coordinator = _tournament_runners.get(self.tournament_id)
             if coordinator is not None:
                 await coordinator.set_ready(self.user.id, bool(data.get("value", True)))
+        elif message_type == "side_bet":
+            # Backing somebody to win a hand you folded. Everything that makes
+            # this legal — that you are out of the hand, that they are in it,
+            # that the cards are not face up yet — is the coordinator's to
+            # judge, since it is the only thing that knows.
+            coordinator = _tournament_runners.get(self.tournament_id)
+            if coordinator is not None:
+                try:
+                    on_user_id = int(data.get("on_user_id"))
+                except (TypeError, ValueError):
+                    return
+                await coordinator.place_side_bet(self.user.id, on_user_id)
         elif message_type == "chat_message":
             await self._send_chat(data)
         elif message_type == "throw_item":

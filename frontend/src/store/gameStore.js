@@ -123,6 +123,13 @@ const useGameStore = create((set) => ({
   // Between hands you may show what you had. The server decides whether a
   // reveal is allowed; this is only whether to offer it.
   showCardsOpen: false,
+  // Side bets: what the folded players have called this hand, whether calls
+  // are still being taken, how the last one turned out, and how well everybody
+  // has been calling them all tournament.
+  sideBets: [],
+  sideBetsOpen: false,
+  sideBetResults: null,
+  sideBetRecords: {},
   // Which cards each seat chose to show, by seat. Held apart from the seat's
   // `cards` because the hero's two are always drawn from `holeCards`, so this
   // is the only way to tell which of them the rest of the table can see.
@@ -242,6 +249,10 @@ const useGameStore = create((set) => ({
           sbSeat: data.sb_seat ?? null,
           bbSeat: data.bb_seat ?? null,
           actionOnSeat: data.action_on_seat ?? null,
+          // A reload mid-hand gets the calls already made, so the table does
+          // not read as though nobody had said anything.
+          sideBets: data.side_bets?.bets || [],
+          sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;
 
@@ -290,6 +301,9 @@ const useGameStore = create((set) => ({
           showCardsOpen: false,
           shownCards: {},
           riverShownAt: null,
+          sideBets: [],
+          sideBetsOpen: true,
+          sideBetResults: null,
           // The wait is over either way: the next hand is being dealt.
           rebuyWindow: null,
           holeCards: [],
@@ -428,6 +442,7 @@ const useGameStore = create((set) => ({
 
       case "all_in_equity": {
         const eqList = data.data || data;
+        set({ sideBetsOpen: false });
         set((s) => {
           // Each reading is the odds after a card landed, so measuring it
           // against the one before says what that card did. A card that
@@ -450,6 +465,7 @@ const useGameStore = create((set) => ({
 
       case "showdown": {
         const sdList = data.data || data;
+        set({ sideBetsOpen: false });
         set((s) => ({
           showdown: sdList,
           messages: appendLog(s, ...(Array.isArray(sdList) ? sdList : []).map((sd) =>
@@ -491,6 +507,27 @@ const useGameStore = create((set) => ({
 
       // Somebody chose to show. Their cards go onto their seat the same way a
       // showdown's do, so nothing else has to know the difference.
+      case "side_bet_placed":
+        set((s) => ({
+          sideBets: [...s.sideBets.filter((bet) => bet.user_id !== data.user_id), data],
+          messages: appendLog(s, entry(s, "sidebet", `${data.name} is on ${data.on_name}`)),
+        }));
+        break;
+
+      case "side_bet_results":
+        set((s) => ({
+          sideBetsOpen: false,
+          sideBetResults: data.results || [],
+          // Everybody's tally, not just your own — the store has no idea which
+          // of these people you are, and a component that does can look itself
+          // up here next hand, once the results themselves are gone.
+          sideBetRecords: (data.results || []).reduce(
+            (all, one) => ({ ...all, [one.user_id]: one.record }),
+            s.sideBetRecords,
+          ),
+        }));
+        break;
+
       case "cards_shown":
         set((s) => ({
           players: s.players.map((p) =>

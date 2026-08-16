@@ -11,6 +11,7 @@ from tournaments.bounties import BountyConfig, split_knockout
 
 from .engine.hand import HandEngine, cards_to_list
 from .levelclock import seconds_until_level_ends
+from .sidebets import record_for, settle as settle_side_bets, updated_records
 from .engine.player import Player as EnginePlayer
 
 
@@ -143,6 +144,12 @@ class MultiTableTournamentCoordinator:
         # rebuy has nothing to do with that cap.
         self._rebuy_deadline = 0.0
         self._rebuy_pending: set[int] = set()
+        # Side bets: who the folded players fancy, per table, for the hand
+        # being played — and how well everybody has been calling them. Both
+        # live and die with the tournament, since nothing is at stake and a
+        # record nobody can lose is not worth a table in the database.
+        self._side_bets: Dict[int, dict] = {}
+        self._side_bet_records: Dict[int, dict] = {}
         self.is_paused = False
         self._paused_at: Optional[float] = None
         # Set once the winner is being decided, so a rebuy can't slip in after
@@ -441,6 +448,135 @@ class MultiTableTournamentCoordinator:
         return True
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Side bets — the folded players' game
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def _hand_event(self, table_number: int, event_type: str, payload) -> None:
+        """Every event the hand engine emits, on its way out to the table.
+
+        The engine knows nothing about side bets and should not: they are a
+        thing the rail does while a hand happens to it. This is the one place
+        that sees the whole hand go past, so it is where they open, lock and
+        settle.
+        """
+        await self._broadcast_to_table(table_number, event_type, payload)
+
+        if event_type in ("all_in_equity", "showdown"):
+            # The cards are face up. Calling a hand you can already read is not
+            # calling anything.
+            book = self._side_bets.get(table_number)
+            if book is not None:
+                book["open"] = False
+        elif event_type == "pot_awarded":
+            await self._settle_side_bets(table_number, payload)
+
+    def _open_side_bets(self, table) -> None:
+        """A fresh book for a fresh hand, remembering who is in it.
+
+        Who was dealt in is the half that cannot be read off a player later: a
+        seat that never got cards and a seat that folded both look like "not in
+        this hand", and only one of them may bet on it.
+        """
+        self._side_bets[table.table_number] = {
+            "open": True,
+            "dealt_in": {
+                getattr(player, "_user_id", None) for player in table.players
+            },
+            "bets": {},
+        }
+
+    async def place_side_bet(self, user_id: int, on_user_id: int) -> bool:
+        """Back somebody to win the hand you are not in.
+
+        Once only, and only while the hand is still a question: a bet cannot be
+        moved once placed, or it would be worth nothing to have called it early.
+        """
+        bettor = self._players_by_user_id.get(user_id)
+        pick = self._players_by_user_id.get(on_user_id)
+        if bettor is None or pick is None or bettor is pick:
+            return False
+
+        table_number = bettor._table_number
+        if pick._table_number != table_number:
+            return False
+
+        book = self._side_bets.get(table_number)
+        if book is None or not book["open"] or user_id in book["bets"]:
+            return False
+
+        # You may only bet on a hand you are not in — folded, or never dealt.
+        if user_id in book["dealt_in"] and not bettor.is_folded:
+            return False
+        # And only on somebody who is still in it.
+        if on_user_id not in book["dealt_in"] or pick.is_folded:
+            return False
+
+        book["bets"][user_id] = on_user_id
+        await self._broadcast_to_table(
+            table_number,
+            "side_bet_placed",
+            self._side_bet_payload(user_id, on_user_id),
+        )
+        return True
+
+    def _side_bet_payload(self, user_id: int, on_user_id: int) -> dict:
+        bettor = self._players_by_user_id.get(user_id)
+        pick = self._players_by_user_id.get(on_user_id)
+        return {
+            "user_id": user_id,
+            "name": bettor.name if bettor else "",
+            "seat": getattr(bettor, "_seat", None),
+            "on_user_id": on_user_id,
+            "on_name": pick.name if pick else "",
+            "on_seat": getattr(pick, "_seat", None),
+        }
+
+    def side_bets_at(self, table_number: int) -> dict:
+        """The open book at a table, for a client that has just arrived."""
+        book = self._side_bets.get(table_number)
+        if book is None:
+            return {"open": False, "bets": []}
+        return {
+            "open": book["open"],
+            "bets": [
+                self._side_bet_payload(user_id, on_user_id)
+                for user_id, on_user_id in book["bets"].items()
+            ],
+        }
+
+    async def _settle_side_bets(self, table_number: int, awards) -> None:
+        book = self._side_bets.get(table_number)
+        if not book or not book["bets"]:
+            return
+
+        seats = {award["seat"] for award in awards if isinstance(award, dict)}
+        winners = {
+            user_id
+            for user_id, player in self._players_by_user_id.items()
+            if player._table_number == table_number and getattr(player, "_seat", None) in seats
+        }
+
+        results = settle_side_bets(book["bets"], winners)
+        self._side_bet_records = updated_records(self._side_bet_records, results)
+        book["open"] = False
+        book["bets"] = {}
+
+        await self._broadcast_to_table(
+            table_number,
+            "side_bet_results",
+            {
+                "results": [
+                    {
+                        **self._side_bet_payload(one["user_id"], one["on_user_id"]),
+                        "correct": one["correct"],
+                        "record": record_for(self._side_bet_records, one["user_id"]),
+                    }
+                    for one in results
+                ],
+            },
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Ready — the pre-tournament countdown, cut short by agreement
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -555,6 +691,7 @@ class MultiTableTournamentCoordinator:
             # So a client that reloads during the countdown gets back the
             # readiness it can see, rather than an empty tally until the next
             # person clicks.
+            "side_bets": self.side_bets_at(table.table_number),
             "ready_user_ids": sorted(self._ready_user_ids & self._seated_user_ids()),
             "ready_total": len(self._seated_user_ids()),
             # Included so a client joining or reconnecting mid-tournament gets
@@ -849,10 +986,11 @@ class MultiTableTournamentCoordinator:
             big_blind=level["big_blind"],
             ante=level["ante"],
             hand_number=table.hand_number + 1,
-            broadcast=lambda event_type, payload: self._broadcast_to_table(table.table_number, event_type, payload),
+            broadcast=lambda event_type, payload: self._hand_event(table.table_number, event_type, payload),
             request_action=lambda player, context: self._request_action_tracked(table, player, context),
             rabbit_hunting_enabled=self.rabbit_hunting_enabled,
         )
+        self._open_side_bets(table)
         result = await engine.run()
         table.hand_number += 1
         table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))

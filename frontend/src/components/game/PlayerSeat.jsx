@@ -85,6 +85,7 @@ export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
   position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
   stats, onInspect, handStrength, shine, raisedCards, compactVideo, compact = false,
+  backers = [],
 }) {
   const showBB = useGameStore((s) => s.showBB);
   const hideHand = useGameStore((s) => s.hideHand);
@@ -119,6 +120,19 @@ export default function PlayerSeat({
       {p.is_waiting && !p.is_eliminated && (
         <div className="bg-(--color-highlight-dim) text-(--color-highlight-pale) text-[10px] font-bold px-1.5 py-0.5 rounded border border-(--color-highlight-edge) text-center">
           WAITING
+        </div>
+      )}
+      {/* Who on the rail has called this seat to take it. A side bet is worth
+          nothing but being right, and being seen to have called it is most of
+          that — so it goes on the seat, not only in the panel. */}
+      {backers.length > 0 && (
+        <div
+          title={`${backers.map((one) => one.name).join(", ")} ${backers.length === 1 ? "is" : "are"} on ${p.name}`}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none
+                     bg-black/60 border border-(--color-border) text-(--color-silver)"
+        >
+          <span aria-hidden="true">👍</span>
+          {backers.length}
         </div>
       )}
       {p.is_sitting_out && !p.is_eliminated && !p.is_waiting && (

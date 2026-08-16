@@ -19,11 +19,18 @@ from .consumers import (
 User = get_user_model()
 from .engine.card import Card, Rank, Suit
 from .levelclock import seconds_until_level_ends
+from .sidebets import record_for, settle, updated_records
 from .engine.hand import HandEngine
 from .engine.player import Player
 
 
-class MultiTableTournamentCoordinatorTests(TestCase):
+class CoordinatorHarness:
+    """A coordinator with the world stubbed out around it.
+
+    Every collaborator is a list this test can read afterwards: what went out
+    to the tables, what was written back, who was told what.
+    """
+
     def _record(
         self,
         index,
@@ -110,6 +117,8 @@ class MultiTableTournamentCoordinatorTests(TestCase):
         async_to_sync(coordinator._sync_players_from_db)()
         async_to_sync(coordinator._rebalance_tables)()
 
+
+class MultiTableTournamentCoordinatorTests(CoordinatorHarness, TestCase):
     def test_boot_layout_creates_two_runtime_tables(self):
         coordinator = self._build_coordinator(
             [self._record(index, table_number=1, seat_at_table=index) for index in range(4)],
@@ -1373,3 +1382,143 @@ class LevelClockTests(TestCase):
         # The clock can read past the end of a level between the last hand and
         # the blinds going up.
         self.assertEqual(seconds_until_level_ends(self.SCHEDULE, 0, 900, 1), 0)
+
+
+class SideBetArithmeticTests(TestCase):
+    """Who called the hand right, and the tally that follows them around."""
+
+    def test_backing_the_winner_is_right(self):
+        results = settle({7: 1, 8: 2}, [1])
+        self.assertEqual(
+            results,
+            [
+                {"user_id": 7, "on_user_id": 1, "correct": True},
+                {"user_id": 8, "on_user_id": 2, "correct": False},
+            ],
+        )
+
+    def test_a_split_pot_makes_both_backers_right(self):
+        results = settle({7: 1, 8: 2}, [1, 2])
+        self.assertTrue(all(one["correct"] for one in results))
+
+    def test_a_pick_who_folded_afterwards_is_wrong(self):
+        # Nothing special happens: they are not among the winners, so the call
+        # was wrong — which is the risk of calling it on the flop.
+        self.assertFalse(settle({7: 3}, [1])[0]["correct"])
+
+    def test_the_tally_counts_calls_and_hits(self):
+        records = updated_records({}, settle({7: 1, 8: 2}, [1]))
+        self.assertEqual(records[7], {"right": 1, "called": 1})
+        self.assertEqual(records[8], {"right": 0, "called": 1})
+
+        records = updated_records(records, settle({7: 5}, [1]))
+        self.assertEqual(records[7], {"right": 1, "called": 2})
+
+    def test_the_tally_is_never_edited_in_place(self):
+        before = {7: {"right": 1, "called": 1}}
+        updated_records(before, settle({7: 1}, [1]))
+        self.assertEqual(before, {7: {"right": 1, "called": 1}})
+
+    def test_someone_who_has_never_called_has_a_record_anyway(self):
+        self.assertEqual(record_for({}, 99), {"right": 0, "called": 0})
+
+
+class SideBetRulesTests(CoordinatorHarness, TestCase):
+    """Who may back whom, and when the book shuts."""
+
+    def _hand_in_progress(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+        coordinator._open_side_bets(coordinator._tables[1])
+        return coordinator
+
+    def _fold(self, coordinator, user_id):
+        coordinator._players_by_user_id[user_id].is_folded = True
+
+    def test_a_folded_player_can_back_somebody_still_in(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertEqual(coordinator.side_bets_at(1)["bets"][0]["on_user_id"], 101)
+        self.assertIn("side_bet_placed", [event for _table, event, _payload in self.table_events])
+
+    def test_a_player_still_in_the_hand_cannot_bet_on_it(self):
+        coordinator = self._hand_in_progress()
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+
+    def test_you_cannot_back_somebody_who_has_folded(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        self._fold(coordinator, 101)
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+
+    def test_a_call_cannot_be_taken_back(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        self.assertTrue(async_to_sync(coordinator.place_side_bet)(100, 101))
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 102))
+        self.assertEqual(coordinator.side_bets_at(1)["bets"][0]["on_user_id"], 101)
+
+    def test_the_book_shuts_when_the_cards_come_face_up(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        async_to_sync(coordinator._hand_event)(1, "showdown", [])
+
+        self.assertFalse(coordinator.side_bets_at(1)["open"])
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+
+    def test_an_all_in_runout_shuts_it_too(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+
+        async_to_sync(coordinator._hand_event)(1, "all_in_equity", [])
+
+        self.assertFalse(async_to_sync(coordinator.place_side_bet)(100, 101))
+
+    def test_the_pot_settles_the_calls_and_moves_the_tally(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        async_to_sync(coordinator.place_side_bet)(100, 101)
+
+        # Seat 1 is player 101 — the one that was backed.
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 1, "amount": 60}])
+
+        results = [
+            payload for _table, event, payload in self.table_events
+            if event == "side_bet_results"
+        ][-1]["results"]
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0]["correct"])
+        self.assertEqual(results[0]["record"], {"right": 1, "called": 1})
+        # And the book is empty again, so the same call cannot settle twice.
+        self.assertEqual(coordinator.side_bets_at(1)["bets"], [])
+
+    def test_backing_a_loser_is_recorded_as_a_miss(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        async_to_sync(coordinator.place_side_bet)(100, 101)
+
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 2, "amount": 60}])
+
+        results = [
+            payload for _table, event, payload in self.table_events
+            if event == "side_bet_results"
+        ][-1]["results"]
+        self.assertFalse(results[0]["correct"])
+        self.assertEqual(results[0]["record"], {"right": 0, "called": 1})
+
+    def test_a_reconnecting_client_is_handed_the_open_book(self):
+        coordinator = self._hand_in_progress()
+        self._fold(coordinator, 100)
+        async_to_sync(coordinator.place_side_bet)(100, 101)
+
+        snapshot = async_to_sync(coordinator.snapshot_for_table)(1)
+
+        self.assertTrue(snapshot["side_bets"]["open"])
+        self.assertEqual(snapshot["side_bets"]["bets"][0]["user_id"], 100)

@@ -19,6 +19,7 @@ import positionLabels from "./tablePositions";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
+import { backersOf } from "./sideBets";
 import FinisherOverlay from "./FinisherOverlay";
 import ThrownItem from "./ThrownItem";
 import AimOverlay from "./AimOverlay";
@@ -188,7 +189,7 @@ function EmptySeat() {
 export default function PokerTable({ mySeat, capacity, statsByName, onInspectPlayer }) {
   const {
     players, actionOnSeat, holeCards, communityCards, winnerSeats, potAwards, allInEquity,
-    dealerSeat, sbSeat, bbSeat, showdown, handStrength, shownCards,
+    dealerSeat, sbSeat, bbSeat, showdown, handStrength, shownCards, sideBets,
   } = useGameStore();
   const showBB = useGameStore((s) => s.showBB);
   // Who is currently saying something. A seat is its own stacking context — it
@@ -367,6 +368,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 stats={statsByName?.[p.username]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
+                backers={backersOf(sideBets, p.seat)}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just
                 // put on display, and every other seat's cards are already

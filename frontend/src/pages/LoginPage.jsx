@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 
 export default function LoginPage() {
@@ -8,13 +8,17 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
+  // Where they were trying to get to before being asked who they are — a
+  // shared tournament link, usually. Home is the answer for anybody who came
+  // to the login page on purpose.
+  const wanted = useLocation().state?.from?.pathname || "/";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     try {
       await login(username, password);
-      navigate("/");
+      navigate(wanted, { replace: true });
     } catch {
       setError("Invalid username or password");
     }
@@ -39,7 +43,11 @@ export default function LoginPage() {
           Log In
         </button>
         <p className="text-center text-sm text-(--color-text-muted)">
-          No account? <Link to="/register" className="link-accent">Register</Link>
+          {/* Carries the destination across: somebody who followed an
+              invitation and needs an account first should still end up at the
+              tournament they were invited to. */}
+          No account? <Link to="/register" state={{ from: { pathname: wanted } }}
+            className="link-accent">Register</Link>
         </p>
       </form>
     </div>

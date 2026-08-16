@@ -7,6 +7,7 @@ import { claimEntryRedirect } from "../components/lobby/autoOpenTable";
 import { entryCount, payoutLabel, placingPoolCents } from "../components/game/prizePool";
 import { formatEuros } from "../components/game/formatMoney";
 import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
+import ShareTournamentButton from "../components/lobby/ShareTournamentButton";
 import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
 import { useCountdown } from "../components/lobby/useCountdown";
 
@@ -652,6 +653,9 @@ function TournamentActions({
           Resume
         </button>
       )}
+      {/* Beside the way out, because both are things you do with the page
+          rather than with the tournament. */}
+      <ShareTournamentButton tournament={tournament} />
       <button onClick={() => navigate("/")} className="btn-secondary px-4 py-2 rounded text-sm transition-colors">
         Back home
       </button>

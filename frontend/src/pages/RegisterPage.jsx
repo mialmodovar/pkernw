@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useThemeStore from "../store/themeStore";
 import { PRESETS, PRESET_NAMES, cardBackImage, resolveTokens } from "../theme/themes";
@@ -43,6 +43,10 @@ export default function RegisterPage() {
   const login = useAuthStore((s) => s.login);
   const updateTheme = useThemeStore((s) => s.update);
   const navigate = useNavigate();
+  // Where they were trying to get to before being asked who they are — a
+  // shared tournament link, usually. Home is the answer for anybody who came
+  // to the login page on purpose.
+  const wanted = useLocation().state?.from?.pathname || "/";
 
   // Painted as you pick, so the choice is made against the thing itself rather
   // than against three swatches. Not saved to an account yet — there is not one
@@ -61,7 +65,7 @@ export default function RegisterPage() {
       // Now there is an account to keep it on, so it goes up with the rest of
       // the theme and follows them to any browser they log in from.
       updateTheme({ preset });
-      navigate("/");
+      navigate(wanted, { replace: true });
     } catch (err) {
       setError(err.response?.data?.username?.[0] || "Registration failed");
     }
@@ -95,7 +99,8 @@ export default function RegisterPage() {
           Create Account
         </button>
         <p className="text-center text-sm text-(--color-text-muted)">
-          Have an account? <Link to="/login" className="link-accent">Log in</Link>
+          Have an account? <Link to="/login" state={{ from: { pathname: wanted } }}
+            className="link-accent">Log in</Link>
         </p>
       </form>
     </div>

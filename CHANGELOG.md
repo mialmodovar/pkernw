@@ -9,6 +9,17 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Share a tournament.** A button on the tournament page hands the night to
+  somebody: the phone's own share sheet where there is one, the link on the
+  clipboard everywhere else, and the button says which of the two happened
+  rather than claiming a copy that did not take. It shares the lobby page
+  rather than the table, because that is the one that says what the night is —
+  the structure, the buy-in, and who is already in.
+- **A shared link survives the login page.** Following one without being signed
+  in used to mean landing on login and then, having signed in, on the home list
+  — with the tournament you were invited to somewhere in it, if you could
+  remember its name. Where you were going is remembered through logging in, and
+  through registering, so an invitation lands where it was pointed.
 - **The table sounds like a table being dealt.** Every hand now opens with the
   cards going round — one flick per card, two rounds of them, at the pace a
   dealer actually pitches, and counted off the seats that are in the hand so a

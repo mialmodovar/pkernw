@@ -42,7 +42,12 @@ def avatar_url(user_id, updated_at):
 
     The stamp is what makes replacing a picture take effect: the bytes are
     cached hard by the URL, so a new upload has to be a new URL.
+
+    In milliseconds rather than seconds. The bytes are served `immutable` for a
+    year, so two uploads that happened to land in the same second would share a
+    URL and the second picture would never be seen — by anyone who had already
+    loaded the first, for as long as their cache held it.
     """
     if not user_id or updated_at is None:
         return None
-    return f"/api/auth/avatar/{user_id}/?v={int(updated_at.timestamp())}"
+    return f"/api/auth/avatar/{user_id}/?v={int(updated_at.timestamp() * 1000)}"

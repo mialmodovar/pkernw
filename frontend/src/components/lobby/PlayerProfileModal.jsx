@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 
+import Avatar from "../Avatar";
 import api from "../../api/http";
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
@@ -13,6 +15,36 @@ const ordinal = (n) => {
 const formatDate = (value) => (value
   ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value))
   : "");
+
+/**
+ * Where this player is, right now.
+ *
+ * Two separate facts, and worth keeping separate: the tournament they are in
+ * comes from the database and stays true through a dropped connection, while
+ * being online means a table socket is actually open. Somebody seated but not
+ * connected is exactly the case you would want to know about before deciding
+ * whether it is worth going to look.
+ */
+function Presence({ profile }) {
+  const { online, tournament } = profile;
+  if (!tournament) {
+    return (
+      <p className={`text-xs ${online ? "text-[#7fc294]" : "text-(--color-text-muted)"}`}>
+        {online ? "Online" : "Offline"}
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-(--color-text-muted) truncate">
+      <span className={online ? "text-[#7fc294]" : ""}>
+        {online ? "Playing" : "Seated, not connected"}
+      </span>
+      {" — "}
+      <span className="text-(--color-silver)">{tournament.name}</span>
+      {tournament.status === "paused" && " (paused)"}
+    </p>
+  );
+}
 
 function Stat({ label, value }) {
   return (
@@ -89,19 +121,41 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
         {profile && (
           <>
             <div className="flex items-center gap-3">
-              <span className="text-3xl leading-none">{profile.avatar_emoji}</span>
-              <h2 className="font-semibold text-(--color-silver) truncate flex-1">{profile.username}</h2>
+              <Avatar
+                url={profile.avatar_url}
+                emoji={profile.avatar_emoji}
+                name={profile.username}
+                className="w-11 h-11 shrink-0 rounded-full panel-raised"
+                emojiClassName="text-2xl"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-(--color-silver) truncate">{profile.username}</h2>
+                <Presence profile={profile} />
+              </div>
               <button
                 type="button"
                 onClick={toggleWatch}
                 disabled={busy}
-                className={`px-3 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
+                className={`shrink-0 px-3 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
                   profile.is_watched ? "btn-secondary" : "btn-accent"
                 }`}
               >
                 {profile.is_watched ? "Watching" : "Watch"}
               </button>
             </div>
+
+            {/* The offer only exists while there is somewhere to go. On the
+                tournament's own page the standings keep refreshing, and if you
+                are in it yourself it hands you back your seat. */}
+            {profile.tournament && (
+              <Link
+                to={`/tournament/${profile.tournament.id}`}
+                onClick={onClose}
+                className="btn-accent block mt-3 px-4 py-2 rounded text-center text-sm font-semibold transition-colors"
+              >
+                Go to {profile.tournament.name}
+              </Link>
+            )}
 
             <div className="grid grid-cols-2 gap-2 mt-4">
               <Stat label="Played" value={stats.tournaments_played} />

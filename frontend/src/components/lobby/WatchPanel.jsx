@@ -1,16 +1,49 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
+import Avatar from "../Avatar";
 import api from "../../api/http";
 import PlayerProfileModal from "./PlayerProfileModal";
+
+// Long enough not to hammer the server from an idle lobby, short enough that
+// somebody sitting down at a table shows up here while you are still looking.
+const REFRESH_MS = 20_000;
 
 /**
  * The players you keep an eye on, as a row of faces.
  *
  * A list of names would take the whole sidebar to say what a row of avatars
  * says in one line, and the only thing you do with this list is pick somebody
- * out of it. A ring marks whoever is at a table right now, which is the one
- * fact worth having before you click.
+ * out of it. A ring marks whoever is at a table, a dot marks whoever is
+ * actually connected — the two are not the same, since a seat can sit
+ * disconnected for a whole level — and anyone playing gets a line underneath
+ * naming the tournament, which is the thing you would otherwise have to go
+ * hunting through the lobby for.
  */
+/** Connected right now. Sits on the rim of the face rather than beside it,
+ *  which is where every other app puts it and where it costs no room. */
+function OnlineDot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute -bottom-px -right-px w-3 h-3 rounded-full bg-[#4ea96a]
+                 border-2 border-(--color-surface-sunken)"
+    />
+  );
+}
+
+/** What the face says on hover — the whole of what is known about where they
+ *  are, in one line. */
+function presenceLine(player) {
+  const where = player.tournament
+    ? `${player.tournament.status === "paused" ? "sat in" : "playing"} ${player.tournament.name}`
+    : null;
+  if (player.online && where) return `${player.username} — online, ${where}`;
+  if (where) return `${player.username} — ${where}, but not connected`;
+  if (player.online) return `${player.username} — online`;
+  return `${player.username} — offline`;
+}
+
 export default function WatchPanel() {
   const [watched, setWatched] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -27,7 +60,13 @@ export default function WatchPanel() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Presence goes stale on its own, so the list re-reads itself while the
+  // lobby is open rather than only when it is first drawn.
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   const add = async (event) => {
     event.preventDefault();
@@ -43,6 +82,8 @@ export default function WatchPanel() {
       setError(requestError.response?.data?.error || "Could not add that player.");
     }
   };
+
+  const atTables = watched.filter((player) => player.tournament);
 
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
@@ -86,18 +127,51 @@ export default function WatchPanel() {
               key={player.username}
               type="button"
               onClick={() => setViewing(player.username)}
-              title={player.playing_now ? `${player.username} — playing now` : player.username}
-              className={`w-10 h-10 flex items-center justify-center text-2xl rounded-full panel-raised
+              title={presenceLine(player)}
+              className={`relative w-10 h-10 rounded-full panel-raised overflow-visible
                           transition-transform hover:scale-110 ${
                             player.playing_now
                               ? "ring-2 ring-(--color-highlight) ring-offset-1 ring-offset-black/60"
                               : ""
                           }`}
             >
-              {player.avatar_emoji}
+              <Avatar
+                url={player.avatar_url}
+                emoji={player.avatar_emoji}
+                name={player.username}
+                className="w-full h-full rounded-full"
+                emojiClassName="text-2xl"
+              />
+              {player.online && <OnlineDot />}
             </button>
           ))}
         </div>
+      )}
+
+      {/* Where to go if you want to see it. The tournament page is live —
+          stacks, standings and blinds refresh while it is open — and if you are
+          in the tournament yourself it takes you to your own seat. */}
+      {atTables.length > 0 && (
+        <ul className="space-y-1 pt-1 border-t border-(--color-border)">
+          {atTables.map((player) => (
+            <li key={player.username} className="flex items-center gap-2 text-xs">
+              <span className="shrink-0 font-semibold text-(--color-silver) truncate max-w-[6rem]">
+                {player.username}
+              </span>
+              <span className="flex-1 min-w-0 truncate text-(--color-text-muted)"
+                title={player.tournament.name}>
+                {player.tournament.name}
+                {player.tournament.status === "paused" && " (paused)"}
+              </span>
+              <Link
+                to={`/tournament/${player.tournament.id}`}
+                className="btn-secondary shrink-0 px-2 py-0.5 rounded font-semibold transition-colors"
+              >
+                Watch
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
 
       {viewing && (

@@ -72,8 +72,14 @@ export default function TournamentSetupPage() {
   const load = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
-    if (data.status === "running") navigate(`/tournament/${id}/play`);
-  }, [id, navigate]);
+    // Straight to your seat once it starts — but only if it is your seat. The
+    // table refuses a socket from anyone not registered, so sending a visitor
+    // there is sending them to a page that cannot connect; somebody who came
+    // from a watch list wants this page, where the stacks and standings keep
+    // refreshing.
+    const seated = data.players?.some((p) => p.username === user?.username);
+    if (data.status === "running" && seated) navigate(`/tournament/${id}/play`);
+  }, [id, navigate, user?.username]);
 
   useEffect(() => { load(); const iv = setInterval(load, 3000); return () => clearInterval(iv); }, [load]);
 

@@ -130,6 +130,65 @@ class WatchingTests(APITestCase):
 
 		self.assertFalse(response.data[0]["playing_now"])
 
+	def test_the_row_names_the_tournament_so_you_can_go_and_watch_it(self):
+		from tournaments.models import Tournament, TournamentPlayer
+
+		tournament = Tournament.objects.create(host=self.them, name="Friday KO", status="running")
+		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+
+		row = self.client.get(reverse("watching")).data[0]
+
+		self.assertEqual(row["tournament"]["id"], tournament.id)
+		self.assertEqual(row["tournament"]["name"], "Friday KO")
+		self.assertEqual(row["tournament"]["status"], "running")
+
+	def test_a_player_knocked_out_of_a_running_tournament_is_no_longer_at_it(self):
+		from tournaments.models import Tournament, TournamentPlayer
+
+		tournament = Tournament.objects.create(host=self.them, name="Live", status="running")
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.them, seat=0, chips=0,
+			is_eliminated=True, finish_position=6,
+		)
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+
+		row = self.client.get(reverse("watching")).data[0]
+
+		self.assertFalse(row["playing_now"])
+		self.assertIsNone(row["tournament"])
+
+	def test_being_at_a_table_and_being_connected_to_it_are_different_things(self):
+		"""A seat can sit disconnected for a whole level. The list says so
+		rather than implying somebody is there when nobody is home."""
+		from game import consumers
+		from tournaments.models import Tournament, TournamentPlayer
+
+		tournament = Tournament.objects.create(host=self.them, name="Live", status="running")
+		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+
+		self.assertFalse(self.client.get(reverse("watching")).data[0]["online"])
+
+		consumers._player_channels[(tournament.id, self.them.id)] = "channel!1"
+		self.addCleanup(consumers._player_channels.pop, (tournament.id, self.them.id), None)
+
+		row = self.client.get(reverse("watching")).data[0]
+		self.assertTrue(row["online"])
+		self.assertTrue(row["playing_now"])
+
+	def test_the_row_carries_an_uploaded_avatar_when_there_is_one(self):
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+
+		self.assertIsNone(self.client.get(reverse("watching")).data[0]["avatar_url"])
+
+		AvatarImage.objects.create(user=self.them, data=ONE_PIXEL_PNG, content_type="image/png")
+
+		row = self.client.get(reverse("watching")).data[0]
+		self.assertIn(f"/api/auth/avatar/{self.them.id}/", row["avatar_url"])
+		# The emoji stays underneath it, as the fallback.
+		self.assertEqual(row["avatar_emoji"], "🃏")
+
 
 class PlayerProfileTests(APITestCase):
 	"""Looking somebody up."""
@@ -180,6 +239,27 @@ class PlayerProfileTests(APITestCase):
 		self.client.post(reverse("watching"), {"username": "subject"}, format="json")
 
 		self.assertTrue(self.client.get(reverse("player-profile", args=["subject"])).data["is_watched"])
+
+	def test_a_profile_says_where_they_are_right_now(self):
+		from game import consumers
+		from tournaments.models import Tournament, TournamentPlayer
+
+		tournament = Tournament.objects.create(host=self.them, name="Friday KO", status="running")
+		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
+		consumers._player_channels[(tournament.id, self.them.id)] = "channel!1"
+		self.addCleanup(consumers._player_channels.pop, (tournament.id, self.them.id), None)
+
+		data = self.client.get(reverse("player-profile", args=["subject"])).data
+
+		self.assertTrue(data["online"])
+		self.assertEqual(data["tournament"]["id"], tournament.id)
+		self.assertEqual(data["tournament"]["name"], "Friday KO")
+
+	def test_a_profile_of_somebody_playing_nothing_offers_nowhere_to_go(self):
+		data = self.client.get(reverse("player-profile", args=["subject"])).data
+
+		self.assertFalse(data["online"])
+		self.assertIsNone(data["tournament"])
 
 	def test_looking_up_nobody_is_a_404(self):
 		response = self.client.get(reverse("player-profile", args=["ghost"]))
@@ -253,16 +333,21 @@ class AvatarImageTests(APITestCase):
 		self.assertFalse(AvatarImage.objects.filter(user=self.user).exists())
 
 	def test_replacing_a_picture_changes_its_url(self):
-		first = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
+		self._upload(ONE_PIXEL_PNG)
+		# Aged deliberately: the URL has to change because the picture did, and
+		# reading yesterday's back is how that is asserted without depending on
+		# how quickly two uploads can follow each other.
 		AvatarImage.objects.filter(user=self.user).update(
 			updated_at=timezone.now() - timedelta(days=1),
 		)
+		yesterday = self.client.get(reverse("me")).data["profile"]["avatar_url"]
 
-		second = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
+		today = self._upload(ONE_PIXEL_PNG).data["avatar_url"]
 
 		# One row, one picture — and a URL nothing has cached under.
 		self.assertEqual(AvatarImage.objects.filter(user=self.user).count(), 1)
-		self.assertNotEqual(first, second)
+		self.assertNotEqual(yesterday, today)
+		self.assertEqual(self.client.get(reverse("me")).data["profile"]["avatar_url"], today)
 
 	def test_removing_the_picture_uncovers_the_emoji(self):
 		self._upload(ONE_PIXEL_PNG)

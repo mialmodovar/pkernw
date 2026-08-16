@@ -68,6 +68,20 @@ def late_registration_open(tournament) -> bool:
     return runner.current_blind_level_number <= tournament.late_reg_level
 
 
+def connected_user_ids() -> set:
+    """Everybody with a table socket open right now.
+
+    Being registered for a running tournament is not the same as being there:
+    a seat can sit disconnected for a whole level. This is the difference, read
+    from the same registry the engine uses to deliver a player their turn.
+
+    Module state, like the registries above — one process, one replica, which is
+    what entrypoint.sh deliberately runs — so a REST view in this process can
+    read it directly.
+    """
+    return {user_id for _tournament_id, user_id in _player_channels}
+
+
 def stop_tournament_engine(tournament_id: int) -> bool:
     """Stop the engine for a tournament, called from outside the event loop.
 

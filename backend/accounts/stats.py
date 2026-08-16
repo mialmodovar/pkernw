@@ -8,7 +8,9 @@ from rest_framework.response import Response
 from game.hand_stats import compute_player_stats
 from tournaments.models import LedgerEntry, TournamentPlayer
 
-from .models import Profile
+from .avatars import avatar_url
+from .models import AvatarImage, Profile
+from .watching import presence
 
 User = get_user_model()
 
@@ -84,10 +86,17 @@ def player_profile(request, username):
     """Somebody else's record: the same figures, plus their last few nights."""
     user = get_object_or_404(User, username=username)
     profile, _ = Profile.objects.get_or_create(user=user)
+    stamp = (
+        AvatarImage.objects.filter(user_id=user.id).values_list("updated_at", flat=True).first()
+    )
     return Response({
         "username": user.username,
         "avatar_emoji": profile.avatar_emoji,
+        "avatar_url": avatar_url(user.id, stamp),
         "is_watched": request.user.watching.filter(watched=user).exists(),
+        # Where they are right now, so the card can offer to take you there
+        # rather than only say how they did last month.
+        **presence([user.id])[user.id],
         "stats": player_summary(user),
         "recent": recent_results(user),
     })

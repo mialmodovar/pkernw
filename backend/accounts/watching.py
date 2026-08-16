@@ -11,11 +11,57 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from game.consumers import connected_user_ids
 from tournaments.models import TournamentPlayer
 
-from .models import Profile, Watch
+from .avatars import avatar_url
+from .models import AvatarImage, Profile, Watch
 
 User = get_user_model()
+
+
+def live_tournaments(user_ids):
+    """The tournament each of these players is sitting in, keyed by user id.
+
+    Only tournaments actually under way, and only seats still in them: a player
+    knocked out an hour ago is not somewhere you can go and watch them. Where
+    somebody is in more than one — the app allows it — the newest wins, on the
+    grounds that it is the one they are most likely to be at.
+    """
+    rows = (
+        TournamentPlayer.objects
+        .filter(user_id__in=user_ids, is_eliminated=False)
+        .filter(Q(tournament__status="running") | Q(tournament__status="paused"))
+        .order_by("-tournament__created_at")
+        .values("user_id", "tournament_id", "tournament__name", "tournament__status")
+    )
+    tables = {}
+    for row in rows:
+        tables.setdefault(row["user_id"], {
+            "id": row["tournament_id"],
+            "name": row["tournament__name"],
+            "status": row["tournament__status"],
+        })
+    return tables
+
+
+def presence(user_ids):
+    """Who is online, and what they are playing — the two facts a watch list is
+    for. Returned together because they are read together, and because one
+    without the other is misleading: online but nowhere, or at a table with
+    nobody home."""
+    tables = live_tournaments(user_ids)
+    online = connected_user_ids()
+    return {
+        user_id: {
+            "online": user_id in online,
+            "tournament": tables.get(user_id),
+            # Kept as its own flag: the ring on a face means "at a table", and
+            # that stays true through a dropped connection.
+            "playing_now": user_id in tables,
+        }
+        for user_id in user_ids
+    }
 
 
 @api_view(["GET", "POST"])
@@ -37,23 +83,23 @@ def watching(request):
         Watch.objects.get_or_create(watcher=request.user, watched=target)
 
     watched_users = [watch.watched for watch in request.user.watching.select_related("watched")]
+    user_ids = [user.id for user in watched_users]
     profiles = dict(
         Profile.objects.filter(user__in=watched_users).values_list("user_id", "avatar_emoji")
     )
-    # Who is at a table right now, so the row can say so — a watch list that
-    # cannot tell you somebody is playing is only half of one.
-    playing = set(
-        TournamentPlayer.objects
-        .filter(user__in=watched_users, is_eliminated=False)
-        .filter(Q(tournament__status="running") | Q(tournament__status="paused"))
-        .values_list("user_id", flat=True)
+    stamps = dict(
+        AvatarImage.objects.filter(user_id__in=user_ids).values_list("user_id", "updated_at")
     )
+    # Whether they are there and what they are playing — a watch list that
+    # cannot tell you somebody is at a table is only half of one.
+    here = presence(user_ids)
 
     return Response([
         {
             "username": user.username,
             "avatar_emoji": profiles.get(user.id) or "\U0001F0CF",
-            "playing_now": user.id in playing,
+            "avatar_url": avatar_url(user.id, stamps.get(user.id)),
+            **here[user.id],
         }
         for user in watched_users
     ])

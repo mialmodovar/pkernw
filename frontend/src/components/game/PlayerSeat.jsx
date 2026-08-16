@@ -83,7 +83,7 @@ function TimerRing({ pct, tone = "--color-highlight" }) {
 
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity,
-  position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
+  position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf, aimed = false,
   stats, onInspect, handStrength, shine, raisedCards, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -420,6 +420,10 @@ export default function PlayerSeat({
         compact ? (isMe ? "w-[7.5rem]" : "w-[6.75rem]") : "w-[clamp(8.75rem,27cqw,15rem)]"
       } ${
         p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
+    } ${
+      // A seat you are about to throw something at says so, and says it about
+      // the whole seat rather than the one part of it you happen to click.
+      aimed ? "animate-aim-pulse cursor-crosshair" : ""
       }`}>
       {stack}
       {/* Over the seat rather than only in the chat panel: what somebody says

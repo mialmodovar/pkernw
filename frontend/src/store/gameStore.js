@@ -144,6 +144,19 @@ const useGameStore = create((set) => ({
   // newest thing they said replaces the last rather than queueing behind it.
   seatBubbles: {},
   seatBubbleSequence: 0,
+  // Things in the air, and the thing you are about to throw.
+  //
+  // A list rather than one at a time: a table that has just seen a bad beat
+  // throws more than one thing at once, and a second tomato should not cancel
+  // the first one mid-flight.
+  throws: [],
+  throwSequence: 0,
+  // The item picked but not yet aimed. While this is set the table is in
+  // aiming mode: seats become targets and a click throws instead of opening
+  // somebody's stats.
+  aimingItem: null,
+  setAiming: (aimingItem) => set({ aimingItem }),
+  clearThrow: (id) => set((s) => ({ throws: s.throws.filter((one) => one.id !== id) })),
   // The knockout GIF playing in the middle of the table, if any.
   finisher: null,
   finisherSequence: 0,
@@ -650,6 +663,22 @@ const useGameStore = create((set) => ({
         });
         break;
 
+
+      // Something is in the air. Kept until whatever draws it says it has
+      // landed — the store holds no timers.
+      case "item_thrown":
+        set((s) => ({
+          throws: [...s.throws, {
+            id: s.throwSequence + 1,
+            item: data.item,
+            fromSeat: data.from_seat,
+            toSeat: data.to_seat,
+            fromName: data.from_name,
+            toName: data.to_name,
+          }],
+          throwSequence: s.throwSequence + 1,
+        }));
+        break;
 
       case "player_disconnected":
         set((s) => ({

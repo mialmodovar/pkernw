@@ -441,6 +441,64 @@ button:disabled {
   .animate-quake-hard { animation: none; }
 }
 
+/* Something thrown across the table.
+
+   The travel is split in two so the two halves can have different easings and
+   compose into an arc: the outer element carries it across at a constant
+   speed, the inner one lifts it and drops it. One transform cannot do that,
+   because an arc is not a straight line with a curve applied to its timing. */
+@keyframes throw-across {
+  from { transform: translateX(0); }
+  to   { transform: translateX(var(--throw-dx)); }
+}
+
+.animate-throw-across {
+  animation: throw-across linear forwards;
+}
+
+@keyframes throw-arc {
+  0%   { transform: translateY(0) rotate(0deg) scale(0.75); }
+  50%  { transform: translateY(calc(var(--throw-dy) * 0.5 - var(--throw-lift)))
+                    rotate(calc(var(--throw-spin) * 0.5)) scale(1.1); }
+  100% { transform: translateY(var(--throw-dy)) rotate(var(--throw-spin)) scale(1); }
+}
+
+.animate-throw-arc {
+  animation: throw-arc cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* And the mess it leaves: a quick bloom, then gone. */
+/* Only the bloom. Where it lands is a translate on the wrapper — an animation
+   setting transform would otherwise overwrite it and put the mess back where
+   the throw started. */
+@keyframes throw-splat {
+  0%   { opacity: 0; transform: scale(0.4); }
+  25%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+.animate-throw-splat {
+  animation: throw-splat ease-out forwards;
+}
+
+/* A seat you can throw at, while something is picked and waiting to be aimed. */
+@keyframes aim-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgb(var(--highlight-rgb) / 0.45); }
+  50%      { box-shadow: 0 0 0 5px rgb(var(--highlight-rgb) / 0.18); }
+}
+
+.animate-aim-pulse {
+  animation: aim-pulse 1.1s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+/* All of it is decoration over a game somebody is trying to read. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-throw-arc { animation-duration: 1ms; }
+  .animate-throw-across { animation-duration: 1ms; }
+  .animate-aim-pulse { animation: none; box-shadow: 0 0 0 2px rgb(var(--highlight-rgb) / 0.5); }
+}
+
 /* A GIF arriving over a seat. Pops in from the seat it belongs to, then simply
    sits there — it is a picture to look at, not another thing moving. */
 /* A bubble arriving over a seat. The horizontal half-step these keyframes used

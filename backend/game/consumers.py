@@ -27,6 +27,7 @@ from .models import Hand, HandAction
 
 from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .giphy import clean_gif_id as _clean_gif_id
+from .throwables import clean_item as _clean_item
 
 
 _game_tasks: Dict[int, asyncio.Task] = {}
@@ -44,6 +45,12 @@ _media_presence: Dict[Tuple[int, int], dict] = {}
 CHAT_MAX_CHARS = 240
 CHAT_WINDOW_SECONDS = 10.0
 CHAT_MESSAGE_BUDGET = 8
+
+# Throwing is cheap to do and easy to overdo, so it gets a budget of its own —
+# tighter than chat, because it lands on somebody else's screen rather than in
+# a panel they can close.
+THROW_WINDOW_SECONDS = 10.0
+THROW_BUDGET = 6
 
 MEDIA_WINDOW_SECONDS = 10.0
 MEDIA_MESSAGE_BUDGET = 120
@@ -673,6 +680,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 await coordinator.set_ready(self.user.id, bool(data.get("value", True)))
         elif message_type == "chat_message":
             await self._send_chat(data)
+        elif message_type == "throw_item":
+            await self._throw_item(data)
         elif message_type in ("media_signal", "media_presence"):
             if not self._media_budget_allows():
                 return
@@ -680,6 +689,54 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 await self._relay_media_signal(data)
             else:
                 await self._announce_media_presence(data)
+
+    async def _throw_item(self, data):
+        """Throw something at somebody at your table.
+
+        The item is one of a closed list (see throwables.py) and the target has
+        to be a player sitting at the same table as you — otherwise this is a
+        way to make an object appear on the screen of anybody whose id you can
+        guess, at a table you are not even at.
+        """
+        item = _clean_item(data.get("item"))
+        if item is None:
+            return
+
+        try:
+            target_id = int(data.get("at_user_id"))
+        except (TypeError, ValueError):
+            return
+        if target_id == self.user.id:
+            return   # nothing to animate, and nothing anybody wants to watch
+
+        now = time.monotonic()
+        window_start, count = getattr(self, "_throw_window", (0.0, 0))
+        if now - window_start > THROW_WINDOW_SECONDS:
+            window_start, count = now, 0
+        self._throw_window = (window_start, count + 1)
+        if count + 1 > THROW_BUDGET:
+            return
+
+        runner = _tournament_runners.get(self.tournament_id)
+        if runner is None:
+            return
+        thrower = runner.get_runtime_player(self.user.id)
+        target = runner.get_runtime_player(target_id)
+        if thrower is None or target is None:
+            return
+        # Same table, or it is being thrown through a wall.
+        if thrower._table_number != target._table_number:
+            return
+
+        await _broadcast_table(self.tournament_id, thrower._table_number, "item_thrown", {
+            "item": item,
+            "from_user_id": self.user.id,
+            "from_name": self.shown_name,
+            "from_seat": thrower._seat,
+            "to_user_id": target_id,
+            "to_name": target.name,
+            "to_seat": target._seat,
+        })
 
     async def _send_chat(self, data):
         """Say something to the rest of your table.

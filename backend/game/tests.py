@@ -1215,3 +1215,124 @@ class TimeBankWhileDisconnectedTests(TestCase):
 
 		self.assertEqual(action, "check")
 		self.assertEqual(player.time_bank_seconds_remaining, 0)
+
+
+class ThrowableTests(TestCase):
+	"""What may be thrown. The list is the whole security of the feature: a
+	client that could name what it throws could throw anything at anybody."""
+
+	def test_an_item_from_the_list_is_kept(self):
+		from game.throwables import clean_item
+
+		self.assertEqual(clean_item("tomato"), "tomato")
+		self.assertEqual(clean_item("  ROSE "), "rose")
+
+	def test_anything_else_is_not_a_throwable(self):
+		from game.throwables import clean_item
+
+		self.assertIsNone(clean_item("brick"))
+		self.assertIsNone(clean_item("<img src=x onerror=alert(1)>"))
+		self.assertIsNone(clean_item("https://example.test/nasty.gif"))
+		self.assertIsNone(clean_item(""))
+		self.assertIsNone(clean_item(None))
+
+
+class ThrowRelayTests(TransactionTestCase):
+	"""Throwing across a live table."""
+
+	def _consumer(self, tournament_id=4321, user_id=1):
+		"""A consumer with just enough on it to reach _throw_item."""
+		consumer = TournamentConsumer()
+		consumer.tournament_id = tournament_id
+		consumer.user = type("U", (), {"id": user_id})()
+		consumer.shown_name = "thrower"
+		return consumer
+
+	def _runner(self, seats):
+		"""seats: {user_id: (seat, table_number)}"""
+		class Player:
+			def __init__(self, seat, table_number, name):
+				self._seat = seat
+				self._table_number = table_number
+				self.name = name
+
+		class Runner:
+			def get_runtime_player(self, user_id):
+				spec = seats.get(user_id)
+				return Player(spec[0], spec[1], f"p{user_id}") if spec else None
+
+		return Runner()
+
+	def _throw(self, seats, payload, tournament_id=4321, user_id=1):
+		from game.consumers import _tournament_runners
+
+		sent = []
+
+		async def capture(tid, table, event_type, data):
+			sent.append((event_type, data))
+
+		_tournament_runners[tournament_id] = self._runner(seats)
+		consumer = self._consumer(tournament_id, user_id)
+		with patch("game.consumers._broadcast_table", capture):
+			async_to_sync(consumer._throw_item)(payload)
+		_tournament_runners.pop(tournament_id, None)
+		return sent
+
+	def test_a_throw_reaches_the_table(self):
+		sent = self._throw(
+			{1: (0, 1), 2: (3, 1)}, {"item": "tomato", "at_user_id": 2},
+		)
+
+		self.assertEqual(len(sent), 1)
+		event_type, data = sent[0]
+		self.assertEqual(event_type, "item_thrown")
+		self.assertEqual(data["item"], "tomato")
+		self.assertEqual((data["from_seat"], data["to_seat"]), (0, 3))
+
+	def test_an_item_nobody_offers_is_refused(self):
+		self.assertEqual(
+			self._throw({1: (0, 1), 2: (3, 1)}, {"item": "brick", "at_user_id": 2}), [],
+		)
+
+	def test_you_cannot_throw_at_another_table(self):
+		"""Otherwise this is a way to put an object on the screen of anybody
+		whose id you can guess, at a table you are not even at."""
+		self.assertEqual(
+			self._throw({1: (0, 1), 2: (3, 2)}, {"item": "egg", "at_user_id": 2}), [],
+		)
+
+	def test_you_cannot_throw_at_yourself(self):
+		self.assertEqual(
+			self._throw({1: (0, 1)}, {"item": "egg", "at_user_id": 1}), [],
+		)
+
+	def test_a_target_who_is_not_at_the_table_is_refused(self):
+		self.assertEqual(
+			self._throw({1: (0, 1)}, {"item": "egg", "at_user_id": 99}), [],
+		)
+
+	def test_nonsense_for_a_target_is_refused(self):
+		self.assertEqual(
+			self._throw({1: (0, 1), 2: (3, 1)}, {"item": "egg", "at_user_id": "everyone"}), [],
+		)
+
+	def test_a_flood_is_cut_off(self):
+		"""Throwing lands on somebody else's screen rather than in a panel they
+		can close, so it gets a tighter budget than chat."""
+		from game.consumers import _tournament_runners
+
+		seats = {1: (0, 1), 2: (3, 1)}
+		sent = []
+
+		async def capture(tid, table, event_type, data):
+			sent.append(data)
+
+		_tournament_runners[4321] = self._runner(seats)
+		consumer = self._consumer()
+		with patch("game.consumers._broadcast_table", capture):
+			for _ in range(20):
+				async_to_sync(consumer._throw_item)({"item": "egg", "at_user_id": 2})
+		_tournament_runners.pop(4321, None)
+
+		self.assertGreater(len(sent), 0)
+		self.assertLessEqual(len(sent), 6)

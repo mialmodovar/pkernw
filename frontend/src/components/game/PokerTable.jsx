@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { send } from "../../api/socket";
 import useGameStore from "../../store/gameStore";
 import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
@@ -200,6 +201,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // together — shaking one of them would read as a glitch in that element.
   const quake = useEquityQuake();
   const frame = useRef(null);
+  // Aiming: an item picked and waiting for a target. While it is set, a click
+  // on somebody else's seat throws instead of opening their stats.
+  const aimingItem = useGameStore((s) => s.aimingItem);
+  const setAiming = useGameStore((s) => s.setAiming);
+  const throws = useGameStore((s) => s.throws);
   const frameSize = useFrameSize(frame);
   const aspect = frameSize.aspect;
   // The phone shape is fixed — the frame there is always the tall one — so only
@@ -256,6 +262,30 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       <div className={`felt absolute ${
         compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]"
       }`} />
+
+      {/* Everything currently in the air. Seat positions are percentages of
+          the frame, and the flight needs pixels, so they are converted once
+          here against the measured frame. */}
+      {throws.map((one) => {
+        const size = frameSize.width && frameSize.height ? frameSize : null;
+        if (!size) return null;
+        const at = (seat) => {
+          const visual = (seat - offset + slots) % slots;
+          const point = slotPosition(visual, slots, geometry);
+          return {
+            x: (parseFloat(point.left) / 100) * size.width,
+            y: (parseFloat(point.top) / 100) * size.height,
+          };
+        };
+        return (
+          <ThrownItem
+            key={one.id}
+            throwing={one}
+            from={at(one.fromSeat)}
+            to={at(one.toSeat)}
+          />
+        );
+      })}
 
       {/* A knockout GIF, over the middle of the table. Sits inside the frame
           so it covers the felt and not the whole page. */}
@@ -315,7 +345,15 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 topHalf={parseFloat(pos.top) < 50}
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}
-                onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
+                onInspect={
+                  aimingItem && !isMe
+                    ? () => {
+                        send({ type: "throw_item", item: aimingItem, at_user_id: p.user_id });
+                        setAiming(null);
+                      }
+                    : onInspectPlayer ? () => onInspectPlayer(p) : undefined
+                }
+                aimed={Boolean(aimingItem) && !isMe}
                 handStrength={isMe ? handStrength : null}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just

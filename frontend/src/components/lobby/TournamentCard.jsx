@@ -1,4 +1,6 @@
 import PlayerFaces from "./PlayerFaces";
+import { countdownLabel } from "./tournamentVitals";
+import { useCountdown } from "./useCountdown";
 
 const formatTime = (value) => (value
   ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
@@ -58,7 +60,8 @@ function StatusPill({ tournament: t }) {
 // tournament is something other than the default everybody assumes.
 const GAME_LABELS = { nlh: "NLH" };
 
-export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, onDelete, onEdit }) {
+export default function TournamentCard({ tournament: t, onJoin, onOpen, onOpenTable, onQuit, onDelete, onEdit }) {
+  const lateRegLeft = useCountdown(t.late_registration_seconds_left ?? null);
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
@@ -96,14 +99,23 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
     t.club_name ? (t.league_name || "club night") : null,
     bountyOn ? (t.bounty_mode === "progressive" ? "PKO" : "KO") : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
-    // Only worth saying while you can still act on it. Spelled out rather than
-    // abbreviated: "reg to L4" is a note to yourself, not a sentence.
+    // Only worth saying while you can still act on it, and in minutes once the
+    // clock is running — "until level 4" is a fact about the schedule, and how
+    // long you have is the thing you were actually asking.
     !isFinished && t.late_reg_level > 0 && (t.status === "lobby" || t.late_registration_open)
-      ? `registration until level ${t.late_reg_level}`
+      ? (countdownLabel(lateRegLeft)
+        ? `late reg closes in ${countdownLabel(lateRegLeft)}`
+        : `registration until level ${t.late_reg_level}`)
       : null,
   ].filter(Boolean);
 
   const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;
+  // A seat you are still sitting in. Getting back to it took two clicks and a
+  // page in between, which is a long way round for the one tournament on this
+  // list that is actually waiting on you.
+  const atTheTable = t.is_joined
+    && (t.status === "running" || t.status === "paused")
+    && !t.my_finish_position;
 
   return (
     <div className="panel rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2
@@ -198,6 +210,13 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
             Delete
           </button>
         )}
+        {atTheTable && onOpenTable && (
+          <button onClick={() => onOpenTable(t.id)}
+            title="Straight back to your seat"
+            className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
+            Open table
+          </button>
+        )}
         {canJoin && (
           <button onClick={() => onJoin(t.id)}
             className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
@@ -207,7 +226,7 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
         <button onClick={() => onOpen(t.id)}
           className="px-2.5 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs
                      transition-colors text-(--color-silver)">
-          {isFinished ? "Results" : t.is_joined ? "Open" : "View"}
+          {isFinished ? "Results" : atTheTable ? "Lobby" : t.is_joined ? "Open" : "View"}
         </button>
       </div>
     </div>

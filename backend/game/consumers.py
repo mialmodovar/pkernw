@@ -77,6 +77,20 @@ def late_registration_open(tournament) -> bool:
     return runner.current_blind_level_number <= tournament.late_reg_level
 
 
+def late_registration_seconds_left(tournament):
+    """How long is left to register, in seconds, or None if it cannot be said.
+
+    "Until level 4" is a fact about the schedule; this is the one a player
+    actually wants, and the only place that knows it is the running engine.
+    """
+    if not late_registration_open(tournament):
+        return None
+    runner = _tournament_runners.get(tournament.id)
+    if runner is None:
+        return None
+    return runner.seconds_until_blind_level_ends(tournament.late_reg_level)
+
+
 def connected_user_ids() -> set:
     """Everybody with a table socket open right now.
 

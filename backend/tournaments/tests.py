@@ -372,6 +372,9 @@ class TournamentCreationTests(APITestCase):
 		class FakeRunner:
 			current_blind_level_number = 1
 
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
+
 		tournament = Tournament.objects.create(
 			host=self.user,
 			name="Late Reg Open",
@@ -389,10 +392,16 @@ class TournamentCreationTests(APITestCase):
 		listed = {row["id"]: row for row in response.data}
 		self.assertIn(tournament.id, listed)
 		self.assertTrue(listed[tournament.id]["late_registration_open"])
+		# And how long is left to act on it, which is the half of "late reg"
+		# a player can actually use.
+		self.assertEqual(listed[tournament.id]["late_registration_seconds_left"], 600)
 
 	def test_upcoming_hides_running_tournament_once_late_registration_closes(self):
 		class FakeRunner:
 			current_blind_level_number = 5
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
 
 		tournament = Tournament.objects.create(
 			host=self.user,
@@ -413,6 +422,9 @@ class TournamentCreationTests(APITestCase):
 	def test_upcoming_excludes_late_registration_tournament_already_joined(self):
 		class FakeRunner:
 			current_blind_level_number = 1
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
 
 		tournament = Tournament.objects.create(
 			host=self.user,
@@ -469,6 +481,9 @@ class RebuyTests(APITestCase):
 
 		class FakeRunner:
 			current_blind_level_number = 1
+
+			def seconds_until_blind_level_ends(self, blind_level_number):
+				return 600
 
 			async def apply_rebuy(self, user_id, chips):
 				calls.append((user_id, chips))

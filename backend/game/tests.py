@@ -18,6 +18,7 @@ from .consumers import (
 
 User = get_user_model()
 from .engine.card import Card, Rank, Suit
+from .levelclock import seconds_until_level_ends
 from .engine.hand import HandEngine
 from .engine.player import Player
 
@@ -1336,3 +1337,39 @@ class ThrowRelayTests(TransactionTestCase):
 
 		self.assertGreater(len(sent), 0)
 		self.assertLessEqual(len(sent), 6)
+
+
+class LevelClockTests(TestCase):
+    """Late registration, answered in seconds instead of level numbers."""
+
+    SCHEDULE = [
+        {"small_blind": 10, "big_blind": 20, "duration_minutes": 10},
+        {"small_blind": 20, "big_blind": 40, "duration_minutes": 10},
+        {"is_break": True, "small_blind": 0, "big_blind": 0, "duration_minutes": 5},
+        {"small_blind": 30, "big_blind": 60, "duration_minutes": 10},
+        {"small_blind": 50, "big_blind": 100, "duration_minutes": 10},
+    ]
+
+    def test_counts_the_rest_of_this_level(self):
+        self.assertEqual(seconds_until_level_ends(self.SCHEDULE, 0, 120, 1), 480)
+
+    def test_counts_the_break_in_the_way(self):
+        # Two minutes into level 1, closing at the end of level 4: what is left
+        # of this level, then levels 2, 3 and 4 — and the five-minute break,
+        # which is five more minutes you can still register in.
+        self.assertEqual(seconds_until_level_ends(self.SCHEDULE, 0, 120, 4), 480 + 600 + 300 + 600 + 600)
+
+    def test_a_level_already_played_has_no_time_left(self):
+        self.assertIsNone(seconds_until_level_ends(self.SCHEDULE, 1, 0, 1))
+
+    def test_a_level_counted_in_hands_cannot_be_timed(self):
+        schedule = [{"small_blind": 10, "big_blind": 20, "duration_hands": 8}, *self.SCHEDULE]
+        self.assertIsNone(seconds_until_level_ends(schedule, 0, 0, 3))
+
+    def test_a_target_beyond_the_schedule_is_not_invented(self):
+        self.assertIsNone(seconds_until_level_ends(self.SCHEDULE, 0, 0, 9))
+
+    def test_an_overrun_level_is_not_negative(self):
+        # The clock can read past the end of a level between the last hand and
+        # the blinds going up.
+        self.assertEqual(seconds_until_level_ends(self.SCHEDULE, 0, 900, 1), 0)

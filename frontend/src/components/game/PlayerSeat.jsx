@@ -160,10 +160,15 @@ export default function PlayerSeat({
   const coverHand = isMe && hideHand && !p.is_folded && !handIsPublic;
   const cards = (
     // Cards and label in a column, the buttons beside it rather than inside
-    // it: what the hand adds up to goes under the cards and never shares a
-    // line with the button that says "nh".
+    // it: what the hand adds up to sits over the cards and never shares a line
+    // with the button that says "nh".
     <div key="cards" className="flex items-start gap-1">
-      <div className="flex flex-col items-start gap-1">
+      {/* Reversed rather than reordered. The label reads better above the cards
+          — it is the first thing you look for and the cards are what you check
+          it against — but it also has to stay after them in the DOM, since what
+          reveals it when you hover your own hand is a sibling selector on the
+          cards. */}
+      <div className="flex flex-col-reverse items-start gap-1">
       <HoleCards
         cards={isMe ? myCards : p.cards}
         folded={p.is_folded}
@@ -181,10 +186,10 @@ export default function PlayerSeat({
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
-      {/* Your own read on what you hold, under your cards. */}
+      {/* Your own read on what you hold, over your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
         // Hidden by display rather than by opacity: a covered hand should not
-        // leave a strip of nothing under the cards for the seat to float on.
+        // leave a strip of nothing over the cards for the seat to float on.
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
                         bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
                           coverHand ? "hidden peer-hover/hand:block peer-active/hand:block" : ""

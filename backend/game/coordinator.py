@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 from tournaments.bounties import BountyConfig, split_knockout
 
 from .engine.hand import HandEngine, cards_to_list
+from .levelclock import seconds_until_level_ends
 from .engine.player import Player as EnginePlayer
 
 
@@ -159,6 +160,17 @@ class MultiTableTournamentCoordinator:
             if not self.levels[idx].get("is_break"):
                 count += 1
         return count
+
+    def seconds_until_blind_level_ends(self, blind_level_number: int) -> Optional[int]:
+        """How long until a given blind level is over, or None if it cannot be
+        timed. Late registration is the caller: it closes at the end of a level,
+        and "until level 4" is a worse answer than "eight minutes"."""
+        if not self._level_start_time:
+            elapsed = 0.0
+        else:
+            now = self._paused_at if self.is_paused and self._paused_at is not None else time.monotonic()
+            elapsed = now - self._level_start_time
+        return seconds_until_level_ends(self.levels, self._level_index, elapsed, blind_level_number)
 
     async def run(self) -> List[EnginePlayer]:
         await self._sync_players_from_db()

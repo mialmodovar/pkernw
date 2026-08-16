@@ -47,6 +47,7 @@ export default function LobbyPage() {
     navigate(`/tournament/${id}`);
   };
   const onOpen = (id) => navigate(`/tournament/${id}`);
+  const onOpenTable = (id) => navigate(`/tournament/${id}/play`);
   const onEdit = (tournament) => navigate(`/tournaments/${tournament.id}/edit`);
   const onQuit = async (id) => {
     if (!window.confirm("Unregister from this tournament? Your seat is freed for someone else.")) return;
@@ -110,6 +111,7 @@ export default function LobbyPage() {
             tournaments={tournaments}
             onJoin={onJoin}
             onOpen={onOpen}
+            onOpenTable={onOpenTable}
             onQuit={onQuit}
             onDelete={onDelete}
             onEdit={onEdit}

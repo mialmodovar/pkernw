@@ -4,6 +4,7 @@ from django.utils import timezone
 from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 from game.consumers import late_registration_open as _late_registration_open
+from game.consumers import late_registration_seconds_left as _late_registration_seconds_left
 
 from accounts.avatars import avatar_url
 from clubs.models import Club, Season
@@ -216,6 +217,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
     winner_name  = serializers.SerializerMethodField()
     my_finish_position = serializers.SerializerMethodField()
     late_registration_open = serializers.SerializerMethodField()
+    late_registration_seconds_left = serializers.SerializerMethodField()
     registered = serializers.SerializerMethodField()
 
     def get_registered(self, tournament):
@@ -266,6 +268,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
     def get_late_registration_open(self, tournament):
         return _late_registration_open(tournament)
 
+    def get_late_registration_seconds_left(self, tournament):
+        return _late_registration_seconds_left(tournament)
+
     def get_winner_name(self, tournament):
         winner = (
             tournament.players.filter(finish_position=1)
@@ -289,7 +294,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "is_host",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
-                  "late_registration_open",
+                  "late_registration_open", "late_registration_seconds_left",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
@@ -309,13 +314,22 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     players   = serializers.SerializerMethodField()
     tables    = TournamentTableSerializer(many=True, read_only=True)
     levels    = BlindLevelSerializer(many=True, read_only=True)
+    late_registration_open = serializers.SerializerMethodField()
+    late_registration_seconds_left = serializers.SerializerMethodField()
+
+    def get_late_registration_open(self, tournament):
+        return _late_registration_open(tournament)
+
+    def get_late_registration_seconds_left(self, tournament):
+        return _late_registration_seconds_left(tournament)
 
     class Meta:
         model = Tournament
         fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents",
                   "max_players", "players_per_table", "players", "tables", "levels",
-                  "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
+                  "late_reg_level", "late_registration_open", "late_registration_seconds_left",
+                  "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
@@ -363,7 +377,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tournament
         fields = ("id", "name", "game_type", "club", "season", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
-                  "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
+                  "late_reg_level",
+                  "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",

@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
 import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
+import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
+import { useCountdown } from "../components/lobby/useCountdown";
 
 const formatScheduledStart = (value) => {
   if (!value) return null;
@@ -33,11 +35,11 @@ const STATUS_STYLE = {
 };
 
 /** A headline number in the banner — the things you want before anything else. */
-function Headline({ label, value }) {
+function Headline({ label, value, tone = "text-(--color-silver)" }) {
   return (
     <div className="text-right">
       <p className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">{label}</p>
-      <p className="text-lg font-bold text-(--color-silver) leading-tight">{value}</p>
+      <p className={`text-lg font-bold leading-tight ${tone}`}>{value}</p>
     </div>
   );
 }
@@ -140,6 +142,8 @@ export default function TournamentSetupPage() {
   const [filter, setFilter] = useState("");
   const [pickedTable, setPickedTable] = useState(null);
   const lastStatus = useRef(null);
+  // Ticks between the three-second polls, so the deadline moves like a clock.
+  const lateRegSeconds = useCountdown(tournament?.late_registration_seconds_left ?? null);
 
   const load = useCallback(async () => {
     const { data } = await api.get(`/tournaments/${id}/`);
@@ -187,6 +191,10 @@ export default function TournamentSetupPage() {
   const currentLevel = levels[tournament.current_level_index] || null;
   const nextLevel = levels[(tournament.current_level_index ?? 0) + 1] || null;
 
+  // A finished tournament has a winner, not a field — its banner keeps the
+  // entrant count it started with.
+  const inPlay = tournament.status === "running" || tournament.status === "paused";
+  const vitalsRows = vitalsSummary({ ...tournamentVitals(tournament), lateRegSeconds });
   const alive = (tournament.players || []).filter((p) => !p.is_eliminated);
   const stacks = alive.map((p) => p.chips);
   const payouts = tournament.payout_structure || [];
@@ -230,11 +238,29 @@ export default function TournamentSetupPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-6">
-          <Headline label="Entrants" value={`${tournament.players.length}/${tournament.max_players}`} />
+        {/* How the tournament is going, beside the state it is in. Before this
+            the banner led with the entrant count and the start stack — both
+            fixed at the moment it began — while how many were left, what an
+            average stack had grown to and how long was left to register were
+            somewhere further down the page or nowhere at all. */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {inPlay
+            ? vitalsRows.map((row) => (
+              <Headline
+                key={row.key}
+                label={row.label}
+                value={row.value}
+                tone={row.key === "latereg" ? "text-(--color-highlight-text)" : undefined}
+              />
+            ))
+            : (
+              <>
+                <Headline label="Entrants" value={`${tournament.players.length}/${tournament.max_players}`} />
+                <Headline label="Places paid" value={payouts.length || "—"} />
+              </>
+            )}
           <Headline label="Start stack" value={tournament.starting_chips.toLocaleString()} />
           {buyInCents > 0 && <Headline label="Buy-in" value={`${(buyInCents / 100).toFixed(2)}€`} />}
-          <Headline label="Places paid" value={payouts.length || "—"} />
         </div>
 
         <div className="flex flex-wrap gap-2 w-full lg:w-auto">

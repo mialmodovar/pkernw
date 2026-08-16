@@ -14,7 +14,7 @@ import RebuyPrompt from "../components/game/RebuyPrompt";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
 import ActionPanel from "../components/game/ActionPanel";
-import BlindLevelBar from "../components/game/BlindLevelBar";
+import BlindLevelBar, { DisplayToggles } from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
 import { useTurnAlert } from "../components/game/useTurnAlert";
 import { useTimeoutAlert } from "../components/game/useTimeoutAlert";
@@ -27,6 +27,7 @@ import PlayerStatsCard from "../components/game/PlayerStatsCard";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 import { InfoIcon, LobbyIcon } from "../components/game/icons";
+import TableVitals from "../components/game/TableVitals";
 
 // How long the table stays up after a hand ends your tournament — yours or
 // everyone's. The last hand is the one worth looking at, and a result screen
@@ -389,16 +390,18 @@ export default function GamePage() {
         </div>
       )}
 
-      {/* Where you are, and the three things you might want to look at while you
-          are there. Info, hand history and the lobby are all "step away from the
-          hand for a moment" — they belong together, and none of them belongs up
-          in the blind bar beside the clock controls. */}
+      {/* Where you are, how the tournament is going, and the three things you
+          might want to look at while you are there. Info, hand history and the
+          lobby are all "step away from the hand for a moment" — they belong
+          together, and none of them belongs up in the blind bar beside the
+          clock controls. */}
       <div className="px-2 md:px-4 py-1.5 md:py-2 text-xs md:text-sm text-(--color-text-muted) flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
           <span className="truncate">{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
           {tableCount > 1 && (
-            <span className="hidden md:inline shrink-0">{`· ${tableCount} active tables`}</span>
+            <span className="hidden lg:inline shrink-0">{`· ${tableCount} tables`}</span>
           )}
+          <TableVitals tournament={tournament} />
           <button
             onClick={() => setInfoOpen((was) => !was)}
             title="Blinds, payouts, stacks and knockouts"
@@ -459,6 +462,7 @@ export default function GamePage() {
               Chat
             </button>
           )}
+          <DisplayToggles />
           {watching == null && (
             <button
               onClick={() => send({ type: "sit_out", value: !amSittingOut })}

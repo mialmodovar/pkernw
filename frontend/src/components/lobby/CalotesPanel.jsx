@@ -18,7 +18,7 @@ function DebtRow({ username, amountCents, onSettle, busy }) {
                        hover:text-(--color-silver) hover:border-(--color-accent) transition-colors
                        disabled:opacity-40 disabled:cursor-wait"
           >
-            Recebi
+            Got it
           </button>
         )}
       </div>
@@ -26,6 +26,13 @@ function DebtRow({ username, amountCents, onSettle, busy }) {
   );
 }
 
+/** Who owes whom, after a night that was played for money.
+ *
+ * The panel speaks English like the rest of the app; the heading does not. A
+ * "calote" is a debt nobody is in a hurry to settle, and the nearest English
+ * word for it is a paragraph — so the name stays as the one thing everybody at
+ * this table already calls it.
+ */
 export default function CalotesPanel() {
   const [ledger, setLedger] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -43,7 +50,7 @@ export default function CalotesPanel() {
   useEffect(() => { load(); }, [load]);
 
   const settle = async (username, amountCents) => {
-    if (!window.confirm(`Confirmas que recebeste ${euros(amountCents)} de ${username}?`)) return;
+    if (!window.confirm(`Confirm you have received ${euros(amountCents)} from ${username}?`)) return;
     setBusy(username);
     setError(null);
     try {
@@ -53,7 +60,7 @@ export default function CalotesPanel() {
       });
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || "Não foi possível registar.");
+      setError(err.response?.data?.error || "That could not be recorded.");
     } finally {
       setBusy(null);
     }
@@ -77,7 +84,7 @@ export default function CalotesPanel() {
 
       {owedToMe.length > 0 && (
         <div>
-          <p className="text-xs text-(--color-text-muted) mb-0.5">Devem-te</p>
+          <p className="text-xs text-(--color-text-muted) mb-0.5">Owed to you</p>
           <div className="divide-y divide-(--color-border)">
             {owedToMe.map((row) => (
               <DebtRow
@@ -94,7 +101,7 @@ export default function CalotesPanel() {
 
       {iOwe.length > 0 && (
         <div>
-          <p className="text-xs text-(--color-text-muted) mb-0.5">Deves</p>
+          <p className="text-xs text-(--color-text-muted) mb-0.5">You owe</p>
           <div className="divide-y divide-(--color-border)">
             {iOwe.map((row) => (
               <DebtRow key={row.username} username={row.username} amountCents={row.amount_cents} />
@@ -104,7 +111,7 @@ export default function CalotesPanel() {
       )}
 
       {!owedToMe.length && !iOwe.length && (
-        <p className="text-xs text-(--color-text-muted)">Estás em dia.</p>
+        <p className="text-xs text-(--color-text-muted)">All square.</p>
       )}
 
       {error && <p className="text-xs text-(--color-accent)">{error}</p>}

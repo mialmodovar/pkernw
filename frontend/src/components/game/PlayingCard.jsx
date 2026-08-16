@@ -30,16 +30,16 @@ export function Suit({ suit, className = "" }) {
 // seat there is room for a rank and a suit, and anything more turns to mush.
 const SIZE = {
   board: {
-    box: "w-[clamp(2.07rem,5.29cqw,3.45rem)] h-[clamp(2.88rem,7.36cqw,4.83rem)]",
-    rank: "text-[1.55rem]",
-    pip: "w-[1.32rem] h-[1.32rem]",
-    corner: "text-[0.69rem]",
-    cornerPip: "w-[0.58rem] h-[0.58rem]",
+    box: "w-[clamp(2.48rem,6.35cqw,4.14rem)] h-[clamp(3.46rem,8.83cqw,5.8rem)]",
+    rank: "text-[1.86rem]",
+    pip: "w-[1.58rem] h-[1.58rem]",
+    corner: "text-[0.83rem]",
+    cornerPip: "w-[0.7rem] h-[0.7rem]",
   },
   seat: {
-    box: "w-[clamp(1.27rem,4.14cqw,2.76rem)] h-[clamp(1.78rem,5.87cqw,3.91rem)]",
-    rank: "text-[1.21rem]",
-    pip: "w-[0.98rem] h-[0.98rem]",
+    box: "w-[clamp(1.52rem,4.97cqw,3.31rem)] h-[clamp(2.14rem,7.04cqw,4.69rem)]",
+    rank: "text-[1.45rem]",
+    pip: "w-[1.18rem] h-[1.18rem]",
     corner: null,   // no room; the centred rank is the index
     cornerPip: null,
   },

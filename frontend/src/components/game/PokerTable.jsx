@@ -5,7 +5,12 @@ import PlayerSeat from "./PlayerSeat";
 import CommunityCards from "./CommunityCards";
 import PotDisplay from "./PotDisplay";
 import { timerToneClass, useActionCountdown } from "./useActionCountdown";
-import { useShowdownReveal } from "./useShowdownReveal";
+import {
+  faceUpFromRunout,
+  holdFaceDown,
+  resultIsRevealed,
+  useShowdownReveal,
+} from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import PositionMarker from "./PositionMarker";
@@ -130,9 +135,13 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Winners are known from pot_awarded; their best five get the gold ring, and
   // the losing hands dim so the eye goes to what actually won.
   const showdownBySeat = new Map((showdown || []).map((entry) => [entry.seat, entry]));
+  // Hands an all-in runout already turned over. The showdown stagger must not
+  // touch them: flipping a visible hand back down and showing it again is what
+  // made the losing hand blink on the river.
+  const faceUpSeats = faceUpFromRunout(allInEquity);
   // Hold the result back until every hand has turned over — otherwise the
   // winner banner and the gold rings give it away mid-reveal.
-  const resultRevealed = revealedSeats == null || revealedSeats.size >= (showdown?.length ?? 0);
+  const resultRevealed = resultIsRevealed({ showdown, revealedSeats, faceUpSeats });
   const winningBoardCards = resultRevealed
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
@@ -215,7 +224,9 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 winAmount={potAwards?.filter((a) => a.seat === p.seat).reduce((s, a) => s + (a.amount || 0), 0) || 0}
                 equity={allInEquity?.find((e) => e.seat === p.seat)?.equity ?? null}
                 showdownEntry={showdownBySeat.get(p.seat)}
-                faceDownAtShowdown={revealedSeats != null && !revealedSeats.has(p.seat) && !isMe}
+                faceDownAtShowdown={holdFaceDown({
+                  seat: p.seat, revealedSeats, faceUpSeats, isMe,
+                })}
                 dimmed={resultRevealed && winnerSeats.length > 0 && showdown != null && !winnerSeats.includes(p.seat)}
                 // The button and the blinds are marked on the felt beside the
                 // chips they cost; what the seat itself carries is the name of

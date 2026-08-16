@@ -1,11 +1,11 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import ProfileCard from "../components/lobby/ProfileCard";
 import StatsPanel from "../components/lobby/StatsPanel";
-import LeaguePlaceholder from "../components/lobby/LeaguePlaceholder";
+import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
@@ -13,6 +13,12 @@ export default function LobbyPage() {
   const { user, logout } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
+  // Opening a tournament now takes site staff or a club you help run, and the
+  // button follows the same rule the server does.
+  const [staffsAClub, setStaffsAClub] = useState(false);
+  const onClubsLoaded = useCallback((clubs) => {
+    setStaffsAClub(clubs.some((club) => club.my_role === "owner" || club.my_role === "staff"));
+  }, []);
 
   // The three scopes overlap — a tournament you are seated at and that is open
   // for late registration comes back in two of them — so they are merged by id
@@ -70,14 +76,14 @@ export default function LobbyPage() {
         <StatsPanel />
         <CalotesPanel />
         <WatchPanel />
-        <LeaguePlaceholder />
+        <ClubPanel onClubsLoaded={onClubsLoaded} />
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
         <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
           <div className="flex flex-wrap gap-3 items-center">
-            {user?.is_staff && (
+            {(user?.is_staff || staffsAClub) && (
               <>
                 <button onClick={() => navigate("/dev/table")}
                   title="Open the game table with mock players, for layout work"

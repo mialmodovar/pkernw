@@ -7,6 +7,8 @@ import RegisterPage from "./pages/RegisterPage";
 import LobbyPage from "./pages/LobbyPage";
 import CreateTournamentPage from "./pages/CreateTournamentPage";
 import EditTournamentPage from "./pages/EditTournamentPage";
+import ClubsPage from "./pages/ClubsPage";
+import ClubPage from "./pages/ClubPage";
 import TournamentSetupPage from "./pages/TournamentSetupPage";
 import GamePage from "./pages/GamePage";
 import DevTablePage from "./pages/DevTablePage";
@@ -35,6 +37,8 @@ export default function App() {
       <Route path="/" element={<ProtectedRoute><LobbyPage /></ProtectedRoute>} />
       <Route path="/tournaments/new" element={<ProtectedRoute><CreateTournamentPage /></ProtectedRoute>} />
       <Route path="/tournaments/:id/edit" element={<ProtectedRoute><EditTournamentPage /></ProtectedRoute>} />
+      <Route path="/clubs" element={<ProtectedRoute><ClubsPage /></ProtectedRoute>} />
+      <Route path="/clubs/:slug" element={<ProtectedRoute><ClubPage /></ProtectedRoute>} />
       <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
       <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
       <Route path="/tournament/:id/watch/:watchTable" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />

@@ -1,0 +1,308 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+
+import Avatar from "../components/Avatar";
+import api from "../api/http";
+import ScoringEditor from "../components/lobby/ScoringEditor";
+import { describeScheme } from "../components/lobby/leagueScoring";
+
+const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
+
+function StandingsTable({ rows }) {
+  if (!rows.length) {
+    return (
+      <p className="text-sm text-(--color-text-muted) py-4">
+        Nothing played yet. The table fills in as nights finish.
+      </p>
+    );
+  }
+  return (
+    <div className="panel-raised rounded-lg overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-[10px] uppercase tracking-wide text-(--color-text-muted)">
+            <th className="px-2 py-2 text-left w-8">#</th>
+            <th className="px-2 py-2 text-left">Player</th>
+            <th className="px-2 py-2 text-right">Pts</th>
+            <th className="px-2 py-2 text-right">Played</th>
+            <th className="px-2 py-2 text-right">Won</th>
+            <th className="px-2 py-2 text-right">KOs</th>
+            <th className="px-2 py-2 text-right">€</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.username} className="border-t border-(--color-border)">
+              <td className={`px-2 py-1.5 font-mono ${
+                index === 0 ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+              }`}>
+                {index + 1}
+              </td>
+              <td className="px-2 py-1.5 text-(--color-silver) truncate" title={row.username}>
+                {row.display_name || row.username}
+              </td>
+              <td className="px-2 py-1.5 text-right font-semibold text-(--color-highlight-text) tabular-nums">
+                {row.points}
+              </td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-(--color-text-muted)">{row.played}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-(--color-text-muted)">{row.wins}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-(--color-text-muted)">{row.knockouts}</td>
+              <td className={`px-2 py-1.5 text-right tabular-nums ${
+                row.net_cents >= 0 ? "text-(--color-silver)" : "text-(--color-accent-link)"
+              }`}>
+                {row.net_cents ? euros(row.net_cents) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * One club: who is in it, what it runs, and how those tables stand.
+ *
+ * Leagues are tabs rather than pages of their own. A club with two leagues is
+ * still one thing you are looking at, and the season selector below the tabs is
+ * the only other axis there is.
+ */
+export default function ClubPage() {
+  const { slug } = useParams();
+  const navigate = useNavigate();
+  const [club, setClub] = useState(null);
+  const [leagueId, setLeagueId] = useState(null);
+  const [seasonId, setSeasonId] = useState(null);
+  const [table, setTable] = useState(null);
+  const [error, setError] = useState("");
+  const [editingScoring, setEditingScoring] = useState(false);
+  const [draftScoring, setDraftScoring] = useState(null);
+
+  const loadClub = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/clubs/${slug}/`);
+      setClub(data);
+      setLeagueId((current) => current ?? data.leagues.find((l) => !l.is_archived)?.id ?? null);
+    } catch {
+      setError("That club could not be loaded.");
+    }
+  }, [slug]);
+
+  useEffect(() => { loadClub(); }, [loadClub]);
+
+  const loadTable = useCallback(async () => {
+    if (!leagueId) { setTable(null); return; }
+    try {
+      const { data } = await api.get(`/clubs/leagues/${leagueId}/standings/`, {
+        params: seasonId ? { season: seasonId } : {},
+      });
+      setTable(data);
+      setSeasonId((current) => current ?? data.season.id);
+    } catch {
+      setTable(null);
+    }
+  }, [leagueId, seasonId]);
+
+  useEffect(() => { loadTable(); }, [loadTable]);
+
+  const isStaff = club?.my_role === "owner" || club?.my_role === "staff";
+  const league = useMemo(
+    () => club?.leagues.find((one) => one.id === leagueId) || null,
+    [club, leagueId],
+  );
+
+  const addLeague = async () => {
+    const name = window.prompt("What is this league called?", "Sunday League");
+    if (!name) return;
+    await api.post(`/clubs/${slug}/leagues/`, { name });
+    await loadClub();
+  };
+
+  const closeSeason = async () => {
+    const name = window.prompt("Name the new season", "Season 2");
+    if (name === null) return;
+    await api.post(`/clubs/leagues/${leagueId}/seasons/`, { name });
+    setSeasonId(null);
+    await loadClub();
+    await loadTable();
+  };
+
+  const saveScoring = async () => {
+    await api.patch(`/clubs/seasons/${table.season.id}/`, { scoring: draftScoring });
+    setEditingScoring(false);
+    await loadTable();
+  };
+
+  if (error) return <p className="max-w-3xl mx-auto px-4 py-16 text-center text-(--color-text-muted)">{error}</p>;
+  if (!club) return <p className="max-w-3xl mx-auto px-4 py-16 text-center text-(--color-text-muted)">Loading…</p>;
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-5">
+      <button
+        type="button"
+        onClick={() => navigate("/clubs")}
+        className="text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
+      >
+        All clubs
+      </button>
+
+      <header className="panel rounded-lg p-4 flex flex-wrap items-center gap-3">
+        <span className="text-4xl leading-none">{club.emoji}</span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold text-(--color-silver) truncate">{club.name}</h1>
+          <p className="text-xs text-(--color-text-muted)">
+            {club.member_count} member{club.member_count === 1 ? "" : "s"}
+            {club.description && ` · ${club.description}`}
+          </p>
+        </div>
+        {/* Only members see the code, and only they can pass it on. */}
+        {club.invite_code && (
+          <span
+            title="Give this to somebody to let them in"
+            className="shrink-0 panel-raised rounded px-2 py-1 font-mono text-sm text-(--color-highlight-text)"
+          >
+            {club.invite_code}
+          </span>
+        )}
+        {isStaff && (
+          <button
+            onClick={() => navigate("/tournaments/new")}
+            className="btn-accent px-3 py-1.5 rounded text-sm font-semibold transition-colors shrink-0"
+          >
+            New tournament
+          </button>
+        )}
+      </header>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {club.leagues.filter((one) => !one.is_archived).map((one) => (
+            <button
+              key={one.id}
+              onClick={() => { setLeagueId(one.id); setSeasonId(null); }}
+              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                one.id === leagueId
+                  ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
+                  : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+              }`}
+            >
+              {one.emoji} {one.name}
+            </button>
+          ))}
+          {isStaff && (
+            <button
+              onClick={addLeague}
+              className="px-3 py-1 rounded-full text-xs font-semibold text-(--color-text-muted)
+                         hover:text-(--color-silver) transition-colors"
+            >
+              + League
+            </button>
+          )}
+        </div>
+
+        {!league ? (
+          <p className="text-sm text-(--color-text-muted)">
+            No leagues yet.{isStaff ? " Add one and its first season opens with it." : ""}
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="input-field rounded px-2 py-1 text-sm transition-colors"
+                value={seasonId ?? ""}
+                onChange={(event) => setSeasonId(Number(event.target.value))}
+              >
+                {league.seasons.map((season) => (
+                  <option key={season.id} value={season.id}>
+                    {season.name}{season.is_open ? "" : " (closed)"}
+                  </option>
+                ))}
+              </select>
+              {isStaff && table?.season?.is_open && (
+                <>
+                  <button
+                    onClick={() => { setDraftScoring(table.season.scoring); setEditingScoring((v) => !v); }}
+                    className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+                  >
+                    {editingScoring ? "Cancel" : "Scoring"}
+                  </button>
+                  <button
+                    onClick={closeSeason}
+                    title="Freeze this table and open the next season"
+                    className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+                  >
+                    End season
+                  </button>
+                </>
+              )}
+              {table?.season && !editingScoring && (
+                <span className="text-[11px] text-(--color-text-muted) ml-auto">
+                  {describeScheme(table.season.scoring)}
+                </span>
+              )}
+            </div>
+
+            {editingScoring && draftScoring && (
+              <div className="panel rounded-lg p-3 space-y-3">
+                <ScoringEditor scoring={draftScoring} onChange={setDraftScoring} />
+                <div className="flex justify-end">
+                  <button
+                    onClick={saveScoring}
+                    className="btn-accent px-4 py-1.5 rounded text-sm font-semibold transition-colors"
+                  >
+                    Save scoring
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <StandingsTable rows={table?.rows || []} />
+
+            {table?.season?.prizes?.length > 0 && (
+              <div className="panel rounded-lg p-3">
+                <h3 className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-1">
+                  Season prize
+                </h3>
+                {table.season.prizes.map((prize) => (
+                  <p key={prize.place} className="text-sm text-(--color-silver)">
+                    {prize.label} — {euros(prize.amount_cents)}
+                  </p>
+                ))}
+                <p className="text-[11px] text-(--color-text-muted) mt-1">
+                  Paid by the club. The app only writes it down.
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="panel rounded-lg p-4">
+        <h2 className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-2">Members</h2>
+        <div className="flex flex-wrap gap-2">
+          {club.members.map((member) => (
+            <span
+              key={member.username}
+              title={`${member.username} · ${member.role}`}
+              className="panel-raised rounded-full pl-1 pr-2.5 py-1 flex items-center gap-1.5 text-xs"
+            >
+              <Avatar
+                url={member.avatar_url}
+                emoji={member.avatar_emoji}
+                name={member.username}
+                className="w-6 h-6 rounded-full shrink-0"
+                emojiClassName="text-sm"
+              />
+              <span className="text-(--color-silver)">{member.display_name || member.username}</span>
+              {member.role !== "member" && (
+                <span className="text-[9px] uppercase tracking-wide text-(--color-highlight-text)">
+                  {member.role}
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

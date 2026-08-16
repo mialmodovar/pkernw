@@ -42,8 +42,14 @@ export default function SeatBubble({ userId, name }) {
 
   return (
     <div className="animate-seat-bubble pointer-events-none absolute bottom-full left-0 mb-2 z-30 origin-bottom-left">
-      <div className="relative rounded-lg border border-(--color-border-strong) bg-(--color-surface-raised)
-                      shadow-lg shadow-black/60 overflow-hidden">
+      {/* Never narrower than the tail has to reach: a two-letter "gg" is a
+          smaller box than half an avatar is wide, and the arrow ended up out
+          past the corner of the bubble it belongs to. */}
+      <div
+        style={{ minWidth: "calc(var(--seat-avatar) / 2 + 1.25rem)" }}
+        className="relative rounded-lg border border-(--color-border-strong) bg-(--color-surface-raised)
+                   shadow-lg shadow-black/60 overflow-hidden"
+      >
         {isGif ? (
           <img
             src={gifPreviewUrl(bubble.gifId)}
@@ -59,10 +65,14 @@ export default function SeatBubble({ userId, name }) {
       {/* The tail, over the middle of the avatar below it — the seat sets
           --seat-avatar, so this follows whatever size the face is at. Drawn as
           a turned square with only its two outer edges bordered, so it reads as
-          part of the bubble rather than a diamond stuck under it. */}
+          part of the bubble rather than a diamond stuck under it.
+
+          The min() is the belt to the min-width's braces: whichever way a
+          bubble ends up narrower than half an avatar, the tail stops at its
+          edge rather than floating off the corner. */}
       <span
         aria-hidden="true"
-        style={{ left: "calc(var(--seat-avatar) / 2)" }}
+        style={{ left: "min(calc(var(--seat-avatar) / 2), calc(100% - 0.875rem))" }}
         className="absolute -bottom-1 -translate-x-1/2 w-2 h-2 rotate-45 bg-(--color-surface-raised)
                    border-r border-b border-(--color-border-strong)"
       />

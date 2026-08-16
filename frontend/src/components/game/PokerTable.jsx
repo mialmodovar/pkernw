@@ -237,6 +237,18 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const highestSeat = players.length ? Math.max(...players.map((p) => p.seat)) + 1 : 0;
   const slots = Math.max(capacity || 0, highestSeat, players.length, 1);
 
+  // Where a seat is, in pixels inside the frame. Null until the frame has been
+  // measured, which is the first paint only.
+  const seatPixel = (seat) => {
+    if (seat == null || !frameSize.width || !frameSize.height) return null;
+    const visual = (seat - (mySeat ?? 0) + slots) % slots;
+    const point = slotPosition(visual, slots, geometry);
+    return {
+      x: (parseFloat(point.left) / 100) * frameSize.width,
+      y: (parseFloat(point.top) / 100) * frameSize.height,
+    };
+  };
+
   // Rotate slots so the hero's seat lands on the bottom-centre position.
   const offset = mySeat ?? 0;
   const bySeat = new Map(players.map((p) => [p.seat, p]));
@@ -264,28 +276,34 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       }`} />
 
       {/* Everything currently in the air. Seat positions are percentages of
-          the frame, and the flight needs pixels, so they are converted once
-          here against the measured frame. */}
-      {throws.map((one) => {
-        const size = frameSize.width && frameSize.height ? frameSize : null;
-        if (!size) return null;
-        const at = (seat) => {
-          const visual = (seat - offset + slots) % slots;
-          const point = slotPosition(visual, slots, geometry);
-          return {
-            x: (parseFloat(point.left) / 100) * size.width,
-            y: (parseFloat(point.top) / 100) * size.height,
-          };
-        };
-        return (
+          the frame, and both the flight and the aiming need pixels, so they
+          are converted once here against the measured frame. */}
+      {throws.map((one) => (
+        seatPixel(one.fromSeat) && seatPixel(one.toSeat) ? (
           <ThrownItem
             key={one.id}
             throwing={one}
-            from={at(one.fromSeat)}
-            to={at(one.toSeat)}
+            from={seatPixel(one.fromSeat)}
+            to={seatPixel(one.toSeat)}
           />
-        );
-      })}
+        ) : null
+      ))}
+
+      {aimingItem && seatPixel(mySeat) && (
+        <AimOverlay
+          item={aimingItem}
+          hero={seatPixel(mySeat)}
+          targets={players
+            .filter((one) => one.seat !== mySeat && one.user_id != null && !one.is_eliminated)
+            .map((one) => ({ ...seatPixel(one.seat), seat: one.seat, userId: one.user_id, name: one.name }))
+            .filter((one) => one.x != null)}
+          onThrow={(target) => {
+            send({ type: "throw_item", item: aimingItem, at_user_id: target.userId });
+            setAiming(null);
+          }}
+          onCancel={() => setAiming(null)}
+        />
+      )}
 
       {/* A knockout GIF, over the middle of the table. Sits inside the frame
           so it covers the felt and not the whole page. */}
@@ -309,11 +327,6 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const pos = slotPosition(visualIdx, slots, geometry);
         const isMe = p != null && p.seat === mySeat;
         const isActive = p != null && actionOnSeat === p.seat;
-        const throwable = Boolean(aimingItem) && p != null && !isMe;
-        const throwAt = () => {
-          send({ type: "throw_item", item: aimingItem, at_user_id: p.user_id });
-          setAiming(null);
-        };
         return (
           <div key={seat}
             // Over its neighbours, and over the bets on the felt, for as long
@@ -322,22 +335,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             className={`absolute -translate-x-1/2 -translate-y-1/2 ${
               p && seatBubbles[p.user_id] ? "z-30" : ""
             }`}
-            style={{ top: pos.top, left: pos.left }}
-            // The whole seat catches it, not just the nameplate: the crosshair
-            // is drawn around all of it, and a target you have to hit precisely
-            // is not the game being offered.
-            {...(throwable ? {
-              role: "button",
-              tabIndex: 0,
-              "aria-label": `Throw at ${p.name}`,
-              onClick: throwAt,
-              onKeyDown: (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  throwAt();
-                }
-              },
-            } : {})}>
+            style={{ top: pos.top, left: pos.left }}>
             {p ? (
               <PlayerSeat
                 player={p}
@@ -365,13 +363,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 topHalf={parseFloat(pos.top) < 50}
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}
-                // While aiming, the seat around it takes the click — see the
-                // wrapper. Leaving the plate's own handler on would open a
-                // stats card behind the thing you just threw.
-                onInspect={
-                  throwable || !onInspectPlayer ? undefined : () => onInspectPlayer(p)
-                }
-                aimed={throwable}
+                onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just

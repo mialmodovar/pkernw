@@ -327,6 +327,49 @@ export function playSplat(itemId) {
  * still short: it plays over somebody's worst moment of the night.
  */
 const FINISHER_STINGS = {
+  // ── Triumph ───────────────────────────────────────────────────────────
+  fanfare: (ctx, now) => {
+    [523, 659, 784, 1047].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.09, duration: 0.3, peak: 0.11, type: "triangle" });
+    });
+  },
+  // The bugle call, with the last note held the way a whole stand shouts it.
+  charge: (ctx, now) => {
+    const notes = [[392, 0.1], [523, 0.1], [659, 0.1], [784, 0.14], [659, 0.1], [784, 0.42]];
+    let at = now;
+    notes.forEach(([freq, length]) => {
+      tone(ctx, { freq, start: at, duration: length, peak: 0.12, type: "sawtooth" });
+      tone(ctx, { freq: freq * 2, start: at, duration: length, peak: 0.04, type: "triangle" });
+      at += length * 0.92;
+    });
+  },
+  // A jingle rather than a chord: up the scale and land on the octave.
+  victory: (ctx, now) => {
+    [523, 659, 784, 1047, 1319].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.07, duration: 0.22, peak: 0.1, type: "triangle" });
+    });
+    tone(ctx, { freq: 2093, start: now + 0.35, duration: 0.5, peak: 0.09, type: "triangle" });
+  },
+  // Struck once and left to ring, with the harmonics that make it metal
+  // rather than a beep.
+  bell: (ctx, now) => {
+    [[1046, 0.09], [2093, 0.05], [3140, 0.03], [4186, 0.02]].forEach(([freq, peak]) => {
+      tone(ctx, { freq, start: now, duration: 1.4, peak, type: "sine" });
+    });
+    noise(ctx, { start: now, duration: 0.04, peak: 0.1, frequency: 5200, Q: 2 });
+  },
+  // Hands, not tones: a swell of noise that takes a moment to gather.
+  applause: (ctx, now) => {
+    for (let burst = 0; burst < 14; burst += 1) {
+      const at = now + burst * 0.055;
+      noise(ctx, {
+        start: at, duration: 0.35, peak: 0.035 + Math.min(burst, 6) * 0.006,
+        frequency: 1500 + burst * 90, Q: 0.4,
+      });
+    }
+  },
+
+  // ── Noise ─────────────────────────────────────────────────────────────
   airhorn: (ctx, now) => {
     [0, 0.16, 0.32].forEach((offset) => {
       tone(ctx, {
@@ -343,11 +386,46 @@ const FINISHER_STINGS = {
     noise(ctx, { start: now, duration: 0.6, peak: 0.3, frequency: 140, Q: 0.3 });
     tone(ctx, { freq: 80, start: now, duration: 0.7, peak: 0.24, type: "sine", endFreq: 28 });
   },
-  fanfare: (ctx, now) => {
-    [523, 659, 784, 1047].forEach((freq, index) => {
-      tone(ctx, { freq, start: now + index * 0.09, duration: 0.3, peak: 0.11, type: "triangle" });
+  slam: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.12, peak: 0.3, frequency: 900, Q: 0.7 });
+    tone(ctx, { freq: 180, start: now, duration: 0.28, peak: 0.2, type: "square", endFreq: 50 });
+  },
+  // Far off and rolling, rather than a bang.
+  thunder: (ctx, now) => {
+    noise(ctx, { start: now, duration: 1.6, peak: 0.26, frequency: 90, Q: 0.25 });
+    noise(ctx, { start: now + 0.25, duration: 1.1, peak: 0.16, frequency: 160, Q: 0.4 });
+    tone(ctx, { freq: 54, start: now, duration: 1.7, peak: 0.14, type: "sine", endFreq: 26 });
+  },
+  // Sticks, faster and faster, and then the crash that stops them.
+  drumroll: (ctx, now) => {
+    let at = now;
+    let gap = 0.075;
+    while (at < now + 1.1) {
+      noise(ctx, { start: at, duration: 0.05, peak: 0.12, frequency: 320, Q: 1.1 });
+      at += gap;
+      gap = Math.max(0.028, gap * 0.93);
+    }
+    noise(ctx, { start: at, duration: 0.7, peak: 0.22, frequency: 6000, Q: 0.3 });
+  },
+  // Two notes and a whistle: the sound of somebody being sent off.
+  whistle: (ctx, now) => {
+    [0, 0.22].forEach((offset) => {
+      tone(ctx, {
+        freq: 2400, start: now + offset, duration: 0.18, peak: 0.1,
+        type: "sine", endFreq: 2650,
+      });
+      noise(ctx, { start: now + offset, duration: 0.18, peak: 0.05, frequency: 2500, Q: 6 });
     });
   },
+  siren: (ctx, now) => {
+    for (let sweep = 0; sweep < 3; sweep += 1) {
+      const at = now + sweep * 0.36;
+      tone(ctx, { freq: 620, start: at, duration: 0.18, peak: 0.11, type: "sawtooth", endFreq: 960 });
+      tone(ctx, { freq: 960, start: at + 0.18, duration: 0.18, peak: 0.11, type: "sawtooth", endFreq: 620 });
+    }
+  },
+
+  // ── Comedy ────────────────────────────────────────────────────────────
   // Three notes falling: the sound of somebody's night ending.
   sting: (ctx, now) => {
     [660, 550, 440].forEach((freq, index) => {
@@ -357,9 +435,73 @@ const FINISHER_STINGS = {
       });
     });
   },
-  slam: (ctx, now) => {
-    noise(ctx, { start: now, duration: 0.12, peak: 0.3, frequency: 900, Q: 0.7 });
-    tone(ctx, { freq: 180, start: now, duration: 0.28, peak: 0.2, type: "square", endFreq: 50 });
+  // The full slide down, which is a different joke from three notes.
+  trombone: (ctx, now) => {
+    [[392, 0.18], [349, 0.18], [311, 0.2]].forEach(([freq, length], index) => {
+      tone(ctx, {
+        freq, start: now + index * 0.19, duration: length, peak: 0.13,
+        type: "sawtooth", endFreq: freq * 0.86,
+      });
+    });
+    tone(ctx, { freq: 262, start: now + 0.57, duration: 0.55, peak: 0.13, type: "sawtooth", endFreq: 160 });
+  },
+  // Ba-dum-tss.
+  rimshot: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.07, peak: 0.2, frequency: 260, Q: 1.2 });
+    noise(ctx, { start: now + 0.14, duration: 0.07, peak: 0.2, frequency: 200, Q: 1.2 });
+    noise(ctx, { start: now + 0.3, duration: 0.5, peak: 0.16, frequency: 7000, Q: 0.3 });
+  },
+  // A spring, wobbling itself still.
+  boing: (ctx, now) => {
+    tone(ctx, { freq: 620, start: now, duration: 0.5, peak: 0.14, type: "sine", endFreq: 120 });
+    [0.12, 0.26, 0.4].forEach((offset, index) => {
+      tone(ctx, {
+        freq: 300 - index * 60, start: now + offset, duration: 0.16, peak: 0.06 - index * 0.015,
+        type: "sine", endFreq: 180 - index * 40,
+      });
+    });
+  },
+  // Up, and then straight back down.
+  slidewhistle: (ctx, now) => {
+    tone(ctx, { freq: 500, start: now, duration: 0.35, peak: 0.1, type: "sine", endFreq: 2200 });
+    tone(ctx, { freq: 2200, start: now + 0.36, duration: 0.4, peak: 0.1, type: "sine", endFreq: 400 });
+  },
+  // Not a duck, but near enough that everybody hears a duck.
+  quack: (ctx, now) => {
+    [0, 0.19].forEach((offset) => {
+      tone(ctx, {
+        freq: 320, start: now + offset, duration: 0.16, peak: 0.13,
+        type: "sawtooth", endFreq: 180,
+      });
+    });
+  },
+
+  // ── Arcade ────────────────────────────────────────────────────────────
+  powerup: (ctx, now) => {
+    [392, 523, 659, 784, 1047, 1319].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.05, duration: 0.12, peak: 0.09, type: "square" });
+    });
+  },
+  gameover: (ctx, now) => {
+    [523, 415, 330, 262].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.14, duration: 0.2, peak: 0.1, type: "square" });
+    });
+    tone(ctx, { freq: 131, start: now + 0.56, duration: 0.5, peak: 0.1, type: "square" });
+  },
+  coin: (ctx, now) => {
+    tone(ctx, { freq: 988, start: now, duration: 0.07, peak: 0.1, type: "square" });
+    tone(ctx, { freq: 1319, start: now + 0.07, duration: 0.4, peak: 0.1, type: "square" });
+  },
+  // Three chords, each one worse news than the last.
+  dundundun: (ctx, now) => {
+    [0, 0.42, 0.84].forEach((offset, index) => {
+      [110, 165, 208].forEach((freq) => {
+        tone(ctx, {
+          freq: freq * (1 - index * 0.06), start: now + offset,
+          duration: index === 2 ? 0.9 : 0.34, peak: 0.075, type: "sawtooth",
+        });
+      });
+    });
   },
 };
 

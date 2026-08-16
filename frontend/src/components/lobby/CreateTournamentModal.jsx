@@ -31,7 +31,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [lateRegEnabled, setLateRegEnabled] = useState(true);
   const [lateRegLevel, setLateRegLevel] = useState(4);
   const [allowRebuys, setAllowRebuys] = useState(true);
-  const [maxRebuys, setMaxRebuys] = useState(2);
+  const [maxRebuys, setMaxRebuys] = useState(null);   // null = unlimited
   const [rebuyLevel, setRebuyLevel] = useState(4);
   const [timeBankEnabled, setTimeBankEnabled] = useState(true);
   const [timeBankSeconds, setTimeBankSeconds] = useState(30);
@@ -158,7 +158,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       setLateRegEnabled(data.late_reg_level > 0);
       if (data.late_reg_level > 0) setLateRegLevel(data.late_reg_level);
       setAllowRebuys(data.allow_rebuys);
-      setMaxRebuys(data.max_rebuys);
+      setMaxRebuys(data.max_rebuys ?? null);
       if (data.rebuy_level > 0) setRebuyLevel(data.rebuy_level);
       setTimeBankEnabled(data.time_bank_seconds > 0);
       if (data.time_bank_seconds > 0) setTimeBankSeconds(data.time_bank_seconds);
@@ -296,7 +296,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       players_per_table: playersPerTable,
       late_reg_level: lateRegEnabled ? normalizedLateRegLevel : 0,
       allow_rebuys: allowRebuys,
-      max_rebuys: allowRebuys ? maxRebuys : 0,
+      max_rebuys: allowRebuys ? maxRebuys : 0,   // null rides through as unlimited
       rebuy_level: allowRebuys ? normalizedRebuyLevel : 0,
       time_bank_seconds: timeBankEnabled ? timeBankSeconds : 0,
       time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
@@ -592,12 +592,25 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
             </label>
             <div>
               <label className="block text-xs text-(--color-text-muted) mb-1">Max Rebuys Per Player</label>
+              {/* Unlimited is the usual answer, so it is the state the field
+                  starts in rather than a number somebody has to clear. The
+                  level cutoff below is the limit people actually think in. */}
+              <label className="flex items-center gap-2 text-xs text-(--color-text-muted) mb-1">
+                <input
+                  type="checkbox"
+                  checked={maxRebuys === null}
+                  disabled={!allowRebuys}
+                  onChange={(e) => setMaxRebuys(e.target.checked ? null : 2)}
+                />
+                Unlimited
+              </label>
               <input
                 type="number"
                 min={0}
                 className="input-field w-full px-3 py-2 rounded transition-colors disabled:opacity-50"
-                value={maxRebuys}
-                disabled={!allowRebuys}
+                value={maxRebuys ?? ""}
+                placeholder="Unlimited"
+                disabled={!allowRebuys || maxRebuys === null}
                 onChange={(e) => setMaxRebuys(Number(e.target.value))}
               />
             </div>

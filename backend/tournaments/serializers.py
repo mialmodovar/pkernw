@@ -342,7 +342,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         max_players = attrs.get("max_players", getattr(self.instance, "max_players", 9))
         players_per_table = attrs.get("players_per_table", getattr(self.instance, "players_per_table", 8))
         allow_rebuys = attrs.get("allow_rebuys", getattr(self.instance, "allow_rebuys", True))
-        max_rebuys = attrs.get("max_rebuys", getattr(self.instance, "max_rebuys", 2))
+        max_rebuys = attrs.get("max_rebuys", getattr(self.instance, "max_rebuys", None))
         late_reg_level = attrs.get("late_reg_level", getattr(self.instance, "late_reg_level", 4))
         rebuy_level = attrs.get("rebuy_level", getattr(self.instance, "rebuy_level", 4))
         scheduled_start_at = attrs.get("scheduled_start_at")
@@ -373,11 +373,12 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"max_players": "Total player cap must be greater than or equal to players per table."})
         if late_reg_level < 0:
             raise serializers.ValidationError({"late_reg_level": "Late registration cutoff cannot be negative."})
-        if max_rebuys < 0:
+        if max_rebuys is not None and max_rebuys < 0:
             raise serializers.ValidationError({"max_rebuys": "Max rebuys cannot be negative."})
         if rebuy_level < 0:
             raise serializers.ValidationError({"rebuy_level": "Rebuy cutoff cannot be negative."})
-        if not allow_rebuys and max_rebuys:
+        if not allow_rebuys and max_rebuys != 0:
+            # Rebuys off is a cap of none, not a cap of unlimited.
             attrs["max_rebuys"] = 0
         if scheduled_start_at is not None and scheduled_start_at <= timezone.now():
             raise serializers.ValidationError({"scheduled_start_at": "Scheduled start must be in the future."})

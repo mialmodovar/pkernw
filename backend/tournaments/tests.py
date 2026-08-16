@@ -2479,3 +2479,107 @@ class PlayTimestampTests(APITestCase):
 		self.assertIn("started_at", row)
 		self.assertIn("finished_at", row)
 		self.assertIsNotNone(row["started_at"])
+
+
+class UnlimitedRebuyTests(APITestCase):
+	"""Null max_rebuys means unlimited, and is where a new tournament starts."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="ur_host", password="secret123", is_staff=True)
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_a_new_tournament_does_not_cap_rebuys(self):
+		response = self.client.post(reverse("tournament-list"), {"name": "Open bar"}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertIsNone(Tournament.objects.get(id=response.data["id"]).max_rebuys)
+
+	def test_a_host_can_still_set_a_cap(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Two only", "max_rebuys": 2}, format="json",
+		)
+
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).max_rebuys, 2)
+
+	def test_turning_rebuys_off_is_a_cap_of_none_not_unlimited(self):
+		"""The one that would go wrong quietly: "off" and "no limit" are both
+		falsey, and treating them alike would let anybody rebuy forever."""
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "None at all", "allow_rebuys": False}, format="json",
+		)
+
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).max_rebuys, 0)
+
+	def test_a_negative_cap_is_still_refused(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Nonsense", "max_rebuys": -1}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_an_uncapped_tournament_keeps_letting_a_player_back_in(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Open bar", status="running",
+			allow_rebuys=True, max_rebuys=None, rebuy_level=4,
+		)
+		player = TournamentPlayer.objects.create(
+			tournament=tournament, user=self.host, seat=0, chips=0,
+			is_eliminated=True, rebuy_count=7,
+		)
+
+		class Runner:
+			current_blind_level_number = 1
+			_finishing = False
+
+			async def apply_rebuy(self, user_id, chips):
+				return ""
+
+		_tournament_runners[tournament.id] = Runner()
+
+		response = self.client.post(reverse("tournament-rebuy", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		player.refresh_from_db()
+		self.assertEqual(player.rebuy_count, 8)
+
+	def test_a_capped_tournament_still_stops_at_the_cap(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Two only", status="running",
+			allow_rebuys=True, max_rebuys=2, rebuy_level=4,
+		)
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.host, seat=0, chips=0,
+			is_eliminated=True, rebuy_count=2,
+		)
+
+		class Runner:
+			current_blind_level_number = 1
+
+		_tournament_runners[tournament.id] = Runner()
+
+		response = self.client.post(reverse("tournament-rebuy", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_the_engine_holds_the_table_for_an_uncapped_rebuy(self):
+		from clubs.models import Club  # noqa: F401  (kept out of the import block above)
+		from game.coordinator import MultiTableTournamentCoordinator
+
+		async def noop(*args, **kwargs):
+			return None
+
+		coordinator = MultiTableTournamentCoordinator(
+			tournament_id=1, players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop, broadcast_table=noop, request_action=noop,
+			notify_user=noop, load_players=noop, persist_assignments=noop,
+			persist_player_states=noop,
+			allow_rebuys=True, max_rebuys=None, rebuy_level=4,
+		)
+		player = EnginePlayer(name="busted", chips=0)
+		player._rebuy_count = 12
+
+		self.assertTrue(coordinator._can_rebuy(player))

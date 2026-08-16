@@ -336,7 +336,7 @@ def rebuy_tournament(request, pk):
     if not tp.is_eliminated:
         return Response({"error": "You are not eliminated"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if tp.rebuy_count >= tournament.max_rebuys:
+    if tournament.max_rebuys is not None and tp.rebuy_count >= tournament.max_rebuys:
         return Response({"error": "No rebuys remaining"}, status=status.HTTP_400_BAD_REQUEST)
 
     # The engine holds its players in memory and writes them over the DB after

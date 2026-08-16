@@ -21,7 +21,9 @@ export default function EliminationScreen({
   const payout = tournament?.payout_structure?.find((row) => row.place === finishPosition);
   const mySeat = tournament?.players?.find((p) => p.finish_position === finishPosition);
   const rebuysUsed = mySeat?.rebuy_count ?? 0;
-  const rebuysLeft = (tournament?.max_rebuys ?? 0) - rebuysUsed;
+  // Null is unlimited, so there is no number to count down from.
+  const rebuysCapped = tournament?.max_rebuys !== null && tournament?.max_rebuys !== undefined;
+  const rebuysLeft = rebuysCapped ? tournament.max_rebuys - rebuysUsed : Infinity;
 
   // The blind-level cutoff is enforced server-side against the live engine, so
   // offer the button whenever it's plausible and surface the refusal verbatim.
@@ -76,7 +78,11 @@ export default function EliminationScreen({
               disabled={busy}
               className="btn-accent px-4 py-2.5 rounded font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {busy ? "Rebuying..." : `Rebuy — ${tournament.starting_chips.toLocaleString()} chips (${rebuysLeft} left)`}
+              {busy
+                ? "Rebuying..."
+                : `Rebuy — ${tournament.starting_chips.toLocaleString()} chips${
+                    rebuysCapped ? ` (${rebuysLeft} left)` : ""
+                  }`}
             </button>
           )}
           {onSpectate && (

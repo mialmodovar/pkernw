@@ -274,7 +274,7 @@ export default function TournamentSetupPage() {
               </Fact>
               <Fact label="Rebuys">
                 {tournament.allow_rebuys
-                  ? `${tournament.max_rebuys} through level ${tournament.rebuy_level}`
+                  ? `${tournament.max_rebuys ?? "Unlimited"} through level ${tournament.rebuy_level}`
                   : "Not allowed"}
               </Fact>
               <Fact label="Time bank">

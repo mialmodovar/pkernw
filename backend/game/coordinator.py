@@ -76,7 +76,7 @@ class MultiTableTournamentCoordinator:
         bounty: Optional[BountyConfig] = None,
         showdown_seconds: Optional[float] = None,
         allow_rebuys: bool = False,
-        max_rebuys: int = 0,
+        max_rebuys: Optional[int] = 0,
         rebuy_level: int = 0,
     ):
         self.tournament_id = tournament_id
@@ -101,7 +101,8 @@ class MultiTableTournamentCoordinator:
         # whether a particular rebuy is allowed; this only decides whether to
         # wait and who to ask.
         self.allow_rebuys = bool(allow_rebuys)
-        self.max_rebuys = max(0, max_rebuys or 0)
+        # None is unlimited, so it cannot be flattened to a number here.
+        self.max_rebuys = None if max_rebuys is None else max(0, max_rebuys)
         self.rebuy_level = max(0, rebuy_level or 0)
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
@@ -367,7 +368,7 @@ class MultiTableTournamentCoordinator:
         """
         if not self.allow_rebuys or self._finishing:
             return False
-        if getattr(player, "_rebuy_count", 0) >= self.max_rebuys:
+        if self.max_rebuys is not None and getattr(player, "_rebuy_count", 0) >= self.max_rebuys:
             return False
         return self.current_blind_level_number <= self.rebuy_level
 

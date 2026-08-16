@@ -53,7 +53,10 @@ class Tournament(models.Model):
     players_per_table = models.IntegerField(default=8)
     late_reg_level = models.IntegerField(default=4)    # late registration open through this level (0 = disabled)
     allow_rebuys   = models.BooleanField(default=True)
-    max_rebuys     = models.IntegerField(default=2)    # per player
+    # Null is unlimited, and is the default: a home game that allows rebuys at
+    # all usually means "until the rebuy period closes", and the level cutoff
+    # below is the limit people actually think in. A number caps it per player.
+    max_rebuys     = models.IntegerField(null=True, blank=True, default=None)
     rebuy_level    = models.IntegerField(default=4)    # rebuys allowed through this level (0 = disabled)
     # On by default: without a bank, a moment's hesitation on a big decision
     # times you out into a fold. A fixed bank with no refill unless the creator

@@ -55,6 +55,7 @@ export default function PlayerSeat({
   stats, onInspect, handStrength, shine, raisedCards, compactVideo, compact = false,
 }) {
   const showBB = useGameStore((s) => s.showBB);
+  const hideHand = useGameStore((s) => s.hideHand);
   const toggleBB = useGameStore((s) => s.toggleBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
   const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
@@ -124,6 +125,10 @@ export default function PlayerSeat({
         winningCards={isWinner ? showdownEntry?.best_cards : null}
         raisedCards={raisedCards}
         shine={shine}
+        // Only your own, only while the hand is live: once it is turned over
+        // at showdown it belongs to the table, and covering it then would be
+        // hiding it from you alone.
+        hideUntilHover={isMe && hideHand && !showdownEntry}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}

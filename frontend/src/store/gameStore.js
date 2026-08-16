@@ -5,6 +5,7 @@ import { formatEuros } from "../components/game/formatMoney";
 
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
+const HIDE_HAND_KEY = "poker.hideHand";
 
 const readStoredFlag = (key, fallback) => {
   try {
@@ -159,6 +160,15 @@ const useGameStore = create((set) => ({
     return { showBB };
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
+  // Keep your own cards face down until you look at them. Off by default —
+  // most people play alone in a room — and remembered per browser, because it
+  // is a fact about where you are sitting rather than about your account.
+  hideHand: readStoredFlag(HIDE_HAND_KEY, false),
+  toggleHideHand: () => set((s) => {
+    const hideHand = !s.hideHand;
+    writeStoredFlag(HIDE_HAND_KEY, hideHand);
+    return { hideHand };
+  }),
   // What has been said at this table since the page opened. Nothing is stored
   // server-side, so this is the whole of it.
   chat: [],

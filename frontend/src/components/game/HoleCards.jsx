@@ -1,6 +1,9 @@
 import PlayingCard, { CardBack } from "./PlayingCard";
 
-export default function HoleCards({ cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine, size = "seat" }) {
+export default function HoleCards({
+  cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine,
+  hideUntilHover = false, size = "seat",
+}) {
   if (eliminated) return null;
   // A card you chose to show stands up out of the pair, so at a glance you can
   // tell which one the table is looking at — showing one of two is a real move,
@@ -46,8 +49,8 @@ export default function HoleCards({ cards, folded, eliminated, isMe, winningCard
     );
   }
   const winners = new Set(winningCards || []);
-  return (
-    <div className="flex gap-0.5">
+  const faces = (
+    <>
       {cards.map((card, index) => (
         <PlayingCard
           key={index}
@@ -58,6 +61,33 @@ export default function HoleCards({ cards, folded, eliminated, isMe, winningCard
           className={lift(card)}
         />
       ))}
+    </>
+  );
+
+  // Face down until you look. For anyone playing somewhere with people behind
+  // them: the cards are covered by their own backs, and lifting them is a hover
+  // — or a touch, which is the same gesture with one finger. Nothing is hidden
+  // from the server or from the table, only from the room you are sitting in.
+  if (hideUntilHover) {
+    return (
+      <div className="group relative flex gap-0.5 cursor-pointer" title="Hold to see your hand">
+        <div className="flex gap-0.5 opacity-0 transition-opacity duration-150
+                        group-hover:opacity-100 group-active:opacity-100">
+          {faces}
+        </div>
+        <div aria-hidden="true"
+          className="absolute inset-0 flex gap-0.5 transition-opacity duration-150
+                     group-hover:opacity-0 group-active:opacity-0">
+          <CardBack size={size} />
+          <CardBack size={size} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-0.5">
+      {faces}
     </div>
   );
 }

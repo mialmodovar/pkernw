@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
 import GifPicker from "../game/GifPicker";
 import { gifPreviewUrl } from "../../api/giphy";
@@ -53,6 +54,9 @@ function SectionLabel({ children, action }) {
 
 export default function ThemeSettings({ onClose }) {
   const { preset, accent, pattern, finisherGifId, update } = useThemeStore();
+  // The one setting here that stays in this browser rather than on the account.
+  const hideHand = useGameStore((s) => s.hideHand);
+  const toggleHideHand = useGameStore((s) => s.toggleHideHand);
   const [listOpen, setListOpen] = useState(false);
   const [finisherOpen, setFinisherOpen] = useState(false);
   const currentAccent = effectiveAccent({ preset, accent });
@@ -193,6 +197,26 @@ export default function ThemeSettings({ onClose }) {
           />
           Custom colour
         </label>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-(--color-border)">
+        <SectionLabel>At the table</SectionLabel>
+
+        {/* Not part of the theme: this one is remembered by the browser rather
+            than by the account, because it is a fact about the room you are
+            sitting in and not about you. */}
+        <label className="mt-2 flex items-center gap-2 text-xs text-(--color-silver) cursor-pointer">
+          <input
+            type="checkbox"
+            checked={hideHand}
+            onChange={toggleHideHand}
+          />
+          Hide my hand until I hover it
+        </label>
+        <p className="mt-1 text-[11px] text-(--color-text-muted)">
+          Your two cards sit face down and lift when you point at them — for
+          playing with somebody looking over your shoulder.
+        </p>
       </div>
 
       <div className="mt-3 pt-3 border-t border-(--color-border)">

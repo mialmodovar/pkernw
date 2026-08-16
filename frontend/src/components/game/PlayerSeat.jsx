@@ -114,8 +114,13 @@ export default function PlayerSeat({
     </div>
   );
 
+  // Your own cards, face down until you point at them. The whole column is the
+  // hover group, because what you hold and what it adds up to are the same
+  // secret: leaving "Two pair, aces and jacks" legible under a pair of card
+  // backs would be covering the cards and reading them out.
+  const coverHand = isMe && hideHand && !showdownEntry && !p.is_folded;
   const cards = (
-    <div key="cards" className="flex flex-col items-center gap-1">
+    <div key="cards" className={`flex flex-col items-center gap-1 ${coverHand ? "group/hand" : ""}`}>
       <HoleCards
         cards={isMe ? myCards : p.cards}
         folded={p.is_folded}
@@ -128,15 +133,19 @@ export default function PlayerSeat({
         // Only your own, only while the hand is live: once it is turned over
         // at showdown it belongs to the table, and covering it then would be
         // hiding it from you alone.
-        hideUntilHover={isMe && hideHand && !showdownEntry}
+        hideUntilHover={coverHand}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
       {/* Your own read on what you hold, next to your cards. */}
       {isMe && handStrength && !p.is_folded && !showdownEntry && (
-        <div className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
-                        bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap">
+        <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
+                        bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
+                          coverHand
+                            ? "opacity-0 transition-opacity duration-150 group-hover/hand:opacity-100 group-active/hand:opacity-100"
+                            : ""
+                        }`}>
           {handStrength}
         </div>
       )}

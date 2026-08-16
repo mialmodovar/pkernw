@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import Avatar from "../Avatar";
 import AvatarCropper from "./AvatarCropper";
+import DisplayNameField from "./DisplayNameField";
 import useAuthStore from "../../store/authStore";
 
 const AVATARS = [
@@ -16,7 +17,7 @@ const AVATARS = [
 const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif";
 
 /**
- * Who you are at the table: one of the emoji, or a picture of your own.
+ * Who you are at the table: what you are called, and what you look like.
  *
  * The picture wins whenever there is one, so picking an emoji while one is set
  * would otherwise change nothing visible — which is why choosing an emoji also
@@ -88,6 +89,12 @@ export default function EmojiPicker({ onSelect, onClose }) {
 
   return (
     <div className="absolute z-10 mt-2 p-3 panel-raised panel-solid rounded-lg shadow-xl shadow-black/50 animate-fade-in">
+      {/* The name first: it is the part of you that other players read, and the
+          part that used to have nowhere sensible to live. */}
+      <div className="pb-3 mb-3 border-b border-(--color-border)">
+        <DisplayNameField />
+      </div>
+
       <div className="flex items-center gap-2 pb-3 mb-3 border-b border-(--color-border)">
         <Avatar
           url={profile?.avatar_url}

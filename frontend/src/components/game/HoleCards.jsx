@@ -70,14 +70,17 @@ export default function HoleCards({
   // from the server or from the table, only from the room you are sitting in.
   if (hideUntilHover) {
     return (
-      <div className="group relative flex gap-0.5 cursor-pointer" title="Hold to see your hand">
+      // The group is the seat's, not this component's: the read on the hand
+      // sits outside these cards and has to lift with them, so the hover is
+      // owned by whatever wraps both. Named, so no other group can claim it.
+      <div className="relative flex gap-0.5 cursor-pointer" title="Hold to see your hand">
         <div className="flex gap-0.5 opacity-0 transition-opacity duration-150
-                        group-hover:opacity-100 group-active:opacity-100">
+                        group-hover/hand:opacity-100 group-active/hand:opacity-100">
           {faces}
         </div>
         <div aria-hidden="true"
           className="absolute inset-0 flex gap-0.5 transition-opacity duration-150
-                     group-hover:opacity-0 group-active:opacity-0">
+                     group-hover/hand:opacity-0 group-active/hand:opacity-0">
           <CardBack size={size} />
           <CardBack size={size} />
         </div>

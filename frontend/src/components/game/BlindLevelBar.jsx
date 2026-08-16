@@ -55,8 +55,8 @@ function UserChip() {
       <button
         type="button"
         onClick={() => toggle("avatar")}
-        title="Change your avatar"
-        aria-label="Change your avatar"
+        title="Change your appearance"
+        aria-label="Change your appearance"
         aria-expanded={panel === "avatar"}
         className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
       >
@@ -73,8 +73,8 @@ function UserChip() {
       <button
         type="button"
         onClick={() => toggle("settings")}
-        title="Appearance settings"
-        aria-label="Appearance settings"
+        title="Theme settings"
+        aria-label="Theme settings"
         aria-expanded={panel === "settings"}
         className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
           panel === "settings" ? "bg-white/10" : "hover:bg-white/10"

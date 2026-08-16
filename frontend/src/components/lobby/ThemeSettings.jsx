@@ -93,7 +93,7 @@ export default function ThemeSettings({ onClose }) {
           </button>
         }
       >
-        Appearance
+        Theme
       </SectionLabel>
 
       <div className="relative">

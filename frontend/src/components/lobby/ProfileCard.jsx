@@ -1,6 +1,5 @@
 import { useState } from "react";
 import Avatar from "../Avatar";
-import DisplayNameField from "./DisplayNameField";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "./EmojiPicker";
 import ThemeSettings from "./ThemeSettings";
@@ -17,7 +16,7 @@ export default function ProfileCard() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => toggle("avatar")}
-          title="Change avatar"
+          title="Change appearance"
           className="w-14 h-14 rounded-full overflow-hidden panel-raised hover:border-(--color-accent-hover) transition-colors"
         >
           <Avatar
@@ -29,18 +28,20 @@ export default function ProfileCard() {
           />
         </button>
         <div className="min-w-0 flex-1">
-          <DisplayNameField />
+          <p className="font-semibold text-(--color-silver) truncate">
+            {user?.profile?.display_name || user?.username}
+          </p>
           <button
             onClick={() => toggle("avatar")}
             className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
           >
-            Change avatar
+            Change appearance
           </button>
         </div>
         <button
           onClick={() => toggle("settings")}
-          title="Appearance settings"
-          aria-label="Appearance settings"
+          title="Theme settings"
+          aria-label="Theme settings"
           aria-expanded={openPanel === "settings"}
           className={`ml-auto shrink-0 w-8 h-8 flex items-center justify-center rounded panel-raised transition-colors ${
             openPanel === "settings" ? "border-(--color-accent-hover)" : ""

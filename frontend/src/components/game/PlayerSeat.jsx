@@ -306,7 +306,7 @@ export default function PlayerSeat({
         <div className="text-[13px] text-(--color-text-muted)">
           {p.is_eliminated ? (
             <span className="text-(--color-accent-link)">Out</span>
-          ) : p.is_all_in ? (
+          ) : p.is_all_in && !p.is_waiting ? (
             <span className="text-(--color-highlight-text) font-bold">ALL IN</span>
           ) : (
             // Any stack at the table flips the whole table between chips and big

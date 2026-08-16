@@ -813,6 +813,11 @@ class MultiTableTournamentCoordinator:
         player.chips = chips
         player.is_eliminated = False
         player.finish_position = 0
+        # Whatever busted them is still on the player: folded, or all in with an
+        # empty stack. They are not dealt in again until the next rebalance, so
+        # nothing else clears it, and the roster below would show a seat that
+        # just rebought 10,000 chips as ALL IN.
+        player.reset_for_hand()
         # A rebuy is another buy-in, so it puts another bounty on their head.
         # In a progressive game that is the base amount again — whatever they
         # had grown it to went to whoever knocked them out.

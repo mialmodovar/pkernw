@@ -2198,6 +2198,24 @@ class RebuySeatVisibilityTests(TestCase):
 		seated = next(entry for entry in roster if entry["name"] == "p1")
 		self.assertFalse(seated["is_waiting"])
 
+	def test_a_player_who_busted_all_in_is_not_shown_all_in_after_rebuying(self):
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._player(coordinator, 1, 0)
+		busted = self._player(coordinator, 2, 1, chips=0, eliminated=True)
+		busted.is_all_in = True
+		busted.is_folded = True
+		busted.current_bet = 500
+
+		async_to_sync(coordinator.apply_rebuy)(22, 10_000)
+
+		roster = [p for _, event, payload in broadcasts if event == "table_players"
+				  for p in payload["players"]]
+		back = next(entry for entry in roster if entry["name"] == busted.name)
+		self.assertFalse(back["is_all_in"])
+		self.assertFalse(back["is_folded"])
+		self.assertEqual(back["chips"], 10_000)
+
 	def test_the_running_hand_is_not_dealt_a_new_player_halfway_through(self):
 		broadcasts = []
 		coordinator = self._coordinator(broadcasts)

@@ -26,6 +26,9 @@ export default function DevTablePage() {
   const setServerData = useSandboxStore((s) => s.setServerData);
   const handleEvent = useGameStore((s) => s.handleEvent);
   const username = useAuthStore((s) => s.user?.username) || "you";
+  // Your own id, so a line you send in the sandbox is recognised as yours
+  // and sits on the right the way it does at a real table.
+  const myUserId = useAuthStore((s) => s.user?.id) ?? 1;
   const chatCounter = useRef(0);
   const lastAction = useRef(null);
 
@@ -193,7 +196,7 @@ export default function DevTablePage() {
     if (!active) return undefined;
     setSendInterceptor((message) => {
       if (message.type === "chat_message") {
-        handleEvent({ type: "chat_message", user_id: 1, name: username, text: message.text });
+        handleEvent({ type: "chat_message", user_id: myUserId, name: username, text: message.text });
       } else if (message.type === "player_action") {
         handleEvent({
           type: "action_taken",
@@ -208,7 +211,7 @@ export default function DevTablePage() {
       return true;
     });
     return () => setSendInterceptor(null);
-  }, [active, config.heroSeat, config.pot, username, handleEvent]);
+  }, [active, config.heroSeat, config.pot, username, myUserId, handleEvent]);
 
   if (!active) return null;
 

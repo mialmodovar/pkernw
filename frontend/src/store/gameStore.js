@@ -561,6 +561,10 @@ const useGameStore = create((set) => ({
             // The server does not number these, and two identical messages a
             // second apart still need distinct keys.
             id: `${data.user_id}-${s.chat.length}-${(data.text || "").length}`,
+            // Who said it, not just what they are called: the panel sides your
+            // own lines to the right, and two players can share a display name
+            // the moment somebody renames themselves.
+            userId: data.user_id,
             name: data.name,
             text: data.text,
             gifId: data.gif_id || null,

@@ -39,11 +39,52 @@ export function ActionCountdownBadge() {
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
 const PRESELECTS = [
-  { key: "fold", label: "Fold" },
-  { key: "check", label: "Check" },
-  { key: "checkfold", label: "Check/Fold" },
-  { key: "callany", label: "Call any" },
+  { key: "fold", label: "Fold", hint: "Fold the moment it reaches you" },
+  { key: "check", label: "Check", hint: "Check if you can — a bet behind you hands the decision back" },
+  { key: "checkfold", label: "Check/Fold", hint: "Check if it is free, fold if it is not" },
+  { key: "callany", label: "Call any", hint: "Call whatever it costs when it reaches you" },
 ];
+
+/**
+ * The one thing you have decided to do before your turn arrives.
+ *
+ * Only ever one of them, which is what was wrong with the tick boxes these
+ * replace: a checkbox says "and also", and ticking a second one silently
+ * cleared the first. These read as what they are — one choice out of four, the
+ * chosen one lit — and the lit one can be pressed again to take it back, which
+ * is the one thing a radio group cannot do and this needs.
+ */
+function PreselectChoice({ value, onChange }) {
+  return (
+    <div role="radiogroup" aria-label="Decide before your turn" className="flex flex-wrap items-center gap-1">
+      {PRESELECTS.map((option) => {
+        const chosen = value === option.key;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            role="radio"
+            aria-checked={chosen}
+            title={chosen ? `${option.hint} — press again to cancel` : option.hint}
+            onClick={() => onChange(chosen ? null : option.key)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-semibold
+                        transition-colors select-none ${
+                          chosen
+                            ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink) border-(--color-highlight-deeper)"
+                            : "bg-black/40 text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver) hover:border-(--color-border-strong)"
+                        }`}
+          >
+            {/* The dot is what says "one of these", before the colour does. */}
+            <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${
+              chosen ? "border-(--color-highlight-ink) bg-(--color-highlight-ink)" : "border-(--color-text-muted)"
+            }`} />
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function ActionPanel({
   mySeat, onAction, disabled = false, amSittingOut = false, onSitIn, bare = false,
@@ -180,18 +221,7 @@ export default function ActionPanel({
         <ShowCardsBar myCards={holeCards} mySeat={mySeat} />
         {/* Deciding early only makes sense while you still hold cards. */}
         {inHand && actionOnSeat !== null && (
-          <div className="flex items-center gap-2">
-            {PRESELECTS.map((option) => (
-              <label key={option.key}
-                className="flex items-center gap-1.5 text-xs text-(--color-silver) cursor-pointer select-none">
-                <input type="checkbox"
-                  checked={preselect === option.key}
-                  onChange={(e) => setPreselect(e.target.checked ? option.key : null)}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
+          <PreselectChoice value={preselect} onChange={setPreselect} />
         )}
       </div>
     );

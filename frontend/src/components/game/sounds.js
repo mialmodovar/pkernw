@@ -156,6 +156,55 @@ export function playAllIn() {
   });
 }
 
+/**
+ * The moment the money is already in and the cards decide it.
+ *
+ * A low bed that swells while a chord climbs over it, then stops dead. It runs
+ * just under two seconds because that is the pause before the next street
+ * lands — it should end as the card does, not talk over it.
+ *
+ * Quieter than everything else here on purpose: this plays behind a table
+ * people are reading, and tension is a thing you feel rather than one you are
+ * told about.
+ */
+export function playAllInTension() {
+  play((ctx, now) => {
+    // The bed: two detuned lows, sliding up a little, wobbling against each
+    // other. The beat between them is most of the unease.
+    tone(ctx, { freq: 55, start: now, duration: 1.7, peak: 0.1, type: "sawtooth", endFreq: 82 });
+    tone(ctx, { freq: 55.9, start: now, duration: 1.7, peak: 0.08, type: "sawtooth", endFreq: 83.4 });
+
+    // Three notes climbing out of it, each one shorter than the last.
+    [[0.15, 330], [0.62, 415], [1.05, 494]].forEach(([offset, freq], index) => {
+      tone(ctx, {
+        freq, start: now + offset, duration: 0.5 - index * 0.08,
+        peak: 0.05 + index * 0.015, type: "triangle",
+      });
+    });
+
+    // A heartbeat under it all.
+    [0.1, 0.75, 1.25].forEach((offset) => {
+      tone(ctx, { freq: 70, start: now + offset, duration: 0.14, peak: 0.12, type: "sine", endFreq: 45 });
+    });
+  });
+}
+
+/** Something leaving your hand: air, and not much of it. */
+export function playThrow() {
+  play((ctx, now) => {
+    noise(ctx, { start: now, duration: 0.22, peak: 0.1, frequency: 900, Q: 0.6 });
+    tone(ctx, { freq: 420, start: now, duration: 0.2, peak: 0.05, type: "sine", endFreq: 180 });
+  });
+}
+
+/** And landing on somebody. */
+export function playSplat() {
+  play((ctx, now) => {
+    noise(ctx, { start: now, duration: 0.16, peak: 0.22, frequency: 320, Q: 0.8 });
+    tone(ctx, { freq: 150, start: now, duration: 0.14, peak: 0.1, type: "square", endFreq: 60 });
+  });
+}
+
 /** Which sound an action at the table makes. */
 export function playAction({ action, isAllIn }) {
   if (isAllIn) return playAllIn();

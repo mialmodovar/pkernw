@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 
 import Avatar from "../Avatar";
 import useGameStore from "../../store/gameStore";
-import { QUICK_MESSAGES, sendQuickMessage } from "./quickMessages";
 import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "../lobby/EmojiPicker";
@@ -110,80 +109,6 @@ function UserChip() {
   );
 }
 
-/**
- * Say one of the eight things people actually say, without opening anything.
- *
- * The chat starts folded away, which is right — it is for between hands — but
- * "nh" belongs to the moment the hand ends, not to a panel you have to unfold
- * first. This is the same eight lines the chat tray offers, hung off the bar
- * that is on screen the whole time.
- *
- * Through a portal, like the avatar and theme panels next to it: the bar is a
- * .panel and every .panel carries a backdrop-filter, which makes a stacking
- * context that would seal a dropdown inside the bar.
- */
-function QuickChat() {
-  const [open, setOpen] = useState(false);
-  const [at, setAt] = useState(null);
-  const button = useRef(null);
-
-  const toggle = () => {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    const rect = button.current?.getBoundingClientRect();
-    // Hung under the button and kept on screen near the right edge.
-    if (rect) setAt({ right: Math.max(8, window.innerWidth - rect.right), top: rect.bottom + 6 });
-    setOpen(true);
-  };
-
-  const say = (text) => {
-    sendQuickMessage(text);
-    setOpen(false);
-  };
-
-  return (
-    <>
-      <button
-        ref={button}
-        type="button"
-        onClick={toggle}
-        title="Quick message"
-        aria-label="Quick message"
-        aria-expanded={open}
-        className={`px-2 py-0.5 rounded text-xs leading-none transition-colors ${
-          open ? "btn-accent" : "btn-secondary"
-        }`}
-      >
-        {"\u{1F4AC}"}
-      </button>
-
-      {open && at && createPortal(
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="fixed z-50 flex flex-wrap justify-end gap-1 w-56 p-2 rounded-lg
-                          panel-raised panel-solid shadow-xl shadow-black/50 animate-fade-in"
-            style={{ right: at.right, top: at.top }}>
-            {QUICK_MESSAGES.map((quick) => (
-              <button
-                key={quick.text}
-                type="button"
-                title={quick.hint}
-                onClick={() => say(quick.text)}
-                className="btn-secondary px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors"
-              >
-                {quick.text}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body,
-      )}
-    </>
-  );
-}
-
 function DisplayToggles() {
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
@@ -193,7 +118,6 @@ function DisplayToggles() {
   return (
     <div className="flex items-center gap-2">
       <UserChip />
-      <QuickChat />
       <span className="hidden md:inline text-xs text-(--color-text-muted)">Show</span>
       <div className="flex rounded overflow-hidden border border-(--color-border)">
         {[["Chips", false], ["BB", true]].map(([label, value]) => (

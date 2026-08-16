@@ -10,8 +10,9 @@ import { QUICK_MESSAGES, sendQuickMessage } from "./quickMessages";
  * chat panel is still there for anything longer; this is for the eight things
  * that are always the same eight things.
  *
- * What you pick goes up as a bubble over this very corner of the seat, so a
- * word said here comes out of the button that said it.
+ * What you pick goes up as a bubble over your own face, where everybody else's
+ * words come from too — the button is where you say it, the avatar is who said
+ * it, and only one of those is worth pointing at.
  */
 export default function SeatQuickChat() {
   const [open, setOpen] = useState(false);

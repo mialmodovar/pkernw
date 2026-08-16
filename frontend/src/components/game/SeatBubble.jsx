@@ -15,10 +15,11 @@ const TEXT_MS = 5000;
  * line sent to it can go entirely unseen, which is most of the point of saying
  * it. This puts it where talk at a table actually comes from: the player.
  *
- * It rises from the right-hand corner of the seat, which is where the hero's
- * own quick-message button sits, so your words come out of the button you said
- * them with. One bubble per player: the newest thing they said replaces the
- * last rather than stacking up over their cards.
+ * It rises from the face — the avatar on the left of the seat — because that is
+ * who is talking. Anchored to the seat's left edge with its tail over the middle
+ * of the picture, so every player's words come out of the same place: theirs.
+ * One bubble per player, the newest thing they said replacing the last rather
+ * than stacking up over their cards.
  *
  * It clears itself. The store deliberately holds no timers, so the thing on
  * screen is the thing that decides when it is done.
@@ -40,7 +41,7 @@ export default function SeatBubble({ userId, name }) {
   if (!bubble) return null;
 
   return (
-    <div className="animate-gif-pop pointer-events-none absolute bottom-full right-0 mb-2 z-30 origin-bottom-right">
+    <div className="animate-gif-pop pointer-events-none absolute bottom-full left-0 mb-2 z-30 origin-bottom-left">
       <div className="relative rounded-lg border border-(--color-border-strong) bg-(--color-surface-raised)
                       shadow-lg shadow-black/60 overflow-hidden">
         {isGif ? (
@@ -55,12 +56,14 @@ export default function SeatBubble({ userId, name }) {
           </p>
         )}
       </div>
-      {/* The tail, pointing back down at where it came from. Drawn as a turned
-          square with only the two outer edges bordered, so it reads as part of
-          the bubble rather than a diamond stuck under it. */}
+      {/* The tail, over the middle of the avatar below it — the seat sets
+          --seat-avatar, so this follows whatever size the face is at. Drawn as
+          a turned square with only its two outer edges bordered, so it reads as
+          part of the bubble rather than a diamond stuck under it. */}
       <span
         aria-hidden="true"
-        className="absolute -bottom-1 right-3 w-2 h-2 rotate-45 bg-(--color-surface-raised)
+        style={{ left: "calc(var(--seat-avatar) / 2)" }}
+        className="absolute -bottom-1 -translate-x-1/2 w-2 h-2 rotate-45 bg-(--color-surface-raised)
                    border-r border-b border-(--color-border-strong)"
       />
     </div>

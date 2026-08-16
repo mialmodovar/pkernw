@@ -662,6 +662,20 @@ class CoordinatorRebuyTests(TestCase):
 		# What the loop would write to the DB now reflects the rebuy.
 		self.assertIn({"tp_id": 1, "chips": 10_000, "is_eliminated": False}, persisted)
 
+	def test_a_rebuy_writes_only_the_returning_player(self):
+		"""A rebuy arrives from the request thread while a hand is running, so
+		writing the whole table would persist stacks with chips still in the
+		pot — the run loop then reads that back as the real total."""
+		persisted = []
+		coordinator = self._coordinator(persisted)
+		self._add_player(coordinator, 1, 11, chips=0, is_eliminated=True, finish_position=2)
+		# Mid-hand: their blind is posted and the pot has not been awarded.
+		self._add_player(coordinator, 2, 22, chips=4_900)
+
+		self.assertEqual(async_to_sync(coordinator.apply_rebuy)(11, 10_000), "")
+
+		self.assertEqual([row["tp_id"] for row in persisted], [1])
+
 	def test_rebuy_applies_even_when_memory_lags_the_db(self):
 		"""Eligibility is decided by the caller from the locked DB row; the
 		in-memory copy only refreshes between hands, so it must not veto."""

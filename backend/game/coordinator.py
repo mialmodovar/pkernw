@@ -833,7 +833,11 @@ class MultiTableTournamentCoordinator:
         if not self._rebuy_pending:
             self._rebuy_deadline = 0.0
 
-        await self.persist_player_states(list(self._players_by_id.values()))
+        # This player only. A rebuy arrives from the request thread while a
+        # hand is running here, so writing every player would snapshot stacks
+        # mid-bet — chips already in the pot but not yet awarded — and the run
+        # loop reads that back as truth if its own write lands first.
+        await self.persist_player_states([player])
         await self.broadcast_tournament(
             "player_rebuy",
             {"name": player.name, "chips": chips},

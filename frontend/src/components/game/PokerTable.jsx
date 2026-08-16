@@ -346,7 +346,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const pos = betPosition(visualIdx, slots, geometry, frameSize);
         return (
           <div key={`bet-${seat}`}
-            className="absolute z-10 flex items-center gap-1 whitespace-nowrap"
+            className="absolute z-10 flex items-center gap-0.5 whitespace-nowrap"
             style={{
               top: pos.top,
               left: pos.left,
@@ -359,10 +359,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             }}>
             <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
             {p.bet > 0 && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/70
+              <span className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70
                                border border-(--color-highlight-edge) shadow-lg shadow-black/60 animate-chip-in">
-                <ChipStack amount={p.bet} size={10} />
-                <span className="text-[11px] font-bold text-(--color-highlight-text) leading-none">
+                <ChipStack amount={p.bet} size={9} />
+                <span className="text-[10px] font-bold text-(--color-highlight-text) leading-none">
                   {formatChips(p.bet, showBB, bb)}
                 </span>
               </span>

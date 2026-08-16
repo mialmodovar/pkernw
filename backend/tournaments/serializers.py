@@ -5,6 +5,7 @@ from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 from game.consumers import late_registration_open as _late_registration_open
 
+from accounts.avatars import avatar_url
 from clubs.models import Club, Season
 from clubs.permissions import is_club_staff
 
@@ -131,6 +132,11 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
     prize_cents = serializers.SerializerMethodField()
     bounty_prize_cents = serializers.SerializerMethodField()
+    # The face, so a list of names in the tournament lobby reads like the table
+    # it becomes. Both come out of maps the parent builds — a lookup per row
+    # would be a query per player, and these lists run to twenty.
+    avatar_emoji = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
     table_id = serializers.IntegerField(source="table.id", read_only=True)
     table_number = serializers.IntegerField(source="table.table_number", read_only=True)
 
@@ -140,6 +146,8 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "display_name",
+            "avatar_emoji",
+            "avatar_url",
             "table_id",
             "table_number",
             "seat",
@@ -159,6 +167,12 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
     def get_display_name(self, player):
         return shown_name(player.user.username, getattr(player.user, "profile", None)
                           and player.user.profile.display_name)
+
+    def get_avatar_emoji(self, player):
+        return self.context.get("emoji_by_user", {}).get(player.user_id) or "\U0001F0CF"
+
+    def get_avatar_url(self, player):
+        return avatar_url(player.user_id, self.context.get("stamp_by_user", {}).get(player.user_id))
 
     def get_prize_cents(self, player):
         """What this player took home, once the tournament settled.
@@ -312,15 +326,34 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     def get_players(self, tournament):
         from .models import LedgerEntry
 
+        from accounts.models import AvatarImage, Profile
+
         prizes = {
             user_id: (prize_cents, bounty_cents)
             for user_id, prize_cents, bounty_cents in LedgerEntry.objects
             .filter(tournament=tournament)
             .values_list("user_id", "prize_cents", "bounty_prize_cents")
         }
+        # The user and their profile come with the row rather than being
+        # fetched per seat — display_name reaches for both, so a fifteen-handed
+        # lobby was thirty queries every time it refreshed, which it does every
+        # few seconds.
+        seated = tournament.players.select_related("user", "user__profile")
+        user_ids = [player.user_id for player in seated]
+        emoji = dict(
+            Profile.objects.filter(user_id__in=user_ids).values_list("user_id", "avatar_emoji")
+        )
+        stamps = dict(
+            AvatarImage.objects.filter(user_id__in=user_ids).values_list("user_id", "updated_at")
+        )
         return TournamentPlayerSerializer(
-            tournament.players.all(), many=True,
-            context={**self.context, "prizes_by_user": prizes},
+            seated, many=True,
+            context={
+                **self.context,
+                "prizes_by_user": prizes,
+                "emoji_by_user": emoji,
+                "stamp_by_user": stamps,
+            },
         ).data
 
 

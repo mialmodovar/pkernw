@@ -94,10 +94,13 @@ function slotPosition(index, capacity, geometry) {
 
 // How far in from a seat its chips sit, as a share of the table's height, so
 // it is the same distance whichever way the seat lies.
-const BET_INSET = 24;
+const BET_INSET = 26;
 
-// The chip pill's own half-height, plus air between it and the seat.
-const BET_MARGIN = 26;
+// The chip pill's own half-height, plus air between it and the seat. Generous
+// on purpose: this is the number that decides whether a stack sits in front of
+// a player or on their cards, and the felt between the seats and the pot is
+// empty anyway.
+const BET_MARGIN = 40;
 
 /**
  * Half the room a seat takes up, in pixels, along each axis.

@@ -2583,3 +2583,52 @@ class UnlimitedRebuyTests(APITestCase):
 		player._rebuy_count = 12
 
 		self.assertTrue(coordinator._can_rebuy(player))
+
+
+class PlayerAvatarTests(APITestCase):
+	"""Faces beside the names in the tournament lobby."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="av_host", password="secret123", is_staff=True)
+		self.client.force_authenticate(self.host)
+		self.tournament = Tournament.objects.create(host=self.host, name="Faces", status="lobby")
+		TournamentPlayer.objects.create(tournament=self.tournament, user=self.host, seat=0, chips=1000)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_a_seat_carries_the_face_and_the_name(self):
+		from accounts.models import Profile
+
+		# Profiles are made on demand rather than by a signal, so a user who has
+		# never opened their settings does not have one yet.
+		Profile.objects.create(user=self.host, avatar_emoji="\U0001F984")
+
+		response = self.client.get(reverse("tournament-detail", args=[self.tournament.id]))
+
+		row = response.data["players"][0]
+		self.assertEqual(row["avatar_emoji"], "\U0001F984")
+		self.assertIn("avatar_url", row)
+
+	def test_somebody_who_never_picked_one_still_gets_a_face(self):
+		from accounts.models import Profile
+
+		Profile.objects.filter(user=self.host).delete()
+
+		response = self.client.get(reverse("tournament-detail", args=[self.tournament.id]))
+
+		self.assertTrue(response.data["players"][0]["avatar_emoji"])
+
+	def test_a_full_table_does_not_cost_a_query_per_seat(self):
+		"""The faces come out of maps built once. Looked up per row, a
+		twenty-handed lobby would be forty extra queries every few seconds."""
+		for index in range(1, 15):
+			player = User.objects.create_user(username=f"av_{index}", password="secret123")
+			TournamentPlayer.objects.create(
+				tournament=self.tournament, user=player, seat=index, chips=1000,
+			)
+
+		with self.assertNumQueries(9):
+			response = self.client.get(reverse("tournament-detail", args=[self.tournament.id]))
+
+		self.assertEqual(len(response.data["players"]), 15)

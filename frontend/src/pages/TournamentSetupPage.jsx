@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
+import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
 
 const formatScheduledStart = (value) => {
@@ -104,7 +105,15 @@ function TableCard({ table, players, onWatch }) {
                   : "border-dashed border-(--color-border) bg-black/30 text-(--color-text-muted)"
               }`}
             >
-              {player ? (player.display_name || player.username).slice(0, 2) : ""}
+              {player ? (
+                <Avatar
+                  url={player.avatar_url}
+                  emoji={player.avatar_emoji}
+                  name={player.username}
+                  className="w-full h-full rounded-full"
+                  emojiClassName="text-[11px]"
+                />
+              ) : ""}
             </span>
           );
         })}
@@ -438,6 +447,16 @@ export default function TournamentSetupPage() {
                         {out ? (player.finish_position ?? "—") : (filter ? "" : index + 1)}
                       </td>
                       <td className={`px-1 py-1.5 truncate ${out ? "text-(--color-text-muted) line-through" : "text-(--color-silver)"}`}>
+                        <Avatar
+                          url={player.avatar_url}
+                          emoji={player.avatar_emoji}
+                          name={player.username}
+                          // Dimmed with the rest of a busted row rather than
+                          // left bright over a struck-through name.
+                          className={`inline-flex align-[-0.3em] w-5 h-5 mr-1.5 rounded-full shrink-0
+                                      border border-(--color-border) ${out ? "opacity-50 grayscale" : ""}`}
+                          emojiClassName="text-xs"
+                        />
                         {player.display_name || player.username}{isMe && " (you)"}
                         {player.rebuy_count > 0 && (
                           <span className="text-[10px] text-(--color-text-muted)"> · {player.rebuy_count}R</span>

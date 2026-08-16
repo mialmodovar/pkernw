@@ -114,11 +114,17 @@ export default function PlayerSeat({
     </div>
   );
 
+  // Three ways a hand stops being yours alone: turned over at showdown, laid
+  // face up for an all-in runout, or shown on purpose between hands. Once the
+  // table has seen it, covering it hides it from nobody but its owner — and
+  // leaves you hovering your own cards to read a showdown everybody else is
+  // already looking at.
+  const handIsPublic = Boolean(showdownEntry) || equity !== null || Boolean(raisedCards?.length);
   // Your own cards, face down until you point at them. The whole column is the
   // hover group, because what you hold and what it adds up to are the same
   // secret: leaving "Two pair, aces and jacks" legible under a pair of card
   // backs would be covering the cards and reading them out.
-  const coverHand = isMe && hideHand && !showdownEntry && !p.is_folded;
+  const coverHand = isMe && hideHand && !p.is_folded && !handIsPublic;
   const cards = (
     <div key="cards" className={`flex flex-col items-center gap-1 ${coverHand ? "group/hand" : ""}`}>
       <HoleCards

@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from .models import Club, League, Membership, Season
 from .permissions import is_club_owner, is_club_staff, role_in
-from .scoring import normalize_scheme, standings
+from .scoring import club_standings, normalize_scheme, standings
 from .serializers import (
     ClubDetailSerializer,
     ClubListSerializer,
@@ -72,6 +72,51 @@ def club_detail(request, slug):
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(ClubDetailSerializer(club, context={"request": request}).data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def club_leaderboard(request, slug):
+    """The club's all-time table, across every league and season it has run."""
+    club = get_object_or_404(Club, slug=slug)
+    if not club.is_public and role_in(request.user, club) is None:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+    return Response({"rows": club_standings(club)})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def club_tournaments(request, slug):
+    """What the club has run, newest first.
+
+    Finished nights with their winner, and whatever is coming up — the history
+    and the diary are the same list read from opposite ends.
+    """
+    club = get_object_or_404(Club, slug=slug)
+    if not club.is_public and role_in(request.user, club) is None:
+        return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    tournaments = (
+        club.tournaments
+        .select_related("season__league")
+        .prefetch_related("players__user")
+        .order_by("-created_at")[:25]
+    )
+
+    rows = []
+    for tournament in tournaments:
+        seats = list(tournament.players.all())
+        winner = next((seat for seat in seats if seat.finish_position == 1), None)
+        rows.append({
+            "id": tournament.id,
+            "name": tournament.name,
+            "status": tournament.status,
+            "played_at": tournament.started_at or tournament.created_at,
+            "entrants": len(seats),
+            "league_name": tournament.season.league.name if tournament.season_id else None,
+            "winner": winner.user.username if winner else None,
+        })
+    return Response(rows)
 
 
 @api_view(["POST"])

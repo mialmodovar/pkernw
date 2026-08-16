@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (
     club_detail,
+    club_leaderboard,
+    club_tournaments,
     clubs,
     create_league,
     join_by_code,
@@ -21,6 +23,8 @@ urlpatterns = [
     path("seasons/<int:season_id>/",  season_detail,    name="season-detail"),
     path("<slug:slug>/",              club_detail,      name="club-detail"),
     path("<slug:slug>/join/",         join_club,        name="club-join"),
+    path("<slug:slug>/leaderboard/",  club_leaderboard, name="club-leaderboard"),
+    path("<slug:slug>/tournaments/",  club_tournaments, name="club-tournaments"),
     path("<slug:slug>/leave/",        leave_club,       name="club-leave"),
     path("<slug:slug>/leagues/",      create_league,    name="club-create-league"),
     path("<slug:slug>/members/<str:username>/", member, name="club-member"),

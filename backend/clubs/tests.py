@@ -411,3 +411,101 @@ class ClubTournamentPermissionTests(APITestCase):
 		)
 
 		self.assertEqual(Tournament.objects.get(id=created["id"]).season_id, self.season.id)
+
+
+class ClubRecordTests(APITestCase):
+	"""What a club keeps: an all-time table, and the nights it has run."""
+
+	def setUp(self):
+		self.owner = User.objects.create_user(username="r_owner", password="secret123")
+		self.rival = User.objects.create_user(username="r_rival", password="secret123")
+		self.outsider = User.objects.create_user(username="r_outsider", password="secret123")
+		self.client.force_authenticate(self.owner)
+
+		self.club = Club.objects.create(name="Quinta", created_by=self.owner)
+		Membership.objects.create(club=self.club, user=self.owner, role=Membership.OWNER)
+		self.league = League.objects.create(club=self.club, name="Sunday")
+		self.season = Season.objects.create(league=self.league, name="Autumn")
+
+	def _night(self, name, season, status_value="finished", **finishes):
+		tournament = Tournament.objects.create(
+			host=self.owner, name=name, status=status_value, club=self.club, season=season,
+		)
+		for seat, (who, finish) in enumerate(finishes.items()):
+			TournamentPlayer.objects.create(
+				tournament=tournament, user=getattr(self, who), seat=seat, chips=0,
+				finish_position=finish,
+			)
+		return tournament
+
+	def test_the_leaderboard_adds_every_season_up(self):
+		"""A season table says who is winning now; this says who is best here."""
+		self._night("One", self.season, owner=1, rival=2)
+		old = Season.objects.create(league=self.league, name="Summer")
+		self._night("Two", old, rival=1, owner=2)
+		self._night("Three", old, owner=1, rival=2)
+
+		response = self.client.get(reverse("club-leaderboard", args=[self.club.slug]))
+
+		rows = {row["username"]: row for row in response.data["rows"]}
+		self.assertEqual(rows["r_owner"]["played"], 3)
+		self.assertEqual(rows["r_owner"]["wins"], 2)
+		self.assertEqual(rows["r_rival"]["wins"], 1)
+		self.assertEqual(response.data["rows"][0]["username"], "r_owner")
+
+	def test_the_leaderboard_counts_seasons_played(self):
+		self._night("One", self.season, owner=1)
+		old = Season.objects.create(league=self.league, name="Summer")
+		self._night("Two", old, owner=1)
+
+		response = self.client.get(reverse("club-leaderboard", args=[self.club.slug]))
+
+		self.assertEqual(response.data["rows"][0]["seasons"], 2)
+
+	def test_a_club_with_nothing_played_has_an_empty_table(self):
+		response = self.client.get(reverse("club-leaderboard", args=[self.club.slug]))
+
+		self.assertEqual(response.data["rows"], [])
+
+	def test_the_history_lists_the_nights_newest_first(self):
+		self._night("Older", self.season, owner=1)
+		self._night("Newer", self.season, rival=1)
+
+		response = self.client.get(reverse("club-tournaments", args=[self.club.slug]))
+
+		self.assertEqual([row["name"] for row in response.data], ["Newer", "Older"])
+		self.assertEqual(response.data[0]["winner"], "r_rival")
+		self.assertEqual(response.data[0]["league_name"], "Sunday")
+
+	def test_the_history_includes_a_night_still_to_come(self):
+		"""The history and the diary are the same list read from both ends."""
+		self._night("Tonight", None, status_value="lobby", owner=None)
+
+		response = self.client.get(reverse("club-tournaments", args=[self.club.slug]))
+
+		row = next(item for item in response.data if item["name"] == "Tonight")
+		self.assertEqual(row["status"], "lobby")
+		self.assertIsNone(row["winner"])
+		self.assertIsNone(row["league_name"])
+
+	def test_a_private_clubs_records_are_not_public(self):
+		self.club.is_public = False
+		self.club.save(update_fields=["is_public"])
+		self.client.force_authenticate(self.outsider)
+
+		self.assertEqual(
+			self.client.get(reverse("club-leaderboard", args=[self.club.slug])).status_code,
+			status.HTTP_404_NOT_FOUND,
+		)
+		self.assertEqual(
+			self.client.get(reverse("club-tournaments", args=[self.club.slug])).status_code,
+			status.HTTP_404_NOT_FOUND,
+		)
+
+	def test_anybody_can_read_a_public_clubs_records(self):
+		self.client.force_authenticate(self.outsider)
+
+		self.assertEqual(
+			self.client.get(reverse("club-leaderboard", args=[self.club.slug])).status_code,
+			status.HTTP_200_OK,
+		)

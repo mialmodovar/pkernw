@@ -165,3 +165,38 @@ def standings(season):
         rows.values(),
         key=lambda row: (-row["points"], -row["wins"], -row["knockouts"], row["username"]),
     )
+
+
+def club_standings(club):
+    """Every season the club has ever run, added up.
+
+    A season table answers "who is winning right now"; this answers "who is the
+    best player in this club", which is a different question and the one people
+    argue about. Each season contributes points scored under its own rules —
+    that is what those rules were for — so a club that changed its scoring is
+    still summing things people actually played for.
+    """
+    from .models import Season
+
+    totals = {}
+    for season in Season.objects.filter(league__club=club).select_related("league"):
+        for row in standings(season):
+            running = totals.setdefault(row["username"], {
+                "username": row["username"],
+                "display_name": row["display_name"],
+                "points": 0,
+                "played": 0,
+                "wins": 0,
+                "cashes": 0,
+                "knockouts": 0,
+                "net_cents": 0,
+                "seasons": 0,
+            })
+            for field in ("points", "played", "wins", "cashes", "knockouts", "net_cents"):
+                running[field] += row[field]
+            running["seasons"] += 1
+
+    return sorted(
+        totals.values(),
+        key=lambda row: (-row["points"], -row["wins"], -row["knockouts"], row["username"]),
+    )

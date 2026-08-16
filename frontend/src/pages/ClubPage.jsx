@@ -8,13 +8,13 @@ import { describeScheme } from "../components/lobby/leagueScoring";
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
-function StandingsTable({ rows }) {
+const formatDate = (value) => (value
+  ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(new Date(value))
+  : "");
+
+function StandingsTable({ rows, empty = "Nothing played yet. The table fills in as nights finish." }) {
   if (!rows.length) {
-    return (
-      <p className="text-sm text-(--color-text-muted) py-4">
-        Nothing played yet. The table fills in as nights finish.
-      </p>
-    );
+    return <p className="text-sm text-(--color-text-muted) py-4">{empty}</p>;
   }
   return (
     <div className="panel-raised rounded-lg overflow-x-auto">
@@ -77,6 +77,9 @@ export default function ClubPage() {
   const [error, setError] = useState("");
   const [editingScoring, setEditingScoring] = useState(false);
   const [draftScoring, setDraftScoring] = useState(null);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [joining, setJoining] = useState(false);
 
   const loadClub = useCallback(async () => {
     try {
@@ -89,6 +92,23 @@ export default function ClubPage() {
   }, [slug]);
 
   useEffect(() => { loadClub(); }, [loadClub]);
+
+  // The club's own two records: who is best across everything it has ever run,
+  // and what it has run. Both survive a club with no leagues at all.
+  const loadRecords = useCallback(async () => {
+    try {
+      const [board, nights] = await Promise.all([
+        api.get(`/clubs/${slug}/leaderboard/`),
+        api.get(`/clubs/${slug}/tournaments/`),
+      ]);
+      setLeaderboard(board.data.rows || []);
+      setHistory(nights.data || []);
+    } catch {
+      // The page is worth reading without them.
+    }
+  }, [slug]);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
 
   const loadTable = useCallback(async () => {
     if (!leagueId) { setTable(null); return; }
@@ -106,6 +126,19 @@ export default function ClubPage() {
   useEffect(() => { loadTable(); }, [loadTable]);
 
   const isStaff = club?.my_role === "owner" || club?.my_role === "staff";
+  const isMember = Boolean(club?.my_role);
+
+  const join = async () => {
+    setJoining(true);
+    try {
+      await api.post(`/clubs/${slug}/join/`);
+      await loadClub();
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || "Could not join that club.");
+    } finally {
+      setJoining(false);
+    }
+  };
   const league = useMemo(
     () => club?.leagues.find((one) => one.id === leagueId) || null,
     [club, leagueId],
@@ -163,6 +196,16 @@ export default function ClubPage() {
           >
             {club.invite_code}
           </span>
+        )}
+        {!isMember && club.is_public && (
+          <button
+            onClick={join}
+            disabled={joining}
+            className="btn-accent px-4 py-1.5 rounded text-sm font-semibold transition-colors shrink-0
+                       disabled:opacity-50"
+          >
+            {joining ? "Joining…" : "Join club"}
+          </button>
         )}
         {isStaff && (
           <button
@@ -274,6 +317,59 @@ export default function ClubPage() {
               </div>
             )}
           </>
+        )}
+      </section>
+
+      {/* All time, across every league and season. The season table above
+          answers who is winning now; this answers who is the best player in
+          the club, which is the argument people actually have. */}
+      <section className="space-y-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+          Club leaderboard
+        </h2>
+        <StandingsTable
+          rows={leaderboard}
+          empty="Nothing to rank yet — it builds as the club plays."
+        />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
+          Nights
+        </h2>
+        {history.length === 0 ? (
+          <p className="text-sm text-(--color-text-muted)">Nothing run yet.</p>
+        ) : (
+          <ol className="panel-raised rounded-lg divide-y divide-(--color-border)">
+            {history.map((night) => (
+              <li key={night.id}>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/tournament/${night.id}`)}
+                  className="w-full px-3 py-2 flex items-center gap-2 text-xs text-left
+                             hover:bg-white/5 transition-colors"
+                >
+                  <span className="text-(--color-text-muted) shrink-0 w-16">
+                    {night.played_at ? formatDate(night.played_at) : ""}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-(--color-silver)">
+                    {night.name}
+                    {night.league_name && (
+                      <span className="text-(--color-text-muted)"> · {night.league_name}</span>
+                    )}
+                  </span>
+                  {night.winner ? (
+                    <span className="text-(--color-highlight-text) shrink-0">🏆 {night.winner}</span>
+                  ) : (
+                    <span className="text-(--color-text-muted) shrink-0">{night.status}</span>
+                  )}
+                  <span className="text-(--color-text-muted) shrink-0 hidden sm:inline">
+                    {night.entrants}p
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
         )}
       </section>
 

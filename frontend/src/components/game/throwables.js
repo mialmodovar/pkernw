@@ -22,3 +22,14 @@ const BY_ID = Object.fromEntries(THROWABLES.map((item) => [item.id, item]));
 export function throwableFor(id) {
   return BY_ID[id] || THROWABLES[0];
 }
+
+/**
+ * How high a throw rises over the distance it covers.
+ *
+ * Enough of an arc to read as thrown rather than slid, and more of it the
+ * further it goes — a lob across the table, a flick to the seat beside you.
+ * Shared so the line you aim along is the line the object actually flies.
+ */
+export function throwLift(dx) {
+  return Math.min(90, 26 + Math.abs(dx) * 0.18);
+}

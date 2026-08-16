@@ -26,6 +26,7 @@ import HandReview from "../components/game/HandReview";
 import PlayerStatsCard from "../components/game/PlayerStatsCard";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 import { useCompactLayout } from "../components/game/useCompactLayout";
+import { InfoIcon, LobbyIcon } from "../components/game/icons";
 
 // How long the table stays up after a hand ends your tournament — yours or
 // everyone's. The last hand is the one worth looking at, and a result screen
@@ -67,6 +68,7 @@ export default function GamePage() {
   const [spectating, setSpectating] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [playerStats, setPlayerStats] = useState({});
   const [inspecting, setInspecting] = useState(null);
   const compact = useCompactLayout();
@@ -329,26 +331,10 @@ export default function GamePage() {
         </div>
       )}
       <BlindLevelBar
+        name={tournament?.name}
+        onHome={() => navigate("/")}
         controls={(
           <div className="flex items-center gap-2">
-            {amPlaying ? (
-              <a
-                href={`/tournament/${id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="This tournament's lobby, in a new window so you keep your seat"
-                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-              >
-                Lobby ↗
-              </a>
-            ) : watching == null && (
-              <button
-                onClick={() => navigate(`/tournament/${id}`)}
-                className="btn-secondary px-2 py-0.5 rounded text-xs font-semibold transition-colors"
-              >
-                Lobby
-              </button>
-            )}
             {isHost && (tournamentStatus === "paused" ? (
               <button
                 onClick={() => handleAdminControl("resume")}
@@ -403,10 +389,52 @@ export default function GamePage() {
         </div>
       )}
 
+      {/* Where you are, and the three things you might want to look at while you
+          are there. Info, hand history and the lobby are all "step away from the
+          hand for a moment" — they belong together, and none of them belongs up
+          in the blind bar beside the clock controls. */}
       <div className="px-2 md:px-4 py-1.5 md:py-2 text-xs md:text-sm text-(--color-text-muted) flex items-center justify-between gap-2">
-        <span className="truncate">{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
+        <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+          <span className="truncate">{currentTableNumber ? `Table ${currentTableNumber}` : "Awaiting table assignment"}</span>
+          {tableCount > 1 && (
+            <span className="hidden md:inline shrink-0">{`· ${tableCount} active tables`}</span>
+          )}
+          <button
+            onClick={() => setInfoOpen((was) => !was)}
+            title="Blinds, payouts, stacks and knockouts"
+            aria-expanded={infoOpen}
+            className={`shrink-0 flex items-center gap-1.5 ml-1 md:ml-2 px-2 md:px-3 py-1 rounded
+                        text-xs font-semibold transition-colors ${infoOpen ? "btn-accent" : "btn-secondary"}`}
+          >
+            <InfoIcon />
+            <span className="hidden md:inline">Info</span>
+          </button>
+          <ActionHistory onReview={() => setReviewOpen(true)} />
+          {amPlaying ? (
+            <a
+              href={`/tournament/${id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="This tournament's lobby, in a new window so you keep your seat"
+              className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
+                         rounded text-xs font-semibold transition-colors"
+            >
+              <LobbyIcon />
+              <span className="hidden md:inline">Lobby ↗</span>
+            </a>
+          ) : watching == null && (
+            <button
+              onClick={() => navigate(`/tournament/${id}`)}
+              title="This tournament's lobby"
+              className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
+                         rounded text-xs font-semibold transition-colors"
+            >
+              <LobbyIcon />
+              <span className="hidden md:inline">Lobby</span>
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
-          <span className="hidden md:inline">{tableCount > 0 ? `${tableCount} active table${tableCount === 1 ? "" : "s"}` : ""}</span>
           {watching != null && tableSummaries.length > 1 && (
             <div className="flex items-center gap-1">
               {tableSummaries.map((table) => (
@@ -431,7 +459,6 @@ export default function GamePage() {
               Chat
             </button>
           )}
-          <ActionHistory onReview={() => setReviewOpen(true)} />
           {watching == null && (
             <button
               onClick={() => send({ type: "sit_out", value: !amSittingOut })}
@@ -441,20 +468,18 @@ export default function GamePage() {
               {amSittingOut ? "Sit in" : "Sit out"}
             </button>
           )}
-          <button
-            onClick={() => navigate("/")}
-            title={watching == null ? "Your seat is kept — you can come back to the table" : "Back home"}
-            className="btn-secondary px-2 md:px-3 py-1 rounded text-xs font-semibold transition-colors"
-          >
-            Home
-          </button>
         </div>
       </div>
 
       <div className={`table-area flex-1 min-h-0 flex items-center justify-center relative px-1 md:px-4 transition-shadow duration-300 ${
         isMyTurn ? "shadow-[inset_0_0_120px_var(--app-glow)]" : ""
       }`}>
-        <TournamentInfoPanel tournament={tournament} username={user?.username} />
+        <TournamentInfoPanel
+          tournament={tournament}
+          username={user?.username}
+          open={infoOpen}
+          onClose={() => setInfoOpen(false)}
+        />
         <PokerTable mySeat={mySeat} capacity={capacity}
           statsByName={playerStats}
           onInspectPlayer={setInspecting} />

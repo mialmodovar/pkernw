@@ -7,6 +7,7 @@ import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "../lobby/EmojiPicker";
 import ThemeSettings from "../lobby/ThemeSettings";
+import { HomeIcon } from "./icons";
 
 /**
  * Who you are, and the two things about that you might want to change.
@@ -111,7 +112,7 @@ function UserChip() {
   );
 }
 
-function DisplayToggles() {
+function DisplayToggles({ onHome }) {
   const showBB = useGameStore((s) => s.showBB);
   const toggleBB = useGameStore((s) => s.toggleBB);
   const soundEnabled = useGameStore((s) => s.soundEnabled);
@@ -119,6 +120,20 @@ function DisplayToggles() {
 
   return (
     <div className="flex items-center gap-2">
+      {/* Home sits with the avatar rather than down among the table controls.
+          Leaving the table is about you, not about this hand, and it is the one
+          button that has to be in the same place on every screen. */}
+      {onHome && (
+        <button
+          onClick={onHome}
+          title="Back to the main menu — your seat is kept"
+          aria-label="Home"
+          className="btn-secondary shrink-0 flex items-center gap-1 rounded px-2 py-0.5 text-xs font-semibold transition-colors"
+        >
+          <HomeIcon />
+          <span className="hidden md:inline">Home</span>
+        </button>
+      )}
       <UserChip />
       <span className="hidden md:inline text-xs text-(--color-text-muted)">Show</span>
       <div className="flex rounded overflow-hidden border border-(--color-border)">
@@ -149,18 +164,32 @@ function DisplayToggles() {
   );
 }
 
-export default function BlindLevelBar({ controls = null }) {
+/** Which tournament this is, in the corner. Easy to forget you are in two. */
+function TournamentName({ name }) {
+  if (!name) return null;
+  return (
+    <span
+      className="max-w-[8rem] md:max-w-[16rem] truncate font-semibold text-(--color-highlight-text)"
+      title={name}
+    >
+      {name}
+    </span>
+  );
+}
+
+export default function BlindLevelBar({ name = null, controls = null, onHome = null }) {
   const level = useGameStore((s) => s.level);
   const remaining = useLevelCountdown();
 
   if (!level) {
     return (
       <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <TournamentName name={name} />
           <span className="text-(--color-text-muted)">Waiting for level info...</span>
           {controls}
         </div>
-        <DisplayToggles />
+        <DisplayToggles onHome={onHome} />
       </div>
     );
   }
@@ -172,7 +201,8 @@ export default function BlindLevelBar({ controls = null }) {
     <div className="panel px-2 md:px-4 py-1.5 md:py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs md:text-sm">
       {/* Pausing and skipping a level are things you do to the clock, so they
           sit with it rather than on a row of their own. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <TournamentName name={name} />
         <span className="text-(--color-silver)">
           {isBreak
             ? `Break after level ${level.blind_level_number || 0}`
@@ -182,7 +212,7 @@ export default function BlindLevelBar({ controls = null }) {
         {controls}
       </div>
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
-        <DisplayToggles />
+        <DisplayToggles onHome={onHome} />
         {/* What is left, not what has gone: a timed level says how long you
             have, and a level counted in hands should answer the same question
             rather than make you subtract. The tally is still in the tooltip. */}

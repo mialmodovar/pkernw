@@ -1,4 +1,3 @@
-import { useState } from "react";
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 import { formatEuros } from "./formatMoney";
@@ -20,9 +19,13 @@ function Row({ label, children }) {
  * standing and the payouts. `tournament` is the REST detail already fetched by
  * GamePage — its `levels`, `payout_structure` and `players` were all being
  * fetched and thrown away.
+ *
+ * Opened from the header rather than from a chip of its own on the felt. That
+ * chip carried the level and the clock, both of which the blind bar an inch
+ * above it was already showing, so it spent every hand covering a corner of the
+ * table to repeat what was on screen anyway.
  */
-export default function TournamentInfoPanel({ tournament, username }) {
-  const [open, setOpen] = useState(false);
+export default function TournamentInfoPanel({ tournament, username, open, onClose }) {
   const level = useGameStore((s) => s.level);
   const levelRemaining = useLevelCountdown();
   const tableSummaries = useGameStore((s) => s.tableSummaries);
@@ -90,51 +93,14 @@ export default function TournamentInfoPanel({ tournament, username }) {
         .sort((a, b) => (b.bounty_cents || 0) - (a.bounty_cents || 0))[0]
     : null;
 
-  // The blinds and the clock stay on screen whether or not the panel is open —
-  // they are the two things you look up mid-hand without wanting to read a card.
-  const levelLabel = level
-    ? level.is_break
-      ? "Break"
-      : `L${level.blind_level_number || 1} · ${level.small_blind}/${level.big_blind}`
-    : "—";
-  // Works for both kinds of level: a clock for a timed one, hands remaining
-  // for one counted in hands, which used to show nothing at all here.
   const levelClock = levelRemainingLabel(level, levelRemaining);
 
-  // Closed it is a single button: this is reference you want between hands, not
-  // something worth a corner of the felt every hand.
-  const corner = "absolute top-1 right-1 md:top-2 md:right-2 z-10";
+  // Under the button that opens it, on the side of the felt where the header's
+  // tools are — a panel that opens across the table from its own button reads
+  // as something that appeared rather than something you opened.
+  const corner = "absolute top-1 left-1 md:top-2 md:left-2 z-10";
 
-  if (!open) {
-    return (
-      <div
-        onDoubleClick={() => setOpen(true)}
-        title="Double-click to open tournament info"
-        className={`${corner} flex items-center gap-2 panel panel-floating rounded-full
-                    py-1 pl-3 pr-1 shadow-lg shadow-black/50 select-none`}
-      >
-        <span className="text-[11px] font-semibold leading-none text-(--color-silver) whitespace-nowrap">
-          {levelLabel}
-        </span>
-        {levelClock && (
-          <span className="text-[11px] font-mono leading-none tabular-nums text-(--color-text-muted)">
-            {levelClock}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          title="Tournament info"
-          aria-label="Show tournament info"
-          className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center
-                     font-serif italic font-bold text-sm leading-none text-(--color-silver)
-                     hover:bg-white/10 transition-colors"
-        >
-          i
-        </button>
-      </div>
-    );
-  }
+  if (!open) return null;
 
   return (
     <div className={`${corner} w-52 md:w-60 panel rounded-lg text-xs shadow-lg shadow-black/50
@@ -142,7 +108,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
       {/* Double-click the header to collapse, the same gesture the floating
           panels use on their title bars. */}
       <div
-        onDoubleClick={() => setOpen(false)}
+        onDoubleClick={onClose}
         title="Double-click to collapse"
         className="flex items-center justify-between px-3 py-1.5 gap-2 text-[10px]
                    font-semibold uppercase tracking-wide text-(--color-silver) select-none cursor-pointer"
@@ -150,7 +116,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
         <span className="truncate">{tournament?.name || "Tournament"}</span>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={onClose}
           aria-label="Hide tournament info"
           className="shrink-0 rounded px-1 text-sm leading-none text-(--color-text-muted)
                      hover:text-(--color-silver) transition-colors"

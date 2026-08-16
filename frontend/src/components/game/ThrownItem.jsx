@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import useGameStore from "../../store/gameStore";
-import { throwableFor } from "./throwables";
+import { throwableFor, throwLift } from "./throwables";
 
 // How long the thing is in the air, and how long the mess it leaves stays on
 // screen after it lands. The whoosh and the splat in useTableSounds are timed
@@ -32,9 +32,7 @@ export default function ThrownItem({ throwing, from, to }) {
 
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  // Enough of an arc to read as thrown rather than slid, and more of it the
-  // further it goes — a lob across the table, a flick to the seat beside you.
-  const lift = Math.min(90, 26 + Math.abs(dx) * 0.18);
+  const lift = throwLift(dx);
   const spin = dx >= 0 ? 540 : -540;
 
   return (

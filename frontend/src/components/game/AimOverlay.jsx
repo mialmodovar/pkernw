@@ -1,6 +1,20 @@
 import { useRef, useState } from "react";
 
-import { throwableFor } from "./throwables";
+import { throwableFor, throwLift } from "./throwables";
+
+/**
+ * The dashes, along the path the object will actually take.
+ *
+ * A quadratic curve passes through the point halfway between its ends and its
+ * control point, so lifting the control by twice the arc height puts the top of
+ * the curve exactly where the thrown object peaks.
+ */
+function arcPath(from, to) {
+  const lift = throwLift(to.x - from.x);
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2 - lift * 2;
+  return `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`;
+}
 
 // How close the pointer has to be to a seat for that seat to be the target.
 // Generous: you are throwing at a person, not clicking a checkbox.
@@ -61,8 +75,9 @@ export default function AimOverlay({ item, hero, targets, onThrow, onCancel }) {
     >
       <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
         {hero && tip && (
-          <line
-            x1={hero.x} y1={hero.y} x2={tip.x} y2={tip.y}
+          <path
+            d={arcPath(hero, tip)}
+            fill="none"
             stroke={locked ? "var(--color-highlight)" : "var(--color-text-muted)"}
             strokeWidth={locked ? 2.5 : 1.5}
             strokeDasharray="9 7"

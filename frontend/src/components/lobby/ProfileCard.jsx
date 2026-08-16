@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Avatar from "../Avatar";
+import DisplayNameField from "./DisplayNameField";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "./EmojiPicker";
 import ThemeSettings from "./ThemeSettings";
@@ -22,13 +23,13 @@ export default function ProfileCard() {
           <Avatar
             url={user?.profile?.avatar_url}
             emoji={user?.profile?.avatar_emoji}
-            name={user?.username}
+            name={user?.profile?.display_name || user?.username}
             className="w-full h-full"
             emojiClassName="text-3xl"
           />
         </button>
-        <div className="min-w-0">
-          <p className="font-semibold text-(--color-silver) truncate">{user?.username}</p>
+        <div className="min-w-0 flex-1">
+          <DisplayNameField />
           <button
             onClick={() => toggle("avatar")}
             className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"

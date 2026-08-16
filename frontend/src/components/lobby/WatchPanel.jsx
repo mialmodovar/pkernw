@@ -38,10 +38,11 @@ function presenceLine(player) {
   const where = player.tournament
     ? `${player.tournament.status === "paused" ? "sat in" : "playing"} ${player.tournament.name}`
     : null;
-  if (player.online && where) return `${player.username} — online, ${where}`;
-  if (where) return `${player.username} — ${where}, but not connected`;
-  if (player.online) return `${player.username} — online`;
-  return `${player.username} — offline`;
+  const who = player.display_name || player.username;
+  if (player.online && where) return `${who} — online, ${where}`;
+  if (where) return `${who} — ${where}, but not connected`;
+  if (player.online) return `${who} — online`;
+  return `${who} — offline`;
 }
 
 export default function WatchPanel() {
@@ -156,7 +157,7 @@ export default function WatchPanel() {
           {atTables.map((player) => (
             <li key={player.username} className="flex items-center gap-2 text-xs">
               <span className="shrink-0 font-semibold text-(--color-silver) truncate max-w-[6rem]">
-                {player.username}
+                {player.display_name || player.username}
               </span>
               <span className="flex-1 min-w-0 truncate text-(--color-text-muted)"
                 title={player.tournament.name}>

@@ -140,7 +140,7 @@ export default function TournamentCard({ tournament: t, onJoin, onOpen, onQuit, 
           ) : (
             <>
               {facts.join(" · ")}
-              <span className="hidden sm:inline"> · {t.host_name}</span>
+              <span className="hidden sm:inline"> · {t.host_display_name || t.host_name}</span>
             </>
           )}
         </p>

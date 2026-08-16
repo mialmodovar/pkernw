@@ -95,7 +95,7 @@ function WatchableTable({ table, players, onWatch }) {
           return (
             <span
               key={index}
-              title={player ? `${player.username} · ${player.chips.toLocaleString()}` : "Empty seat"}
+              title={player ? `${player.display_name || player.username} · ${player.chips.toLocaleString()}` : "Empty seat"}
               style={{
                 left: `${50 + 43 * Math.cos(angle)}%`,
                 top: `${50 + 39 * Math.sin(angle)}%`,
@@ -107,7 +107,7 @@ function WatchableTable({ table, players, onWatch }) {
                   : "border-dashed border-(--color-border) bg-black/30 text-(--color-text-muted)"
               }`}
             >
-              {player ? player.username.slice(0, 2) : ""}
+              {player ? (player.display_name || player.username).slice(0, 2) : ""}
             </span>
           );
         })}
@@ -119,7 +119,7 @@ function WatchableTable({ table, players, onWatch }) {
           : "No players seated"}
       </p>
       <p className="text-[11px] text-(--color-silver) truncate">
-        {players.map((player) => player.username).join(", ") || "—"}
+        {players.map((player) => player.display_name || player.username).join(", ") || "—"}
       </p>
     </button>
   );
@@ -197,7 +197,8 @@ export default function TournamentSetupPage() {
   const potCents = buyInCents * tournament.players.length;
 
   const visible = filter
-    ? ranked.filter((p) => p.username.toLowerCase().includes(filter.toLowerCase()))
+    ? ranked.filter((p) => `${p.display_name || ""} ${p.username}`.toLowerCase()
+        .includes(filter.toLowerCase()))
     : ranked;
 
   return (
@@ -212,7 +213,7 @@ export default function TournamentSetupPage() {
             </span>
           </div>
           <p className="text-xs text-(--color-text-muted) mt-0.5">
-            Host: {tournament.host_name}
+            Host: {tournament.host_display_name || tournament.host_name}
             {scheduledStart && ` · ${scheduledStartPending ? "starts" : "started"} ${formatScheduledStart(tournament.scheduled_start_at)}`}
           </p>
         </div>
@@ -406,7 +407,7 @@ export default function TournamentSetupPage() {
                         {out ? (player.finish_position ?? "—") : (filter ? "" : index + 1)}
                       </td>
                       <td className={`px-1 py-1.5 truncate ${out ? "text-(--color-text-muted) line-through" : "text-(--color-silver)"}`}>
-                        {player.username}{isMe && " (you)"}
+                        {player.display_name || player.username}{isMe && " (you)"}
                         {player.rebuy_count > 0 && (
                           <span className="text-[10px] text-(--color-text-muted)"> · {player.rebuy_count}R</span>
                         )}

@@ -5,6 +5,7 @@ from game.giphy import GIF_ID_PATTERN, clean_gif_id
 
 from .avatars import avatar_url
 from .models import AvatarImage, Profile
+from .naming import DISPLAY_NAME_MAX, shown_name
 
 AVAILABLE_AVATARS = [
     "🃏", "♠️", "♣️", "♥️", "♦️", "🎲", "🏆", "💰",
@@ -40,9 +41,16 @@ class ProfileSerializer(serializers.ModelSerializer):
     # load, and what comes back if the picture is removed.
     avatar_url = serializers.SerializerMethodField()
 
+    # What other players read. Sent already resolved — the username where no
+    # display name is set — so no client has to know the fallback rule.
+    display_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "avatar_url", "theme")
+        fields = ("avatar_emoji", "avatar_url", "display_name", "theme")
+
+    def get_display_name(self, profile):
+        return shown_name(profile.user.username, profile.display_name)
 
     def get_avatar_url(self, profile):
         # values_list, so reading a profile never drags the image bytes along.
@@ -68,6 +76,39 @@ class UserSerializer(serializers.ModelSerializer):
 
 class AvatarUpdateSerializer(serializers.Serializer):
     avatar_emoji = serializers.ChoiceField(choices=AVAILABLE_AVATARS)
+
+
+class DisplayNameSerializer(serializers.Serializer):
+    """The name a player puts in front of everybody else.
+
+    Blank is allowed and means "go back to my username" — a display name is
+    something you can put down as well as pick up.
+    """
+
+    display_name = serializers.CharField(
+        max_length=DISPLAY_NAME_MAX, allow_blank=True, trim_whitespace=True,
+    )
+
+    def validate_display_name(self, value):
+        name = " ".join(value.split())
+        if not name:
+            return ""
+        # Nothing that could be read as somebody else at a table where money
+        # changes hands: not another player's login, and not a display name
+        # already taken. Case-insensitive, because "Rui" and "rui" are the same
+        # person to everyone reading the felt.
+        me = self.context["user"]
+        if User.objects.filter(username__iexact=name).exclude(pk=me.pk).exists():
+            raise serializers.ValidationError("Somebody already plays under that name.")
+        taken = (
+            Profile.objects
+            .filter(display_name__iexact=name)
+            .exclude(user_id=me.pk)
+            .exists()
+        )
+        if taken:
+            raise serializers.ValidationError("Somebody already plays under that name.")
+        return name
 
 
 class ThemeUpdateSerializer(serializers.Serializer):

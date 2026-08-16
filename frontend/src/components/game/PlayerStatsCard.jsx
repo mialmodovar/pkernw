@@ -180,7 +180,7 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
               {hands ? `${hands.toLocaleString()} hands recorded` : "No hands recorded yet"}
             </p>
           </div>
-          <WatchToggle username={player.name} isMe={isMe} />
+          <WatchToggle username={player.username} isMe={isMe} />
           <button onClick={onClose}
             className="btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors">
             Close

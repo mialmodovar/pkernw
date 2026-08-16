@@ -12,8 +12,10 @@ from rest_framework.response import Response
 
 from .avatars import ACCEPTED_LABEL, AVATAR_MAX_BYTES, avatar_url, sniff_image_type
 from .models import AvatarImage, Profile
+from .naming import shown_name
 from .serializers import (
     AvatarUpdateSerializer,
+    DisplayNameSerializer,
     RegisterSerializer,
     ThemeUpdateSerializer,
     UserSerializer,
@@ -44,6 +46,27 @@ def update_avatar(request):
     profile.save(update_fields=["avatar_emoji"])
 
     return Response({"avatar_emoji": profile.avatar_emoji}, status=status.HTTP_200_OK)
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_display_name(request):
+    """Change what other players call you.
+
+    Only the display name moves. The username still keys the hand history, the
+    ledger and every stat, so nothing already recorded changes hands.
+    """
+    serializer = DisplayNameSerializer(data=request.data, context={"user": request.user})
+    serializer.is_valid(raise_exception=True)
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.display_name = serializer.validated_data["display_name"]
+    profile.save(update_fields=["display_name"])
+
+    return Response(
+        {"display_name": shown_name(request.user.username, profile.display_name)},
+        status=status.HTTP_200_OK,
+    )
 
 
 @api_view(["PUT", "DELETE"])

@@ -76,7 +76,7 @@ export default function TournamentInfoPanel({ tournament, username }) {
   // own seat is not on the table being watched (eliminated, or spectating).
   const bountyMode = tournament?.bounty_mode || "none";
   const bountyOn = bountyMode !== "none" && (tournament?.bounty_cents || 0) > 0;
-  const myLiveSeat = livePlayers.find((p) => p.name === username);
+  const myLiveSeat = livePlayers.find((p) => p.username === username);
   const myRestSeat = (tournament?.players || []).find((p) => p.username === username);
   const myBountyWon = myLiveSeat?.bounty_won_cents ?? myRestSeat?.bounty_won_cents ?? 0;
   const myKnockouts = myLiveSeat?.knockouts ?? myRestSeat?.knockouts ?? 0;

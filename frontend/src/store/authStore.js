@@ -39,6 +39,17 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  // What everybody else calls you. The username underneath it never moves —
+  // it is what the login form asks for and what every stat is filed under.
+  updateDisplayName: async (name) => {
+    const { data } = await api.patch("/auth/me/display-name/", { display_name: name });
+    const user = get().user;
+    if (user) {
+      set({ user: { ...user, profile: { ...user.profile, display_name: data.display_name } } });
+    }
+    return data.display_name;
+  },
+
   // A picture, which covers the emoji for as long as it is there. The blob has
   // already been cropped and re-encoded by the browser (see avatarImage.js);
   // this only carries it.

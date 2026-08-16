@@ -20,7 +20,7 @@ export default function PlayerFaces({ players = [], size = "w-6 h-6" }) {
   return (
     <div
       className="flex items-center shrink-0"
-      title={players.map((player) => player.username).join(", ")}
+      title={players.map((player) => player.display_name || player.username).join(", ")}
     >
       {shown.map((player) => (
         <span
@@ -34,7 +34,7 @@ export default function PlayerFaces({ players = [], size = "w-6 h-6" }) {
           <Avatar
             url={player.avatar_url}
             emoji={player.avatar_emoji}
-            name={player.username}
+            name={player.display_name || player.username}
             className="w-full h-full"
             emojiClassName="text-[0.85rem]"
           />

@@ -15,6 +15,7 @@ from game.consumers import connected_user_ids
 from tournaments.models import TournamentPlayer
 
 from .avatars import avatar_url
+from .naming import shown_name
 from .models import AvatarImage, Profile, Watch
 
 User = get_user_model()
@@ -84,9 +85,11 @@ def watching(request):
 
     watched_users = [watch.watched for watch in request.user.watching.select_related("watched")]
     user_ids = [user.id for user in watched_users]
-    profiles = dict(
-        Profile.objects.filter(user__in=watched_users).values_list("user_id", "avatar_emoji")
-    )
+    profiles = {
+        row[0]: row[1:]
+        for row in Profile.objects.filter(user__in=watched_users)
+        .values_list("user_id", "avatar_emoji", "display_name")
+    }
     stamps = dict(
         AvatarImage.objects.filter(user_id__in=user_ids).values_list("user_id", "updated_at")
     )
@@ -97,7 +100,8 @@ def watching(request):
     return Response([
         {
             "username": user.username,
-            "avatar_emoji": profiles.get(user.id) or "\U0001F0CF",
+            "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
+            "avatar_emoji": (profiles.get(user.id) or ("", ""))[0] or "\U0001F0CF",
             "avatar_url": avatar_url(user.id, stamps.get(user.id)),
             **here[user.id],
         }

@@ -6,6 +6,12 @@ class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
     avatar_emoji = models.CharField(max_length=8, default="🃏")
 
+    # What other players read. Blank means "use the username", which is what
+    # every account started with — see accounts/naming.py. Deliberately NOT the
+    # username itself: that keys the hand history, the ledger and every stats
+    # lookup, and renaming it would quietly rewrite who won last April.
+    display_name = models.CharField(max_length=24, blank=True, default="")
+
     # How this player wants the app skinned: {"preset": "burgundy", "accent": "#8a1c2b"}.
     # Deliberately a blob rather than columns — the set of tokens a preset can
     # move is a frontend concern, and it will grow. The server only cares that

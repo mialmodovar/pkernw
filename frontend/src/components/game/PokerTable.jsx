@@ -228,7 +228,8 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 // never wide enough for the tile.
                 compactVideo={compact || slots > 6}
                 topHalf={parseFloat(pos.top) < 50}
-                stats={statsByName?.[p.name]}
+                // Keyed on the login name, never on the one they can change.
+                stats={statsByName?.[p.username]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
                 handStrength={isMe ? handStrength : null}
                 shine={isMe && heroShines && !p.is_folded}

@@ -264,6 +264,7 @@ class MultiTableTournamentCoordinator:
                     {
                         "seat": player._seat,
                         "name": player.name,
+                        "username": getattr(player, "_username", player.name),
                         "finish_position": player.finish_position,
                     },
                 )
@@ -307,6 +308,7 @@ class MultiTableTournamentCoordinator:
                     {
                         "seat": player._global_seat,
                         "name": player.name,
+                        "username": getattr(player, "_username", player.name),
                         "finish": index + 1,
                     }
                     for index, player in enumerate(standings)
@@ -680,11 +682,19 @@ class MultiTableTournamentCoordinator:
             runtime_player = self._players_by_id.get(record["id"])
             is_new = runtime_player is None
             if runtime_player is None:
-                runtime_player = EnginePlayer(name=record["username"], chips=record["chips"], is_human=True)
+                runtime_player = EnginePlayer(
+                    name=record.get("display_name") or record["username"],
+                    chips=record["chips"],
+                    is_human=True,
+                )
                 runtime_player._tp_id = record["id"]
                 self._players_by_id[record["id"]] = runtime_player
 
-            runtime_player.name = record["username"]
+            # What the felt reads. The username is kept beside it because that
+            # is what every client keys on — stats, watch lists, "is this me" —
+            # and a name a player can change is no key at all.
+            runtime_player.name = record.get("display_name") or record["username"]
+            runtime_player._username = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
             runtime_player._avatar_url = record.get("avatar_url")
             runtime_player._finisher_gif_id = record.get("finisher_gif_id")
@@ -1144,6 +1154,7 @@ class MultiTableTournamentCoordinator:
             "global_seat": player._global_seat,
             "table_number": player._table_number,
             "name": player.name,
+            "username": getattr(player, "_username", player.name),
             "avatar": getattr(player, "_avatar", "\U0001F0CF"),
             # The picture, when there is one. The emoji above stays the
             # fallback, so a client that cannot load it still has a seat marker.
@@ -1339,6 +1350,7 @@ class MultiTableTournamentCoordinator:
                 {
                     "seat": player._seat,
                     "name": player.name,
+                    "username": getattr(player, "_username", player.name),
                     "finish_position": player.finish_position,
                     "reason": "offline_timeout",
                 },

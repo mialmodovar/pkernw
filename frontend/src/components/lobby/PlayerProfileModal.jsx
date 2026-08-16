@@ -124,12 +124,14 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
               <Avatar
                 url={profile.avatar_url}
                 emoji={profile.avatar_emoji}
-                name={profile.username}
+                name={profile.display_name || profile.username}
                 className="w-11 h-11 shrink-0 rounded-full panel-raised"
                 emojiClassName="text-2xl"
               />
               <div className="min-w-0 flex-1">
-                <h2 className="font-semibold text-(--color-silver) truncate">{profile.username}</h2>
+                <h2 className="font-semibold text-(--color-silver) truncate">
+                  {profile.display_name || profile.username}
+                </h2>
                 <Presence profile={profile} />
               </div>
               <button

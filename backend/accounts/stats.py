@@ -9,6 +9,7 @@ from game.hand_stats import compute_player_stats
 from tournaments.models import LedgerEntry, TournamentPlayer
 
 from .avatars import avatar_url
+from .naming import shown_name
 from .models import AvatarImage, Profile
 from .watching import presence
 
@@ -91,6 +92,7 @@ def player_profile(request, username):
     )
     return Response({
         "username": user.username,
+        "display_name": shown_name(user.username, profile.display_name),
         "avatar_emoji": profile.avatar_emoji,
         "avatar_url": avatar_url(user.id, stamp),
         "is_watched": request.user.watching.filter(watched=user).exists(),

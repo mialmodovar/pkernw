@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .avatars import AVATAR_MAX_BYTES
-from .models import AvatarImage
+from .models import AvatarImage, Profile
 
 User = get_user_model()
 
@@ -188,6 +188,82 @@ class WatchingTests(APITestCase):
 		self.assertIn(f"/api/auth/avatar/{self.them.id}/", row["avatar_url"])
 		# The emoji stays underneath it, as the fallback.
 		self.assertEqual(row["avatar_emoji"], "🃏")
+
+
+class DisplayNameTests(APITestCase):
+	"""The name other players read, as against the one you log in with."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="vasco", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def _set(self, name):
+		return self.client.patch(reverse("update_display_name"), {"display_name": name}, format="json")
+
+	def test_a_display_name_is_what_everybody_else_reads(self):
+		response = self._set("Vasco F.")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		self.assertEqual(response.data["display_name"], "Vasco F.")
+		me = self.client.get(reverse("me")).data
+		self.assertEqual(me["profile"]["display_name"], "Vasco F.")
+		# The login name is untouched: it keys the history and the ledger.
+		self.assertEqual(me["username"], "vasco")
+
+	def test_a_player_without_one_is_shown_their_username(self):
+		self.assertEqual(self.client.get(reverse("me")).data["profile"]["display_name"], "vasco")
+
+	def test_clearing_it_goes_back_to_the_username(self):
+		self._set("Vasco F.")
+
+		response = self._set("   ")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["display_name"], "vasco")
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.display_name, "")
+
+	def test_it_cannot_be_somebody_elses_login_name(self):
+		User.objects.create_user(username="rui", password="secret123")
+
+		response = self._set("Rui")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_it_cannot_be_a_name_already_taken(self):
+		rival = User.objects.create_user(username="rui", password="secret123")
+		Profile.objects.update_or_create(user=rival, defaults={"display_name": "The Rock"})
+
+		response = self._set("the rock")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_keeping_your_own_name_is_not_taking_it_from_yourself(self):
+		self._set("Vasco F.")
+
+		self.assertEqual(self._set("Vasco F.").status_code, status.HTTP_200_OK)
+
+	def test_a_name_is_squeezed_rather_than_stored_as_typed(self):
+		self._set("  Vasco   F.  ")
+
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.display_name, "Vasco F.")
+
+	def test_it_has_a_ceiling(self):
+		self.assertEqual(self._set("x" * 25).status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_the_watch_list_and_the_profile_both_read_it(self):
+		rival = User.objects.create_user(username="rui", password="secret123")
+		Profile.objects.update_or_create(user=rival, defaults={"display_name": "The Rock"})
+		self.client.post(reverse("watching"), {"username": "rui"}, format="json")
+
+		row = self.client.get(reverse("watching")).data[0]
+		self.assertEqual(row["display_name"], "The Rock")
+		# Still filed under the login name, which is what unwatching uses.
+		self.assertEqual(row["username"], "rui")
+
+		card = self.client.get(reverse("player-profile", args=["rui"])).data
+		self.assertEqual(card["display_name"], "The Rock")
 
 
 class PlayerProfileTests(APITestCase):

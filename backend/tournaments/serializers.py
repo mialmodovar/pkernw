@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.utils import timezone
 
 from accounts.avatars import avatar_url
+from accounts.naming import shown_name
 from game.consumers import late_registration_open as _late_registration_open
 
 from .bounties import BountyConfig, starting_bounty_cents
@@ -123,6 +124,8 @@ class BlindLevelSerializer(serializers.ModelSerializer):
 
 class TournamentPlayerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
+    # What to print. `username` stays the key everything is filed under.
+    display_name = serializers.SerializerMethodField()
     prize_cents = serializers.SerializerMethodField()
     bounty_prize_cents = serializers.SerializerMethodField()
     table_id = serializers.IntegerField(source="table.id", read_only=True)
@@ -133,6 +136,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "username",
+            "display_name",
             "table_id",
             "table_number",
             "seat",
@@ -148,6 +152,10 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "prize_cents",
             "bounty_prize_cents",
         )
+
+    def get_display_name(self, player):
+        return shown_name(player.user.username, getattr(player.user, "profile", None)
+                          and player.user.profile.display_name)
 
     def get_prize_cents(self, player):
         """What this player took home, once the tournament settled.
@@ -177,6 +185,9 @@ class TournamentTableSerializer(serializers.ModelSerializer):
 
 class TournamentListSerializer(serializers.ModelSerializer):
     host_name    = serializers.CharField(source="host.username", read_only=True)
+    # Printed beside the tournament; host_name above is what "am I the host"
+    # is decided on, and stays the login name.
+    host_display_name = serializers.SerializerMethodField()
     player_count = serializers.IntegerField(source="players.count", read_only=True)
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
@@ -203,6 +214,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
             image = getattr(user, "avatar_image", None)
             roster.append({
                 "username": user.username,
+                "display_name": shown_name(user.username, profile.display_name if profile else ""),
                 "avatar_emoji": (profile.avatar_emoji if profile else None) or "\U0001F0CF",
                 "avatar_url": avatar_url(user.id, image.updated_at if image else None),
                 # Dimmed rather than dropped: who played is part of what a
@@ -217,6 +229,10 @@ class TournamentListSerializer(serializers.ModelSerializer):
             return None
         return tournament.players.filter(user=request.user).first()
 
+    def get_host_display_name(self, tournament):
+        return shown_name(tournament.host.username, getattr(tournament.host, "profile", None)
+                          and tournament.host.profile.display_name)
+
     def get_is_joined(self, tournament):
         return self._my_seat(tournament) is not None
 
@@ -230,8 +246,16 @@ class TournamentListSerializer(serializers.ModelSerializer):
         return _late_registration_open(tournament)
 
     def get_winner_name(self, tournament):
-        winner = tournament.players.filter(finish_position=1).select_related("user").first()
-        return winner.user.username if winner else None
+        winner = (
+            tournament.players.filter(finish_position=1)
+            .select_related("user", "user__profile")
+            .first()
+        )
+        if winner is None:
+            return None
+        # Only ever printed, never matched against, so this is the shown name.
+        return shown_name(winner.user.username, getattr(winner.user, "profile", None)
+                          and winner.user.profile.display_name)
 
     def get_my_finish_position(self, tournament):
         seat = self._my_seat(tournament)
@@ -249,7 +273,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "showdown_seconds",
-                  "registered",
+                  "registered", "host_display_name",
                   "auto_remove_offline_seconds", "created_at", "started_at", "finished_at")
 
 

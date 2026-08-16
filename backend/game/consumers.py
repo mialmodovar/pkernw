@@ -14,10 +14,11 @@ from channels.db import database_sync_to_async
 from django.db import transaction
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, User
 from django.utils import timezone
 
 from accounts.avatars import avatar_url
+from accounts.naming import shown_name
 from accounts.models import AvatarImage
 from tournaments.bounties import BountyConfig
 from tournaments.models import BlindLevel, Tournament, TournamentPlayer
@@ -211,6 +212,7 @@ def _db_get_player_records(tournament_id):
             "id",
             "user_id",
             "user__username",
+            "user__profile__display_name",
             "user__profile__avatar_emoji",
             "user__profile__theme",
             "table_id",
@@ -238,6 +240,17 @@ def _db_get_player_records(tournament_id):
     for record in records:
         record["avatar_url"] = avatar_url(record["user_id"], stamps.get(record["user_id"]))
     return records
+
+
+@database_sync_to_async
+def _db_get_shown_name(user_id):
+    """What this player is called in front of the table."""
+    row = (
+        User.objects.filter(pk=user_id)
+        .values_list("username", "profile__display_name")
+        .first()
+    )
+    return shown_name(*row) if row else ""
 
 
 @database_sync_to_async
@@ -467,6 +480,10 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             await self.close()
             return
 
+        # What this player is called in front of everybody else. Read once
+        # here rather than on every line of chat they type.
+        self.shown_name = await _db_get_shown_name(self.user.id)
+
         self.tournament_id = int(self.scope["url_route"]["kwargs"]["tournament_id"])
         self.tournament_group = _tournament_group_name(self.tournament_id)
         self.current_table_number = None
@@ -693,7 +710,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
 
         await _broadcast_table(self.tournament_id, table, "chat_message", {
             "user_id": self.user.id,
-            "name": self.user.username,
+            "name": self.shown_name,
             "text": text,
             "gif_id": gif_id,
         })
@@ -780,7 +797,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         _media_presence[key] = {"audio": audio, "video": video, "table": table}
         await _broadcast_table(self.tournament_id, table, "media_presence", {
             "user_id": self.user.id,
-            "name": self.user.username,
+            "name": self.shown_name,
             "audio": audio,
             "video": video,
         })
@@ -930,6 +947,11 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 "id": record["id"],
                 "user_id": record["user_id"],
                 "username": record["user__username"],
+                # What the table calls them. The username above is still the
+                # identity every key and every stat is filed under.
+                "display_name": shown_name(
+                    record["user__username"], record["user__profile__display_name"],
+                ),
                 "avatar": record["user__profile__avatar_emoji"] or "\U0001F0CF",
                 # None unless they uploaded a picture, in which case it is what
                 # the table draws and the emoji is only the fallback.

@@ -63,10 +63,12 @@ function UserChip() {
         <Avatar
           url={user.profile?.avatar_url}
           emoji={user.profile?.avatar_emoji}
-          name={user.username}
+          name={user.profile?.display_name || user.username}
           className="w-5 h-5 rounded-full"
         />
-        <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">{user.username}</span>
+        <span className="hidden md:inline text-xs font-semibold text-(--color-silver)">
+          {user.profile?.display_name || user.username}
+        </span>
       </button>
       <button
         type="button"

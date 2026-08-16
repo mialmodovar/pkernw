@@ -26,7 +26,7 @@ export default function TournamentCompleteScreen({
 }) {
   const rows = standings || [];
   const winner = rows.find((row) => row.finish === 1);
-  const mine = rows.find((row) => row.name === username);
+  const mine = rows.find((row) => row.username === username);
   const iWon = mine?.finish === 1;
 
   const payouts = tournament?.payout_structure || [];
@@ -108,7 +108,7 @@ export default function TournamentCompleteScreen({
         </h2>
         <ol className="panel-raised rounded-lg divide-y divide-[rgba(196,178,165,0.14)]">
           {rows.map((row) => {
-            const isMe = row.name === username;
+            const isMe = row.username === username;
             const payout = payoutFor(row.finish);
             const record = playerRecord(row.name);
             return (

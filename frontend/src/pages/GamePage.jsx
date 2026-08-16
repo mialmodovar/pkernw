@@ -154,7 +154,7 @@ export default function GamePage() {
   // player gets no snapshot on reconnect, so this has to survive a reload.
   const mySeatRecord = tournament?.players?.find((p) => p.username === user?.username);
   const myFinish = mySeatRecord?.is_eliminated ? mySeatRecord.finish_position : null;
-  const eliminatedByEvent = lastElimination?.name === user?.username;
+  const eliminatedByEvent = lastElimination?.username === user?.username;
   const myEliminationFinish = myFinish ?? (eliminatedByEvent ? lastElimination.finish_position : null);
 
   // Let the hand finish playing out — the river, the showdown, the pot — before
@@ -181,7 +181,7 @@ export default function GamePage() {
   }, [standings]);
 
   // Find "my" seat
-  const mySeat = players.find((p) => p.name === user?.username)?.seat ?? null;
+  const mySeat = players.find((p) => p.username === user?.username)?.seat ?? null;
   const isMyTurn = mySeat !== null && actionOnSeat === mySeat;
   useTurnAlert(isMyTurn, soundEnabled);
   useTimeoutAlert(isMyTurn, soundEnabled);
@@ -523,7 +523,7 @@ export default function GamePage() {
         <PlayerStatsCard
           player={inspecting}
           stats={playerStats[inspecting.name]}
-          isMe={inspecting.name === user?.username}
+          isMe={inspecting.username === user?.username}
           onClose={() => setInspecting(null)}
         />
       )}

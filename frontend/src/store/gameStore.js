@@ -171,6 +171,13 @@ const useGameStore = create((set) => ({
   // somebody's stats.
   aimingItem: null,
   setAiming: (aimingItem) => set({ aimingItem }),
+  // Whether one of the quick panels is hanging off your own seat. Every seat is
+  // translated into its place on the ring, and a transform makes a stacking
+  // context — so a panel inside one cannot reach over the seat next door with a
+  // z-index, however large. The table lifts the whole seat instead, which is
+  // what it already does for a seat holding a speech bubble.
+  seatPanelOpen: false,
+  setSeatPanelOpen: (seatPanelOpen) => set({ seatPanelOpen }),
   clearThrow: (id) => set((s) => ({ throws: s.throws.filter((one) => one.id !== id) })),
   // The knockout GIF playing in the middle of the table, if any.
   finisher: null,
@@ -865,6 +872,7 @@ const useGameStore = create((set) => ({
       tableAssignmentNotice: null,
       bountyFlash: null, seatBubbles: {}, finisher: null, equityShake: null,
       readyUserIds: [], readyTotal: 0, showCardsOpen: false, rebuyWindow: null,
+      seatPanelOpen: false,
       shownCards: {}, riverShownAt: null,
     }),
 }));

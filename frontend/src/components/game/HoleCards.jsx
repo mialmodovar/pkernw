@@ -24,13 +24,23 @@ export default function HoleCards({
     // A mucked hand leaves the table. You can still peek at your own by
     // hovering, which is only ever a reminder of what you just let go — unless
     // you showed it, in which case it is not a secret to fade out any more.
+    //
+    // A ghost at a fifteenth is a reminder to you and a legible pair of cards
+    // to whoever is standing behind you, so anybody who asked for their hand to
+    // be covered gets it covered here too: gone entirely until they point at
+    // it. Folding is not the moment to start showing a hand to the room.
     if (!isMe) return null;
+    const ghost = raised.size
+      ? ""
+      : hideUntilHover
+        ? "opacity-0 hover:opacity-100 active:opacity-100 cursor-pointer"
+        : "opacity-15 hover:opacity-100";
     return (
       <div
-        title={raised.size ? "Shown to the table" : "Your mucked hand"}
-        className={`flex gap-0.5 transition-opacity duration-200 ${
-          raised.size ? "" : "opacity-15 hover:opacity-100"
-        }`}
+        title={raised.size
+          ? "Shown to the table"
+          : hideUntilHover ? "Hold to see the hand you mucked" : "Your mucked hand"}
+        className={`flex gap-0.5 transition-opacity duration-200 ${ghost}`}
       >
         {(cards || []).length
           ? cards.map((card, index) => (

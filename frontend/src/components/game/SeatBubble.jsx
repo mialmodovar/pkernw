@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { gifPreviewUrl } from "../../api/giphy";
 import useGameStore from "../../store/gameStore";
+import { isEmojiMessage } from "./emojiMessage";
 
 // A GIF is a joke and needs landing; a line of chat is read in a moment. Both
 // short enough that the table is never wearing somebody's last word for long.
@@ -57,7 +58,15 @@ export default function SeatBubble({ userId, name }) {
             className="block w-[clamp(3.5rem,11cqw,6rem)] h-auto"
           />
         ) : (
-          <p className="px-2 py-1 max-w-[11rem] w-max text-[11px] leading-snug text-(--color-silver) break-words">
+          <p className={`px-2 py-1 max-w-[11rem] w-max leading-snug text-(--color-silver) break-words ${
+            // A reaction is the whole message, and at eleven pixels a thumbs-up
+            // is the size of a full stop. Sized off the table like everything
+            // else on the felt, so it grows with the seats rather than swamping
+            // them on a phone.
+            isEmojiMessage(bubble.text)
+              ? "text-[clamp(1.1rem,3.4cqw,2rem)] leading-none text-center"
+              : "text-[11px]"
+          }`}>
             {bubble.text}
           </p>
         )}

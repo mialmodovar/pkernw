@@ -26,7 +26,9 @@ export default function useTableSounds(enabled) {
           // Timed to the flight in ThrownItem: the splat belongs to the moment
           // it lands, not the moment it was thrown. Smoke never lands, so it
           // gets the exhale and nothing after it.
-          if (!throwableFor(message.item).smoke) window.setTimeout(playSplat, 620);
+          if (!throwableFor(message.item).smoke) {
+            window.setTimeout(() => playSplat(message.item), 620);
+          }
           return undefined;
         default:
           return undefined;

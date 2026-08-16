@@ -204,12 +204,94 @@ export function playThrow() {
   });
 }
 
-/** And landing on somebody. */
-export function playSplat() {
-  play((ctx, now) => {
+/**
+ * And landing on somebody — in the voice of whatever it was.
+ *
+ * A brick and a rose arriving with the same wet thud was the joke falling flat:
+ * half of throwing something is what it sounds like when it hits. Every one of
+ * these is still a couple of oscillators and a burst of filtered noise, so the
+ * set costs nothing to ship, and anything unrecognised lands on the old sound.
+ */
+const LANDINGS = {
+  // Wet, and nothing left of it.
+  splat: (ctx, now) => {
     noise(ctx, { start: now, duration: 0.16, peak: 0.22, frequency: 320, Q: 0.8 });
     tone(ctx, { freq: 150, start: now, duration: 0.14, peak: 0.1, type: "square", endFreq: 60 });
-  });
+  },
+  // Shell first, then the mess.
+  crack: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.04, peak: 0.24, frequency: 2600, Q: 1.4 });
+    noise(ctx, { start: now + 0.04, duration: 0.18, peak: 0.16, frequency: 360, Q: 0.7 });
+  },
+  // Glass and liquid: a ring on top of the slop.
+  glass: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.05, peak: 0.2, frequency: 3400, Q: 2.5 });
+    tone(ctx, { freq: 1800, start: now, duration: 0.22, peak: 0.07, type: "triangle", endFreq: 900 });
+    noise(ctx, { start: now + 0.05, duration: 0.16, peak: 0.12, frequency: 420, Q: 0.8 });
+  },
+  // Something hard, off something solid.
+  knock: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.05, peak: 0.26, frequency: 1200, Q: 1.2 });
+    tone(ctx, { freq: 260, start: now, duration: 0.1, peak: 0.12, type: "square", endFreq: 90 });
+  },
+  // Heavier, and it stays where it lands.
+  thud: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.09, peak: 0.2, frequency: 220, Q: 0.5 });
+    tone(ctx, { freq: 110, start: now, duration: 0.2, peak: 0.16, type: "sine", endFreq: 45 });
+  },
+  // A chip on felt, and then the roll.
+  clink: (ctx, now) => {
+    tone(ctx, { freq: 2300, start: now, duration: 0.09, peak: 0.09, type: "triangle", endFreq: 1500 });
+    noise(ctx, { start: now + 0.06, duration: 0.1, peak: 0.06, frequency: 1800, Q: 2 });
+  },
+  // Ice: brittle, high, and gone.
+  chink: (ctx, now) => {
+    tone(ctx, { freq: 3100, start: now, duration: 0.07, peak: 0.08, type: "triangle", endFreq: 2400 });
+    noise(ctx, { start: now, duration: 0.06, peak: 0.12, frequency: 4200, Q: 3 });
+  },
+  // Petals. Barely a sound at all, which is the point of throwing one.
+  soft: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.18, peak: 0.05, frequency: 1600, Q: 0.5 });
+  },
+  // Powder snow.
+  poff: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.22, peak: 0.1, frequency: 700, Q: 0.4 });
+    tone(ctx, { freq: 300, start: now, duration: 0.12, peak: 0.04, type: "sine", endFreq: 140 });
+  },
+  // Two notes of indignation, up and then further up.
+  squawk: (ctx, now) => {
+    tone(ctx, { freq: 700, start: now, duration: 0.1, peak: 0.12, type: "sawtooth", endFreq: 1250 });
+    tone(ctx, { freq: 900, start: now + 0.11, duration: 0.13, peak: 0.1, type: "sawtooth", endFreq: 1500 });
+  },
+  // The only one anybody will complain is too loud, and rightly so.
+  boom: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.5, peak: 0.3, frequency: 160, Q: 0.3 });
+    tone(ctx, { freq: 90, start: now, duration: 0.55, peak: 0.22, type: "sine", endFreq: 30 });
+  },
+  // Something better than it deserves to be.
+  fanfare: (ctx, now) => {
+    [880, 1108, 1318].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.07, duration: 0.22, peak: 0.08, type: "triangle" });
+    });
+  },
+};
+
+/** Which of those each thing makes. Anything missing lands on the wet one. */
+const LANDING_BY_ITEM = {
+  tomato: "splat", egg: "crack", beer: "glass", chip: "clink",
+  shoe: "thud", chicken: "squawk", rose: "soft", snowball: "poff",
+  banana: "splat", ice: "chink", pie: "splat", fish: "splat",
+  brick: "knock", bomb: "boom", crown: "fanfare",
+};
+
+/** Which landing an item makes, or null when nothing was written for it. */
+export function landingFor(itemId) {
+  const name = LANDING_BY_ITEM[itemId];
+  return name && LANDINGS[name] ? name : null;
+}
+
+export function playSplat(itemId) {
+  play(LANDINGS[landingFor(itemId) || "splat"]);
 }
 
 /** Which sound an action at the table makes. */

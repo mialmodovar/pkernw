@@ -42,6 +42,16 @@ export default function SeatQuickChat() {
   // nobody buys from.
   const owns = useWalletStore((s) => s.owns);
   const setAiming = useGameStore((s) => s.setAiming);
+  const setSeatPanelOpen = useGameStore((s) => s.setSeatPanelOpen);
+
+  // The table lifts this seat over its neighbours while a panel is open. It
+  // cannot be done from in here: the seat is translated into place and that
+  // makes it a stacking context, so the panel was opening under the seat next
+  // door however high its own z-index went.
+  useEffect(() => {
+    setSeatPanelOpen(Boolean(panel));
+    return () => setSeatPanelOpen(false);
+  }, [panel, setSeatPanelOpen]);
 
   // Anywhere else on the table dismisses it. Without this the list sits open
   // over your own cards while you are trying to read them.

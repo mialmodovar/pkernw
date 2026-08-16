@@ -9,6 +9,26 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Everything you throw now lands with its own sound.** A brick and a rose
+  arriving with the same wet thud was the joke falling flat — half of throwing
+  something is what it sounds like when it hits. An egg cracks, a beer breaks,
+  a chip clinks, ice chinks, a chicken objects twice, a crown gets a small
+  fanfare it has not earned, and the bomb is as loud as you would expect. All
+  of them are still a couple of oscillators and a burst of filtered noise, so
+  nothing is downloaded and nothing can fail to load. The cigar keeps its
+  silence: it never lands.
+- **A reaction is drawn as the picture it is.** The emoji buttons send their
+  faces as ordinary chat text, so a 👍 arrived over a seat at eleven pixels —
+  the size of a full stop. A message that is nothing but one or two faces is
+  now large, over the seat and in the chat panel alike. A sentence with an emoji
+  in it is still a sentence, and a paragraph of emoji is someone writing rather
+  than reacting, so both stay their ordinary size.
+- **Something to look at when you go out.** The finish screen was a number and
+  three buttons. It now carries a GIF that celebrates with you if you cashed and
+  laughs at you if you did not, searched at the moment it opens and seeded on
+  where you came — so it holds still rather than reshuffling, and two players
+  who finished in different places do not get the same picture. A table with no
+  Giphy key configured simply carries on without it.
 - **The app opens at your table when there is a hand waiting on you.** Being
   registered in a tournament that is dealing and landing on a list with your own
   game somewhere in it is the wrong place to be put: the blinds are going
@@ -157,6 +177,23 @@ remembering.
   of their own do not fit around the ring, and trying made the seats overlap.
 
 ### Fixed
+- **The finish screen told you what percentage you had won.** "In the money —
+  20% of the prize pool" is a rule for splitting a pot, on the one screen where
+  the question is what you are owed. It says the money now — €5.00 — and falls
+  back to the share only where there is no pot to apply it to. The lobby keeps
+  its percentages beside the money, which is the one place a split is the point.
+- **Folding stopped hiding your hand from the room.** With "hide my hand until I
+  hover" on, the moment you folded your cards were left on the seat at a
+  fifteenth of their opacity — faint to you, perfectly legible to whoever is
+  standing behind you, and with the hand still going. The cover now stays on
+  until the hand is public, and the mucked cards lift on the same hover as the
+  live ones did.
+- **The quick panels opened behind the player next to you.** Every seat is
+  translated into its place on the ring, and a transform makes a stacking
+  context — so the emoji, chat and throwables panels could not reach over their
+  neighbour however high their z-index went. The table lifts your whole seat
+  while a panel is open, which is what it already did for a seat holding a
+  speech bubble.
 - **"You were moved to table 1" at the table you were already sitting at.**
   Four players, one busts, and the two below them shift up a seat as the table
   closes ranks — which the engine was reporting as a table assignment, because

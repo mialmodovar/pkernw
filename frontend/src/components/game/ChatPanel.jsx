@@ -4,6 +4,7 @@ import useGameStore from "../../store/gameStore";
 import useAuthStore from "../../store/authStore";
 import { send } from "../../api/socket";
 import QuickMessageList from "./QuickMessageList";
+import { isEmojiMessage } from "./emojiMessage";
 import { sendQuickMessage } from "./quickMessages";
 import { gifPreviewUrl } from "../../api/giphy";
 import GifPicker from "./GifPicker";
@@ -142,7 +143,15 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
                   {!mine && (
                     <span className="font-semibold text-(--color-highlight-text)">{message.name} </span>
                   )}
-                  {message.text && <span className="text-(--color-silver)">{message.text}</span>}
+                  {message.text && (
+                    // A message that is only faces is drawn as the picture it
+                    // is, the same as it is over the seat that sent it.
+                    <span className={isEmojiMessage(message.text)
+                      ? "text-2xl leading-none align-middle"
+                      : "text-(--color-silver)"}>
+                      {message.text}
+                    </span>
+                  )}
                   {message.gifId && (
                     <img
                       src={gifPreviewUrl(message.gifId)}

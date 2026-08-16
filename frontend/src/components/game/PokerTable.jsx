@@ -198,6 +198,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // is positioned and translated — so a bubble inside one cannot be lifted over
   // the seat next door by any z-index of its own; the seat has to be lifted.
   const seatBubbles = useGameStore((s) => s.seatBubbles);
+  const seatPanelOpen = useGameStore((s) => s.seatPanelOpen);
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const countdown = useActionCountdown();
   const revealedSeats = useShowdownReveal(showdown);
@@ -364,9 +365,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
           <div key={seat}
             // Over its neighbours, and over the bets on the felt, for as long
             // as it is holding a bubble — a speech balloon half behind the next
-            // player's nameplate reads as a rendering fault.
+            // player's nameplate reads as a rendering fault. The same for your
+            // own seat with a quick panel open beside it: the panel hangs out
+            // to the side, straight into whoever is sitting there.
             className={`absolute -translate-x-1/2 -translate-y-1/2 ${
-              p && seatBubbles[p.user_id] ? "z-30" : ""
+              (p && seatBubbles[p.user_id]) || (isMe && seatPanelOpen) ? "z-30" : ""
             }`}
             style={{ top: pos.top, left: pos.left }}>
             {p ? (

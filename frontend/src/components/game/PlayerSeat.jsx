@@ -170,7 +170,12 @@ export default function PlayerSeat({
   // legible under a pair of card backs would be covering the cards and reading
   // them out — so the label lifts with them. The cards alone are what lifts
   // them, though: see `peer/hand` in HoleCards.
-  const coverHand = isMe && hideHand && !p.is_folded && !handIsPublic;
+  // Folding does not empty the room behind you. The mucked hand is left on the
+  // seat at a fifteenth of its opacity, which is a reminder to you and a
+  // readable pair of cards to anybody looking over your shoulder — so the cover
+  // stays on until the hand is public, and the folded cards lift on the same
+  // hover as the live ones.
+  const coverHand = isMe && hideHand && !handIsPublic;
   const cards = (
     // Cards and label in a column, the buttons beside it rather than inside
     // it: what the hand adds up to sits over the cards and never shares a line

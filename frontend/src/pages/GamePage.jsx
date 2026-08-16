@@ -374,9 +374,14 @@ export default function GamePage() {
             band of its own below the table. */}
         {!compact && (
           <>
+            {/* Folded into its title bar to begin with. Chat is something you
+                dip into between hands, and open it sits over the corner of the
+                felt for the whole tournament whether anyone is talking or not.
+                The unread count on the collapsed bar is what says otherwise. */}
             <FloatingPanel
               id="chat" title="Table chat" anchor="bottom-left"
               defaultWidth={288} defaultHeight={192} minWidth={180} minHeight={110}
+              defaultCollapsed
               actions={<MediaControls />}
               badge={<ChatUnreadBadge />}
             >

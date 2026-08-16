@@ -11,11 +11,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
  */
 
 const STORE_PREFIX = "poker.panel.";
+// Bumped when a panel's starting state changes in a way that should reach
+// browsers that have already stored a layout. See readLayout.
+const DEFAULTS_VERSION = 2;
 
 function readLayout(id, fallback) {
   try {
     const raw = localStorage.getItem(STORE_PREFIX + id);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+    if (!raw) return fallback;
+    const stored = { ...fallback, ...JSON.parse(raw) };
+    // A default that changes has to reach the people who have already used the
+    // app, or it is only a default for new browsers. Applied once and recorded,
+    // so it never overrides what somebody does with the panel afterwards — and
+    // so it takes nothing else with it: where they dragged it and how big they
+    // made it are still theirs.
+    if (stored.defaultsVersion !== DEFAULTS_VERSION) {
+      return { ...stored, collapsed: fallback.collapsed, defaultsVersion: DEFAULTS_VERSION };
+    }
+    return stored;
   } catch {
     return fallback;
   }
@@ -53,6 +66,7 @@ export default function FloatingPanel({
   anchor = "bottom-left",    // which corner the offsets are measured from
   defaultWidth = 224,
   defaultHeight = null,      // null = size to content until the user resizes
+  defaultCollapsed = false,  // whether it starts folded into its title bar
   minWidth = 160,
   minHeight = 96,
   className = "",
@@ -66,7 +80,8 @@ export default function FloatingPanel({
   // panel you have to deliberately unlock can't be dragged halfway across the
   // felt by a misjudged click while you are trying to act.
   const defaults = {
-    dx: 8, dy: 8, w: defaultWidth, h: defaultHeight, collapsed: false, pinned: true,
+    dx: 8, dy: 8, w: defaultWidth, h: defaultHeight,
+    collapsed: defaultCollapsed, pinned: true, defaultsVersion: DEFAULTS_VERSION,
   };
   const [layout, setLayout] = useState(() => readLayout(id, defaults));
 

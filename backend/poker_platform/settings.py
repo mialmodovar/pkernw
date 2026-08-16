@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     "accounts",
     "tournaments",
     "game",
+    "clubs",
 ]
 
 # ── Middleware ─────────────────────────────────────────────────────────────

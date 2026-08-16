@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 from accounts.models import AvatarImage
+from clubs.permissions import is_club_staff
 
 from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentPlayer, BlindLevel
@@ -33,6 +34,23 @@ def _start_due_scheduled_tournaments():
             tournament.status = "running"
             tournament.started_at = timezone.now()
             tournament.save(update_fields=["status", "started_at"])
+
+
+def manageable_tournament(user, pk):
+    """The tournament, if this person may run it — otherwise None.
+
+    The host, or anybody who helps run the club whose night it is. A
+    co-organiser should be able to start the game when whoever created it is
+    stuck in traffic, which is the whole point of a club having staff.
+    """
+    tournament = Tournament.objects.filter(pk=pk).select_related("club").first()
+    if tournament is None:
+        return None
+    if tournament.host_id == user.id:
+        return tournament
+    if tournament.club_id and is_club_staff(user, tournament.club):
+        return tournament
+    return None
 
 
 def _get_table_assignment(tournament, global_seat):
@@ -169,10 +187,9 @@ def join_tournament(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def start_tournament(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status != "lobby":
         return Response({"error": "Tournament already started"}, status=status.HTTP_400_BAD_REQUEST)
@@ -200,10 +217,9 @@ def start_tournament(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def pause_tournament(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status != "running":
         return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
@@ -220,10 +236,9 @@ def pause_tournament(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def resume_tournament(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status != "paused":
         return Response({"error": "Tournament is not paused"}, status=status.HTTP_400_BAD_REQUEST)
@@ -241,10 +256,9 @@ def resume_tournament(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def skip_blind_level(request, pk):
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status not in ("running", "paused"):
         return Response({"error": "Tournament is not running"}, status=status.HTTP_400_BAD_REQUEST)
@@ -390,10 +404,9 @@ def update_tournament(request, pk):
     what a head is worth are the terms players joined on, and changing those
     behind them is a different thing from moving the start time.
     """
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status != "lobby":
         return Response(
@@ -424,10 +437,9 @@ def delete_tournament(request, pk):
     that were played are gone, which is why this is the host's call and nobody
     else's.
     """
-    try:
-        tournament = Tournament.objects.get(pk=pk, host=request.user)
-    except Tournament.DoesNotExist:
-        return Response({"error": "Not found or not host"}, status=status.HTTP_404_NOT_FOUND)
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
 
     if tournament.status not in ("lobby", "paused"):
         return Response(

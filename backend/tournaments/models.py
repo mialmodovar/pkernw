@@ -27,6 +27,16 @@ class Tournament(models.Model):
     ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
+    # Whose night this is, and which league table it counts for. Both null for
+    # a one-off, which is every tournament that existed before clubs did. A
+    # club with no season is a club night that moves no table — the fun format
+    # nobody wants distorting the standings.
+    club           = models.ForeignKey(
+        "clubs.Club", on_delete=models.SET_NULL, null=True, blank=True, related_name="tournaments",
+    )
+    season         = models.ForeignKey(
+        "clubs.Season", on_delete=models.SET_NULL, null=True, blank=True, related_name="tournaments",
+    )
     name           = models.CharField(max_length=100)
     game_type      = models.CharField(max_length=8, choices=GAME_TYPE_CHOICES, default="nlh")
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")

@@ -17,4 +17,10 @@ class StaffCreatesTournaments(permissions.BasePermission):
             return False
         if request.method in permissions.SAFE_METHODS:
             return True
-        return bool(request.user.is_staff)
+        # Site staff run the installation; club staff run their own community.
+        # Which club is being organised for is not visible here, so this only
+        # asks whether they organise anywhere — the serializer checks that the
+        # club in the payload is one of theirs.
+        from clubs.permissions import staffs_any_club
+
+        return bool(request.user.is_staff) or staffs_any_club(request.user)

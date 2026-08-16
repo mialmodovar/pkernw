@@ -5,6 +5,9 @@ from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 from game.consumers import late_registration_open as _late_registration_open
 
+from clubs.models import Club, Season
+from clubs.permissions import is_club_staff
+
 from .bounties import BountyConfig, starting_bounty_cents
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
@@ -188,6 +191,10 @@ class TournamentListSerializer(serializers.ModelSerializer):
     # Printed beside the tournament; host_name above is what "am I the host"
     # is decided on, and stays the login name.
     host_display_name = serializers.SerializerMethodField()
+    club_name    = serializers.CharField(source="club.name", read_only=True, default=None)
+    club_emoji   = serializers.CharField(source="club.emoji", read_only=True, default=None)
+    club_slug    = serializers.CharField(source="club.slug", read_only=True, default=None)
+    league_name  = serializers.CharField(source="season.league.name", read_only=True, default=None)
     player_count = serializers.IntegerField(source="players.count", read_only=True)
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
@@ -263,7 +270,8 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
+        fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
+                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
                   "is_host",
                   "winner_name", "my_finish_position",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
@@ -279,13 +287,19 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
     host_name = serializers.CharField(source="host.username", read_only=True)
+    club_name    = serializers.CharField(source="club.name", read_only=True, default=None)
+    club_emoji   = serializers.CharField(source="club.emoji", read_only=True, default=None)
+    club_slug    = serializers.CharField(source="club.slug", read_only=True, default=None)
+    league_name  = serializers.CharField(source="season.league.name", read_only=True, default=None)
+
     players   = serializers.SerializerMethodField()
     tables    = TournamentTableSerializer(many=True, read_only=True)
     levels    = BlindLevelSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "host_name", "status", "starting_chips", "buy_in_cents",
+        fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
+                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
@@ -315,7 +329,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
+        fields = ("id", "name", "game_type", "club", "season", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
                   "late_reg_level", "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
@@ -396,6 +410,24 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"showdown_seconds": "The showdown pause must be between 2 and 60 seconds."}
             )
+
+        club = attrs.get("club", getattr(self.instance, "club", None))
+        season = attrs.get("season", getattr(self.instance, "season", None))
+        request = self.context.get("request")
+        if club is not None and request is not None:
+            if not is_club_staff(request.user, club):
+                raise serializers.ValidationError(
+                    {"club": "You do not organise for that club."}
+                )
+        if season is not None:
+            if club is None or season.league.club_id != club.id:
+                # Otherwise a night could be dropped onto another community's
+                # table by anybody who knew a season id.
+                raise serializers.ValidationError(
+                    {"season": "That league belongs to a different club."}
+                )
+            if not season.is_open:
+                raise serializers.ValidationError({"season": "That season is closed."})
 
         if bounty_mode not in {"none", "fixed", "progressive"}:
             raise serializers.ValidationError({"bounty_mode": "Choose a valid knockout mode."})
@@ -478,6 +510,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 # rest is arrangement: when it starts, how fast the blinds climb, how long the
 # clock is.
 LOCKED_AFTER_CREATION = (
+    "club",
+    "season",
     "buy_in_cents",
     "payout_structure",
     "bounty_mode",

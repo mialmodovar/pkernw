@@ -1,0 +1,413 @@
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from tournaments.models import Tournament, TournamentPlayer
+
+from .models import Club, League, Membership, Season
+from .scoring import PRESETS, normalize_scheme, points_for, standings
+
+User = get_user_model()
+
+
+class ScoringTests(TestCase):
+	"""What a night is worth. No database, no tournament — just the rules."""
+
+	def test_the_table_pays_down_the_places_and_then_a_flat_rate(self):
+		scheme = PRESETS["placement_only"]
+
+		self.assertEqual(points_for({"finish_position": 1}, scheme), 10)
+		self.assertEqual(points_for({"finish_position": 3}, scheme), 5)
+		# Past the listed places everybody gets the same for turning up and
+		# outlasting nobody in particular.
+		self.assertEqual(points_for({"finish_position": 9}, scheme), 1)
+
+	def test_knockouts_and_attendance_add_to_the_placement(self):
+		scheme = PRESETS["placement_ko"]
+
+		# 2nd (7) + attendance (1) + three knockouts (6).
+		self.assertEqual(points_for({"finish_position": 2, "knockouts": 3}, scheme), 14)
+
+	def test_a_night_nobody_finished_scores_nothing(self):
+		"""No finish position means the tournament never ended, or they are
+		still in it — not that they came last."""
+		scheme = PRESETS["placement_ko"]
+
+		self.assertEqual(points_for({"finish_position": None, "knockouts": 4}, scheme), 0)
+		self.assertEqual(points_for({}, scheme), 0)
+		self.assertEqual(points_for(None, scheme), 0)
+
+	def test_a_scheme_nobody_recognises_falls_back_rather_than_breaking(self):
+		"""A table people are looking at must not be crashable by a stored row
+		from an older version, or by somebody editing JSON by hand."""
+		scheme = normalize_scheme({"preset": "nonsense"})
+
+		self.assertEqual(scheme["preset"], "custom")
+		self.assertGreater(points_for({"finish_position": 1}, scheme), 0)
+		self.assertEqual(points_for({"finish_position": 1}, {"placement": "not a list"}),
+						 points_for({"finish_position": 1}, PRESETS["placement_ko"]))
+
+	def test_numbers_that_do_not_match_the_preset_make_it_custom(self):
+		scheme = normalize_scheme({"preset": "placement_ko", "per_knockout": 5})
+
+		self.assertEqual(scheme["preset"], "custom")
+		self.assertEqual(scheme["per_knockout"], 5)
+
+	def test_untouched_preset_numbers_keep_the_preset_name(self):
+		scheme = normalize_scheme(dict(PRESETS["placement_only"]))
+
+		self.assertEqual(scheme["preset"], "placement_only")
+
+	def test_nonsense_numbers_never_score_negative(self):
+		scheme = normalize_scheme({"placement": [-5, "x", None], "per_knockout": -3})
+
+		self.assertGreaterEqual(points_for({"finish_position": 1, "knockouts": 2}, scheme), 0)
+
+
+class StandingsTests(TestCase):
+	"""The table, built from results rather than kept beside them."""
+
+	def setUp(self):
+		self.owner = User.objects.create_user(username="s_owner", password="secret123")
+		self.rival = User.objects.create_user(username="s_rival", password="secret123")
+		self.club = Club.objects.create(name="Quinta", created_by=self.owner)
+		self.league = League.objects.create(club=self.club, name="Sunday")
+		self.season = Season.objects.create(league=self.league, name="Autumn")
+
+	def _night(self, status_value="finished", season=None, **finishes):
+		tournament = Tournament.objects.create(
+			host=self.owner, name="Night", status=status_value,
+			club=self.club, season=self.season if season is None else season,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		for seat, (user, spec) in enumerate(finishes.items()):
+			TournamentPlayer.objects.create(
+				tournament=tournament, user=getattr(self, user), seat=seat, chips=0,
+				finish_position=spec[0], knockouts=spec[1],
+			)
+		return tournament
+
+	def test_a_finished_night_lands_on_the_table(self):
+		self._night(owner=(1, 2), rival=(2, 0))
+
+		rows = standings(self.season)
+
+		self.assertEqual([row["username"] for row in rows], ["s_owner", "s_rival"])
+		self.assertEqual(rows[0]["wins"], 1)
+		self.assertEqual(rows[0]["knockouts"], 2)
+		self.assertEqual(rows[0]["cashes"], 1)
+
+	def test_a_night_still_being_played_counts_for_nothing_yet(self):
+		self._night(status_value="running", owner=(1, 3), rival=(2, 0))
+
+		self.assertEqual(standings(self.season), [])
+
+	def test_a_club_night_outside_any_league_moves_no_table(self):
+		"""The fun format nobody wants distorting the standings."""
+		tournament = Tournament.objects.create(
+			host=self.owner, name="Just for fun", status="finished", club=self.club, season=None,
+		)
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.owner, seat=0, chips=0, finish_position=1, knockouts=5,
+		)
+
+		self.assertEqual(standings(self.season), [])
+
+	def test_two_leagues_in_one_club_keep_separate_tables(self):
+		other = League.objects.create(club=self.club, name="Turbo")
+		other_season = Season.objects.create(league=other, name="Autumn")
+		self._night(owner=(1, 0), rival=(2, 0))
+		self._night(season=other_season, rival=(1, 0))
+
+		sunday = standings(self.season)
+		turbo = standings(other_season)
+
+		self.assertEqual(sunday[0]["username"], "s_owner")
+		self.assertEqual([row["username"] for row in turbo], ["s_rival"])
+		self.assertEqual(turbo[0]["played"], 1)
+
+	def test_a_tie_on_points_breaks_on_who_actually_won_nights(self):
+		# Level on points, but one of them keeps winning.
+		self._night(owner=(1, 0), rival=(5, 4))
+
+		rows = standings(self.season)
+
+		self.assertEqual(rows[0]["points"], rows[1]["points"])
+		self.assertEqual(rows[0]["username"], "s_owner")
+
+	def test_the_table_follows_the_seasons_own_scoring(self):
+		self._night(owner=(1, 3), rival=(2, 0))
+		before = standings(self.season)[0]["points"]
+
+		self.season.scoring = dict(PRESETS["placement_only"])
+		self.season.save(update_fields=["scoring"])
+
+		# Same results, different rules, and nothing was recomputed or stored.
+		self.assertLess(standings(self.season)[0]["points"], before)
+
+
+class MembershipTests(APITestCase):
+	def setUp(self):
+		self.owner = User.objects.create_user(username="m_owner", password="secret123")
+		self.joiner = User.objects.create_user(username="m_joiner", password="secret123")
+		self.client.force_authenticate(self.owner)
+
+	def _club(self, **overrides):
+		response = self.client.post(reverse("clubs"), {"name": "Quinta Poker", **overrides}, format="json")
+		return Club.objects.get(id=response.data["id"])
+
+	def test_making_a_club_makes_you_its_owner(self):
+		club = self._club()
+
+		self.assertEqual(club.memberships.get(user=self.owner).role, Membership.OWNER)
+
+	def test_anybody_can_join_a_public_club(self):
+		club = self._club()
+		self.client.force_authenticate(self.joiner)
+
+		response = self.client.post(reverse("club-join", args=[club.slug]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertTrue(club.memberships.filter(user=self.joiner).exists())
+
+	def test_a_private_club_needs_its_code(self):
+		club = self._club(is_public=False)
+		self.client.force_authenticate(self.joiner)
+
+		refused = self.client.post(reverse("club-join", args=[club.slug]))
+		self.assertEqual(refused.status_code, status.HTTP_403_FORBIDDEN)
+
+		joined = self.client.post(reverse("club-join-by-code"), {"code": club.invite_code}, format="json")
+		self.assertEqual(joined.status_code, status.HTTP_200_OK)
+		self.assertTrue(club.memberships.filter(user=self.joiner).exists())
+
+	def test_a_wrong_code_is_refused(self):
+		self._club(is_public=False)
+		self.client.force_authenticate(self.joiner)
+
+		response = self.client.post(reverse("club-join-by-code"), {"code": "NOPE99"}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_a_private_club_is_not_listed_to_outsiders(self):
+		self._club(is_public=False)
+		self.client.force_authenticate(self.joiner)
+
+		self.assertEqual(self.client.get(reverse("clubs")).data, [])
+
+	def test_the_invite_code_is_not_handed_to_outsiders(self):
+		"""A code visible to anybody would make every private club public."""
+		club = self._club()
+		self.client.force_authenticate(self.joiner)
+
+		response = self.client.get(reverse("club-detail", args=[club.slug]))
+
+		self.assertIsNone(response.data["invite_code"])
+
+	def test_only_the_owner_can_make_somebody_staff(self):
+		club = self._club()
+		self.client.post(reverse("club-join", args=[club.slug]))
+		Membership.objects.get_or_create(club=club, user=self.joiner)
+		self.client.force_authenticate(self.joiner)
+
+		response = self.client.patch(
+			reverse("club-member", args=[club.slug, "m_owner"]), {"role": "member"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_handing_over_leaves_exactly_one_owner(self):
+		club = self._club()
+		Membership.objects.create(club=club, user=self.joiner)
+
+		self.client.patch(
+			reverse("club-member", args=[club.slug, "m_joiner"]), {"role": "owner"}, format="json",
+		)
+
+		self.assertEqual(club.memberships.filter(role=Membership.OWNER).count(), 1)
+		self.assertEqual(club.memberships.get(user=self.joiner).role, Membership.OWNER)
+		self.assertEqual(club.memberships.get(user=self.owner).role, Membership.STAFF)
+
+	def test_an_owner_cannot_walk_out_on_a_club_with_members_in_it(self):
+		club = self._club()
+		Membership.objects.create(club=club, user=self.joiner)
+
+		response = self.client.delete(reverse("club-leave", args=[club.slug]))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_the_last_person_out_can_leave(self):
+		club = self._club()
+
+		response = self.client.delete(reverse("club-leave", args=[club.slug]))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class SeasonTests(APITestCase):
+	def setUp(self):
+		self.owner = User.objects.create_user(username="se_owner", password="secret123")
+		self.member = User.objects.create_user(username="se_member", password="secret123")
+		self.client.force_authenticate(self.owner)
+		self.club = Club.objects.create(name="Quinta", created_by=self.owner)
+		Membership.objects.create(club=self.club, user=self.owner, role=Membership.OWNER)
+		Membership.objects.create(club=self.club, user=self.member, role=Membership.MEMBER)
+
+	def _league(self):
+		response = self.client.post(
+			reverse("club-create-league", args=[self.club.slug]), {"name": "Sunday"}, format="json",
+		)
+		return League.objects.get(id=response.data["id"])
+
+	def test_a_new_league_opens_with_a_season(self):
+		"""A league with no season has nowhere to put a result."""
+		league = self._league()
+
+		self.assertIsNotNone(league.open_season)
+
+	def test_a_member_cannot_start_a_league(self):
+		self.client.force_authenticate(self.member)
+
+		response = self.client.post(
+			reverse("club-create-league", args=[self.club.slug]), {"name": "Mine"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_the_next_season_carries_the_rules_forward(self):
+		league = self._league()
+		season = league.open_season
+		self.client.patch(
+			reverse("season-detail", args=[season.id]),
+			{"scoring": {"preset": "placement_ko", "per_knockout": 4}}, format="json",
+		)
+
+		self.client.post(reverse("league-next-season", args=[league.id]), {"name": "Winter"}, format="json")
+
+		season.refresh_from_db()
+		self.assertIsNotNone(season.closed_at)
+		self.assertEqual(league.open_season.name, "Winter")
+		self.assertEqual(league.open_season.scoring["per_knockout"], 4)
+
+	def test_a_closed_season_cannot_be_rescored(self):
+		"""It is a record of what happened under the rules it was played under."""
+		league = self._league()
+		season = league.open_season
+		self.client.post(reverse("league-next-season", args=[league.id]), {}, format="json")
+
+		response = self.client.patch(
+			reverse("season-detail", args=[season.id]),
+			{"scoring": {"preset": "placement_only"}}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_standings_come_back_for_the_open_season_by_default(self):
+		league = self._league()
+
+		response = self.client.get(reverse("league-standings", args=[league.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["season"]["id"], league.open_season.id)
+		self.assertEqual(response.data["rows"], [])
+
+
+class ClubTournamentPermissionTests(APITestCase):
+	"""Communities run themselves: club staff open their own tournaments."""
+
+	def setUp(self):
+		self.organiser = User.objects.create_user(username="c_organiser", password="secret123")
+		self.member = User.objects.create_user(username="c_member", password="secret123")
+		self.outsider = User.objects.create_user(username="c_outsider", password="secret123")
+
+		self.club = Club.objects.create(name="Quinta", created_by=self.organiser)
+		Membership.objects.create(club=self.club, user=self.organiser, role=Membership.OWNER)
+		Membership.objects.create(club=self.club, user=self.member, role=Membership.MEMBER)
+		self.league = League.objects.create(club=self.club, name="Sunday")
+		self.season = Season.objects.create(league=self.league, name="Autumn")
+
+	def _create(self, user, **payload):
+		self.client.force_authenticate(user)
+		return self.client.post(
+			reverse("tournament-list"), {"name": "Club night", **payload}, format="json",
+		)
+
+	def test_club_staff_can_open_a_tournament_without_being_site_staff(self):
+		self.assertFalse(self.organiser.is_staff)
+
+		response = self._create(self.organiser, club=self.club.id, season=self.season.id)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(id=response.data["id"]).season_id, self.season.id)
+
+	def test_a_plain_member_cannot(self):
+		response = self._create(self.member, club=self.club.id)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_somebody_in_no_club_at_all_still_cannot(self):
+		response = self._create(self.outsider, club=self.club.id)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_a_season_from_another_club_is_refused(self):
+		"""Otherwise a night could be dropped onto another community's table by
+		anybody who knew a season id."""
+		other_club = Club.objects.create(name="Elsewhere", created_by=self.organiser)
+		Membership.objects.create(club=other_club, user=self.organiser, role=Membership.OWNER)
+		other_league = League.objects.create(club=other_club, name="Theirs")
+		other_season = Season.objects.create(league=other_league, name="Autumn")
+
+		response = self._create(self.organiser, club=self.club.id, season=other_season.id)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_closed_season_takes_no_new_nights(self):
+		from django.utils import timezone
+
+		self.season.closed_at = timezone.now()
+		self.season.save(update_fields=["closed_at"])
+
+		response = self._create(self.organiser, club=self.club.id, season=self.season.id)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_club_night_can_count_for_nothing(self):
+		response = self._create(self.organiser, club=self.club.id)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertIsNone(Tournament.objects.get(id=response.data["id"]).season_id)
+
+	def test_club_staff_can_start_a_tournament_somebody_else_created(self):
+		"""A co-organiser should be able to start the night when whoever made
+		it is stuck in traffic."""
+		colleague = User.objects.create_user(username="c_colleague", password="secret123")
+		Membership.objects.create(club=self.club, user=colleague, role=Membership.STAFF)
+		created = self._create(self.organiser, club=self.club.id).data
+		tournament = Tournament.objects.get(id=created["id"])
+		TournamentPlayer.objects.create(tournament=tournament, user=self.member, seat=1, chips=1000)
+
+		self.client.force_authenticate(colleague)
+		response = self.client.post(reverse("tournament-start", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+	def test_a_member_cannot_start_the_clubs_tournament(self):
+		created = self._create(self.organiser, club=self.club.id).data
+		tournament = Tournament.objects.get(id=created["id"])
+
+		self.client.force_authenticate(self.member)
+		response = self.client.post(reverse("tournament-start", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_which_club_a_night_belongs_to_is_settled_when_it_is_made(self):
+		created = self._create(self.organiser, club=self.club.id, season=self.season.id).data
+
+		self.client.patch(
+			reverse("tournament-edit", args=[created["id"]]), {"season": None}, format="json",
+		)
+
+		self.assertEqual(Tournament.objects.get(id=created["id"]).season_id, self.season.id)

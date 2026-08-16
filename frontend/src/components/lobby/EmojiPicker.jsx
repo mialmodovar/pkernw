@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 
 import Avatar from "../Avatar";
+import AvatarCropper from "./AvatarCropper";
 import useAuthStore from "../../store/authStore";
-import { squareAvatarBlob } from "./avatarImage";
 
 const AVATARS = [
   "🃏", "♠️", "♣️", "♥️", "♦️", "🎲", "🏆", "💰",
@@ -27,6 +27,9 @@ export default function EmojiPicker({ onSelect, onClose }) {
   const uploadAvatarImage = useAuthStore((s) => s.uploadAvatarImage);
   const removeAvatarImage = useAuthStore((s) => s.removeAvatarImage);
   const fileInput = useRef(null);
+  // The file waiting to be cropped. Held rather than uploaded straight away:
+  // which part of a photo is your face is a decision only you can make.
+  const [chosenFile, setChosenFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const hasPicture = Boolean(profile?.avatar_url);
@@ -42,17 +45,22 @@ export default function EmojiPicker({ onSelect, onClose }) {
     }
   };
 
-  const upload = async (event) => {
+  const pick = (event) => {
     const file = event.target.files?.[0];
     // Cleared straight away so picking the same file twice still counts as a
     // change — after a failed upload, that is exactly what you would do.
     event.target.value = "";
     if (!file) return;
+    setError(null);
+    setChosenFile(file);
+  };
 
+  const upload = async (blob) => {
     setBusy(true);
     setError(null);
     try {
-      await uploadAvatarImage(await squareAvatarBlob(file));
+      await uploadAvatarImage(blob);
+      setChosenFile(null);
       onClose();
     } catch (failure) {
       setError(
@@ -60,6 +68,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
         || failure?.message
         || "That picture could not be uploaded.",
       );
+      setChosenFile(null);
     } finally {
       setBusy(false);
     }
@@ -110,13 +119,22 @@ export default function EmojiPicker({ onSelect, onClose }) {
           ref={fileInput}
           type="file"
           accept={ACCEPTED}
-          onChange={upload}
+          onChange={pick}
           className="hidden"
         />
       </div>
 
       {error && (
         <p role="alert" className="mb-2 text-[11px] text-(--color-accent-link)">{error}</p>
+      )}
+
+      {chosenFile && (
+        <AvatarCropper
+          file={chosenFile}
+          busy={busy}
+          onCancel={() => setChosenFile(null)}
+          onDone={upload}
+        />
       )}
 
       <div className="grid grid-cols-6 gap-1">

@@ -7,6 +7,8 @@
  * megabytes, the circle is never a squashed rectangle, and whatever metadata
  * the original carried — the location it was taken, most of all — is left
  * behind in the browser: the canvas only ever hands back pixels.
+ *
+ * Which square gets cut out is the player's decision — see AvatarCropper.
  */
 
 // What the biggest avatar on screen needs, doubled for retina screens.
@@ -17,49 +19,27 @@ export const AVATAR_PIXELS = 256;
 // was too big", but it is checked before the upload rather than after it.
 export const AVATAR_MAX_BYTES = 512 * 1024;
 
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("That file could not be read as an image."));
-    };
-    image.src = objectUrl;
-  });
-}
-
 function encode(canvas, type, quality) {
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
 /**
- * A square, avatar-sized image from the middle of whatever was picked.
+ * The square the player chose, as an avatar-sized Blob ready to upload.
  *
- * Centre-cropped rather than squashed: a face off-centre is better than a face
- * stretched. Resolves to a Blob ready to upload, and rejects with a message
- * meant to be shown to the player.
+ * `rect` is in the image's own pixels: where the square starts and how big it
+ * is. The cropper works in screen pixels and converts, which keeps this
+ * function honest about one thing only — turning a square of an image into an
+ * avatar. Rejects with a message meant to be shown to the player.
  */
-export async function squareAvatarBlob(file, size = AVATAR_PIXELS) {
-  const image = await loadImage(file);
-  const side = Math.min(image.naturalWidth, image.naturalHeight);
-  if (!side) throw new Error("That image appears to be empty.");
-
+export async function cropToBlob(image, rect, size = AVATAR_PIXELS) {
+  const side = Math.max(1, Math.round(rect.side));
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext("2d");
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
-  context.drawImage(
-    image,
-    (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side,
-    0, 0, size, size,
-  );
+  context.drawImage(image, rect.sx, rect.sy, side, side, 0, 0, size, size);
 
   // WebP first: it keeps transparency, which matters because these are drawn as
   // circles and a transparent corner turned black would show as a dark wedge.
@@ -77,3 +57,4 @@ export async function squareAvatarBlob(file, size = AVATAR_PIXELS) {
   if (blob.size > AVATAR_MAX_BYTES) throw new Error("That image is too large to use as an avatar.");
   return blob;
 }
+

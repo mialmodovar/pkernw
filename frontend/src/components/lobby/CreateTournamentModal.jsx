@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import api from "../../api/http";
 import BlindStructureEditor from "./BlindStructureEditor";
 import { DEFAULT_HANDS } from "./blindStructureDefaults";
+import { formatCoins } from "./buyIn";
 import {
   SPEEDS,
   SPEED_NAMES,
@@ -18,6 +19,18 @@ const toDatetimeLocalValue = (date) => {
 // The only game there is, so far. Named rather than assumed, so adding another
 // is a list to extend instead of an assumption to hunt down.
 const GAME_TYPES = [{ value: "nlh", label: "No-Limit Hold'em" }];
+
+// The floor and the default, matching MIN_COIN_BUY_IN and DEFAULT_COIN_BUY_IN in
+// tournaments/serializers.py — the server is the authority, and a form that
+// offers what it refuses is worse than one that offers nothing.
+const MIN_COIN_BUY_IN = 5;
+const DEFAULT_COIN_BUY_IN = 50;
+
+// No third option on purpose. See the note beside the currency state below.
+const CURRENCIES = [
+  { key: "coins", label: "\u{1FA99} Coins" },
+  { key: "euros", label: "\u20AC Real money" },
+];
 
 export default function CreateTournamentForm({ onCancel, onCreate, editing = null, onSave }) {
   const [name, setName] = useState("");
@@ -38,8 +51,12 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [timeBankRefillRule, setTimeBankRefillRule] = useState("hands");
   const [timeBankRefillEveryHands, setTimeBankRefillEveryHands] = useState(10);
   const [timeBankRefillLevel, setTimeBankRefillLevel] = useState(4);
-  const [payoutEnabled, setPayoutEnabled] = useState(false);
+  // Which currency the night is played for. Coins by default, and there is no
+  // third option: a tournament with nothing at stake is a tournament nobody
+  // folds in, and euros are only ever a note for people to settle themselves.
+  const [currency, setCurrency] = useState("coins");
   const [buyInEuros, setBuyInEuros] = useState(0);
+  const [buyInCoins, setBuyInCoins] = useState(DEFAULT_COIN_BUY_IN);
   const [payoutRows, setPayoutRows] = useState([
     { place: 1, label: "1st", percentage: 50 },
     { place: 2, label: "2nd", percentage: 30 },
@@ -171,9 +188,10 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       if (data.auto_remove_offline_seconds > 0) setAutoRemoveOfflineSeconds(data.auto_remove_offline_seconds);
 
       const payouts = data.payout_structure || [];
-      setPayoutEnabled(payouts.length > 0);
       if (payouts.length > 0) setPayoutRows(payouts);
+      setCurrency((data.buy_in_cents || 0) > 0 ? "euros" : "coins");
       setBuyInEuros((data.buy_in_cents || 0) / 100);
+      setBuyInCoins(data.buy_in_coins || DEFAULT_COIN_BUY_IN);
       setBountyMode(data.bounty_mode || "none");
       setBountyEuros((data.bounty_cents || 0) / 100);
       setBountySplit(data.bounty_progressive_split_pct || 50);
@@ -201,9 +219,12 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const normalizedRebuyLevel = Math.min(Math.max(rebuyLevel, 1), blindLevelCount || 1);
   const normalizedTimeBankRefillLevel = Math.min(Math.max(timeBankRefillLevel, 1), blindLevelCount || 1);
   const payoutTotal = payoutRows.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
+  const euroMode = currency === "euros";
   // Cents, so the euro shares below match what the ledger will record to the cent.
-  const buyInCents = payoutEnabled ? Math.max(0, Math.round(Number(buyInEuros || 0) * 100)) : 0;
-  const bountyOn = payoutEnabled && bountyMode !== "none";
+  const buyInCents = euroMode ? Math.max(0, Math.round(Number(buyInEuros || 0) * 100)) : 0;
+  // Coins are whole. Half a coin is not a thing anybody can be charged.
+  const stakeCoins = euroMode ? 0 : Math.max(0, Math.round(Number(buyInCoins || 0)));
+  const bountyOn = euroMode && bountyMode !== "none";
   const bountyCents = bountyOn ? Math.max(0, Math.round(Number(bountyEuros || 0) * 100)) : 0;
   // The percentages below share out only what is left after the bounties, so
   // the euro figures beside them stay honest.
@@ -252,16 +273,20 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
         return;
       }
     }
-    if (payoutEnabled) {
-      if (!payoutRows.length) {
-        setError("Add at least one payout row.");
-        return;
-      }
-      if (Math.round(payoutTotal * 100) / 100 !== 100) {
-        setError("Payout percentages must add up to 100.");
-        return;
-      }
-      if (bountyMode !== "none") {
+    if (!payoutRows.length) {
+      setError("Add at least one payout row.");
+      return;
+    }
+    if (Math.round(payoutTotal * 100) / 100 !== 100) {
+      setError("Payout percentages must add up to 100.");
+      return;
+    }
+    if (!euroMode && stakeCoins < MIN_COIN_BUY_IN) {
+      setError(`A coin buy-in of less than ${MIN_COIN_BUY_IN} is not a stake.`);
+      return;
+    }
+    {
+      if (bountyMode !== "none" && euroMode) {
         if (buyInCents <= 0) {
           setError("Set a buy-in for the knockout bounties to come out of.");
           return;
@@ -302,12 +327,13 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
       time_bank_refill_every_hands: timeBankEnabled && timeBankRefillRule === "hands" ? timeBankRefillEveryHands : null,
       time_bank_refill_level: timeBankEnabled && timeBankRefillRule === "blind_level" ? normalizedTimeBankRefillLevel : null,
-      payout_structure: payoutEnabled ? payoutRows.map((row) => ({
+      payout_structure: payoutRows.map((row) => ({
         place: row.place,
         label: row.label,
         percentage: row.percentage,
-      })) : [],
+      })),
       buy_in_cents: buyInCents,
+      buy_in_coins: stakeCoins,
       bounty_mode: bountyOn ? bountyMode : "none",
       bounty_cents: bountyCents,
       bounty_progressive_split_pct: bountyMode === "progressive" ? Number(bountySplit) : 50,
@@ -322,6 +348,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       // The money is not the host's to change once people have joined on it,
       // and the server refuses it regardless — see LOCKED_AFTER_CREATION.
       delete payload.buy_in_cents;
+      delete payload.buy_in_coins;
       delete payload.payout_structure;
       delete payload.bounty_mode;
       delete payload.bounty_cents;
@@ -707,26 +734,62 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
           </p>
         ) : (
         <div className="panel-raised rounded-lg p-3 space-y-3">
-          <label className="flex items-center justify-between text-sm">
-            <span className="text-(--color-silver)">Prize Pool Reference</span>
-            <input type="checkbox" checked={payoutEnabled} onChange={(e) => setPayoutEnabled(e.target.checked)} />
-          </label>
-          <p className="text-xs text-(--color-text-muted)">
-            Set a buy-in and the app tracks who owes whom afterwards. It never handles money.
-          </p>
+          {/* One currency or the other, and no "off". A game that costs nothing
+              is one nobody folds in — coins are the app's own, actually charged
+              and actually paid back, and euros are a note for people who settle
+              between themselves. */}
+          <div className="space-y-2">
+            <span className="text-(--color-silver) text-sm">Played for</span>
+            <div className="flex gap-2" role="radiogroup" aria-label="Buy-in currency">
+              {CURRENCIES.map((one) => (
+                <button
+                  key={one.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={currency === one.key}
+                  onClick={() => setCurrency(one.key)}
+                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    currency === one.key
+                      ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
+                      : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+                  }`}
+                >
+                  {one.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-(--color-text-muted) leading-snug">
+              {euroMode
+                ? "Real money. The app records who owes whom and never handles a cent of it — settle up in Calotes."
+                : "Coins. Taken from each player's wallet when they join, and paid back to the places below when it ends."}
+            </p>
+          </div>
 
-          <label className="flex items-center justify-between text-sm gap-3">
-            <span className="text-(--color-text-muted) text-xs">Buy-in (€)</span>
-            <input
-              type="number"
-              min={0}
-              step="0.5"
-              className="input-field px-2 py-1 rounded w-28 text-right transition-colors disabled:opacity-50"
-              value={buyInEuros}
-              disabled={!payoutEnabled}
-              onChange={(e) => setBuyInEuros(e.target.value)}
-            />
-          </label>
+          {euroMode ? (
+            <label className="flex items-center justify-between text-sm gap-3">
+              <span className="text-(--color-text-muted) text-xs">Buy-in (€)</span>
+              <input
+                type="number"
+                min={0}
+                step="0.5"
+                className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
+                value={buyInEuros}
+                onChange={(e) => setBuyInEuros(e.target.value)}
+              />
+            </label>
+          ) : (
+            <label className="flex items-center justify-between text-sm gap-3">
+              <span className="text-(--color-text-muted) text-xs">Buy-in (coins)</span>
+              <input
+                type="number"
+                min={MIN_COIN_BUY_IN}
+                step="5"
+                className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
+                value={buyInCoins}
+                onChange={(e) => setBuyInCoins(e.target.value)}
+              />
+            </label>
+          )}
 
           {/* Knockouts. One select and one amount is the whole configuration —
               the bounty is carved out of the buy-in above rather than charged
@@ -736,8 +799,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
               <span className="text-(--color-text-muted) text-xs">Knockout bounties</span>
               <select
                 className="input-field px-2 py-1 rounded w-40 transition-colors disabled:opacity-50"
-                value={bountyMode}
-                disabled={!payoutEnabled}
+                value={euroMode ? bountyMode : "none"}
+                disabled={!euroMode}
                 onChange={(e) => setBountyMode(e.target.value)}
               >
                 <option value="none">Off</option>
@@ -790,7 +853,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-(--color-text-muted)">
               <span>Place</span>
               <span>Label</span>
-              <span>{buyInCents > 0 ? "Percent / €" : "Percent"}</span>
+              <span>{buyInCents > 0 ? "Percent / €" : stakeCoins > 0 ? "Percent / 🪙" : "Percent"}</span>
               <span></span>
             </div>
             {payoutRows.map((row, index) => (
@@ -800,13 +863,11 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                   min={1}
                   className="input-field px-2 py-1 rounded transition-colors disabled:opacity-50"
                   value={row.place}
-                  disabled={!payoutEnabled}
                   onChange={(e) => updatePayoutRow(index, "place", e.target.value)}
                 />
                 <input
                   className="input-field px-2 py-1 rounded transition-colors disabled:opacity-50"
                   value={row.label}
-                  disabled={!payoutEnabled}
                   onChange={(e) => updatePayoutRow(index, "label", e.target.value)}
                 />
                 <div>
@@ -817,19 +878,23 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                     step="0.01"
                     className="input-field px-2 py-1 rounded w-full transition-colors disabled:opacity-50"
                     value={row.percentage}
-                    disabled={!payoutEnabled}
-                    onChange={(e) => updatePayoutRow(index, "percentage", e.target.value)}
+                      onChange={(e) => updatePayoutRow(index, "percentage", e.target.value)}
                   />
                   {buyInCents > 0 && (
                     <span className="block text-[11px] text-(--color-text-muted) text-right pr-1">
                       {(potCents * Number(row.percentage || 0) / 10000).toFixed(2)}€
                     </span>
                   )}
+                  {stakeCoins > 0 && (
+                    <span className="block text-[11px] text-(--color-text-muted) text-right pr-1">
+                      {formatCoins(Math.floor(stakeCoins * maxPlayers * Number(row.percentage || 0) / 100))}
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="text-[#c76b7a] hover:text-[#e3cdd1] transition-colors disabled:opacity-30"
-                  disabled={!payoutEnabled || payoutRows.length <= 1}
+                  disabled={payoutRows.length <= 1}
                   onClick={() => removePayoutRow(index)}
                 >
                   x
@@ -837,13 +902,14 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
               </div>
             ))}
             <div className="flex items-center justify-between">
-              <button type="button" className="text-xs text-[#d9c07a] transition-colors disabled:opacity-50" disabled={!payoutEnabled} onClick={addPayoutRow}>
+              <button type="button" className="text-xs text-[#d9c07a] transition-colors" onClick={addPayoutRow}>
                 + Add Payout
               </button>
-              <span className={`text-xs ${payoutEnabled && Math.round(payoutTotal * 100) / 100 !== 100 ? "text-[#c76b7a]" : "text-(--color-text-muted)"}`}>
+              <span className={`text-xs ${Math.round(payoutTotal * 100) / 100 !== 100 ? "text-[#c76b7a]" : "text-(--color-text-muted)"}`}>
                 Total {payoutTotal.toFixed(2)}%
                 {buyInCents > 0 && ` · ${bountyOn ? "places" : "pot"} up to ${(potCents / 100).toFixed(2)}€`}
                 {bountyOn && ` · KO pool ${(bountyCents * maxPlayers / 100).toFixed(2)}€`}
+                {stakeCoins > 0 && ` · pot up to ${formatCoins(stakeCoins * maxPlayers)}`}
               </span>
             </div>
           </div>

@@ -115,6 +115,9 @@ const useGameStore = create((set) => ({
   equityShakeSequence: 0,
   clearEquityShake: (id) => set((s) => (s.equityShake?.id === id ? { equityShake: null } : {})),
   countdown: null,    // seconds remaining before tournament starts
+  // A Spin n Go's drawn prize: {stake_coins, multiplier, prize_coins}, or null
+  // at a tournament table. Everything the format looks like hangs off this.
+  spin: null,
   // Who is ready to start, and how many seats there are to be ready. The count
   // exists so the overlay can say 3/5 without having to work out which of the
   // players it can see are actually seated.
@@ -275,6 +278,9 @@ const useGameStore = create((set) => ({
           // A reload mid-hand gets the calls already made, so the table does
           // not read as though nobody had said anything.
           sideBets: data.side_bets?.bets || [],
+          // Carried on the snapshot too, so a reload mid-game gets the prize
+          // back rather than a table with no stakes on it.
+          spin: data.spin ?? s.spin,
           sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;
@@ -290,6 +296,9 @@ const useGameStore = create((set) => ({
           messages: [],
           tableCount: data.table_count || 0,
           tableSummaries: data.tables || [],
+          // What a Spin n Go is being played for. Null on a tournament, which
+          // is what leaves the table looking like a tournament's table.
+          spin: data.spin || null,
         });
         break;
 

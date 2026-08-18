@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
+import useSpinGoStore from "../store/spinGoStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
+import SpinGoBrowser from "../components/lobby/SpinGoBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -12,6 +14,52 @@ import CalotesPanel from "../components/lobby/CalotesPanel";
 import CoinPanel from "../components/lobby/CoinPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
+// The two things you can be playing. Written as a list rather than two buttons
+// so the strip is one loop, the way the filter chips inside the tournament
+// browser are — and so a third format has one place to be added.
+const LOBBY_TABS = [
+  { key: "tournaments", label: "Tournaments" },
+  { key: "spingo", label: "Spin n Go" },
+];
+
+/**
+ * Watch your own Spin n Go and leave for the table when it fires.
+ *
+ * Kept here rather than inside the Spin n Go tab, because you can sit down and
+ * then go back to reading the tournament list — and the game starts dealing
+ * whether or not that tab is the one on screen. The tournament list has
+ * useAutoOpenTable for the same reason; a queue that has filled up is the same
+ * moment, arrived at from a different page.
+ */
+function useSpinGoWatch({ user }) {
+  const navigate = useNavigate();
+  const { myGame, fetchTiers } = useSpinGoStore();
+  const waiting = myGame?.status === "lobby";
+  const running = myGame != null && myGame.status !== "lobby" ? myGame.id : null;
+
+  useEffect(() => {
+    if (!user) return;
+    fetchTiers();
+  }, [user, fetchTiers]);
+
+  // Two paces, like the tournament list: a queue you are sitting in can fill up
+  // at any second and is worth knowing about immediately, and everything else
+  // can wait.
+  useEffect(() => {
+    if (!user) return undefined;
+    const id = setInterval(() => {
+      fetchTiers({ silent: true }).catch(() => {});
+    }, waiting ? 2000 : 8000);
+    return () => clearInterval(id);
+  }, [user, fetchTiers, waiting]);
+
+  useEffect(() => {
+    // Replaced rather than pushed, so "back" from the table is the lobby you
+    // were looking at and not a bounce straight back to the felt.
+    if (running != null) navigate(`/tournament/${running}/play`, { replace: true });
+  }, [running, navigate]);
+}
+
 export default function LobbyPage() {
   const { user, logout } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
@@ -19,6 +67,7 @@ export default function LobbyPage() {
   // Opening a tournament now takes site staff or a club you help run, and the
   // button follows the same rule the server does.
   const [staffsAClub, setStaffsAClub] = useState(false);
+  const [tab, setTab] = useState("tournaments");
   const onClubsLoaded = useCallback((clubs) => {
     setStaffsAClub(clubs.some((club) => club.my_role === "owner" || club.my_role === "staff"));
   }, []);
@@ -38,6 +87,7 @@ export default function LobbyPage() {
   // the app, takes you to the table — there is a hand waiting on you and this
   // list is not where you can play it.
   useAutoOpenTable({ tournaments, user, loading });
+  useSpinGoWatch({ user });
 
   // Waiting on a tournament of your own to begin is the one thing on this page
   // that is worth knowing about the second it happens, because it starts
@@ -111,9 +161,28 @@ export default function LobbyPage() {
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
         <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold text-(--color-silver) tracking-wide">Tournaments</h1>
+          {/* The two game modes, as the page's own heading. Same pill as the
+              league tabs on a club page and the filter chips below. */}
+          <div className="flex gap-2 items-center" role="tablist" aria-label="Game mode">
+            {LOBBY_TABS.map((one) => (
+              <button
+                key={one.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === one.key}
+                onClick={() => setTab(one.key)}
+                className={`px-4 py-1.5 rounded-full text-lg font-bold tracking-wide border transition-colors ${
+                  tab === one.key
+                    ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
+                    : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+                }`}
+              >
+                {one.label}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-3 items-center">
-            {(runsThePlace(user) || staffsAClub) && (
+            {tab === "tournaments" && (runsThePlace(user) || staffsAClub) && (
               <>
                 <button onClick={() => navigate("/dev/table")}
                   title="Open the game table with mock players, for layout work"
@@ -133,7 +202,9 @@ export default function LobbyPage() {
           </div>
         </div>
 
-        {loading ? (
+        {tab === "spingo" ? (
+          <SpinGoBrowser onOpenTable={onOpenTable} />
+        ) : loading ? (
           <p className="text-(--color-text-muted)">Loading...</p>
         ) : (
           <TournamentBrowser

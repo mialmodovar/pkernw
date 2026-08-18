@@ -1,5 +1,6 @@
 import { send } from "../../api/socket";
 import useGameStore from "../../store/gameStore";
+import SpinReveal from "./SpinReveal";
 
 /**
  * The wait before the first hand, with a way out of it.
@@ -14,6 +15,9 @@ import useGameStore from "../../store/gameStore";
  */
 export default function StartCountdown({ myUserId }) {
   const countdown = useGameStore((s) => s.countdown);
+  // A Spin n Go spends its short countdown showing what was drawn, which is the
+  // one thing about the game nobody chose and everybody wants to see.
+  const spin = useGameStore((s) => s.spin);
   const readyUserIds = useGameStore((s) => s.readyUserIds);
   const readyTotal = useGameStore((s) => s.readyTotal);
   const players = useGameStore((s) => s.players);
@@ -31,8 +35,19 @@ export default function StartCountdown({ myUserId }) {
 
   return (
     <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20 px-4 text-center">
-      <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
-      <div className="text-6xl font-bold text-(--color-silver) tabular-nums">{countdown}</div>
+      {spin ? (
+        <>
+          <SpinReveal spin={spin} />
+          <div className="text-(--color-text-muted) text-sm mt-3">
+            Cards in <span className="tabular-nums">{countdown}</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-(--color-text-muted) text-lg mb-2">Tournament starting in</div>
+          <div className="text-6xl font-bold text-(--color-silver) tabular-nums">{countdown}</div>
+        </>
+      )}
 
       <button
         type="button"

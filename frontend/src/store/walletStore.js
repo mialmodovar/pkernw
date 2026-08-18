@@ -6,8 +6,9 @@ import api from "../api/http";
  * Coins: the side games' own currency.
  *
  * Deliberately nothing to do with money. The tournament ledger settles real
- * debts between friends; these buy a guess at who wins a pot and a rubber
- * chicken to throw at them, and the two must never be confused for each other.
+ * debts between friends; these buy a seat in a Spin n Go, a guess at who wins a
+ * pot and a rubber chicken to throw at them, and the two must never be confused
+ * for each other — one is settled between people, the other is spent here.
  *
  * One store rather than a fetch in each panel, because three things read the
  * balance — the lobby chip, the shop and the side-bet card — and a stake placed

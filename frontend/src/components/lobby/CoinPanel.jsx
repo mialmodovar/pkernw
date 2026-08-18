@@ -4,11 +4,13 @@ import useWalletStore from "../../store/walletStore";
 import ShopModal from "./ShopModal";
 
 /**
- * Your coins, and the two things you do with them.
+ * Your coins, and what you do with them.
  *
- * Coins are the side games' own currency and buy nothing that money buys —
- * which is the point of keeping them in a panel of their own rather than
- * anywhere near Calotes, where the numbers are real debts between real people.
+ * Coins buy nothing that money buys, which is the point of keeping them in a
+ * panel of their own rather than anywhere near Calotes, where the numbers are
+ * real debts between real people. They are a stake all the same — a Spin n Go
+ * seat and a coin tournament's buy-in are both charged from here — so the
+ * balance is worth a glance before you go looking for a game.
  */
 export default function CoinPanel() {
   const { balance, dailyAmount, canClaim, claim, fetchWallet, error } = useWalletStore();
@@ -28,8 +30,8 @@ export default function CoinPanel() {
       </div>
 
       <p className="text-xs text-(--color-text-muted) leading-snug">
-        Side-game coins. Not money — call a hand you folded out of, and spend what you win on
-        something to throw.
+        Not money. Buys you into a Spin n Go or a coin tournament, calls a hand you folded out
+        of, and pays for something to throw.
       </p>
 
       <div className="flex gap-2">

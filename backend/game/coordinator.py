@@ -94,6 +94,10 @@ class MultiTableTournamentCoordinator:
         allow_rebuys: bool = False,
         max_rebuys: Optional[int] = 0,
         rebuy_level: int = 0,
+        # A Spin n Go's drawn prize: {"stake_coins", "multiplier", "prize_coins"}
+        # or None for a tournament, which is what every other format is.
+        spin: Optional[dict] = None,
+        countdown_seconds: int = 30,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
@@ -120,6 +124,11 @@ class MultiTableTournamentCoordinator:
         # None is unlimited, so it cannot be flattened to a number here.
         self.max_rebuys = None if max_rebuys is None else max(0, max_rebuys)
         self.rebuy_level = max(0, rebuy_level or 0)
+        self.spin = spin or None
+        # How long the table holds before the first hand. It is loading time, not
+        # a rule of the game, so a format that fires with everybody already
+        # watching asks for less of it.
+        self.countdown_seconds = max(0, countdown_seconds or 0)
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -223,15 +232,16 @@ class MultiTableTournamentCoordinator:
                 "level": self._level_payload(),
                 "table_count": len(self._tables),
                 "tables": self.table_summaries(),
+                "spin": self.spin,
             },
         )
 
-        # Thirty seconds is there so everyone has time to load the table, not
+        # The countdown is there so everyone has time to load the table, not
         # because the table needs it. When every player says they are ready
         # there is nothing left to wait for, so the count stops early.
         self._countdown_open = True
         await self._broadcast_ready_state()
-        for remaining in range(30, 0, -1):
+        for remaining in range(self.countdown_seconds, 0, -1):
             if self._everyone_ready():
                 await self.broadcast_tournament("countdown", {"seconds": 0, "reason": "all_ready"})
                 break
@@ -782,6 +792,9 @@ class MultiTableTournamentCoordinator:
             # the blind level straight away, instead of waiting for the next
             # level_change broadcast.
             "level": self._level_payload(),
+            # The drawn prize, for the same reason: a player who reloads during
+            # a Spin n Go should still be able to see what they are playing for.
+            "spin": self.spin,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:

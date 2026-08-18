@@ -9,6 +9,30 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Spin n Go.** A second game mode, beside Tournaments at the top of the lobby.
+  Two tiers, 25 or 50 coins, three seats each: you sit, and when the third
+  player sits the prize is drawn — a multiplier between 2× and 100× on the
+  buy-in — and the cards are in the air. Fifteen big blinds, three-handed, two
+  minutes a level, three to five minutes from the draw to somebody having all
+  the chips, and the winner takes the whole coin pool. Nobody hosts one and
+  there is nothing to configure; the server keeps the queue for each tier and
+  fires it. The prize table is on the tier card rather than hidden behind "up to
+  100×", and the weights average out to exactly three buy-ins, which is what the
+  three of you paid in — nothing is raked off a currency the app prints.
+  The table looks like a different game because it is one: a smaller, rounder
+  three-seat felt in violet with a gold rim, the drawn prize written on the felt
+  for the whole game, and the multiplier landing on a reel before the first hand.
+- **Coins buy you into a tournament that has no euro prize pool.** A tournament
+  is now played for one currency or the other, and there is no third option: a
+  game with nothing at stake is a game nobody folds in. Euros work exactly as
+  before — the app records what was agreed and never handles a cent, and you
+  settle up in Calotes. Coins are the app's own, so they are actually taken off
+  the wallet when you join and actually paid into the winners' wallets when it
+  ends, to the coin, by the payout structure the host set. A new tournament that
+  says nothing about money costs 50 coins and pays the winner. Unregistering
+  before it starts gives the buy-in back, a rebuy is another buy-in, and joining
+  with too little is refused before a seat is taken rather than after. Every
+  tournament that existed before this stays free.
 - **Share a tournament.** A button on the tournament page hands the night to
   somebody: the phone's own share sheet where there is one, the link on the
   clipboard everywhere else, and the button says which of the two happened

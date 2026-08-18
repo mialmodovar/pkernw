@@ -29,6 +29,13 @@ def can_manage_tournament(user, tournament):
     """
     if tournament is None or not (user and user.is_authenticated):
         return False
+    # Nobody runs a Spin n Go. The host column points at whoever sat down first
+    # because the database needs it to point somewhere, and that must not hand
+    # them a pause button over two strangers' game — or a delete button over a
+    # prize pool three people paid into. Not even the superuser: there is
+    # nothing to intervene in that outliving the format's five minutes.
+    if tournament.format == "spingo":
+        return False
     if is_superuser(user):
         return True
     if tournament.host_id == user.id:

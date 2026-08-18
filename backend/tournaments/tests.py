@@ -3405,3 +3405,515 @@ class BadBeatTests(TestCase):
 		)
 
 		self.assertEqual(self._beats("hero"), 0)
+
+
+class SpinGoRulesTests(TestCase):
+	"""The format's arithmetic, which has to add up before anything is staked."""
+
+	def test_the_draw_averages_exactly_three_buy_ins(self):
+		from tournaments import spingo
+
+		# Three players pay in, three buy-ins come out. Coins are the app's own
+		# currency and raking one it prints would only empty wallets slower.
+		self.assertEqual(spingo.expected_multiplier(), 3)
+
+	def test_every_weight_in_the_table_can_actually_be_drawn(self):
+		from tournaments import spingo
+
+		drawn = set()
+		# One roll landing on the first index of each band, walked by hand rather
+		# than by luck: a weight that can never come up is a prize nobody wins.
+		roll = 0
+		for weight, multiplier in spingo.MULTIPLIERS:
+			drawn.add(spingo.draw_multiplier(_FixedRng(roll)))
+			drawn.add(spingo.draw_multiplier(_FixedRng(roll + weight - 1)))
+			roll += weight
+		self.assertEqual(drawn, {multiplier for _, multiplier in spingo.MULTIPLIERS})
+		self.assertEqual(roll, spingo.TOTAL_WEIGHT)
+
+	def test_the_prize_is_one_buy_in_times_the_draw(self):
+		from tournaments import spingo
+
+		self.assertEqual(spingo.prize_coins(25, 2), 50)
+		self.assertEqual(spingo.prize_coins(50, 100), 5000)
+
+	def test_the_stack_is_fifteen_big_blinds_of_the_opening_level(self):
+		from tournaments import spingo
+
+		first = spingo.level_rows()[0]
+		self.assertEqual(spingo.STARTING_CHIPS // first["big_blind"], 15)
+		# Timed, because the format promises minutes and hands cannot be timed.
+		self.assertTrue(all(row["duration_minutes"] for row in spingo.level_rows()))
+		self.assertTrue(all(row["duration_hands"] is None for row in spingo.level_rows()))
+
+	def test_the_format_is_three_handed_and_pays_the_winner(self):
+		from tournaments import spingo
+
+		defaults = spingo.tournament_defaults(25)
+		self.assertEqual(defaults["max_players"], 3)
+		self.assertEqual(defaults["players_per_table"], 3)
+		self.assertEqual(defaults["buy_in_coins"], 25)
+		self.assertEqual(defaults["buy_in_cents"], 0)
+		self.assertFalse(defaults["allow_rebuys"])
+		self.assertEqual(defaults["late_reg_level"], 0)
+		self.assertEqual(defaults["payout_structure"], [{"place": 1, "label": "1st", "percentage": 100}])
+
+
+class _FixedRng:
+	"""A generator that rolls one number, so a draw can be pinned."""
+
+	def __init__(self, value):
+		self.value = value
+
+	def randrange(self, _stop):
+		return self.value
+
+
+class SpinGoLobbyTests(APITestCase):
+	"""Sitting down, filling up, and walking away."""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=name, password="secret123")
+			for name in ("ana", "bea", "caio", "dina")
+		}
+		for user in self.players.values():
+			self._top_up(user, 500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _top_up(self, user, coins):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		wallet_for(user)
+		Wallet.objects.filter(user=user).update(balance=coins)
+
+	def _balance(self, user):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=user).balance
+
+	def _sit(self, name, stake=25):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(reverse("spingo-sit"), {"stake": stake}, format="json")
+
+	def _leave(self, name):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(reverse("spingo-leave"), {}, format="json")
+
+	def test_the_first_player_to_sit_opens_the_queue_and_pays_for_their_seat(self):
+		response = self._sit("ana")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(response.data["game"]["seats"], 1)
+		self.assertEqual(response.data["game"]["status"], "lobby")
+		self.assertEqual(self._balance(self.players["ana"]), 475)
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual(game.buy_in_coins, 25)
+		self.assertEqual(game.max_players, 3)
+		self.assertEqual(game.levels.count(), 7)
+		self.assertEqual(game.starting_chips, 1500)
+
+	def test_the_second_player_sits_at_the_same_table(self):
+		self._sit("ana")
+		response = self._sit("bea")
+
+		self.assertEqual(response.data["game"]["seats"], 2)
+		self.assertEqual(Tournament.objects.filter(format="spingo").count(), 1)
+		self.assertEqual(response.data["game"]["status"], "lobby")
+
+	def test_the_third_player_draws_the_prize_and_fires_the_game(self):
+		self._sit("ana")
+		self._sit("bea")
+		response = self._sit("caio")
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual(game.status, "running")
+		self.assertIsNotNone(game.started_at)
+		from tournaments.spingo import MULTIPLIERS
+
+		self.assertIn(game.spin_multiplier, {multiplier for _, multiplier in MULTIPLIERS})
+		self.assertEqual(response.data["game"]["prize_coins"], 25 * game.spin_multiplier)
+		# Three seats, three chairs at one table, three stacks of fifteen blinds.
+		self.assertEqual(game.players.count(), 3)
+		self.assertEqual(sorted(game.players.values_list("seat_at_table", flat=True)), [0, 1, 2])
+
+	def test_a_fourth_player_opens_a_new_game_rather_than_a_fourth_seat(self):
+		for name in ("ana", "bea", "caio"):
+			self._sit(name)
+		response = self._sit("dina")
+
+		self.assertEqual(response.data["game"]["seats"], 1)
+		self.assertEqual(Tournament.objects.filter(format="spingo").count(), 2)
+		self.assertEqual(Tournament.objects.filter(format="spingo", status="lobby").count(), 1)
+
+	def test_the_tiers_are_kept_apart(self):
+		self._sit("ana", stake=25)
+		self._sit("bea", stake=50)
+
+		self.assertEqual(Tournament.objects.filter(format="spingo").count(), 2)
+		self.assertEqual(self._balance(self.players["bea"]), 450)
+
+	def test_sitting_with_an_empty_wallet_costs_nothing_and_takes_no_seat(self):
+		self._top_up(self.players["ana"], 10)
+		response = self._sit("ana", stake=25)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(response.data["error"], "Not enough coins")
+		self.assertEqual(self._balance(self.players["ana"]), 10)
+		self.assertFalse(Tournament.objects.filter(format="spingo").exists())
+
+	def test_a_player_can_only_be_in_one_spin_n_go_at_a_time(self):
+		self._sit("ana")
+		response = self._sit("ana", stake=50)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(self._balance(self.players["ana"]), 475)
+
+	def test_an_unknown_stake_is_refused(self):
+		self.client.force_authenticate(self.players["ana"])
+		response = self.client.post(reverse("spingo-sit"), {"stake": 30}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(Tournament.objects.exists())
+
+	def test_leaving_the_queue_gives_the_coins_back_and_closes_an_empty_game(self):
+		self._sit("ana")
+		response = self._leave("ana")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self._balance(self.players["ana"]), 500)
+		self.assertFalse(Tournament.objects.filter(format="spingo").exists())
+
+	def test_leaving_a_queue_somebody_else_is_in_hands_over_the_host_column(self):
+		self._sit("ana")
+		self._sit("bea")
+		self._leave("ana")
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual(game.players.count(), 1)
+		self.assertEqual(game.host, self.players["bea"])
+		self.assertEqual(self._balance(self.players["ana"]), 500)
+
+	def test_a_game_that_has_started_cannot_be_left(self):
+		for name in ("ana", "bea", "caio"):
+			self._sit(name)
+		response = self._leave("ana")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(self._balance(self.players["ana"]), 475)
+
+	def test_nobody_runs_a_spin_n_go_not_even_whoever_sat_down_first(self):
+		from tournaments.permissions import can_manage_tournament
+
+		self._sit("ana")
+		game = Tournament.objects.get(format="spingo")
+		boss = User.objects.create_superuser(username="boss", password="secret123")
+
+		self.assertEqual(game.host, self.players["ana"])
+		self.assertFalse(can_manage_tournament(self.players["ana"], game))
+		self.assertFalse(can_manage_tournament(boss, game))
+
+		self.client.force_authenticate(self.players["ana"])
+		started = self.client.post(reverse("tournament-start", args=[game.id]))
+		self.assertEqual(started.status_code, status.HTTP_404_NOT_FOUND)
+		deleted = self.client.delete(reverse("tournament-delete", args=[game.id]))
+		self.assertEqual(deleted.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_a_spin_n_go_is_not_joined_or_quit_like_a_tournament(self):
+		self._sit("ana")
+		game = Tournament.objects.get(format="spingo")
+
+		self.client.force_authenticate(self.players["bea"])
+		joined = self.client.post(reverse("tournament-join", args=[game.id]))
+		self.assertEqual(joined.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(game.players.count(), 1)
+		self.assertEqual(self._balance(self.players["bea"]), 500)
+
+		self.client.force_authenticate(self.players["ana"])
+		quit_response = self.client.post(reverse("tournament-quit", args=[game.id]))
+		self.assertEqual(quit_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_waiting_spin_n_go_is_not_listed_among_the_tournaments(self):
+		self._sit("ana")
+
+		self.client.force_authenticate(self.players["bea"])
+		listed = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+		self.assertEqual(listed.data, [])
+
+		tiers = self.client.get(reverse("spingo-lobby"))
+		by_stake = {tier["stake"]: tier for tier in tiers.data["tiers"]}
+		self.assertEqual(by_stake[25]["game"]["seats"], 1)
+		self.assertIsNone(by_stake[50]["game"])
+		self.assertIsNone(tiers.data["my_game"])
+
+	def test_the_lobby_says_where_your_own_seat_is(self):
+		self._sit("ana")
+
+		self.client.force_authenticate(self.players["ana"])
+		tiers = self.client.get(reverse("spingo-lobby"))
+		self.assertEqual(tiers.data["my_game"]["stake"], 25)
+		self.assertEqual(tiers.data["balance"], 475)
+		self.assertEqual(
+			[face["username"] for face in tiers.data["my_game"]["waiting"]], ["ana"],
+		)
+
+
+class CoinBuyInTests(APITestCase):
+	"""Tournaments played for coins, which are actually charged."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="c_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="c_player", password="secret123")
+		for user in (self.host, self.player):
+			self._top_up(user, 500)
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _top_up(self, user, coins):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		wallet_for(user)
+		Wallet.objects.filter(user=user).update(balance=coins)
+
+	def _balance(self, user):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=user).balance
+
+	def test_a_tournament_with_no_euro_prize_pool_costs_coins(self):
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Coin night"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		tournament = Tournament.objects.get(id=response.data["id"])
+		self.assertEqual(tournament.buy_in_coins, 50)
+		self.assertEqual(tournament.buy_in_cents, 0)
+		# Coins are taken for real, so a coin game must have somewhere to pay
+		# them back to. Winner takes all unless the host said otherwise.
+		self.assertEqual(tournament.payout_structure, [{"place": 1, "label": "1st", "percentage": 100}])
+		# The host holds a seat like anybody else, and paid for it.
+		self.assertEqual(self._balance(self.host), 450)
+
+	def test_a_euro_tournament_is_not_charged_coins(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			{
+				"name": "Real money night",
+				"buy_in_cents": 2000,
+				"payout_structure": [{"place": 1, "label": "1st", "percentage": 100}],
+			},
+			format="json",
+		)
+
+		tournament = Tournament.objects.get(id=response.data["id"])
+		self.assertEqual(tournament.buy_in_coins, 0)
+		self.assertEqual(self._balance(self.host), 500)
+
+	def test_a_tournament_is_played_for_one_currency_or_the_other(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			{"name": "Both", "buy_in_cents": 2000, "buy_in_coins": 50},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("buy_in_coins", response.data)
+
+	def test_a_host_who_cannot_cover_their_own_buy_in_opens_nothing(self):
+		self._top_up(self.host, 10)
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "Too rich for me", "buy_in_coins": 100}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(Tournament.objects.exists())
+		self.assertEqual(self._balance(self.host), 10)
+
+	def test_the_coin_buy_in_cannot_be_changed_once_players_have_signed_up(self):
+		created = self.client.post(
+			reverse("tournament-list"), {"name": "Coin night", "buy_in_coins": 100}, format="json",
+		)
+		response = self.client.patch(
+			reverse("tournament-edit", args=[created.data["id"]]), {"buy_in_coins": 5}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(Tournament.objects.get(id=created.data["id"]).buy_in_coins, 100)
+
+	def test_joining_a_coin_tournament_takes_the_buy_in(self):
+		created = self.client.post(
+			reverse("tournament-list"), {"name": "Coin night", "buy_in_coins": 100}, format="json",
+		)
+		self.client.force_authenticate(self.player)
+		response = self.client.post(reverse("tournament-join", args=[created.data["id"]]))
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(self._balance(self.player), 400)
+
+	def test_joining_with_too_few_coins_is_refused_and_takes_no_seat(self):
+		created = self.client.post(
+			reverse("tournament-list"), {"name": "Coin night", "buy_in_coins": 100}, format="json",
+		)
+		self._top_up(self.player, 20)
+		self.client.force_authenticate(self.player)
+		response = self.client.post(reverse("tournament-join", args=[created.data["id"]]))
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(response.data["error"], "Not enough coins")
+		self.assertEqual(self._balance(self.player), 20)
+		self.assertEqual(TournamentPlayer.objects.filter(user=self.player).count(), 0)
+
+	def test_unregistering_before_it_starts_gives_the_coins_back(self):
+		created = self.client.post(
+			reverse("tournament-list"), {"name": "Coin night", "buy_in_coins": 100}, format="json",
+		)
+		self.client.force_authenticate(self.player)
+		self.client.post(reverse("tournament-join", args=[created.data["id"]]))
+		response = self.client.post(reverse("tournament-quit", args=[created.data["id"]]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self._balance(self.player), 500)
+
+	def test_a_free_tournament_from_before_coins_stays_free(self):
+		# Made in the database rather than through the form, which is what every
+		# row that predates the coin buy-in looks like.
+		tournament = Tournament.objects.create(host=self.host, name="Old night", status="lobby")
+		self.client.force_authenticate(self.player)
+		response = self.client.post(reverse("tournament-join", args=[tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(self._balance(self.player), 500)
+
+
+class CoinSettlementTests(TestCase):
+	"""Paying the coin prizes out at the end."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="s_host", password="x")
+		self.users = {
+			name: User.objects.create_user(username=name, password="x")
+			for name in ("ana", "bea", "caio")
+		}
+		for user in self.users.values():
+			self._top_up(user, 100)
+
+	def _top_up(self, user, coins):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		wallet_for(user)
+		Wallet.objects.filter(user=user).update(balance=coins)
+
+	def _balance(self, name):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=self.users[name]).balance
+
+	def _seat(self, tournament, name, seat, finish, rebuys=0):
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=self.users[name], seat=seat, chips=0,
+			finish_position=finish, rebuy_count=rebuys, is_eliminated=finish != 1,
+		)
+
+	def _settle(self, tournament):
+		from tournaments.coinbank import settle_tournament_coins
+
+		return settle_tournament_coins(tournament)
+
+	def test_the_places_are_paid_what_the_structure_says(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Coins", status="finished", buy_in_coins=30,
+			payout_structure=[
+				{"place": 1, "label": "1st", "percentage": 70},
+				{"place": 2, "label": "2nd", "percentage": 30},
+			],
+		)
+		self._seat(tournament, "ana", 0, 1)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		self.assertTrue(self._settle(tournament))
+		# Ninety coins in, ninety out: 63 and 27.
+		self.assertEqual(self._balance("ana"), 163)
+		self.assertEqual(self._balance("bea"), 127)
+		self.assertEqual(self._balance("caio"), 100)
+
+	def test_a_rebuy_is_another_buy_in_in_the_pot(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Coins", status="finished", buy_in_coins=30,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		self._seat(tournament, "ana", 0, 1)
+		self._seat(tournament, "bea", 1, 2, rebuys=1)
+
+		self._settle(tournament)
+		self.assertEqual(self._balance("ana"), 190)
+
+	def test_paying_out_twice_pays_out_once(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Coins", status="finished", buy_in_coins=30,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		self._seat(tournament, "ana", 0, 1)
+		self._seat(tournament, "bea", 1, 2)
+
+		self.assertTrue(self._settle(tournament))
+		self.assertFalse(self._settle(tournament))
+		self.assertEqual(self._balance("ana"), 160)
+
+	def test_a_spin_n_go_pays_the_draw_rather_than_the_buy_ins(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Spin n Go · 25", status="finished", format="spingo",
+			buy_in_coins=25, spin_multiplier=10,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		self._seat(tournament, "ana", 0, 1)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		self._settle(tournament)
+		# Seventy-five coins were paid in and two hundred and fifty come out.
+		# That is the format: the difference is made back on the twos.
+		self.assertEqual(self._balance("ana"), 350)
+		self.assertEqual(self._balance("bea"), 100)
+
+	def test_a_euro_tournament_pays_no_coins(self):
+		tournament = Tournament.objects.create(
+			host=self.host, name="Money", status="finished", buy_in_cents=1000,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		self._seat(tournament, "ana", 0, 1)
+
+		self.assertFalse(self._settle(tournament))
+		self.assertEqual(self._balance("ana"), 100)
+
+	def test_the_coin_ledger_balances_across_a_whole_spin_n_go(self):
+		from sidegames.economy import spend
+		from sidegames.models import CoinLedger
+
+		tournament = Tournament.objects.create(
+			host=self.host, name="Spin n Go · 25", status="finished", format="spingo",
+			buy_in_coins=25, spin_multiplier=2,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		memo = f"tournament:{tournament.id}"
+		for index, name in enumerate(("ana", "bea", "caio")):
+			spend(self.users[name], 25, "stake", memo=memo)
+			self._seat(tournament, name, index, index + 1)
+
+		self._settle(tournament)
+		moved = sum(
+			row.amount for row in CoinLedger.objects.filter(memo=memo)
+		)
+		# Three stakes out, one prize of fifty in, and at twice the buy-in the
+		# game keeps a buy-in back — which is what pays for the hundreds.
+		self.assertEqual(moved, -25)
+		self.assertEqual(self._balance("ana"), 125)

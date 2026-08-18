@@ -12,18 +12,22 @@ import { useShowCardsOffer } from "./showCards";
  * of showing two. Showing anything buys the table a few more seconds before the
  * next deal, so what you showed can actually be seen.
  *
- * Not the only way any more: your cards on the seat are clickable for the same
- * window, which is where a player's hand actually is. This stays for "both",
- * for anybody who would rather press a labelled button, and because the row is
- * what tells you the window is open at all.
+ * Not the only way any more: your cards on the seat are clickable too — the same
+ * offer, asked through the same hook, and reaching for the cards is what a
+ * player actually does. Those can be picked earlier in the hand and go face up
+ * when it ends; this row is the same reveal without the wait, for anybody who
+ * would rather press a labelled button, and it is also what tells you the window
+ * is open at all.
  */
 export default function ShowCardsBar({ myCards, mySeat }) {
   const { canShow, betweenHands, show } = useShowCardsOffer(mySeat, myCards);
 
   const cards = myCards || [];
-  // The cards themselves can be clicked mid-hand; this row waits for the hand
-  // to be over. It lives among Fold and Call, and a reveal button in that row
-  // while you are still deciding is a misclick with your stack on the line.
+  // The cards on the seat can be picked at any point in the hand — they turn
+  // over when it ends, not when they are pressed. This row waits for the hand to
+  // be over before it appears at all: it lives among Fold and Call, and a button
+  // in that row while you are still deciding is a misclick with your stack on
+  // the line.
   if (!canShow || !betweenHands) return null;
 
   return (

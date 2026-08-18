@@ -94,9 +94,20 @@ export default function PlayerSeat({
   const toggleBB = useGameStore((s) => s.toggleBB);
   const media = useMediaStore((s) => s.peers[player.user_id]);
   const myStream = useMediaStore((s) => (isMe && s.cameraOn ? s.localStream : null));
-  // The picture always rides in the avatar circle, so a seat with a camera on
-  // is the same shape as one without.
-  const liveStream = myStream || (media?.video && media.videoFlowing !== false ? media.stream : null);
+  // The picture always rides in the avatar circle, so a seat with a camera on is
+  // the same shape as one without — and a camera coming up changes nothing about
+  // the seat until there are frames to show. Your own stream first: what you are
+  // sending is drawn from the stream itself, not from a connection to yourself.
+  const facePeer = myStream
+    ? { stream: myStream, video: true, status: "connected", videoFlowing: true }
+    : media || null;
+  // Whether the circle is showing a moving face rather than the avatar. Same
+  // question SeatVideo asks itself; asked here because it decides whether the
+  // avatar is drawn underneath at all.
+  const cameraInCircle = Boolean(
+    facePeer?.stream && facePeer.video
+    && facePeer.videoFlowing !== false && facePeer.status !== "failed",
+  );
   const bb = useGameStore((s) => s.level?.big_blind) || 0;
   const p = player;
   // Your own hand, between hands: the same offer the action panel's bar makes,
@@ -208,10 +219,18 @@ export default function PlayerSeat({
         // at showdown it belongs to the table, and covering it then would be
         // hiding it from you alone.
         hideUntilHover={coverHand}
-        // Your own cards are how you show them — between hands, and mid-hand
-        // on the way to folding. Pick one or both; the button over them is
-        // what turns them over. Null for everybody else's seat.
+        // Your own cards are how you show them — the same offer the bar in the
+        // action panel makes, through the same hook. Pick one or both at any
+        // point in the hand, mucking included, since reaching for the cards is
+        // when a player decides to flash one; the reveal itself waits for the
+        // hand to be over, so nobody still deciding learns anything from it.
+        // Null for everybody else's seat.
         onShowCards={showOffer.canShow ? showOffer.show : null}
+        // Whether pressing Show turns them over now or asks for the end of the
+        // hand, what has already been asked for, and how to take it back.
+        showDeferred={!showOffer.betweenHands}
+        pendingShow={showOffer.pending}
+        onCancelShow={showOffer.cancel}
         // On a phone every seat shrinks; the hero keeps board-sized cards,
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
@@ -392,13 +411,17 @@ export default function PlayerSeat({
                   shadow-lg shadow-black/60 w-[var(--seat-avatar)] h-[var(--seat-avatar)]
                   ${isActive ? "ring-2 ring-(--color-highlight-edge)" : ""}`}
     >
-      {liveStream ? (
-        <SeatVideo peer={{ stream: liveStream, video: true, status: "connected", videoFlowing: true }}
-          name={p.name} mirrored={!!myStream} muted={!!myStream} bare />
-      ) : (
+      {!cameraInCircle && (
         <Avatar url={p.avatar_url} emoji={p.avatar} name={p.name}
           className="w-full h-full"
           emojiClassName="text-[calc(var(--seat-avatar)*0.5)]" />
+      )}
+      {/* The camera, and nothing else, ever: a picture when frames are arriving
+          and a hidden element for the sound when they are not. Never a box of
+          its own — see SeatVideo. */}
+      {facePeer && (
+        <SeatVideo peer={facePeer} name={p.name}
+          mirrored={!!myStream} muted={!!myStream} />
       )}
     </span>
   );
@@ -433,15 +456,10 @@ export default function PlayerSeat({
     </div>
   );
 
-  // What is left for the outer edge once the picture moved into the circle: a
-  // peer who is only on the microphone, whose audio still has to be played, and
-  // the notices for a camera that is on but not getting through.
-  const video = liveStream || !media
-    ? null
-    : <SeatVideo key="video" peer={media} name={p.name} />;
-  const stack = topHalf
-    ? [video, body, badges]
-    : [badges, body, video];
+  // Nothing is left for the outer edge: the picture lives in the circle and the
+  // sound is played from there too, so a seat with a camera on is laid out
+  // exactly like a seat without one.
+  const stack = topHalf ? [body, badges] : [badges, body];
 
   // A phone has no room to spare: the seat ring runs down the long sides of the
   // screen, so a seat that grows sideways runs off it. The picture is still the

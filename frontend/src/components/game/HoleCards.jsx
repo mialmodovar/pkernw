@@ -16,6 +16,7 @@ const TIDY_MS = 550;
 export default function HoleCards({
   cards, folded, eliminated, isMe, winningCards, raisedCards, faceDown, shine,
   hideUntilHover = false, size = "seat", onShowCards = null,
+  showDeferred = false, pendingShow = null, onCancelShow = null,
 }) {
   // Which cards you have picked to show, by position. Picking is not showing:
   // the button that appears over them is what turns them over, so one stray
@@ -33,6 +34,14 @@ export default function HoleCards({
     if (!onShowCards) setPicked([]);
   }, [onShowCards]);
 
+  // A pick that has been sent stops being a pick: the cards are either up or the
+  // wait is on, and leaving them picked would offer to show what is already on
+  // its way.
+  const asked = (pendingShow || []).join(",");
+  useEffect(() => {
+    if (asked) setPicked([]);
+  }, [asked]);
+
   // A hand arrives in the order it was dealt and then shuffles itself big-card
   // first, which is what every player does by hand the moment they look. Held
   // for a beat so the tidy is something you watch happen rather than a pair
@@ -47,6 +56,90 @@ export default function HoleCards({
   }, [dealt]);
 
   if (eliminated) return null;
+
+  // Your own cards are how you show them. The bar in the action panel could do
+  // it before and still can, but a player reaching to turn one over reaches for
+  // the card, not for a row of labels somewhere else on the screen. Pick either
+  // or both — showing one is a real move and so is showing the pair.
+  const toggle = (index) => setPicked((current) => (
+    current.includes(index)
+      ? current.filter((one) => one !== index)
+      : [...current, index].sort()
+  ));
+  const showPicked = () => {
+    const wanted = [...picked];
+    setPicked([]);
+    onShowCards(wanted);
+  };
+  // A pick that is waiting for the hand to end. It stands the cards up the same
+  // way picking them does, so what you asked for is on the felt in front of you
+  // for the whole wait rather than being a click you have to remember making.
+  const waiting = new Set(pendingShow || []);
+  const chosen = (position) => picked.includes(position) || waiting.has(position);
+  // The card, wrapped in the press that picks it. Used by a live hand and by a
+  // mucked one alike: folding is exactly when a player reaches for their cards,
+  // and taking the press away at that moment would take away the gesture this
+  // is here for.
+  const pickable = (position, card, inner) => (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); toggle(position); }}
+      title={picked.includes(position)
+        ? `${card} is picked — press Show, or click it again to put it back`
+        : waiting.has(position)
+          ? `${card} goes face up when the hand ends`
+          : `Pick ${card} to show the table`}
+      aria-pressed={chosen(position)}
+      aria-label={`Pick ${card} to show the table`}
+      className={`block rounded transition-transform cursor-pointer
+                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
+                  ${chosen(position) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
+    >
+      {inner}
+    </button>
+  );
+
+  // One button over the pair rather than a confirm on each card: showing both
+  // is a single move — "here, look" — and asking for it twice would turn it
+  // into two. Mid-hand it says what actually happens: the cards go up when the
+  // hand is over, because a card turned over while people are still deciding
+  // tells them something they have not paid to know.
+  const showButton = onShowCards && picked.length > 0 && (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); showPicked(); }}
+      title={`${picked.map((one) => cards[one]).join(" and ")} ${
+        showDeferred ? "go face up when the hand ends" : "go face up now"}`}
+      className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.5 rounded-full
+                 whitespace-nowrap bg-(--color-highlight) text-(--color-highlight-ink)
+                 text-[9px] font-extrabold leading-tight shadow shadow-black/60
+                 hover:brightness-110 transition-[filter]"
+    >
+      {showDeferred
+        ? "Show at the end"
+        : `Show ${picked.length === 2 ? "both" : cards[picked[0]]}`}
+    </button>
+  );
+
+  // Already asked, still waiting for the hand to finish. Sitting there as a
+  // button rather than a label so it can be taken back: a hand flashed on the
+  // way to folding is a decision made in a hurry, and there is no reason to make
+  // it final before the cards are actually up.
+  const waitingBadge = !showButton && waiting.size > 0 && (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); onCancelShow?.(); }}
+      title="Waiting for the hand to end — click to take it back"
+      className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.5 rounded-full
+                 whitespace-nowrap bg-black/75 border border-(--color-highlight-edge)
+                 text-(--color-highlight-pale) text-[9px] font-bold leading-tight
+                 hover:border-(--color-highlight) transition-colors"
+    >
+      Showing at the end
+    </button>
+  );
+  const overlay = showButton || waitingBadge || null;
+
   // A card you chose to show stands up out of the pair, so at a glance you can
   // tell which one the table is looking at — showing one of two is a real move,
   // and there is otherwise nothing on your own seat to say which one it was.
@@ -72,23 +165,38 @@ export default function HoleCards({
     // be covered gets it covered here too: gone entirely until they point at
     // it. Folding is not the moment to start showing a hand to the room.
     if (!isMe) return null;
-    const ghost = raised.size
-      ? ""
-      : hideUntilHover
-        ? "opacity-0 hover:opacity-100 active:opacity-100 cursor-pointer"
-        : "opacity-15 hover:opacity-100";
+    // A pick still standing keeps the hand legible to you — it is about to be
+    // face up anyway — but not to anybody covering their hand: picking one of
+    // two says nothing about the other, and lighting the pair up would hand the
+    // room behind them the card they did not pick.
+    const ghost = hideUntilHover
+      ? (raised.size ? "" : "opacity-0 hover:opacity-100 active:opacity-100 cursor-pointer")
+      : (raised.size || waiting.size || picked.length ? "" : "opacity-15 hover:opacity-100");
     return (
-      <div
-        title={raised.size
-          ? "Shown to the table"
-          : hideUntilHover ? "Hold to see the hand you mucked" : "Your mucked hand"}
-        className={`flex gap-0.5 transition-opacity duration-200 ${ghost}`}
-      >
-        {(cards || []).length
-          ? cards.map((card, index) => (
-              <PlayingCard key={index} card={card} size={size} className={lift(card)} />
-            ))
-          : (<><CardBack size={size} /><CardBack size={size} /></>)}
+      // The badge outside the fade, the cards inside it: what you asked for has
+      // to be readable even when the hand it is about is covered.
+      <div className="relative">
+        {/* Mucking is when a player reaches for their cards — to flash one on
+            the way past. It is still a pick and not a reveal: the table sees it
+            when the hand is over, never while somebody is still deciding. */}
+        {overlay}
+        <div
+          title={raised.size
+            ? "Shown to the table"
+            : hideUntilHover ? "Hold to see the hand you mucked" : "Your mucked hand"}
+          className={`flex gap-0.5 transition-opacity duration-200 ${ghost}`}
+        >
+          {(cards || []).length
+            ? cards.map((card, index) => {
+                const drawn = <PlayingCard card={card} size={size} className={lift(card)} />;
+                return (
+                  <span key={index}>
+                    {onShowCards ? pickable(index, card, drawn) : drawn}
+                  </span>
+                );
+              })
+            : (<><CardBack size={size} /><CardBack size={size} /></>)}
+        </div>
       </div>
     );
   }
@@ -111,20 +219,6 @@ export default function HoleCards({
       className={lift(card)}
     />
   );
-  // Your own cards are how you show them. The bar in the action panel could do
-  // it before and still can, but a player reaching to turn one over reaches for
-  // the card, not for a row of labels somewhere else on the screen. Pick either
-  // or both — showing one is a real move and so is showing the pair.
-  const toggle = (index) => setPicked((current) => (
-    current.includes(index)
-      ? current.filter((one) => one !== index)
-      : [...current, index].sort()
-  ));
-  const showPicked = () => {
-    const wanted = [...picked];
-    setPicked([]);
-    onShowCards(wanted);
-  };
   // Where each card is drawn, which is not where it was dealt. `position` is
   // the dealt one all the way through — the server is told to show card 0, and
   // card 0 is the card the deck gave you first, whichever end of the pair it
@@ -146,22 +240,9 @@ export default function HoleCards({
     <>
       {order.map((position, place) => {
         const card = cards[position];
-        const inner = onShowCards ? (
-          <button
-            type="button"
-            onClick={(event) => { event.stopPropagation(); toggle(position); }}
-            title={picked.includes(position)
-              ? `${card} is picked — press Show, or click it again to put it back`
-              : `Pick ${card} to show the table`}
-            aria-pressed={picked.includes(position)}
-            aria-label={`Pick ${card} to show the table`}
-            className={`block rounded transition-transform cursor-pointer
-                        focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
-                        ${picked.includes(position) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}
-          >
-            {face(card, position)}
-          </button>
-        ) : face(card, position);
+        const inner = onShowCards
+          ? pickable(position, card, face(card, position))
+          : face(card, position);
         // Keyed on the card so the pair is moved rather than rebuilt when it
         // sorts itself — a rebuilt card would blink instead of sliding. The
         // deal comes first and the swap replaces it: changing which animation
@@ -181,22 +262,6 @@ export default function HoleCards({
     </>
   );
 
-  // One button over the pair rather than a confirm on each card: showing both
-  // is a single move — "here, look" — and asking for it twice would turn it
-  // into two.
-  const showButton = onShowCards && picked.length > 0 && (
-    <button
-      type="button"
-      onClick={(event) => { event.stopPropagation(); showPicked(); }}
-      className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 px-1.5 py-0.5 rounded-full
-                 whitespace-nowrap bg-(--color-highlight) text-(--color-highlight-ink)
-                 text-[9px] font-extrabold leading-tight shadow shadow-black/60
-                 hover:brightness-110 transition-[filter]"
-    >
-      Show {picked.length === 2 ? "both" : cards[picked[0]]}
-    </button>
-  );
-
   // Face down until you look. For anyone playing somewhere with people behind
   // them: the cards are covered by their own backs, and lifting them is a hover
   // — or a touch, which is the same gesture with one finger. Nothing is hidden
@@ -210,7 +275,7 @@ export default function HoleCards({
       // this component, lifts with them without widening what triggers it.
       <div className="group/cards peer/hand relative flex gap-0.5 cursor-pointer"
         title={onShowCards ? "Hold to see your hand, click a card to pick it" : "Hold to see your hand"}>
-        {showButton}
+        {overlay}
         <div className="flex gap-0.5 opacity-0 transition-opacity duration-150
                         group-hover/cards:opacity-100 group-active/cards:opacity-100">
           {faces}
@@ -230,7 +295,7 @@ export default function HoleCards({
 
   return (
     <div className="relative flex gap-0.5">
-      {showButton}
+      {overlay}
       {faces}
     </div>
   );

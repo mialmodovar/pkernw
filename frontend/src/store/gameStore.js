@@ -123,6 +123,14 @@ const useGameStore = create((set) => ({
   // Between hands you may show what you had. The server decides whether a
   // reveal is allowed; this is only whether to offer it.
   showCardsOpen: false,
+  // Cards you have already asked to show while the hand was still running —
+  // typically on your way to folding, which is when a player reaches for them.
+  // The reveal itself waits for the hand to be over, so nobody still deciding
+  // learns anything; this is the asking, held until then. `cards` is the hand it
+  // was asked about, so a pick cannot survive into the next deal.
+  // { cards: "As,Kd", indices: [0] } or null.
+  pendingShow: null,
+  setPendingShow: (pendingShow) => set({ pendingShow }),
   // Side bets: what the folded players have called this hand, whether calls
   // are still being taken, how the last one turned out, and how well everybody
   // has been calling them all tournament.
@@ -314,6 +322,7 @@ const useGameStore = create((set) => ({
           allInEquity: null,
           countdown: null,
           showCardsOpen: false,
+          pendingShow: null,
           shownCards: {},
           riverShownAt: null,
           sideBets: [],
@@ -878,7 +887,8 @@ const useGameStore = create((set) => ({
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,
       bountyFlash: null, seatBubbles: {}, finisher: null, equityShake: null,
-      readyUserIds: [], readyTotal: 0, showCardsOpen: false, rebuyWindow: null,
+      readyUserIds: [], readyTotal: 0, showCardsOpen: false, pendingShow: null,
+      rebuyWindow: null,
       seatPanelOpen: false,
       shownCards: {}, riverShownAt: null,
     }),

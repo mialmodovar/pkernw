@@ -1082,6 +1082,111 @@ class SuperuserRunsAnythingTests(APITestCase):
 		self.assertFalse(detail.data["can_manage"])
 
 
+class StaffDoNotRunEachOthersTournamentsTests(APITestCase):
+	"""Who may run a club's tournament, pinned because it was wrong.
+
+	Staff is handed out so people can open a game of their own. It was also
+	being read as "runs the installation", which gave every host the
+	organiser's controls over every club on it — a table where everybody could
+	edit and pause a night that was none of theirs. The ladder is: the host, the
+	club's own staff and owner, and the superuser.
+	"""
+
+	def setUp(self):
+		# Imported here rather than in the block at the top, as the rebuy tests
+		# below do: this module is loaded by the clubs app's own tests.
+		from clubs.models import Club, Membership
+
+		self.Membership = Membership
+		self.host = User.objects.create_user(username="cn_host", password="secret123", is_staff=True)
+		self.co_organiser = User.objects.create_user(username="cn_co", password="secret123")
+		self.other_host = User.objects.create_user(
+			username="cn_other", password="secret123", is_staff=True,
+		)
+		self.boss = User.objects.create_superuser(username="cn_boss", password="secret123")
+		self.club = Club.objects.create(name="Tuesday Club", created_by=self.host)
+		Membership.objects.create(club=self.club, user=self.host, role=Membership.OWNER)
+		Membership.objects.create(club=self.club, user=self.co_organiser, role=Membership.STAFF)
+		self.tournament = Tournament.objects.create(
+			host=self.host, name="Club night", status="lobby", club=self.club,
+		)
+		for index, user in enumerate([self.host, self.co_organiser]):
+			TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user, seat=index, seat_at_table=index, chips=10000,
+			)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _start(self, user):
+		self.client.force_authenticate(user)
+		return self.client.post(reverse("tournament-start", kwargs={"pk": self.tournament.id}))
+
+	def test_staff_from_outside_the_club_cannot_start_it(self):
+		self.assertEqual(self._start(self.other_host).status_code, status.HTTP_404_NOT_FOUND)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "lobby")
+
+	def test_staff_from_outside_the_club_cannot_edit_it(self):
+		self.client.force_authenticate(self.other_host)
+
+		response = self.client.patch(
+			reverse("tournament-edit", kwargs={"pk": self.tournament.id}),
+			{"name": "Mine now"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.name, "Club night")
+
+	def test_staff_from_outside_the_club_cannot_delete_it(self):
+		self.client.force_authenticate(self.other_host)
+
+		response = self.client.delete(
+			reverse("tournament-delete", kwargs={"pk": self.tournament.id}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.assertTrue(Tournament.objects.filter(pk=self.tournament.id).exists())
+
+	def test_staff_from_outside_the_club_cannot_pause_a_running_night(self):
+		self.tournament.status = "running"
+		self.tournament.save(update_fields=["status"])
+		self.client.force_authenticate(self.other_host)
+
+		response = self.client.post(
+			reverse("tournament-pause", kwargs={"pk": self.tournament.id}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+
+	def test_the_buttons_are_not_drawn_for_them_either(self):
+		self.client.force_authenticate(self.other_host)
+		detail = self.client.get(reverse("tournament-detail", kwargs={"pk": self.tournament.id}))
+		self.assertFalse(detail.data["can_manage"])
+
+	def test_the_clubs_own_co_organiser_still_can(self):
+		"""The reason this permission exists: the host is stuck in traffic."""
+		self.assertEqual(self._start(self.co_organiser).status_code, status.HTTP_200_OK)
+
+	def test_the_host_still_can(self):
+		self.assertEqual(self._start(self.host).status_code, status.HTTP_200_OK)
+
+	def test_the_superuser_still_can(self):
+		self.assertEqual(self._start(self.boss).status_code, status.HTTP_200_OK)
+
+	def test_staff_can_still_open_a_tournament_of_their_own(self):
+		"""What the staff flag is actually for."""
+		self.client.force_authenticate(self.other_host)
+		response = self.client.post(
+			reverse("tournament-list"), {"name": "My own game"}, format="json",
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertTrue(Tournament.objects.filter(host=self.other_host).exists())
+
+
 class PreflopStatsTests(TestCase):
 	"""The definitions are what make these numbers comparable, so they are
 	pinned here rather than left to whoever reads the query next."""
@@ -2118,25 +2223,40 @@ class ShowCardsTests(TestCase):
 		self.assertEqual(len(payload["cards"]), 1)
 		self.assertEqual(payload["indices"], [1])
 
-	def test_a_card_can_be_flashed_while_the_hand_is_still_running(self):
-		"""This used to be refused, on the grounds that a casino refuses it.
-
-		It is a table of friends, and flashing the ace before you muck it is
-		half of why anybody plays with people they can see. Everyone at the
-		table watches it happen, which is the check that matters here.
+	def test_a_card_cannot_be_turned_over_while_the_hand_is_still_running(self):
+		"""Flashing the ace on the way to mucking it is half of why anybody
+		plays with people they can see, so the picking stays — but the card
+		itself waits for the hand to be over. A card face up while other
+		players are still deciding tells them something they have not paid to
+		know, and on a phone it was happening by accident: peeking at your own
+		hand is a tap on the same cards. The client holds the pick and posts it
+		when the window opens; this end simply refuses anything earlier.
 		"""
 		broadcasts = []
 		coordinator = self._coordinator(broadcasts)
 		self._seat_with_cards(coordinator)
 		coordinator._show_open = False
 
-		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
-		self.assertEqual(broadcasts[0][0], "cards_shown")
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [0]))
+		self.assertEqual(broadcasts, [])
 
-	def test_a_card_shown_mid_hand_does_not_stretch_the_pause_after_it(self):
-		"""The pause is extended so a card shown late can still be looked at.
-		A card shown three streets earlier has been looked at already, and
-		pushing the deadline from there would quietly slow the table down."""
+	def test_a_refused_reveal_is_not_the_one_show_you_had(self):
+		"""A pick that landed too early must not cost the player their show:
+		the client resends it when the hand ends, and that one has to land."""
+		broadcasts = []
+		coordinator = self._coordinator(broadcasts)
+		self._seat_with_cards(coordinator)
+		coordinator._show_open = False
+		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [0]))
+
+		coordinator._show_open = True
+
+		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
+		self.assertEqual(broadcasts[-1][0], "cards_shown")
+
+	def test_a_reveal_that_was_refused_does_not_move_the_deadline(self):
+		"""Nothing was shown, so there is nothing for the table to look at and
+		no reason for the next deal to wait."""
 		coordinator = self._coordinator([])
 		self._seat_with_cards(coordinator)
 		coordinator._show_open = False
@@ -2146,14 +2266,14 @@ class ShowCardsTests(TestCase):
 
 		self.assertEqual(coordinator._show_deadline, 0.0)
 
-	def test_showing_is_still_once_a_hand_however_it_is_done(self):
+	def test_showing_is_once_a_hand_whichever_card_it_was(self):
 		coordinator = self._coordinator([])
 		self._seat_with_cards(coordinator)
-		coordinator._show_open = False
+		coordinator._show_open = True
 
 		self.assertTrue(async_to_sync(coordinator.show_cards)(11, [0]))
-		# Mid-hand or in the pause afterwards, one card a hand is the cap.
-		coordinator._show_open = True
+		# One card a hand is the cap: the second is refused whether it comes
+		# from the bar or from the cards on the seat.
 		self.assertFalse(async_to_sync(coordinator.show_cards)(11, [1]))
 
 	def test_showing_twice_in_one_hand_is_refused(self):

@@ -17,10 +17,15 @@ def can_manage_tournament(user, tournament):
     a level, edit it, delete it.
 
     Three ways in. Whoever created it, obviously. Anybody who helps run the club
-    whose night it is, because a co-organiser should be able to start the game
-    when the host is stuck in traffic. And the superuser, over anything at all —
-    including a tournament with no club behind it, which used to answer to its
-    host and to nobody else.
+    whose night it is — staff or owner of THAT club — because a co-organiser
+    should be able to start the game when the host is stuck in traffic. And the
+    superuser, over anything at all, including a tournament with no club behind
+    it.
+
+    Being `is_staff` is not one of the three. Staff is what lets you open a
+    tournament of your own; it used to reach through `is_club_staff` into every
+    club on the installation, which meant every host could edit and pause
+    everybody else's club night. See the note in clubs/permissions.py.
     """
     if tournament is None or not (user and user.is_authenticated):
         return False

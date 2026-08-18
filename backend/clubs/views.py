@@ -68,7 +68,9 @@ def club_detail(request, slug):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-    if not club.is_public and role_in(request.user, club) is None and not request.user.is_staff:
+    # Members and the superuser. `is_staff` here let every host of every game
+    # read any private club's page, which is not what staff is for.
+    if not club.is_public and role_in(request.user, club) is None and not request.user.is_superuser:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(ClubDetailSerializer(club, context={"request": request}).data)

@@ -1,20 +1,29 @@
 """Who may do what inside a club.
 
-A ladder, not a set of flags: an owner can do anything staff can. Site staff
-(`is_staff`) sit above all of it — they run the installation, not a community —
-and the superuser sits above them, whatever their other flags say.
+A ladder, not a set of flags: an owner can do anything staff can, and staff
+anything a member can. Above all of it, and only there, sits the superuser.
+
+`is_staff` is deliberately NOT on that ladder. Staff is a job — it opens
+tournaments — and it is handed out to everybody who hosts a game, which is most
+of the room. Treating it as "runs the installation" gave every host the
+organiser's controls over every other club: a table of staff accounts could all
+edit and pause a club night that was none of theirs. Whoever administers the
+installation is the superuser, and that is one account.
 """
 
 from .models import Membership
 
 
-def _runs_the_place(user):
-    """Site staff, or the superuser. Neither is a member of anything."""
+def _owns_the_installation(user):
+    """The superuser, who is a member of nothing and may do anything.
+
+    Not `is_staff`: see the note at the top of this file. A superuser normally
+    has the staff box ticked as well, but the flags are separate and it is this
+    one that means ownership.
+    """
     if not user or not user.is_authenticated:
         return False
-    # A superuser is normally staff as well, but the flags are separate and a
-    # superuser with the staff box unticked still owns the installation.
-    return bool(user.is_staff or user.is_superuser)
+    return bool(user.is_superuser)
 
 
 def role_in(user, club):
@@ -31,14 +40,14 @@ def is_member(user, club):
 
 def is_club_staff(user, club):
     """May organise: create tournaments, run leagues, edit the club."""
-    if _runs_the_place(user):
+    if _owns_the_installation(user):
         return True
     return role_in(user, club) in (Membership.OWNER, Membership.STAFF)
 
 
 def is_club_owner(user, club):
     """May change who else is staff, and hand the club over."""
-    if _runs_the_place(user):
+    if _owns_the_installation(user):
         return True
     return role_in(user, club) == Membership.OWNER
 

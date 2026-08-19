@@ -6,8 +6,8 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from .ledger import balances, owed_between, suggested_transfers
-from .models import LedgerEntry, Settlement
+from .ledger import apply_settlement, balances, open_transfers, owed_between
+from .models import LedgerEntry
 
 User = get_user_model()
 
@@ -21,7 +21,9 @@ def my_ledger(request):
     """
     me = request.user.id
     current = balances()
-    transfers = suggested_transfers(current)
+    # The agreed payments, not a fresh pairing: what somebody was told to pay
+    # last time is what they are still being told to pay.
+    transfers = open_transfers()
 
     names = dict(User.objects.filter(
         id__in={t["from_user_id"] for t in transfers} | {t["to_user_id"] for t in transfers}
@@ -79,14 +81,13 @@ def record_settlement(request):
         return Response({"error": "You cannot pay yourself"}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
-        owed = owed_between(payer.id, request.user.id)
-        if amount_cents > owed:
+        # Paid off against the promises themselves, so the ones this payment does
+        # not touch stay exactly as they were for everybody else.
+        if apply_settlement(payer.id, request.user.id, amount_cents) is None:
+            owed = owed_between(payer.id, request.user.id)
             return Response(
                 {"error": f"{payer.username} only owes you {owed / 100:.2f}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        Settlement.objects.create(
-            from_user=payer, to_user=request.user, amount_cents=amount_cents,
-        )
 
     return Response({"balance_cents": balances().get(request.user.id, 0)}, status=status.HTTP_201_CREATED)

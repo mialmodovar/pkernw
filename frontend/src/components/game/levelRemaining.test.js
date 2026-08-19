@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { levelRemainingLabel } from "./useLevelCountdown";
+import { levelIsEnding, levelRemainingLabel } from "./useLevelCountdown";
 
 describe("levelRemainingLabel", () => {
   it("counts down a timed level as a clock", () => {
@@ -32,5 +32,32 @@ describe("levelRemainingLabel", () => {
   it("has nothing to say without a level", () => {
     expect(levelRemainingLabel(null, 30)).toBeNull();
     expect(levelRemainingLabel({}, null)).toBeNull();
+  });
+});
+
+describe("levelIsEnding", () => {
+  it("warns inside the last minute of a timed level", () => {
+    expect(levelIsEnding({ duration_minutes: 12 }, 60)).toBe(true);
+    expect(levelIsEnding({ duration_minutes: 12 }, 5)).toBe(true);
+    expect(levelIsEnding({ duration_minutes: 12 }, 0)).toBe(true);
+  });
+
+  it("stays quiet earlier in the level", () => {
+    expect(levelIsEnding({ duration_minutes: 12 }, 61)).toBe(false);
+    expect(levelIsEnding({ duration_minutes: 12 }, 600)).toBe(false);
+  });
+
+  it("says nothing before the clock has read", () => {
+    expect(levelIsEnding({ duration_minutes: 12 }, null)).toBe(false);
+  });
+
+  // A level counted in hands ends when the hand ends, so there is no last
+  // minute to warn about — and no clock ticking down to misread as one.
+  it("never warns on a level counted in hands", () => {
+    expect(levelIsEnding({ duration_hands: 8, hands_in_level: 7 }, 3)).toBe(false);
+  });
+
+  it("copes with no level at all", () => {
+    expect(levelIsEnding(null, 10)).toBe(false);
   });
 });

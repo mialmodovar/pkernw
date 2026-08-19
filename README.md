@@ -67,3 +67,29 @@ static files and starts it. Deployed the same way from
 [railway.json](railway.json). Keep it at one replica: a second instance would
 run a second engine for the same tournament and the two would fight over the
 players.
+
+## Refreshing dev with production data
+
+```sh
+./scripts/sync-prod-db-to-dev.sh
+```
+
+Replaces the `dev` environment's Postgres with a copy of production's, dumping
+dev's current contents to `.db-dumps/` first. Needs the Railway CLI (logged in)
+and `brew install postgresql@18` — the servers run 18 and pg_dump refuses a
+server newer than itself.
+
+Railway's databases listen only on their own private network, so the script
+opens a public TCP proxy on each one, copies the data, and deletes both proxies
+on the way out — including when a step fails. A proxy you set up by hand is
+reused and left alone. `railway connect --tunnel-only` would avoid the proxies
+altogether, but its SSH tunnel times out here.
+
+The dump carries production's schema as well as its rows, so dev comes back on
+whatever migration production has applied — behind dev's own code whenever a
+migration has not shipped yet, and a column dev's code expects but does not find
+makes those queries fail rather than degrade. So the sync ends by deploying dev,
+since [backend/entrypoint.sh](backend/entrypoint.sh) migrates on boot. It also
+clears dev's sessions and rotates dev's `DJANGO_SECRET_KEY`: user ids now belong
+to production's accounts, and a token left in your browser would still verify
+and log you in as whoever holds that id.

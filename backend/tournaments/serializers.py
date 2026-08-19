@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.db import transaction
 from django.utils import timezone
 
 from accounts.avatars import avatar_url
@@ -15,6 +16,7 @@ from clubs.permissions import is_club_staff
 from .permissions import can_manage_tournament
 
 from .bounties import BountyConfig, starting_bounty_cents
+from .coinbank import charge_entry
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
 
@@ -34,6 +36,14 @@ def _normalize_level_payload(level_data):
     else:
         level["duration_minutes"] = None
     return level
+
+
+# The floor on a coin buy-in. Low enough that the daily top-up is a week of
+# tournaments, high enough that a stake is a stake.
+MIN_COIN_BUY_IN = 5
+
+# What a tournament costs when nobody said what it costs.
+DEFAULT_COIN_BUY_IN = 50
 
 
 def _normalize_payout_structure(payout_structure):
@@ -136,6 +146,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
     # What to print. `username` stays the key everything is filed under.
     display_name = serializers.SerializerMethodField()
     prize_cents = serializers.SerializerMethodField()
+    prize_coins = serializers.SerializerMethodField()
     bounty_prize_cents = serializers.SerializerMethodField()
     # The face, so a list of names in the tournament lobby reads like the table
     # it becomes. Both come out of maps the parent builds — a lookup per row
@@ -166,6 +177,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "bounty_won_cents",
             "knockouts",
             "prize_cents",
+            "prize_coins",
             "bounty_prize_cents",
         )
 
@@ -186,6 +198,16 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
         one query rather than one per seat.
         """
         return self.context.get("prizes_by_user", {}).get(player.user_id, (0, 0))[0]
+
+    def get_prize_coins(self, player):
+        """The coins this player was actually paid, once the game settled.
+
+        The coin ledger rather than the percentage: a share is a rule for
+        splitting a pot and this is what landed in the wallet, which for a Spin
+        n Go is the only figure that means anything — the pot was a draw, not the
+        buy-ins. Same one-map-per-list trick as the cents above.
+        """
+        return self.context.get("coin_prizes_by_user", {}).get(player.user_id, 0)
 
     def get_bounty_prize_cents(self, player):
         """The knockout half of that prize, once settled.
@@ -324,8 +346,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
-                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "is_joined",
+        fields = ("id", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
+                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "buy_in_coins",
+                  "spin_multiplier", "is_joined",
                   "is_host", "can_manage",
                   "winner_name", "my_finish_position", "my_rebuy_count",
                   "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
@@ -377,8 +400,9 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "club", "club_name", "club_emoji", "club_slug", "season",
-                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents",
+        fields = ("id", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
+                  "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "buy_in_coins",
+                  "spin_multiplier",
                   "max_players", "players_per_table", "players", "tables", "levels",
                   "late_reg_level", "late_registration_open", "late_registration_seconds_left",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open",
@@ -394,6 +418,9 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
         from .models import LedgerEntry
 
         from accounts.models import AvatarImage, Profile
+        from sidegames.models import CoinLedger
+
+        from .coinbank import stake_memo
 
         prizes = {
             user_id: (prize_cents, bounty_cents)
@@ -401,6 +428,14 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
             .filter(tournament=tournament)
             .values_list("user_id", "prize_cents", "bounty_prize_cents")
         }
+        # The coin half of the same question. Only ever a handful of rows — one
+        # per paid place — and skipped entirely for a game played for euros.
+        coin_prizes = {}
+        if (tournament.buy_in_coins or 0) > 0:
+            for user_id, amount in CoinLedger.objects.filter(
+                reason="payout", memo=stake_memo(tournament.id),
+            ).values_list("user_id", "amount"):
+                coin_prizes[user_id] = coin_prizes.get(user_id, 0) + amount
         # The user and their profile come with the row rather than being
         # fetched per seat — display_name reaches for both, so a fifteen-handed
         # lobby was thirty queries every time it refreshed, which it does every
@@ -418,6 +453,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
             context={
                 **self.context,
                 "prizes_by_user": prizes,
+                "coin_prizes_by_user": coin_prizes,
                 "emoji_by_user": emoji,
                 "stamp_by_user": stamps,
             },
@@ -429,7 +465,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "club", "season", "starting_chips", "buy_in_cents", "max_players", "players_per_table",
+        fields = ("id", "name", "game_type", "club", "season", "starting_chips",
+                  "buy_in_cents", "buy_in_coins", "max_players", "players_per_table",
                   "late_reg_level",
                   "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
@@ -460,6 +497,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             getattr(self.instance, "bounty_progressive_split_pct", 50),
         )
         buy_in_cents = attrs.get("buy_in_cents", getattr(self.instance, "buy_in_cents", 0))
+        buy_in_coins = attrs.get("buy_in_coins", getattr(self.instance, "buy_in_coins", 0))
         auto_remove_offline_seconds = attrs.get(
             "auto_remove_offline_seconds",
             getattr(self.instance, "auto_remove_offline_seconds", 0),
@@ -505,6 +543,35 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             attrs["time_bank_refill_every_hands"] = None
             attrs["time_bank_refill_level"] = None
         attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
+
+        # One currency or the other. Euros are a note of what people agreed and
+        # settle between themselves; coins are the app's own and are actually
+        # taken off the wallet. A tournament charging both would be asking for a
+        # night out and a stake in the same breath.
+        if buy_in_cents > 0 and buy_in_coins > 0:
+            raise serializers.ValidationError(
+                {"buy_in_coins": "A tournament is played for euros or for coins, not both."}
+            )
+        if buy_in_coins < 0:
+            raise serializers.ValidationError({"buy_in_coins": "A coin buy-in cannot be negative."})
+        if buy_in_coins and buy_in_coins < MIN_COIN_BUY_IN:
+            raise serializers.ValidationError(
+                {"buy_in_coins": f"A coin buy-in of less than {MIN_COIN_BUY_IN} is not a stake."}
+            )
+        # A new tournament with no euro prize pool is played for coins. Free
+        # used to be the default, and every row made before this one is still
+        # free, but a game nothing is at stake in is a game nobody folds in.
+        # Defaulted rather than refused: the tournament is worth something now
+        # without every caller having to say so.
+        if self.instance is None and buy_in_cents <= 0 and buy_in_coins <= 0:
+            buy_in_coins = attrs["buy_in_coins"] = DEFAULT_COIN_BUY_IN
+        # Coins are actually taken off the wallet, so a coin game with nobody to
+        # pay them back to is coins destroyed. Winner takes all unless the
+        # creator said otherwise.
+        if buy_in_coins > 0 and not attrs["payout_structure"]:
+            attrs["payout_structure"] = _normalize_payout_structure(
+                [{"place": 1, "label": "1st", "percentage": 100}]
+            )
 
         # Below two seconds nobody can read the result, and beyond a minute the
         # pause stops being a pause.
@@ -571,7 +638,17 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         levels_data = validated_data.pop("levels", None)
-        tournament = Tournament.objects.create(host=self.context["request"].user, **validated_data)
+        host = self.context["request"].user
+        # A coin buy-in is money the host is about to be charged along with
+        # everybody else, so it is checked before the row exists rather than
+        # after — see the charge at the end of this method, which is what the
+        # transaction is here to be able to take back.
+        with transaction.atomic():
+            tournament = self._create_with_host(validated_data, host, levels_data)
+        return tournament
+
+    def _create_with_host(self, validated_data, host, levels_data):
+        tournament = Tournament.objects.create(host=host, **validated_data)
         primary_table = tournament.ensure_table(1)
 
         if levels_data:
@@ -603,6 +680,13 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             time_bank_seconds_remaining=tournament.time_bank_seconds,
             bounty_cents=starting_bounty_cents(BountyConfig.from_tournament(tournament)),
         )
+        # The host holds a seat like anybody else, and a seat in a coin game is
+        # paid for. Opening a tournament you cannot afford to play in would put
+        # a stake in the pool that nobody put coins behind.
+        if not charge_entry(host, tournament):
+            raise serializers.ValidationError(
+                {"buy_in_coins": "You do not have the coins for your own buy-in."}
+            )
         return tournament
 
 
@@ -615,6 +699,7 @@ LOCKED_AFTER_CREATION = (
     "club",
     "season",
     "buy_in_cents",
+    "buy_in_coins",
     "payout_structure",
     "bounty_mode",
     "bounty_cents",

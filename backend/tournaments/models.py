@@ -25,6 +25,15 @@ class Tournament(models.Model):
         ("fixed",       "Fixed knockout"),
         ("progressive", "Progressive knockout"),
     ]
+    # What kind of game this row is. A standard tournament is somebody's night:
+    # a host opens it, sets the stakes and starts it. A Spin n Go has no host at
+    # all — the server makes it when a player sits and fires it when the third
+    # one does — so the difference has to survive creation, which a setting that
+    # only existed in the create form would not.
+    FORMAT_CHOICES = [
+        ("standard", "Tournament"),
+        ("spingo",   "Spin n Go"),
+    ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
     # Whose night this is, and which league table it counts for. Both null for
@@ -39,12 +48,24 @@ class Tournament(models.Model):
     )
     name           = models.CharField(max_length=100)
     game_type      = models.CharField(max_length=8, choices=GAME_TYPE_CHOICES, default="nlh")
+    format         = models.CharField(max_length=12, choices=FORMAT_CHOICES, default="standard")
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")
     scheduled_start_at = models.DateTimeField(null=True, blank=True)
     starting_chips = models.IntegerField(default=10_000)
     # In cents. The app never handles money; it only records what was agreed,
     # and a rounding error here is somebody's actual euro.
     buy_in_cents   = models.IntegerField(default=0)
+    # Coins, the app's own currency, and the one thing here it really does move:
+    # this is charged to the wallet on the way in and paid back out to the
+    # places on the way out. A tournament is played for one currency or the
+    # other, never both — euros are recorded and settled between friends, coins
+    # are debited for real. Zero is free, which is every row made before this.
+    buy_in_coins   = models.IntegerField(default=0)
+    # Spin n Go only: the multiplier drawn when the third seat filled. Persisted
+    # rather than held in the engine, because the prize has to still be the same
+    # number after a restart, and because it is what the payout is worked out
+    # from long after the draw. Zero means no draw has been made.
+    spin_multiplier = models.IntegerField(default=0)
     max_players    = models.IntegerField(default=9)
     # Eight, not nine. A full ring of nine is a lot of seats to read at once,
     # and on the felt it is the difference between a nameplate you can see and
@@ -210,3 +231,47 @@ class Settlement(models.Model):
 
     def __str__(self):
         return f"{self.from_user.username} paid {self.to_user.username} {self.amount_cents}c"
+
+
+class DebtTransfer(models.Model):
+    """One agreed payment: who pays whom, decided once and then left alone.
+
+    Who owes whom is not in the results — the results say what each night cost
+    and paid each player, and somebody has to pair the losers off against the
+    winners. That pairing used to be worked out afresh on every read, which made
+    it move: recording one payment changed the balances it was derived from, so
+    the next read paired everybody up differently and told players who had
+    already handed over cash to pay somebody else instead.
+
+    So a pairing is written down. It is a promise between two people, and the
+    only thing that changes about it afterwards is how much of it has been paid.
+    New debt from a later night gets its own promises; it never re-opens these.
+    """
+
+    from_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debts_owed",
+    )
+    to_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debts_due",
+    )
+    amount_cents = models.IntegerField()
+    # Part payment is normal — somebody hands over a note and owes the change.
+    paid_cents = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    @property
+    def remaining_cents(self):
+        return max(0, self.amount_cents - self.paid_cents)
+
+    @property
+    def is_settled(self):
+        return self.remaining_cents == 0
+
+    def __str__(self):
+        return (
+            f"{self.from_user.username} owes {self.to_user.username} "
+            f"{self.remaining_cents}c of {self.amount_cents}c"
+        )

@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from django.db import transaction
+from django.db.models import Max
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser, User
@@ -164,6 +165,25 @@ def stop_tournament_engine(tournament_id: int) -> bool:
     return had_engine
 
 
+def spin_payload(tournament) -> Optional[dict]:
+    """What a Spin n Go is being played for, or None if this is a tournament.
+
+    Read off the row rather than drawn here: the multiplier was decided when the
+    third player sat down, and the table is only reporting it.
+    """
+    if getattr(tournament, "format", "standard") != "spingo":
+        return None
+    from tournaments.spingo import prize_coins
+
+    stake = tournament.buy_in_coins or 0
+    multiplier = tournament.spin_multiplier or 0
+    return {
+        "stake_coins": stake,
+        "multiplier": multiplier,
+        "prize_coins": prize_coins(stake, multiplier),
+    }
+
+
 def _tournament_group_name(tournament_id: int) -> str:
     return f"tournament_{tournament_id}"
 
@@ -191,10 +211,18 @@ def _db_set_tournament_status(tournament_id, status):
 
 @database_sync_to_async
 def _db_settle_tournament(tournament_id):
-    """Work out who owes whom, now that the results are final."""
+    """Work out who owes whom, now that the results are final.
+
+    Two currencies, two settlements, and they do different things. The euro one
+    only writes down what the night worked out to, for people to square up
+    between themselves. The coin one actually pays the prizes into wallets.
+    """
+    from tournaments.coinbank import settle_finished_coins
     from tournaments.ledger import settle_finished
 
-    return settle_finished(tournament_id)
+    recorded = settle_finished(tournament_id)
+    paid = settle_finished_coins(tournament_id)
+    return recorded or paid
 
 
 @database_sync_to_async
@@ -286,6 +314,23 @@ def _db_save_hand(tournament_id, data):
 def _db_set_progress(tournament_id, level_index, hands_in_level):
     Tournament.objects.filter(id=tournament_id).update(
         current_level_index=level_index, hands_in_level=hands_in_level,
+    )
+
+
+@database_sync_to_async
+def _db_get_last_hand_number(tournament_id):
+    """The highest hand number this tournament has on record, or 0 for a new one.
+
+    The hand count a table carries is in-memory state, so a tournament picked up
+    after a restart would otherwise deal its next hand as hand 1 — leaving two
+    hands numbered 1 in the same night and a finish screen, which reads the last
+    number rather than counting the rows, reporting a fraction of what was
+    played.
+    """
+    return (
+        Hand.objects.filter(tournament_id=tournament_id)
+        .aggregate(highest=Max("hand_number"))["highest"]
+        or 0
     )
 
 
@@ -1014,6 +1059,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             return
 
         levels = await _db_get_levels(self.tournament_id)
+        last_hand_number = await _db_get_last_hand_number(self.tournament_id)
+        spingo = tournament.format == "spingo"
         coordinator = MultiTableTournamentCoordinator(
             tournament_id=self.tournament_id,
             players_per_table=tournament.players_per_table,
@@ -1061,6 +1108,14 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             pay_side_bets=_db_pay_side_bets,
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
+            last_hand_number=last_hand_number,
+            # The drawn prize, carried to the table so it can be revealed there
+            # and read again by anybody who reconnects mid-game.
+            spin=spin_payload(tournament),
+            # Half a minute of loading time is for a tournament people arrived
+            # for. A Spin n Go fires the moment the third player sits, and they
+            # are all already looking at it.
+            countdown_seconds=8 if spingo else 30,
         )
         # Booting a paused tournament must not start dealing; run() waits for
         # the host to resume before it announces the start.

@@ -1,4 +1,5 @@
 import PlayerFaces from "./PlayerFaces";
+import { buyInLabel, isSpinGo, prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { countdownLabel } from "./tournamentVitals";
 import { useCountdown } from "./useCountdown";
@@ -68,6 +69,7 @@ export default function TournamentCard({
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
+  const spinGo = isSpinGo(t);
   const startTime = formatTime(t.scheduled_start_at);
   const full = t.player_count >= t.max_players;
   const bountyOn = (t.bounty_mode || "none") !== "none" && (t.bounty_cents || 0) > 0;
@@ -98,11 +100,19 @@ export default function TournamentCard({
     // 8-max and 9-max play differently enough that it belongs next to the
     // turnout rather than buried in the setup screen.
     t.players_per_table ? `${t.players_per_table}-max` : null,
-    buyInCents > 0 ? euros(buyInCents) : "free",
+    // Euros or coins, and never a bare number that could be either.
+    buyInLabel(t),
     // Never the percentages: a share is a rule for splitting a pot, and the pot
     // is knowable here. Places paid is the count, the pool is the money.
-    poolCents > 0 ? `${euros(poolCents)} ${bountyOn ? "places" : "pool"}` : buyInCents > 0 ? null : "no prize",
-    GAME_LABELS[t.game_type] || null,
+    poolCents > 0
+      ? `${euros(poolCents)} ${bountyOn ? "places" : "pool"}`
+      : prizeLabel(t, t.player_count),
+    // A Spin n Go says so, and says what it drew. Only ever seen on the
+    // finished ones — a waiting queue is not listed here at all — so the
+    // multiplier is history rather than news.
+    spinGo ? "Spin n Go" : null,
+    spinGo && t.spin_multiplier ? `${t.spin_multiplier}×` : null,
+    spinGo ? null : GAME_LABELS[t.game_type] || null,
     t.club_name ? (t.league_name || "club night") : null,
     // The format and what it is worth, in one fact — "PKO" on its own said the
     // rules and left the money out.

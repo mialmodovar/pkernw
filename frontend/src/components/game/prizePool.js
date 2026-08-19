@@ -1,14 +1,18 @@
 /**
- * What a place is worth, in money.
+ * What a place is worth, in whichever currency it is worth it in.
  *
  * A percentage is a rule for splitting a pot, not an answer to "what do I win".
  * Wherever there is a buy-in, the money is knowable, so the money is what gets
- * shown — the percentage only survives where there is no pot to apply it to.
+ * shown — the percentage only survives where there is no pot at all to apply it
+ * to, which now means only the free tournaments that predate coins.
  *
- * All cents, like everything else that touches money here.
+ * Euros are cents, like everything else here that touches money. Coins are whole
+ * and are the app's own, so a coin figure is not a note of what to settle later:
+ * it is what lands in the wallet.
  */
 
 import { formatEuros } from "./formatMoney";
+import { formatCoins } from "../lobby/buyIn";
 
 /** Entries, counting rebuys — each one is another buy-in into the pot. */
 export function entryCount(tournament) {
@@ -42,6 +46,46 @@ export function placeCents(tournament, percentage, entries) {
  * but the split to state, and stating it is better than showing "€0".
  */
 export function payoutLabel(tournament, row, entries) {
+  const coins = placeCoins(tournament, row.percentage, entries);
+  if (coins != null) return formatCoins(coins);
   const cents = placeCents(tournament, row.percentage, entries);
   return cents == null ? `${row.percentage}%` : formatEuros(cents);
+}
+
+/**
+ * The coins the payout structure divides.
+ *
+ * A Spin n Go's pot was drawn rather than paid in, so it is the buy-in times the
+ * multiplier and has nothing to do with how many entries there were. Everything
+ * else is the buy-ins, rebuys included.
+ */
+export function poolCoins(tournament, entries = entryCount(tournament)) {
+  const stake = tournament?.buy_in_coins || 0;
+  if (stake <= 0) return 0;
+  if (tournament?.format === "spingo") return stake * (tournament.spin_multiplier || 0);
+  return stake * entries;
+}
+
+/** One row's share of the coin pot — or null when there is no coin pot. */
+export function placeCoins(tournament, percentage, entries) {
+  const pool = poolCoins(tournament, entries);
+  if (pool <= 0) return null;
+  // Floored, matching the server: it pays whole coins and hands the remainder
+  // to first place, and a client that rounded up would promise a coin more than
+  // the wallet is about to receive.
+  return Math.floor(pool * percentage / 100);
+}
+
+/**
+ * What a player was actually paid, preferred over anything recomputed.
+ *
+ * Once a game has settled, the ledger is the truth — it is what went into the
+ * wallet or onto the tab. Before that lands, the arithmetic above is the best
+ * answer there is. Returns null when there is nothing to say.
+ */
+export function paidLabel(tournament, record, row, entries) {
+  if (record?.prize_coins > 0) return formatCoins(record.prize_coins);
+  if (record?.prize_cents > 0) return formatEuros(record.prize_cents);
+  if (!row) return null;
+  return payoutLabel(tournament, row, entries);
 }

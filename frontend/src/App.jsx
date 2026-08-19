@@ -14,6 +14,7 @@ import GamePage from "./pages/GamePage";
 import DevTablePage from "./pages/DevTablePage";
 import StaffRoute from "./components/auth/StaffRoute";
 import BuildStamp from "./components/BuildStamp";
+import TableShortcut from "./components/lobby/TableShortcut";
 
 export default function App() {
   const { init, loading } = useAuthStore();
@@ -45,6 +46,10 @@ export default function App() {
       <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
+      {/* Outside the routes on purpose: a seat being dealt to is a fact about
+          the whole app, not about the page you happen to be reading. It hides
+          itself at the table and on the login pages. */}
+      <TableShortcut />
     </>
   );
 }

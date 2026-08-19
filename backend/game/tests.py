@@ -13,7 +13,8 @@ from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .consumers import (
     CHAT_MESSAGE_BUDGET, MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues,
-    _media_presence, _player_channels, _request_action,
+    _game_tasks, _media_presence, _player_channels, _request_action, _tournament_runners,
+    spin_payload,
 )
 
 User = get_user_model()
@@ -56,7 +57,7 @@ class CoordinatorHarness:
             "time_bank_seconds_remaining": time_bank_seconds_remaining,
         }
 
-    def _build_coordinator(self, records, *, players_per_table=3):
+    def _build_coordinator(self, records, *, players_per_table=3, last_hand_number=0):
         self.records = [dict(record) for record in records]
         self.assignments = []
         self.notifications = []
@@ -131,6 +132,7 @@ class CoordinatorHarness:
             persist_player_states=persist_player_states,
             take_side_bet_stake=take_side_bet_stake,
             pay_side_bets=pay_side_bets,
+            last_hand_number=last_hand_number,
         )
 
     def _sync_and_rebalance(self, coordinator):
@@ -150,6 +152,46 @@ class MultiTableTournamentCoordinatorTests(CoordinatorHarness, TestCase):
         self.assertEqual([table["table_number"] for table in coordinator.table_summaries()], [1, 2])
         self.assertEqual([table["player_count"] for table in coordinator.table_summaries()], [2, 2])
         self.assertEqual(self.assignments[-1]["active_table_numbers"], [1, 2])
+
+    def test_tables_start_numbering_hands_where_the_record_left_off(self):
+        """A tournament picked up again carries on counting.
+
+        The hand count lives on an in-memory table, so a restart mid-tournament
+        used to deal hand 1 for the second time — leaving two hands with the
+        same number and a finish screen, which reads the last number rather than
+        counting rows, calling a nineteen-hand game a two-hand one.
+        """
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            last_hand_number=17,
+        )
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 17)
+
+    def test_a_fresh_tournament_still_starts_at_hand_zero(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+        )
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 0)
+
+    def test_rebalanced_tables_keep_their_own_count(self):
+        """A table that already exists carries its own number, not the seed."""
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(4)],
+            players_per_table=3,
+            last_hand_number=17,
+        )
+        self._sync_and_rebalance(coordinator)
+        coordinator._tables[1].hand_number = 20
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 20)
 
     def test_spectator_snapshot_shows_a_table_without_its_hole_cards(self):
         coordinator = self._build_coordinator(
@@ -1883,3 +1925,138 @@ class OutsTests(TestCase):
 
 		self.assertEqual(hero, [])
 		self.assertEqual(villain, [])
+
+
+class SpinPayloadTests(TestCase):
+    """What the table is told a Spin n Go is worth."""
+
+    def test_a_tournament_carries_no_draw(self):
+        tournament = Tournament.objects.create(
+            host=User.objects.create_user(username="sp_host", password="x"),
+            name="Thursday", buy_in_coins=50,
+        )
+        self.assertIsNone(spin_payload(tournament))
+
+    def test_a_spin_n_go_carries_the_stake_the_multiplier_and_the_prize(self):
+        tournament = Tournament.objects.create(
+            host=User.objects.create_user(username="sp_host2", password="x"),
+            name="Spin n Go", format="spingo", buy_in_coins=25, spin_multiplier=10,
+        )
+        self.assertEqual(spin_payload(tournament), {
+            "stake_coins": 25, "multiplier": 10, "prize_coins": 250,
+        })
+
+
+class SpinGoLiveTests(TransactionTestCase):
+    """A whole Spin n Go, played over the socket, coins in and coins out.
+
+    The one test that goes all the way through: the engine boots off the first
+    connect, three fifteen-blind stacks play it out, and the wallet is checked
+    afterwards. Everything else about the format is arithmetic somewhere with a
+    test of its own — this is the wiring between those, which is the part that
+    unit tests cannot say anything about.
+    """
+
+    def tearDown(self):
+        _tournament_runners.clear()
+        _game_tasks.clear()
+
+    def _setup_game(self):
+        from sidegames.economy import spend, wallet_for
+        from sidegames.models import Wallet
+        from tournaments import spingo
+        from tournaments.models import BlindLevel
+
+        users = []
+        for name in ("live_ana", "live_bea", "live_caio"):
+            user = User.objects.create_user(username=name, password="x")
+            wallet_for(user)
+            Wallet.objects.filter(user=user).update(balance=100)
+            users.append(user)
+
+        # Fired, as the sit endpoint leaves it: running, with the draw already
+        # made. A multiplier of two is the common case and the cheapest to check.
+        game = Tournament.objects.create(
+            host=users[0],
+            **{**spingo.tournament_defaults(25), "status": "running", "spin_multiplier": 2},
+        )
+        BlindLevel.objects.bulk_create([
+            BlindLevel(tournament=game, **row) for row in spingo.level_rows()
+        ])
+        table = game.ensure_table(1)
+        for index, user in enumerate(users):
+            TournamentPlayer.objects.create(
+                tournament=game, user=user, table=table, seat=index, seat_at_table=index,
+                chips=game.starting_chips, time_bank_seconds_remaining=game.time_bank_seconds,
+            )
+            spend(user, 25, "stake", memo=f"tournament:{game.id}")
+        return game, users
+
+    async def _play_it_out(self, game, users, timeout=120):
+        comms = []
+        for user in users:
+            communicator = WebsocketCommunicator(
+                TournamentConsumer.as_asgi(), f"/ws/tournament/{game.id}/",
+            )
+            communicator.scope["user"] = user
+            communicator.scope["url_route"] = {"kwargs": {"tournament_id": str(game.id)}}
+            connected, _ = await communicator.connect(timeout=5)
+            self.assertTrue(connected, f"{user.username} could not connect")
+            comms.append(communicator)
+
+        # Everybody ready, so the countdown ends without waiting it out.
+        for communicator in comms:
+            await communicator.send_json_to({"type": "ready", "value": True})
+
+        seen_spin = {}
+        complete = None
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while complete is None and loop.time() < deadline:
+            for communicator in comms:
+                if await communicator.receive_nothing(timeout=0.05):
+                    continue
+                message = await communicator.receive_json_from()
+                kind = message.get("type")
+                if kind in ("tournament_started", "game_state") and message.get("spin"):
+                    seen_spin.update(message["spin"])
+                if kind == "action_required":
+                    valid = message.get("valid_actions") or []
+                    # Shove whenever it is legal. Fifteen blinds three-handed is
+                    # a format that ends this way anyway, and it gets the test to
+                    # the payout in a handful of hands.
+                    action = "raise" if "raise" in valid else (
+                        "call" if "call" in valid else "check"
+                    )
+                    await communicator.send_json_to({
+                        "type": "player_action",
+                        "action": action,
+                        "amount": message.get("max_raise", 0),
+                    })
+                if kind == "tournament_complete":
+                    complete = message
+                    break
+
+        for communicator in comms:
+            await communicator.disconnect()
+        return complete, seen_spin
+
+    def test_a_spin_n_go_plays_out_and_pays_the_winner_in_coins(self):
+        from sidegames.models import CoinLedger, Wallet
+
+        game, users = self._setup_game()
+        complete, seen_spin = async_to_sync(self._play_it_out)(game, users)
+
+        self.assertIsNotNone(complete, "the tournament never finished")
+        # The draw reached the table, which is the only place it is ever shown.
+        self.assertEqual(seen_spin.get("multiplier"), 2)
+        self.assertEqual(seen_spin.get("prize_coins"), 50)
+
+        game.refresh_from_db()
+        self.assertEqual(game.status, "finished")
+        winner = game.players.get(finish_position=1)
+        payouts = CoinLedger.objects.filter(reason="payout", memo=f"tournament:{game.id}")
+        self.assertEqual([row.amount for row in payouts], [50])
+        self.assertEqual(payouts.first().user_id, winner.user_id)
+        # A hundred to start, twenty-five to sit, fifty for winning it.
+        self.assertEqual(Wallet.objects.get(user_id=winner.user_id).balance, 125)

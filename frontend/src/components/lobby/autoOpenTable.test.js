@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   claimEntryRedirect,
+  markArrivedAtTable,
   resetEntryRedirect,
   seatIsWaiting,
   tableToOpen,
@@ -104,5 +105,19 @@ describe("a session, in the order the hook asks its questions", () => {
     expect(poll([mine({ status: "lobby" })], home)).toBeNull();
     expect(poll([mine({ status: "lobby" })], home)).toBeNull();
     expect(poll([mine()], home)).toBe(7);
+  });
+});
+
+describe("markArrivedAtTable", () => {
+  beforeEach(() => resetEntryRedirect());
+
+  it("spends the arrival redirect, so the walk back is not an arrival", () => {
+    // The app opened somewhere that concluded nothing — a login page, or a home
+    // list that had not loaded — so the redirect is still going when the player
+    // reaches a table by hand.
+    markArrivedAtTable();
+
+    const backHome = new Map();
+    expect(tableToOpen([mine()], backHome, { entryPending: claimEntryRedirect() })).toBeNull();
   });
 });

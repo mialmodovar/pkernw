@@ -1,5 +1,10 @@
+import { useEffect, useState } from "react";
+
+import { giphyConfigured, gifPreviewUrl } from "../../api/giphy";
+import { formatCoins, isSpinGo } from "../lobby/buyIn";
 import { formatEuros } from "./formatMoney";
-import { entryCount, payoutLabel } from "./prizePool";
+import { findOutcomeGif, outcomeOf } from "./outcomeGif";
+import { entryCount, paidLabel, poolCoins } from "./prizePool";
 
 const ordinal = (n) => {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
@@ -32,6 +37,7 @@ export default function TournamentCompleteScreen({
   const payouts = tournament?.payout_structure || [];
   const payoutFor = (finish) => payouts.find((row) => row.place === finish);
   const playerRecord = (name) => tournament?.players?.find((p) => p.username === name);
+  const spinGo = isSpinGo(tournament);
 
   const entrants = tournament?.players?.length ?? rows.length;
   const myPayout = mine ? payoutFor(mine.finish) : null;
@@ -44,14 +50,35 @@ export default function TournamentCompleteScreen({
   const myRecord = mine ? playerRecord(mine.name) : null;
 
   const entries = entryCount(tournament);
-  // What a place is worth in money. Once the tournament has settled, the
-  // ledger's own figure is the truest answer there is — it is what was actually
-  // recorded, bounties included — so it wins over anything recomputed here.
-  const prizeLabel = (finish, record) => {
-    if (record?.prize_cents > 0) return formatEuros(record.prize_cents);
-    const payout = payoutFor(finish);
-    return payout ? payoutLabel(tournament, payout, entries) : null;
-  };
+  // What a place was worth. Once the game has settled, the ledger's own figure
+  // is the truest answer there is — it is what was actually paid, in coins or in
+  // euros — so it wins over anything recomputed here. A percentage is never the
+  // answer where there is a pot to apply it to, which is every game that costs
+  // anything.
+  const prizeLabel = (finish, record) => paidLabel(tournament, record, payoutFor(finish), entries);
+
+  // Something to look at while it sinks in, the same way busting out gets one.
+  // Seeded on the game and the place so it holds still rather than reshuffling
+  // on every render, and a table with no Giphy key carries on without it.
+  const [gifId, setGifId] = useState(null);
+  const myFinish = mine?.finish ?? null;
+  const outcome = outcomeOf({
+    finishPosition: myFinish,
+    inTheMoney: Boolean(myFinish && prizeLabel(myFinish, playerRecord(mine?.name))),
+  });
+  useEffect(() => {
+    if (!giphyConfigured || !myFinish) return undefined;
+    const controller = new AbortController();
+    findOutcomeGif({
+      outcome,
+      seed: (tournament?.id || 0) * 89 + myFinish,
+      signal: controller.signal,
+    })
+      .then(setGifId)
+      // The result underneath is the result whether or not a picture arrives.
+      .catch(() => {});
+    return () => controller.abort();
+  }, [outcome, tournament?.id, myFinish]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10">
@@ -68,7 +95,7 @@ export default function TournamentCompleteScreen({
             </h1>
             <p className="text-(--color-text-muted) text-sm mt-1">
               of {entrants} entrants
-              {myPayout && (
+              {myPayout && prizeLabel(mine.finish, myRecord) && (
                 <span className="text-(--color-highlight-text)">
                   {` · ${prizeLabel(mine.finish, myRecord)}`}
                 </span>
@@ -84,22 +111,43 @@ export default function TournamentCompleteScreen({
           </div>
         )}
 
+        {gifId && (
+          <img
+            src={gifPreviewUrl(gifId)}
+            alt=""
+            className="mt-4 w-full max-h-56 object-cover rounded-lg border border-(--color-border)"
+          />
+        )}
+
         <div className="grid grid-cols-3 gap-2 mt-5">
-          <Stat label="Entrants" value={entrants} />
-          <Stat label="Hands" value={handNumber || "—"} />
-          {/* In a knockout tournament this is often the bigger half of the
-              night's result, so it replaces the final blinds rather than
-              being buried in the standings. */}
-          {bountyOn && myRecord ? (
-            <Stat
-              label={`Your KOs (${myRecord.knockouts || 0})`}
-              value={formatEuros(bountyPrize(myRecord))}
-            />
+          {/* A Spin n Go was three players and one number nobody chose, so the
+              number and what it paid are the result — an entrant count of three
+              and a hand count say nothing about it. */}
+          {spinGo ? (
+            <>
+              <Stat label="Multiplier" value={`${tournament?.spin_multiplier || 0}×`} />
+              <Stat label="Prize" value={formatCoins(poolCoins(tournament, entries))} />
+              <Stat label="Hands" value={handNumber || "—"} />
+            </>
           ) : (
-            <Stat
-              label="Final blinds"
-              value={level ? `${level.small_blind}/${level.big_blind}` : "—"}
-            />
+            <>
+              <Stat label="Entrants" value={entrants} />
+              <Stat label="Hands" value={handNumber || "—"} />
+              {/* In a knockout tournament this is often the bigger half of the
+                  night's result, so it replaces the final blinds rather than
+                  being buried in the standings. */}
+              {bountyOn && myRecord ? (
+                <Stat
+                  label={`Your KOs (${myRecord.knockouts || 0})`}
+                  value={formatEuros(bountyPrize(myRecord))}
+                />
+              ) : (
+                <Stat
+                  label="Final blinds"
+                  value={level ? `${level.small_blind}/${level.big_blind}` : "—"}
+                />
+              )}
+            </>
           )}
         </div>
 

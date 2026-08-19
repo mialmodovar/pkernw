@@ -17,12 +17,24 @@ def can_manage_tournament(user, tournament):
     a level, edit it, delete it.
 
     Three ways in. Whoever created it, obviously. Anybody who helps run the club
-    whose night it is, because a co-organiser should be able to start the game
-    when the host is stuck in traffic. And the superuser, over anything at all —
-    including a tournament with no club behind it, which used to answer to its
-    host and to nobody else.
+    whose night it is — staff or owner of THAT club — because a co-organiser
+    should be able to start the game when the host is stuck in traffic. And the
+    superuser, over anything at all, including a tournament with no club behind
+    it.
+
+    Being `is_staff` is not one of the three. Staff is what lets you open a
+    tournament of your own; it used to reach through `is_club_staff` into every
+    club on the installation, which meant every host could edit and pause
+    everybody else's club night. See the note in clubs/permissions.py.
     """
     if tournament is None or not (user and user.is_authenticated):
+        return False
+    # Nobody runs a Spin n Go. The host column points at whoever sat down first
+    # because the database needs it to point somewhere, and that must not hand
+    # them a pause button over two strangers' game — or a delete button over a
+    # prize pool three people paid into. Not even the superuser: there is
+    # nothing to intervene in that outliving the format's five minutes.
+    if tournament.format == "spingo":
         return False
     if is_superuser(user):
         return True

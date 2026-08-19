@@ -8,6 +8,7 @@ from django.utils import timezone
 from accounts.models import AvatarImage
 
 from .bounties import BountyConfig, starting_bounty_cents
+from .coinbank import charge_entry, refund_entry
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .permissions import StaffCreatesTournaments, can_manage_tournament
 from .serializers import (
@@ -102,7 +103,11 @@ class TournamentListCreateView(generics.ListCreateAPIView):
                 ).exclude(players__user=user)
                 if late_registration_open(tournament)
             ]
-            return Tournament.objects.filter(
+            # Spin n Go queues are not browsable tournaments: they have no host,
+            # no start button and nothing to read on a card, and they are sat at
+            # from their own tab. They stay in `mine_active` and `past`, so a
+            # game of yours still opens itself and still shows up afterwards.
+            return Tournament.objects.exclude(format="spingo").filter(
                 Q(status="lobby") | Q(id__in=open_late_reg_ids)
             ).order_by(
                 F("scheduled_start_at").asc(nulls_last=True), "-created_at"
@@ -141,6 +146,14 @@ def join_tournament(request, pk):
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    if tournament.format == "spingo":
+        # A seat here is bought at a tier, not joined at a tournament, and the
+        # tier endpoint is the only thing that may open the queue or fire it.
+        return Response(
+            {"error": "Sit at a Spin n Go from the Spin n Go tab"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     if tournament.players.filter(user=request.user).exists():
         return Response({"error": "Already joined"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -159,6 +172,12 @@ def join_tournament(request, pk):
             return Response({"error": "Late registration is closed"}, status=status.HTTP_400_BAD_REQUEST)
     else:
         return Response({"error": "Tournament already started"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # A coin tournament is played for the app's own currency, so the buy-in is
+    # actually taken here rather than written down for later. Charged before the
+    # seat exists: a seat nobody paid for is chips in the prize pool from nowhere.
+    if not charge_entry(request.user, tournament):
+        return Response({"error": "Not enough coins"}, status=status.HTTP_400_BAD_REQUEST)
 
     taken_seats = set(tournament.players.values_list("seat", flat=True))
     next_seat = next(s for s in range(tournament.max_players) if s not in taken_seats)
@@ -346,6 +365,12 @@ def rebuy_tournament(request, pk):
     if tournament.max_rebuys is not None and tp.rebuy_count >= tournament.max_rebuys:
         return Response({"error": "No rebuys remaining"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # A rebuy is another buy-in, and in a coin game that is another debit. Taken
+    # before the engine hands the chips over, since the engine's word on the
+    # stack is final and there is no taking them back afterwards.
+    if not charge_entry(request.user, tournament):
+        return Response({"error": "Not enough coins"}, status=status.HTTP_400_BAD_REQUEST)
+
     # The engine holds its players in memory and writes them over the DB after
     # every hand, so the rebuy has to land there or it is silently undone. This
     # call must stay outside any atomic block: it bridges into async and opens
@@ -353,6 +378,10 @@ def rebuy_tournament(request, pk):
     # apply_rebuy persists chips and is_eliminated itself.
     refusal = async_to_sync(runner.apply_rebuy)(request.user.id, tournament.starting_chips)
     if refusal:
+        # The engine would not take them back — the tournament is finishing, or
+        # the window closed while this was in flight — so the coins charged
+        # above bought nothing and go back.
+        refund_entry(request.user, tournament)
         return Response({"error": refusal}, status=status.HTTP_400_BAD_REQUEST)
 
     # Only the bookkeeping the engine doesn't own is left to write here.
@@ -373,6 +402,14 @@ def quit_tournament(request, pk):
         tournament = Tournament.objects.get(pk=pk)
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if tournament.format == "spingo":
+        # Leaving a queue also decides what happens to the queue, so it has its
+        # own endpoint rather than a special case in this one.
+        return Response(
+            {"error": "Leave a Spin n Go from the Spin n Go tab"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Once cards are in the air a seat carries chips that belong to the prize
     # pool, so it can only be given up before the tournament starts.
@@ -396,6 +433,8 @@ def quit_tournament(request, pk):
         return Response({"error": "You are not in this tournament"}, status=status.HTTP_400_BAD_REQUEST)
 
     tp.delete()
+    # Nothing was played, so a coin buy-in goes back where it came from.
+    refund_entry(request.user, tournament)
     return Response({"status": "unregistered"})
 
 

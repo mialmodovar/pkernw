@@ -6,6 +6,7 @@ import useAuthStore from "../store/authStore";
 import { claimEntryRedirect } from "../components/lobby/autoOpenTable";
 import { entryCount, payoutLabel, placingPoolCents } from "../components/game/prizePool";
 import { formatEuros } from "../components/game/formatMoney";
+import { buyInLabel, formatCoins, isSpinGo } from "../components/lobby/buyIn";
 import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
 import ShareTournamentButton from "../components/lobby/ShareTournamentButton";
 import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
@@ -245,6 +246,14 @@ export default function TournamentSetupPage() {
   const potCents = placingPoolCents(tournament, entries);
   const bountyOn = (tournament.bounty_mode || "none") !== "none" && (tournament.bounty_cents || 0) > 0;
   const koPoolCents = bountyOn ? (tournament.bounty_cents || 0) * entries : 0;
+  // The other currency. A coin tournament is charged and paid for real, so the
+  // pool is not a note of what to settle later — it is the coins that will land
+  // in a wallet, and a Spin n Go's is the draw rather than the entries.
+  const buyInCoins = tournament.buy_in_coins || 0;
+  const spinGo = isSpinGo(tournament);
+  const potCoins = spinGo
+    ? buyInCoins * (tournament.spin_multiplier || 0)
+    : buyInCoins * entries;
   // Settled, the ledger's split of the prize; before that, what they have
   // actually taken off other people's heads.
   const koWinnings = (player) => (player.bounty_prize_cents || player.bounty_won_cents || 0);
@@ -295,6 +304,21 @@ export default function TournamentSetupPage() {
               </>
             )}
           <Headline label="Start stack" value={tournament.starting_chips.toLocaleString()} />
+          {buyInCoins > 0 && (
+            <Headline
+              label="Buy-in"
+              value={buyInLabel(tournament)}
+              title="Coins, taken from your wallet when you sit down and paid back out to the places"
+            />
+          )}
+          {spinGo && (
+            <Headline
+              label="Prize"
+              value={tournament.spin_multiplier
+                ? `${formatCoins(potCoins)} · ${tournament.spin_multiplier}×`
+                : "drawn at 3"}
+            />
+          )}
           {buyInCents > 0 && (
             <Headline
               label="Buy-in"
@@ -407,7 +431,7 @@ export default function TournamentSetupPage() {
                     <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
                     <span className="text-[#d9c07a] font-semibold">
                       {row.percentage}%
-                      {potCents > 0 && (
+                      {(potCents > 0 || potCoins > 0) && (
                         <span className="text-(--color-text-muted) font-normal ml-2">
                           {payoutLabel(tournament, row, entries)}
                         </span>
@@ -417,7 +441,14 @@ export default function TournamentSetupPage() {
                 ))}
               </ul>
               <p className="px-3 py-2 border-t border-(--color-border) text-[11px] text-(--color-text-muted)">
-                {potCents > 0
+                {potCoins > 0
+                  ? (spinGo
+                    ? `${formatCoins(potCoins)} to the winner — ${formatCoins(buyInCoins)} a seat, `
+                      + `multiplied by ${tournament.spin_multiplier}×. Paid into wallets when it ends.`
+                    : `${formatCoins(potCoins)} in coins so far · `
+                      + `${entries} ${entries === 1 ? "entry" : "entries"} at ${formatCoins(buyInCoins)}. `
+                      + "Paid into wallets when it ends.")
+                  : potCents > 0
                   ? (bountyOn
                     // Two pools, said as two, because the percentages above only
                     // ever divide the first one. A single "prize pool" figure
@@ -428,6 +459,8 @@ export default function TournamentSetupPage() {
                       + `${formatEuros(tournament.bounty_cents)} of each onto a head. `
                       + "Settle up in Calotes, payments happen outside this app."
                     : `Prize pool ${formatEuros(potCents)} so far · settle up in Calotes, payments happen outside this app.`)
+                  : buyInCoins > 0
+                  ? `Percentages only until somebody sits down. ${formatCoins(buyInCoins)} a seat.`
                   : "Percentages only — payments happen outside this app."}
               </p>
             </Panel>

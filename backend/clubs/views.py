@@ -11,7 +11,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from .models import Club, League, Membership, Season
+from .models import Club, League, Membership, Season, generate_invite_code
 from .permissions import is_club_owner, is_club_staff, role_in
 from .scoring import club_standings, normalize_scheme, standings
 from .serializers import (
@@ -19,6 +19,7 @@ from .serializers import (
     ClubListSerializer,
     ClubWriteSerializer,
     LeagueSerializer,
+    LeagueWriteSerializer,
     SeasonSerializer,
 )
 
@@ -49,16 +50,24 @@ def clubs(request):
 
     # Yours, plus anything open to join. A private club you are not in is not
     # listed at all: it is found with its code or not at all.
-    visible = Club.objects.filter(
-        Q(is_public=True) | Q(memberships__user=request.user)
-    ).distinct()
+    #
+    # Except for whoever owns the installation, who can already open and edit any
+    # club by its address — leaving them out of the list only meant the one
+    # account that can fix a club had no way of finding it.
+    visible = (
+        Club.objects.all() if request.user.is_superuser
+        else Club.objects.filter(Q(is_public=True) | Q(memberships__user=request.user)).distinct()
+    )
     return Response(ClubListSerializer(visible, many=True, context={"request": request}).data)
 
 
-@api_view(["GET", "PATCH"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([permissions.IsAuthenticated])
 def club_detail(request, slug):
     club = get_object_or_404(Club, slug=slug)
+
+    if request.method == "DELETE":
+        return _delete_club(request, club)
 
     if request.method == "PATCH":
         refusal = _staff_only(request.user, club)
@@ -72,6 +81,61 @@ def club_detail(request, slug):
     # read any private club's page, which is not what staff is for.
     if not club.is_public and role_in(request.user, club) is None and not request.user.is_superuser:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(ClubDetailSerializer(club, context={"request": request}).data)
+
+
+def _delete_club(request, club):
+    """Close a club for good. The owner, or whoever owns the installation.
+
+    Not staff: staff run the nights, and deleting the club takes everybody
+    else's leagues and tables with it. The nights themselves survive — a
+    tournament's club is nulled rather than cascaded, so what people played is
+    still there — but the standings those nights added up to are gone, and there
+    is no undo. Hence the confirmation: the caller has to name the club it means,
+    so a stray request cannot take one out.
+    """
+    if not is_club_owner(request.user, club):
+        return Response({"error": "Only the club owner can delete it."}, status=REFUSED)
+
+    confirm = str(
+        request.data.get("confirm")
+        or request.query_params.get("confirm")
+        or ""
+    ).strip()
+    if confirm != club.slug:
+        return Response(
+            {"error": f'Confirm by sending the club\'s slug: "{club.slug}".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    club.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def reset_invite_code(request, slug):
+    """A new code, and the old one stops working.
+
+    What you do when a code has been passed somewhere it should not have been.
+    Staff rather than the owner: it is the same job as inviting people, and it
+    locks nobody out — members stay members.
+    """
+    club = get_object_or_404(Club, slug=slug)
+    refusal = _staff_only(request.user, club)
+    if refusal:
+        return refusal
+
+    # Loop rather than trust: the column is unique and the alphabet is small
+    # enough that a collision is a thing that can happen rather than a thing
+    # that cannot.
+    for _ in range(10):
+        code = generate_invite_code()
+        if not Club.objects.filter(invite_code=code).exists():
+            club.invite_code = code
+            club.save(update_fields=["invite_code"])
+            break
 
     return Response(ClubDetailSerializer(club, context={"request": request}).data)
 
@@ -219,6 +283,21 @@ def create_league(request, slug):
         scoring=normalize_scheme(request.data.get("scoring")),
     )
     return Response(LeagueSerializer(league).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def league_detail(request, league_id):
+    """Rename a league, give it a different face, or shelve it."""
+    league = get_object_or_404(League.objects.select_related("club"), pk=league_id)
+    refusal = _staff_only(request.user, league.club)
+    if refusal:
+        return refusal
+
+    serializer = LeagueWriteSerializer(league, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(LeagueSerializer(league).data)
 
 
 @api_view(["GET"])

@@ -509,3 +509,303 @@ class ClubRecordTests(APITestCase):
 			self.client.get(reverse("club-leaderboard", args=[self.club.slug])).status_code,
 			status.HTTP_200_OK,
 		)
+
+
+class ClubManagementTests(APITestCase):
+	"""Editing a club, staffing it, and closing it down."""
+
+	def setUp(self):
+		self.owner = User.objects.create_user(username="m_owner", password="x")
+		self.helper = User.objects.create_user(username="m_helper", password="x")
+		self.regular = User.objects.create_user(username="m_regular", password="x")
+		self.boss = User.objects.create_superuser(username="m_boss", password="x")
+
+		self.club = Club.objects.create(name="Quinta", slug="quinta", created_by=self.owner)
+		Membership.objects.create(club=self.club, user=self.owner, role=Membership.OWNER)
+		Membership.objects.create(club=self.club, user=self.helper, role=Membership.MEMBER)
+
+	def _detail(self, user):
+		self.client.force_authenticate(user)
+		return self.client.get(reverse("club-detail", args=[self.club.slug])).data
+
+	# --- what the page is allowed to draw
+
+	def test_the_owner_is_told_they_may_edit_and_may_own(self):
+		detail = self._detail(self.owner)
+
+		self.assertEqual(detail["my_role"], "owner")
+		self.assertTrue(detail["can_manage"])
+		self.assertTrue(detail["can_own"])
+
+	def test_a_plain_member_is_told_they_may_do_neither(self):
+		detail = self._detail(self.helper)
+
+		self.assertEqual(detail["my_role"], "member")
+		self.assertFalse(detail["can_manage"])
+		self.assertFalse(detail["can_own"])
+
+	def test_the_superuser_may_do_everything_in_a_club_they_are_not_in(self):
+		"""The permission functions have always said so; the page could not tell.
+
+		can_manage is not derivable from a role, because the superuser has none.
+		"""
+		detail = self._detail(self.boss)
+
+		self.assertIsNone(detail["my_role"])
+		self.assertTrue(detail["can_manage"])
+		self.assertTrue(detail["can_own"])
+		# And the code, which they need to be able to read to hand it over.
+		self.assertEqual(detail["invite_code"], self.club.invite_code)
+
+	def test_somebody_outside_the_club_gets_no_code_and_no_controls(self):
+		detail = self._detail(self.regular)
+
+		self.assertIsNone(detail["invite_code"])
+		self.assertFalse(detail["can_manage"])
+
+	# --- editing
+
+	def test_staff_can_rename_the_club_and_make_it_private(self):
+		Membership.objects.filter(club=self.club, user=self.helper).update(role=Membership.STAFF)
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.patch(
+			reverse("club-detail", args=[self.club.slug]),
+			{"name": "Quinta Poker", "description": "Thursdays", "is_public": False},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.club.refresh_from_db()
+		self.assertEqual(self.club.name, "Quinta Poker")
+		self.assertFalse(self.club.is_public)
+		# The slug is the address people have already bookmarked, so renaming
+		# does not move the club.
+		self.assertEqual(self.club.slug, "quinta")
+
+	def test_a_member_cannot_edit_the_club(self):
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.patch(
+			reverse("club-detail", args=[self.club.slug]), {"name": "Mine now"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		self.club.refresh_from_db()
+		self.assertEqual(self.club.name, "Quinta")
+
+	def test_a_club_still_needs_a_name(self):
+		self.client.force_authenticate(self.owner)
+
+		response = self.client.patch(
+			reverse("club-detail", args=[self.club.slug]), {"name": " "}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	# --- the invite code
+
+	def test_staff_can_roll_the_invite_code(self):
+		before = self.club.invite_code
+		self.client.force_authenticate(self.owner)
+
+		response = self.client.post(reverse("club-invite-code", args=[self.club.slug]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.club.refresh_from_db()
+		self.assertNotEqual(self.club.invite_code, before)
+		self.assertEqual(response.data["invite_code"], self.club.invite_code)
+		# Rolling it invites nobody out.
+		self.assertEqual(self.club.memberships.count(), 2)
+
+	def test_a_member_cannot_roll_the_invite_code(self):
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.post(reverse("club-invite-code", args=[self.club.slug]))
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	# --- staffing
+
+	def test_the_owner_can_make_somebody_staff_and_take_it_back(self):
+		self.client.force_authenticate(self.owner)
+		url = reverse("club-member", args=[self.club.slug, "m_helper"])
+
+		self.client.patch(url, {"role": "staff"}, format="json")
+		self.assertEqual(
+			Membership.objects.get(club=self.club, user=self.helper).role, "staff",
+		)
+
+		self.client.patch(url, {"role": "member"}, format="json")
+		self.assertEqual(
+			Membership.objects.get(club=self.club, user=self.helper).role, "member",
+		)
+
+	def test_staff_cannot_appoint_more_staff(self):
+		Membership.objects.filter(club=self.club, user=self.helper).update(role=Membership.STAFF)
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.patch(
+			reverse("club-member", args=[self.club.slug, "m_owner"]),
+			{"role": "member"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_the_superuser_can_staff_a_club_they_are_not_in(self):
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.patch(
+			reverse("club-member", args=[self.club.slug, "m_helper"]),
+			{"role": "staff"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(
+			Membership.objects.get(club=self.club, user=self.helper).role, "staff",
+		)
+
+	def test_handing_the_club_over_leaves_one_owner(self):
+		self.client.force_authenticate(self.owner)
+
+		self.client.patch(
+			reverse("club-member", args=[self.club.slug, "m_helper"]),
+			{"role": "owner"}, format="json",
+		)
+
+		roles = dict(self.club.memberships.values_list("user__username", "role"))
+		self.assertEqual(roles["m_helper"], "owner")
+		self.assertEqual(roles["m_owner"], "staff")
+
+	# --- deleting
+
+	def test_the_owner_can_delete_their_club_by_naming_it(self):
+		league = League.objects.create(club=self.club, name="Sunday")
+		Season.objects.create(league=league, name="S1")
+		self.client.force_authenticate(self.owner)
+
+		response = self.client.delete(
+			reverse("club-detail", args=[self.club.slug]),
+			{"confirm": self.club.slug}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		self.assertFalse(Club.objects.filter(slug="quinta").exists())
+		self.assertFalse(League.objects.filter(pk=league.pk).exists())
+
+	def test_deleting_without_naming_the_club_does_nothing(self):
+		self.client.force_authenticate(self.owner)
+
+		response = self.client.delete(reverse("club-detail", args=[self.club.slug]), format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertTrue(Club.objects.filter(slug="quinta").exists())
+
+	def test_staff_cannot_delete_the_club(self):
+		Membership.objects.filter(club=self.club, user=self.helper).update(role=Membership.STAFF)
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.delete(
+			reverse("club-detail", args=[self.club.slug]),
+			{"confirm": self.club.slug}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		self.assertTrue(Club.objects.filter(slug="quinta").exists())
+
+	def test_the_nights_the_club_ran_survive_it(self):
+		"""Deleting a club must not delete what people played.
+
+		The tournament's club is nulled rather than cascaded, so the night, its
+		hands and its result are all still there — it simply stops belonging to
+		a club.
+		"""
+		league = League.objects.create(club=self.club, name="Sunday")
+		season = Season.objects.create(league=league, name="S1")
+		night = Tournament.objects.create(
+			host=self.owner, name="Thursday", club=self.club, season=season, status="finished",
+		)
+		self.client.force_authenticate(self.owner)
+
+		self.client.delete(
+			reverse("club-detail", args=[self.club.slug]),
+			{"confirm": self.club.slug}, format="json",
+		)
+
+		night.refresh_from_db()
+		self.assertIsNone(night.club_id)
+		self.assertIsNone(night.season_id)
+
+	# --- leagues
+
+	def test_staff_can_rename_a_league_and_shelve_it(self):
+		league = League.objects.create(club=self.club, name="Sunday")
+		self.client.force_authenticate(self.owner)
+
+		response = self.client.patch(
+			reverse("league-detail", args=[league.id]),
+			{"name": "Sunday Turbo", "emoji": "🔥", "is_archived": True}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		league.refresh_from_db()
+		self.assertEqual(league.name, "Sunday Turbo")
+		self.assertEqual(league.emoji, "🔥")
+		self.assertTrue(league.is_archived)
+
+	def test_a_member_cannot_touch_a_league(self):
+		league = League.objects.create(club=self.club, name="Sunday")
+		self.client.force_authenticate(self.helper)
+
+		response = self.client.patch(
+			reverse("league-detail", args=[league.id]), {"name": "Mine"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+	def test_shelving_a_league_keeps_its_seasons(self):
+		league = League.objects.create(club=self.club, name="Sunday")
+		season = Season.objects.create(league=league, name="S1")
+		self.client.force_authenticate(self.owner)
+
+		self.client.patch(
+			reverse("league-detail", args=[league.id]), {"is_archived": True}, format="json",
+		)
+
+		self.assertTrue(Season.objects.filter(pk=season.pk).exists())
+
+
+class ClubVisibilityTests(APITestCase):
+	"""Which clubs a reader is shown at all."""
+
+	def setUp(self):
+		self.owner = User.objects.create_user(username="v_owner", password="x")
+		self.stranger = User.objects.create_user(username="v_stranger", password="x")
+		self.boss = User.objects.create_superuser(username="v_boss", password="x")
+
+		self.open_club = Club.objects.create(
+			name="Open", slug="open", created_by=self.owner, is_public=True,
+		)
+		self.closed_club = Club.objects.create(
+			name="Closed", slug="closed", created_by=self.owner, is_public=False,
+		)
+		for club in (self.open_club, self.closed_club):
+			Membership.objects.create(club=club, user=self.owner, role=Membership.OWNER)
+
+	def _listed(self, user):
+		self.client.force_authenticate(user)
+		return {club["slug"] for club in self.client.get(reverse("clubs")).data}
+
+	def test_a_stranger_sees_only_what_is_open(self):
+		self.assertEqual(self._listed(self.stranger), {"open"})
+
+	def test_a_member_sees_their_own_private_club(self):
+		self.assertEqual(self._listed(self.owner), {"open", "closed"})
+
+	def test_the_superuser_sees_every_club_because_they_can_edit_every_club(self):
+		"""They could already open one by its address and change it.
+
+		Leaving private clubs out of their list only meant the account that can
+		fix a club had no way of finding it.
+		"""
+		self.assertEqual(self._listed(self.boss), {"open", "closed"})

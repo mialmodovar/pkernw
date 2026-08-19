@@ -22,6 +22,34 @@ remembering.
   The table looks like a different game because it is one: a smaller, rounder
   three-seat felt in violet with a gold rim, the drawn prize written on the felt
   for the whole game, and the multiplier landing on a reel before the first hand.
+- **Clubs can be run, not just started.** A club used to be a thing you could
+  only make: the server had always allowed renaming it, making it private,
+  handing it over and staffing it, and there was no way in the app to ask for any
+  of it — so a typo in a club name was permanent and every club was stuck with
+  exactly one person able to open a tournament. A **Manage** panel on the club
+  page now covers the name, the description, the face, and whether the club is
+  listed at all. The invite code sits there too, with a copy button and a way to
+  replace it when it has been passed somewhere it should not have been — members
+  stay members, the old code stops working.
+- **Staff, appointed by the owner.** The members list becomes a staff list for
+  whoever owns the club: make somebody staff so they can open the club's nights
+  and run its leagues, take it back, hand the club over entirely, or remove
+  somebody. Removing a player takes them out of the club and leaves their results
+  in the tables they played in. There is still exactly one owner — handing over
+  makes you staff — and an owner is told to hand the club on rather than offered a
+  Leave button that would strand everybody.
+- **Leagues can be renamed and shelved.** A shelved league keeps every season
+  table it ever produced and stops being offered for new nights; whoever runs the
+  club still sees it, marked, and can bring it back.
+- **A club can be closed down.** Owners only, and it asks you to type the club's
+  address to be sure. What goes is the club, its leagues and its season tables.
+  What stays is every night the club ever ran — the hands, the results and who won
+  them are untouched; they simply stop belonging to a club.
+- **The superuser can actually reach what they administer.** Every control on a
+  club page is drawn from the server's own answer to "may this person manage
+  this", rather than from their membership — a superuser is a member of nothing,
+  so the account that can fix any club was shown the controls for none of them.
+  Private clubs are listed for them too, for the same reason.
 - **A way back to the table, and a way out of it.** Being in a game used to mean
   the lobby was unreachable: every page that knew about your tournament sent you
   straight back to the felt, on every refresh, for as long as the game lasted.

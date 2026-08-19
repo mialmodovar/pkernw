@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import api from "../api/http";
-
-const EMOJI_CHOICES = ["🎴", "🃏", "♠️", "♣️", "♥️", "♦️", "🏆", "🎲", "🔥", "🦈", "👑", "🍀"];
+import { EMOJI_CHOICES } from "../components/lobby/clubEmoji";
 
 /** Start a club. Two fields and a face — a club is a name and the people in it. */
 function CreateClub({ onCreated, onCancel }) {
@@ -214,6 +213,7 @@ function ClubRow({ club, onOpen, onJoin }) {
         <p className="text-sm font-semibold text-(--color-silver) truncate">{club.name}</p>
         <p className="text-xs text-(--color-text-muted) truncate">
           {club.member_count} member{club.member_count === 1 ? "" : "s"}
+          {!club.is_public && " · private"}
           {club.league_count > 0 && ` · ${club.league_count} league${club.league_count === 1 ? "" : "s"}`}
           {club.description && ` · ${club.description}`}
         </p>

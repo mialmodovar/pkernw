@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import Avatar from "../components/Avatar";
 import api from "../api/http";
+import ClubMembers from "../components/lobby/ClubMembers";
+import ClubSettings from "../components/lobby/ClubSettings";
 import ScoringEditor from "../components/lobby/ScoringEditor";
+import { leaveState } from "../components/lobby/clubRoles";
 import { describeScheme } from "../components/lobby/leagueScoring";
+import useAuthStore from "../store/authStore";
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
@@ -70,6 +73,7 @@ function StandingsTable({ rows, empty = "Nothing played yet. The table fills in 
 export default function ClubPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [club, setClub] = useState(null);
   const [leagueId, setLeagueId] = useState(null);
   const [seasonId, setSeasonId] = useState(null);
@@ -80,6 +84,8 @@ export default function ClubPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [history, setHistory] = useState([]);
   const [joining, setJoining] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const [editingLeague, setEditingLeague] = useState(false);
 
   const loadClub = useCallback(async () => {
     try {
@@ -125,8 +131,11 @@ export default function ClubPage() {
 
   useEffect(() => { loadTable(); }, [loadTable]);
 
-  const isStaff = club?.my_role === "owner" || club?.my_role === "staff";
+  // Asked of the server rather than worked out from the role: the superuser has
+  // no role in anybody's club and may still do everything in it.
+  const isStaff = Boolean(club?.can_manage);
   const isMember = Boolean(club?.my_role);
+  const leaving = club ? leaveState(club) : { can: false, reason: null };
 
   const join = async () => {
     setJoining(true);
@@ -143,6 +152,29 @@ export default function ClubPage() {
     () => club?.leagues.find((one) => one.id === leagueId) || null,
     [club, leagueId],
   );
+
+  const leave = async () => {
+    if (!window.confirm(`Leave ${club.name}? Your results stay in its tables.`)) return;
+    try {
+      await api.delete(`/clubs/${slug}/leave/`);
+      navigate("/clubs");
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || "Could not leave that club.");
+    }
+  };
+
+  const saveLeague = async (changes) => {
+    await api.patch(`/clubs/leagues/${leagueId}/`, changes);
+    setEditingLeague(false);
+    await loadClub();
+  };
+
+  const archiveLeague = async () => {
+    if (!window.confirm(`Shelve ${league.name}? Its tables stay readable, and it stops `
+      + "being offered for new nights. You can bring it back from here.")) return;
+    await saveLeague({ is_archived: true });
+    setLeagueId(null);
+  };
 
   const addLeague = async () => {
     const name = window.prompt("What is this league called?", "Sunday League");
@@ -185,6 +217,9 @@ export default function ClubPage() {
           <h1 className="text-xl font-bold text-(--color-silver) truncate">{club.name}</h1>
           <p className="text-xs text-(--color-text-muted)">
             {club.member_count} member{club.member_count === 1 ? "" : "s"}
+            {/* Worth saying on the club's own page: it is the difference between
+                a code being a convenience and being the only way in. */}
+            {!club.is_public && " · private"}
             {club.description && ` · ${club.description}`}
           </p>
         </div>
@@ -215,21 +250,45 @@ export default function ClubPage() {
             New tournament
           </button>
         )}
+        {isStaff && (
+          <button
+            onClick={() => setManaging((open) => !open)}
+            aria-pressed={managing}
+            className="btn-secondary px-3 py-1.5 rounded text-sm font-semibold transition-colors shrink-0"
+          >
+            {managing ? "Done" : "Manage"}
+          </button>
+        )}
       </header>
+
+      {/* Everything about running the club, folded away until asked for: most
+          visits are to read a table, not to rename anything. */}
+      {isStaff && managing && (
+        <ClubSettings
+          club={club}
+          onSaved={(updated) => setClub(updated)}
+          onDeleted={() => navigate("/clubs")}
+        />
+      )}
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          {club.leagues.filter((one) => !one.is_archived).map((one) => (
+          {/* Shelved leagues stay visible to whoever runs the club, or shelving
+              one would be a way of losing it: its tables are still there, and
+              somebody has to be able to reach them to bring it back. */}
+          {club.leagues.filter((one) => !one.is_archived || isStaff).map((one) => (
             <button
               key={one.id}
               onClick={() => { setLeagueId(one.id); setSeasonId(null); }}
+              title={one.is_archived ? "Shelved — not offered for new nights" : one.description || undefined}
               className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
                 one.id === leagueId
                   ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
                   : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
-              }`}
+              } ${one.is_archived && one.id !== leagueId ? "opacity-50" : ""}`}
             >
               {one.emoji} {one.name}
+              {one.is_archived && <span className="ml-1 opacity-70">· shelved</span>}
             </button>
           ))}
           {isStaff && (
@@ -261,6 +320,16 @@ export default function ClubPage() {
                   </option>
                 ))}
               </select>
+              {isStaff && (
+                <button
+                  onClick={() => setEditingLeague((open) => !open)}
+                  aria-pressed={editingLeague}
+                  title="Rename this league, or shelve it"
+                  className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"
+                >
+                  {editingLeague ? "Cancel" : "League"}
+                </button>
+              )}
               {isStaff && table?.season?.is_open && (
                 <>
                   <button
@@ -284,6 +353,15 @@ export default function ClubPage() {
                 </span>
               )}
             </div>
+
+            {editingLeague && (
+              <LeagueEditor
+                league={league}
+                onSave={saveLeague}
+                onArchive={archiveLeague}
+                onRestore={() => saveLeague({ is_archived: false })}
+              />
+            )}
 
             {editingScoring && draftScoring && (
               <div className="panel rounded-lg p-3 space-y-3">
@@ -373,32 +451,103 @@ export default function ClubPage() {
         )}
       </section>
 
-      <section className="panel rounded-lg p-4">
-        <h2 className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-2">Members</h2>
-        <div className="flex flex-wrap gap-2">
-          {club.members.map((member) => (
-            <span
-              key={member.username}
-              title={`${member.username} · ${member.role}`}
-              className="panel-raised rounded-full pl-1 pr-2.5 py-1 flex items-center gap-1.5 text-xs"
-            >
-              <Avatar
-                url={member.avatar_url}
-                emoji={member.avatar_emoji}
-                name={member.username}
-                className="w-6 h-6 rounded-full shrink-0"
-                emojiClassName="text-sm"
-              />
-              <span className="text-(--color-silver)">{member.display_name || member.username}</span>
-              {member.role !== "member" && (
-                <span className="text-[9px] uppercase tracking-wide text-(--color-highlight-text)">
-                  {member.role}
-                </span>
-              )}
-            </span>
-          ))}
+      <ClubMembers club={club} myUsername={user?.username} onChanged={loadClub} />
+
+      {/* On the way out. An owner is told to hand the club over rather than
+          offered a button that the server would refuse. */}
+      {isMember && (
+        <div className="flex items-center justify-end gap-3 pb-2">
+          {leaving.reason && (
+            <span className="text-[11px] text-(--color-text-muted)">{leaving.reason}</span>
+          )}
+          <button
+            type="button"
+            onClick={leave}
+            disabled={!leaving.can}
+            className="px-3 py-1.5 rounded text-xs font-semibold text-(--color-text-muted)
+                       hover:text-(--color-accent-link) transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Leave club
+          </button>
         </div>
-      </section>
+      )}
     </div>
+  );
+}
+
+/** Renaming a league, changing its face, or shelving it. */
+function LeagueEditor({ league, onSave, onArchive, onRestore }) {
+  const [name, setName] = useState(league.name);
+  const [emoji, setEmoji] = useState(league.emoji);
+  const [description, setDescription] = useState(league.description || "");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await onSave({ name: name.trim(), emoji, description: description.trim() });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="panel rounded-lg p-3 space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={emoji}
+          onChange={(event) => setEmoji(event.target.value)}
+          aria-label="League emoji"
+          className="input-field rounded px-2 py-1.5 text-lg w-14 text-center transition-colors"
+        />
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          aria-label="League name"
+          className="input-field rounded px-3 py-1.5 text-sm flex-1 min-w-40 transition-colors"
+        />
+      </div>
+      <input
+        value={description}
+        maxLength={200}
+        placeholder="What this league is for"
+        onChange={(event) => setDescription(event.target.value)}
+        aria-label="League description"
+        className="input-field w-full rounded px-3 py-1.5 text-sm transition-colors"
+      />
+      <div className="flex items-center justify-between gap-2">
+        {league.is_archived ? (
+          <button
+            type="button"
+            onClick={onRestore}
+            title="Run it again — it goes back to being offered for new nights"
+            className="px-2.5 py-1 rounded text-xs font-semibold text-(--color-highlight-text)
+                       hover:underline transition-colors"
+          >
+            Bring it back
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onArchive}
+            title="Keep its tables, stop running it"
+            className="px-2.5 py-1 rounded text-xs font-semibold text-(--color-text-muted)
+                       hover:text-(--color-accent-link) transition-colors"
+          >
+            Shelve league
+          </button>
+        )}
+        <button
+          type="submit"
+          disabled={busy || name.trim().length < 2}
+          className="btn-accent px-4 py-1.5 rounded text-xs font-semibold transition-colors
+                     disabled:opacity-50"
+        >
+          Save league
+        </button>
+      </div>
+    </form>
   );
 }

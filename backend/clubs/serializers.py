@@ -4,7 +4,7 @@ from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 
 from .models import Club, League, Membership, Season
-from .permissions import role_in
+from .permissions import is_club_owner, is_club_staff, role_in
 from .scoring import normalize_scheme
 
 
@@ -89,11 +89,29 @@ class ClubListSerializer(serializers.ModelSerializer):
     member_count = serializers.SerializerMethodField()
     my_role = serializers.SerializerMethodField()
     league_count = serializers.SerializerMethodField()
+    # What the reader may actually do here, answered by the same functions the
+    # endpoints enforce with. Not derivable from my_role: the superuser is a
+    # member of nothing and may do everything, so a page that worked its buttons
+    # out from the role would hide every control from the one account that can
+    # always use them.
+    can_manage = serializers.SerializerMethodField()
+    can_own = serializers.SerializerMethodField()
 
     class Meta:
         model = Club
         fields = ("id", "name", "slug", "emoji", "description", "is_public",
-                  "member_count", "league_count", "my_role", "created_at")
+                  "member_count", "league_count", "my_role", "can_manage", "can_own",
+                  "created_at")
+
+    def _user(self):
+        request = self.context.get("request")
+        return request.user if request else None
+
+    def get_can_manage(self, club):
+        return is_club_staff(self._user(), club)
+
+    def get_can_own(self, club):
+        return is_club_owner(self._user(), club)
 
     def get_member_count(self, club):
         return club.memberships.count()
@@ -116,12 +134,31 @@ class ClubDetailSerializer(ClubListSerializer):
         fields = ClubListSerializer.Meta.fields + ("members", "leagues", "invite_code")
 
     def get_invite_code(self, club):
-        request = self.context.get("request")
-        if request and role_in(request.user, club) is not None:
+        user = self._user()
+        if role_in(user, club) is not None or is_club_staff(user, club):
             return club.invite_code
         # A code handed to somebody outside the club would make every private
         # club public to anybody who could see it existed.
         return None
+
+
+class LeagueWriteSerializer(serializers.ModelSerializer):
+    """Renaming a league, or shelving it.
+
+    Archived rather than deleted: a league that is over still has seasons whose
+    tables people played for, and those are not a thing to throw away because
+    the club has stopped running it.
+    """
+
+    class Meta:
+        model = League
+        fields = ("name", "emoji", "description", "is_archived")
+
+    def validate_name(self, value):
+        name = value.strip()
+        if len(name) < 2:
+            raise serializers.ValidationError("Give the league a name.")
+        return name
 
 
 class ClubWriteSerializer(serializers.ModelSerializer):

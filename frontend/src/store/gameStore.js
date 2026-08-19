@@ -118,6 +118,14 @@ const useGameStore = create((set) => ({
   // A Spin n Go's drawn prize: {stake_coins, multiplier, prize_coins}, or null
   // at a tournament table. Everything the format looks like hangs off this.
   spin: null,
+  // Which tournament the live state belongs to, stamped by reset when a table
+  // is opened. Only the memory below needs it, but it needs it badly: a hand
+  // remembered from one table must never be shown against another.
+  tournamentId: null,
+  // The last hand dealt to you, kept after the table is left so the shortcut
+  // back to it can show what you are holding. Deliberately outside reset: the
+  // whole point is that it survives leaving the page.
+  lastHand: null,
   // Who is ready to start, and how many seats there are to be ready. The count
   // exists so the overlay can say 3/5 without having to work out which of the
   // players it can see are actually seated.
@@ -257,6 +265,11 @@ const useGameStore = create((set) => ({
           street: data.street || null,
           handNumber: data.hand_number || 0,
           holeCards: data.hole_cards && data.hole_cards.length ? data.hole_cards : s.holeCards,
+          // A reconnect mid-hand is the other way your hand arrives, and the
+          // shortcut back to the table should know about it too.
+          ...(data.hole_cards && data.hole_cards.length
+            ? { lastHand: { tournamentId: s.tournamentId, cards: data.hole_cards, at: Date.now() } }
+            : {}),
           currentTableNumber: data.current_table_number ?? s.currentTableNumber,
           currentTableId: data.current_table_id ?? s.currentTableId,
           tableCount: data.table_count ?? s.tableCount,
@@ -364,7 +377,10 @@ const useGameStore = create((set) => ({
         break;
 
       case "hole_cards":
-        set({ holeCards: data.cards || [] });
+        set((s) => ({
+          holeCards: data.cards || [],
+          lastHand: { tournamentId: s.tournamentId, cards: data.cards || [], at: Date.now() },
+        }));
         break;
 
       case "hand_strength":
@@ -884,8 +900,12 @@ const useGameStore = create((set) => ({
     }
   },
 
-  reset: () =>
+  reset: (tournamentId = null) =>
     set({
+      tournamentId,
+      // Cleared, or a tournament table opened after a Spin n Go would keep its
+      // violet felt and print a prize nobody is playing for.
+      spin: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,

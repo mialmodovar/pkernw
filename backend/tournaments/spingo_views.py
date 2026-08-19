@@ -91,15 +91,73 @@ def _tier_payload(stake):
     }
 
 
+# How many of your own games to look back over, and how many record draws to
+# keep on the board. Ten is an evening; three is a podium.
+HISTORY_LENGTH = 10
+TOP_LENGTH = 3
+
+
+def _finished_payload(tournament, *, me=None):
+    """A game that is over, as one line of history.
+
+    Everything printed comes off rows already loaded — the winner's seat and, if
+    they were in it, the reader's own — so a list of ten costs one query for the
+    games and one for their seats.
+    """
+    seats = list(tournament.players.all())
+    winner = next((seat for seat in seats if seat.finish_position == 1), None)
+    mine = next((seat for seat in seats if seat.user_id == getattr(me, "id", None)), None)
+    return {
+        "id": tournament.id,
+        "stake": tournament.buy_in_coins,
+        "multiplier": tournament.spin_multiplier,
+        "prize_coins": spingo.prize_coins(tournament.buy_in_coins, tournament.spin_multiplier),
+        "winner": _seat_face(winner) if winner is not None else None,
+        "finished_at": tournament.finished_at or tournament.started_at,
+        # Where you came, when you were in it at all. The board of record draws
+        # is everybody's, so this is null on most of those rows.
+        "my_finish": mine.finish_position if mine is not None else None,
+        "i_won": bool(mine is not None and mine.finish_position == 1),
+    }
+
+
+def _finished_games(queryset, limit, *order):
+    """Finished Spin n Gos, ordered then cut — a slice cannot be reordered."""
+    return (
+        queryset.filter(format="spingo", status="finished", spin_multiplier__gt=0)
+        .prefetch_related("players__user__profile", "players__user__avatar_image")
+        .order_by(*order)
+        [:limit]
+    )
+
+
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def spingo_lobby(request):
-    """The tiers, what is waiting in them, and where your own seat is."""
+    """The tiers, what is waiting in them, your own seat, and what has happened.
+
+    The history and the record board are here rather than behind endpoints of
+    their own because they are read together, on one poll, by one screen — and a
+    lobby that takes three requests to draw is three chances to draw half of it.
+    """
     my_game = _my_live_game(request.user)
+
+    mine_finished = _finished_games(
+        Tournament.objects.filter(players__user=request.user), HISTORY_LENGTH,
+        "-finished_at", "-id",
+    )
+    # The biggest draws anybody has had. What makes the format worth a look is
+    # that the hundred-times is real, and a list of them is the proof.
+    biggest = _finished_games(
+        Tournament.objects.all(), TOP_LENGTH, "-spin_multiplier", "-finished_at",
+    )
+
     return Response({
         "tiers": [_tier_payload(stake) for stake in spingo.STAKES],
         "my_game": _game_payload(my_game) if my_game is not None else None,
         "balance": balance_of(request.user),
+        "history": [_finished_payload(game, me=request.user) for game in mine_finished],
+        "top": [_finished_payload(game, me=request.user) for game in biggest],
     })
 
 

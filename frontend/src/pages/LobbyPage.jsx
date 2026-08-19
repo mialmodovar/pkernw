@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
@@ -23,19 +23,26 @@ const LOBBY_TABS = [
 ];
 
 /**
- * Watch your own Spin n Go and leave for the table when it fires.
+ * Watch your own Spin n Go and leave for the table the moment it fires.
  *
  * Kept here rather than inside the Spin n Go tab, because you can sit down and
  * then go back to reading the tournament list — and the game starts dealing
- * whether or not that tab is the one on screen. The tournament list has
- * useAutoOpenTable for the same reason; a queue that has filled up is the same
- * moment, arrived at from a different page.
+ * whether or not that tab is the one on screen.
+ *
+ * Strictly on the change from waiting to dealing. Sending you to the table
+ * because you are *in* a running game is the mistake this used to make: it made
+ * the lobby unreachable for as long as the game lasted, since every poll took
+ * you straight back. Opening the app mid-game is a different case and belongs to
+ * useAutoOpenTable, which spends its redirect once; walking back here on purpose
+ * has TableShortcut for a way back and no argument about it.
  */
 function useSpinGoWatch({ user }) {
   const navigate = useNavigate();
   const { myGame, fetchTiers } = useSpinGoStore();
   const waiting = myGame?.status === "lobby";
-  const running = myGame != null && myGame.status !== "lobby" ? myGame.id : null;
+  const status = myGame?.status ?? null;
+  const gameId = myGame?.id ?? null;
+  const previous = useRef({ id: null, status: null });
 
   useEffect(() => {
     if (!user) return;
@@ -54,10 +61,17 @@ function useSpinGoWatch({ user }) {
   }, [user, fetchTiers, waiting]);
 
   useEffect(() => {
+    const before = previous.current;
+    previous.current = { id: gameId, status };
+    // The third player just sat down while you were looking at this page. Any
+    // other combination — including finding yourself already in a running game —
+    // is not a moment, and must not move you.
+    const justFired = gameId != null && gameId === before.id
+      && before.status === "lobby" && status === "running";
     // Replaced rather than pushed, so "back" from the table is the lobby you
     // were looking at and not a bounce straight back to the felt.
-    if (running != null) navigate(`/tournament/${running}/play`, { replace: true });
-  }, [running, navigate]);
+    if (justFired) navigate(`/tournament/${gameId}/play`, { replace: true });
+  }, [gameId, status, navigate]);
 }
 
 export default function LobbyPage() {

@@ -19,6 +19,10 @@ import useWalletStore from "./walletStore";
 const useSpinGoStore = create((set, get) => ({
   tiers: [],
   myGame: null,
+  // Your own finished games, newest first, and the biggest draws anybody has
+  // had. Both arrive on the same poll as the tiers — one screen, one request.
+  history: [],
+  top: [],
   loading: false,
   error: "",
   // Which stake is mid-request, so only that card's button goes quiet.
@@ -29,6 +33,8 @@ const useSpinGoStore = create((set, get) => ({
     set({
       ...(data.tiers ? { tiers: data.tiers } : {}),
       ...("my_game" in data ? { myGame: data.my_game } : {}),
+      ...(data.history ? { history: data.history } : {}),
+      ...(data.top ? { top: data.top } : {}),
     });
   },
 

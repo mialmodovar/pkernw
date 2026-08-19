@@ -20,6 +20,7 @@ import { useTurnAlert } from "../components/game/useTurnAlert";
 import { useTimeoutAlert } from "../components/game/useTimeoutAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
+import { markArrivedAtTable } from "../components/lobby/autoOpenTable";
 import BreakOverlay from "../components/game/BreakOverlay";
 import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
 import HandReview from "../components/game/HandReview";
@@ -98,7 +99,12 @@ export default function GamePage() {
 
   useEffect(() => {
     if (sandbox) return undefined;
-    reset();
+    // You are at a table. Anything that would later "take you to your table" is
+    // from here on a drag backwards, so the arrival redirect is spent.
+    markArrivedAtTable();
+    // Stamped with the tournament, so the hand this table deals is remembered
+    // against the right game once the page is left again.
+    reset(id);
     connect(id, watching != null ? { spectateTable: watching } : {});
     const unsub = onMessage(handleEvent);
     const unsubStatus = onStatus(setConnectionStatus);
@@ -141,6 +147,14 @@ export default function GamePage() {
   useEffect(() => {
     if (lastElimination && !sandbox) loadTournament();
   }, [sandbox, lastElimination, loadTournament]);
+
+  // The prizes are settled at the moment the tournament ends, so a detail
+  // fetched a few seconds earlier does not have them. Read it again rather than
+  // waiting for the next poll: the complete screen is drawn from this, and a
+  // winner should not watch their own prize arrive late.
+  useEffect(() => {
+    if (standings && !sandbox) loadTournament();
+  }, [sandbox, standings, loadTournament]);
 
   // A tournament that was already over when the table was opened has no hand to
   // play or watch, only a result — send them back rather than seat them at an

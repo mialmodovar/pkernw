@@ -431,7 +431,7 @@ export default function TournamentSetupPage() {
                     <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
                     <span className="text-[#d9c07a] font-semibold">
                       {row.percentage}%
-                      {potCents > 0 && (
+                      {(potCents > 0 || potCoins > 0) && (
                         <span className="text-(--color-text-muted) font-normal ml-2">
                           {payoutLabel(tournament, row, entries)}
                         </span>

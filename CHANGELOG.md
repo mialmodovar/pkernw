@@ -22,6 +22,26 @@ remembering.
   The table looks like a different game because it is one: a smaller, rounder
   three-seat felt in violet with a gold rim, the drawn prize written on the felt
   for the whole game, and the multiplier landing on a reel before the first hand.
+- **A way back to the table, and a way out of it.** Being in a game used to mean
+  the lobby was unreachable: every page that knew about your tournament sent you
+  straight back to the felt, on every refresh, for as long as the game lasted.
+  You are now only taken to the table when there is a moment worth taking you to
+  — you opened the app with a game already running, or the one you were waiting
+  on has just started dealing — and the rest of the time you can go and read the
+  lobby. A button pinned to the corner of every other page takes you back, says
+  which game it is, and shows the hand you were holding when you left, for as
+  long as it is still recent enough to be the hand.
+- **The end of a Spin n Go reads like the end of a tournament.** A GIF for how it
+  went, the multiplier and the coins beside it, and never a percentage: a share
+  is a rule for splitting a pot, and what people want at the end is the number
+  that landed in their wallet. The finish screen for a coin tournament now says
+  coins throughout — the payout column, your own result and the standings — read
+  from the ledger once it settles rather than recomputed.
+- **The Spin n Go lobby remembers.** Under the tables: your last ten games with
+  what each one came to and your net across them, and beside it the three biggest
+  spins anybody in the app has landed — nickname, multiplier and prize. The
+  hundred-times is what makes the format worth playing, and a board of them is
+  the proof it happens.
 - **Coins buy you into a tournament that has no euro prize pool.** A tournament
   is now played for one currency or the other, and there is no third option: a
   game with nothing at stake is a game nobody folds in. Euros work exactly as

@@ -146,6 +146,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
     # What to print. `username` stays the key everything is filed under.
     display_name = serializers.SerializerMethodField()
     prize_cents = serializers.SerializerMethodField()
+    prize_coins = serializers.SerializerMethodField()
     bounty_prize_cents = serializers.SerializerMethodField()
     # The face, so a list of names in the tournament lobby reads like the table
     # it becomes. Both come out of maps the parent builds — a lookup per row
@@ -176,6 +177,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "bounty_won_cents",
             "knockouts",
             "prize_cents",
+            "prize_coins",
             "bounty_prize_cents",
         )
 
@@ -196,6 +198,16 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
         one query rather than one per seat.
         """
         return self.context.get("prizes_by_user", {}).get(player.user_id, (0, 0))[0]
+
+    def get_prize_coins(self, player):
+        """The coins this player was actually paid, once the game settled.
+
+        The coin ledger rather than the percentage: a share is a rule for
+        splitting a pot and this is what landed in the wallet, which for a Spin
+        n Go is the only figure that means anything — the pot was a draw, not the
+        buy-ins. Same one-map-per-list trick as the cents above.
+        """
+        return self.context.get("coin_prizes_by_user", {}).get(player.user_id, 0)
 
     def get_bounty_prize_cents(self, player):
         """The knockout half of that prize, once settled.
@@ -406,6 +418,9 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
         from .models import LedgerEntry
 
         from accounts.models import AvatarImage, Profile
+        from sidegames.models import CoinLedger
+
+        from .coinbank import stake_memo
 
         prizes = {
             user_id: (prize_cents, bounty_cents)
@@ -413,6 +428,14 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
             .filter(tournament=tournament)
             .values_list("user_id", "prize_cents", "bounty_prize_cents")
         }
+        # The coin half of the same question. Only ever a handful of rows — one
+        # per paid place — and skipped entirely for a game played for euros.
+        coin_prizes = {}
+        if (tournament.buy_in_coins or 0) > 0:
+            for user_id, amount in CoinLedger.objects.filter(
+                reason="payout", memo=stake_memo(tournament.id),
+            ).values_list("user_id", "amount"):
+                coin_prizes[user_id] = coin_prizes.get(user_id, 0) + amount
         # The user and their profile come with the row rather than being
         # fetched per seat — display_name reaches for both, so a fifteen-handed
         # lobby was thirty queries every time it refreshed, which it does every
@@ -430,6 +453,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
             context={
                 **self.context,
                 "prizes_by_user": prizes,
+                "coin_prizes_by_user": coin_prizes,
                 "emoji_by_user": emoji,
                 "stamp_by_user": stamps,
             },

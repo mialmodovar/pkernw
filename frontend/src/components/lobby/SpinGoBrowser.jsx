@@ -3,6 +3,7 @@ import { useState } from "react";
 import useSpinGoStore from "../../store/spinGoStore";
 import useWalletStore from "../../store/walletStore";
 import PlayerFaces from "./PlayerFaces";
+import { drawLabel, historyNet, myResult, netLabel, winnerName } from "./spinGoHistory";
 import { prizeRows, seatCounts, tierAction, tierBlurb } from "./spinGoTiers";
 
 /**
@@ -18,7 +19,7 @@ import { prizeRows, seatCounts, tierAction, tierBlurb } from "./spinGoTiers";
  * and most of the time you are here to sit down.
  */
 export default function SpinGoBrowser({ onOpenTable }) {
-  const { tiers, myGame, loading, error, sit, leave, sitting } = useSpinGoStore();
+  const { tiers, myGame, history, top, loading, error, sit, leave, sitting } = useSpinGoStore();
   const balance = useWalletStore((s) => s.balance);
   const [oddsOpen, setOddsOpen] = useState(null);
 
@@ -63,10 +64,15 @@ export default function SpinGoBrowser({ onOpenTable }) {
                 <button
                   type="button"
                   disabled={!action.enabled || busy}
-                  onClick={() => {
+                  onClick={async () => {
                     if (action.kind === "leave") return leave();
                     if (action.kind === "open") return onOpenTable?.(myGame.id);
-                    return sit(tier.stake);
+                    // Whoever fills the table is taken to it there and then. The
+                    // other two learn from their next poll — see useSpinGoWatch,
+                    // which fires on the change and never on the state.
+                    const game = await sit(tier.stake);
+                    if (game?.status === "running") onOpenTable?.(game.id);
+                    return game;
                   }}
                   className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
                     action.enabled && !busy
@@ -117,6 +123,105 @@ export default function SpinGoBrowser({ onOpenTable }) {
       </div>
 
       {error && <p className="text-xs text-[#c76b7a]">{error}</p>}
+
+      {/* Underneath: what happened to you, and what the format is capable of.
+          Side by side, because they answer each other — the record board is the
+          reason the column of lost stakes on the left is worth playing through. */}
+      <div className="grid gap-4 md:grid-cols-2 pt-2">
+        <HistoryPanel rows={history} />
+        <RecordPanel rows={top} />
+      </div>
     </div>
+  );
+}
+
+/** Your own last games, newest first, with what they came to. */
+function HistoryPanel({ rows = [] }) {
+  const net = historyNet(rows);
+  return (
+    <section className="panel-raised rounded-xl p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+          Your last games
+        </h2>
+        {rows.length > 0 && (
+          <span
+            title={`Across the ${rows.length} games listed`}
+            className={`text-xs font-semibold tabular-nums ${
+              net > 0 ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+            }`}
+          >
+            {netLabel(net)}
+          </span>
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-(--color-text-muted) mt-2">
+          Nothing yet. Sit at a table above.
+        </p>
+      ) : (
+        <ul className="mt-2 divide-y divide-[rgba(196,178,165,0.12)]">
+          {rows.map((row) => (
+            <li key={row.id} className="py-1.5 flex items-center gap-2 text-xs">
+              <span className={`w-10 shrink-0 font-semibold ${
+                row.i_won ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+              }`}>
+                {myResult(row)}
+              </span>
+              <span className="text-(--color-text-muted) tabular-nums shrink-0">
+                🪙 {row.stake}
+              </span>
+              <span className="flex-1 min-w-0 truncate text-(--color-silver) tabular-nums">
+                {drawLabel(row)}
+              </span>
+              {/* Whoever took it, when it was not you. */}
+              {!row.i_won && (
+                <span className="text-(--color-text-muted) truncate max-w-[7rem]">
+                  {winnerName(row)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The three biggest draws in the app, whoever had them. */
+function RecordPanel({ rows = [] }) {
+  const medals = ["🥇", "🥈", "🥉"];
+  return (
+    <section className="panel-raised rounded-xl p-4">
+      <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+        Biggest spins
+      </h2>
+
+      {rows.length === 0 ? (
+        <p className="text-xs text-(--color-text-muted) mt-2">
+          No spin has landed yet. The first hundred-times is going spare.
+        </p>
+      ) : (
+        <ol className="mt-2 divide-y divide-[rgba(196,178,165,0.12)]">
+          {rows.map((row, index) => (
+            <li key={row.id} className="py-1.5 flex items-center gap-2 text-xs">
+              <span className="shrink-0" aria-hidden="true">{medals[index] || "·"}</span>
+              <span className={`flex-1 min-w-0 truncate ${
+                row.i_won ? "text-(--color-highlight-text) font-semibold" : "text-(--color-silver)"
+              }`}>
+                {winnerName(row)}{row.i_won && " (you)"}
+              </span>
+              <span className="text-(--color-highlight-text) font-semibold tabular-nums shrink-0">
+                {row.multiplier}×
+              </span>
+              <span className="text-(--color-text-muted) tabular-nums shrink-0 w-20 text-right">
+                🪙 {Number(row.prize_coins || 0).toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }

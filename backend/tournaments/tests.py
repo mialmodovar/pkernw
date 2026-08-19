@@ -3917,3 +3917,129 @@ class CoinSettlementTests(TestCase):
 		# game keeps a buy-in back — which is what pays for the hundreds.
 		self.assertEqual(moved, -25)
 		self.assertEqual(self._balance("ana"), 125)
+
+
+class SpinGoHistoryTests(APITestCase):
+	"""What the lobby says has already happened."""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=name, password="secret123")
+			for name in ("hana", "hbea", "hcaio")
+		}
+		self.client.force_authenticate(self.players["hana"])
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _finished(self, multiplier, stake=25, winner="hana", include=("hana", "hbea", "hcaio")):
+		from tournaments import spingo
+
+		game = Tournament.objects.create(
+			host=self.players[include[0]],
+			**{**spingo.tournament_defaults(stake), "status": "finished",
+			   "spin_multiplier": multiplier, "finished_at": timezone.now()},
+		)
+		for index, name in enumerate(include):
+			TournamentPlayer.objects.create(
+				tournament=game, user=self.players[name], seat=index, chips=0,
+				finish_position=1 if name == winner else index + 2,
+				is_eliminated=name != winner,
+			)
+		return game
+
+	def _lobby(self):
+		return self.client.get(reverse("spingo-lobby")).data
+
+	def test_your_own_finished_games_come_back_newest_first(self):
+		self._finished(2)
+		big = self._finished(25)
+
+		history = self._lobby()["history"]
+		self.assertEqual([row["multiplier"] for row in history], [25, 2])
+		self.assertEqual(history[0]["id"], big.id)
+		self.assertEqual(history[0]["prize_coins"], 625)
+		self.assertTrue(history[0]["i_won"])
+		self.assertEqual(history[0]["my_finish"], 1)
+		self.assertEqual(history[0]["winner"]["username"], "hana")
+
+	def test_a_game_you_were_not_in_is_not_your_history(self):
+		self._finished(5, winner="hbea", include=("hbea", "hcaio"))
+
+		self.assertEqual(self._lobby()["history"], [])
+
+	def test_the_board_keeps_the_three_biggest_draws_anybody_has_had(self):
+		self._finished(2)
+		self._finished(100, winner="hbea", include=("hbea", "hcaio"))
+		self._finished(10)
+		self._finished(50, winner="hcaio", include=("hcaio", "hbea"))
+
+		top = self._lobby()["top"]
+		self.assertEqual([row["multiplier"] for row in top], [100, 50, 10])
+		self.assertEqual(top[0]["winner"]["username"], "hbea")
+		# Somebody else's record is still somebody else's.
+		self.assertFalse(top[0]["i_won"])
+		self.assertTrue(top[2]["i_won"])
+
+	def test_a_game_that_never_drew_is_in_neither_list(self):
+		# A queue that was deleted mid-fill leaves nothing behind, but a row that
+		# somehow finished without a draw has no prize to report either.
+		self._finished(0)
+
+		lobby = self._lobby()
+		self.assertEqual(lobby["history"], [])
+		self.assertEqual(lobby["top"], [])
+
+
+class CoinPrizeReportingTests(APITestCase):
+	"""What the finish screen is drawn from."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="p_host", password="secret123")
+		self.rival = User.objects.create_user(username="p_rival", password="secret123")
+		for user in (self.host, self.rival):
+			from sidegames.economy import wallet_for
+			wallet_for(user)
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def test_a_settled_coin_game_reports_what_each_player_was_paid(self):
+		from tournaments import spingo
+		from tournaments.coinbank import settle_tournament_coins
+
+		game = Tournament.objects.create(
+			host=self.host,
+			**{**spingo.tournament_defaults(25), "status": "finished",
+			   "spin_multiplier": 10, "finished_at": timezone.now()},
+		)
+		TournamentPlayer.objects.create(
+			tournament=game, user=self.host, seat=0, chips=4500, finish_position=1,
+		)
+		TournamentPlayer.objects.create(
+			tournament=game, user=self.rival, seat=1, chips=0, finish_position=2, is_eliminated=True,
+		)
+		settle_tournament_coins(game)
+
+		detail = self.client.get(reverse("tournament-detail", args=[game.id])).data
+		by_name = {player["username"]: player for player in detail["players"]}
+		# The winner's own figure, in the currency it was paid in — the screen
+		# has no business printing a percentage over a game that paid coins.
+		self.assertEqual(by_name["p_host"]["prize_coins"], 250)
+		self.assertEqual(by_name["p_host"]["prize_cents"], 0)
+		self.assertEqual(by_name["p_rival"]["prize_coins"], 0)
+		self.assertEqual(detail["spin_multiplier"], 10)
+		self.assertEqual(detail["buy_in_coins"], 25)
+
+	def test_a_euro_game_reports_no_coin_prizes(self):
+		game = Tournament.objects.create(
+			host=self.host, name="Money", status="finished", buy_in_cents=1000,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+		)
+		TournamentPlayer.objects.create(
+			tournament=game, user=self.host, seat=0, chips=0, finish_position=1,
+		)
+
+		detail = self.client.get(reverse("tournament-detail", args=[game.id])).data
+		self.assertEqual(detail["players"][0]["prize_coins"], 0)

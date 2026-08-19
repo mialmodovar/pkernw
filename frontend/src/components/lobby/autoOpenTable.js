@@ -38,6 +38,19 @@ export function claimEntryRedirect() {
   return true;
 }
 
+/**
+ * Called by the table when it opens: you have arrived, by whatever route.
+ *
+ * Without this, the arrival redirect could still be unspent when you walk back
+ * to the lobby — the app that opened on the login page, say, and reached home
+ * with an empty list, which the hook rightly declines to conclude anything from.
+ * The first look at a loaded list would then be your trip *back* from the table,
+ * and it would bounce you straight to the felt. Arriving spends it.
+ */
+export function markArrivedAtTable() {
+  entryPendingFor = "claimed";
+}
+
 /** Test seam — the flag is deliberately per page load, not per mount. */
 export function resetEntryRedirect(pending = true) {
   entryPendingFor = pending ? "unclaimed" : "claimed";

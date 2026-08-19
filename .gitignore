@@ -32,3 +32,6 @@ dist-ssr/
 
 # Built frontend copied in for the single-service image
 backend/frontend_dist/
+
+# Database dumps pulled from Railway — real player data, never commit these.
+.db-dumps/

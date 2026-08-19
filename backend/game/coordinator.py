@@ -82,6 +82,11 @@ class MultiTableTournamentCoordinator:
         pay_side_bets: Optional[Callable[[list], Awaitable[dict]]] = None,
         level_index: int = 0,
         hands_in_level: int = 0,
+        # The highest hand number already on record for this tournament. Hands
+        # are numbered per tournament in the database, but the count lives on a
+        # table in memory, so a coordinator built for a tournament already in
+        # progress has to be told where the numbering had got to.
+        last_hand_number: int = 0,
         time_bank_seconds: int = 0,
         time_bank_refill_rule: str = "none",
         time_bank_refill_every_hands: Optional[int] = None,
@@ -149,6 +154,10 @@ class MultiTableTournamentCoordinator:
         # hand count that play had actually reached.
         self._level_index = max(0, min(level_index, max(0, len(levels) - 1)))
         self._hands_in_level = max(0, hands_in_level)
+        # Where a table starts counting when it has no predecessor to carry a
+        # number over from — which is every table of a tournament that is being
+        # picked up again rather than started.
+        self._last_hand_number = max(0, last_hand_number)
         self._hands_played = 0
         self._level_start_time = 0.0
         self._standings: List[EnginePlayer] = []
@@ -1042,7 +1051,11 @@ class MultiTableTournamentCoordinator:
                 max_seats=meta.get("max_seats", self.players_per_table),
                 players=players,
                 dealer_idx=0 if previous is None else min(previous.dealer_idx, max(0, len(players) - 1)),
-                hand_number=0 if previous is None else previous.hand_number,
+                # A brand-new table resumes the tournament's numbering rather
+                # than restarting it: a process restart mid-tournament used to
+                # deal "hand 1" again, so the finish screen — which reads the
+                # last hand number — reported a night of nineteen hands as two.
+                hand_number=self._last_hand_number if previous is None else previous.hand_number,
             )
             self._table_states.setdefault(table_number, {"community_cards": [], "pot": 0, "street": None, "hand_number": 0})
 

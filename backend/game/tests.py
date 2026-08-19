@@ -57,7 +57,7 @@ class CoordinatorHarness:
             "time_bank_seconds_remaining": time_bank_seconds_remaining,
         }
 
-    def _build_coordinator(self, records, *, players_per_table=3):
+    def _build_coordinator(self, records, *, players_per_table=3, last_hand_number=0):
         self.records = [dict(record) for record in records]
         self.assignments = []
         self.notifications = []
@@ -132,6 +132,7 @@ class CoordinatorHarness:
             persist_player_states=persist_player_states,
             take_side_bet_stake=take_side_bet_stake,
             pay_side_bets=pay_side_bets,
+            last_hand_number=last_hand_number,
         )
 
     def _sync_and_rebalance(self, coordinator):
@@ -151,6 +152,46 @@ class MultiTableTournamentCoordinatorTests(CoordinatorHarness, TestCase):
         self.assertEqual([table["table_number"] for table in coordinator.table_summaries()], [1, 2])
         self.assertEqual([table["player_count"] for table in coordinator.table_summaries()], [2, 2])
         self.assertEqual(self.assignments[-1]["active_table_numbers"], [1, 2])
+
+    def test_tables_start_numbering_hands_where_the_record_left_off(self):
+        """A tournament picked up again carries on counting.
+
+        The hand count lives on an in-memory table, so a restart mid-tournament
+        used to deal hand 1 for the second time — leaving two hands with the
+        same number and a finish screen, which reads the last number rather than
+        counting rows, calling a nineteen-hand game a two-hand one.
+        """
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            last_hand_number=17,
+        )
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 17)
+
+    def test_a_fresh_tournament_still_starts_at_hand_zero(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+        )
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 0)
+
+    def test_rebalanced_tables_keep_their_own_count(self):
+        """A table that already exists carries its own number, not the seed."""
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(4)],
+            players_per_table=3,
+            last_hand_number=17,
+        )
+        self._sync_and_rebalance(coordinator)
+        coordinator._tables[1].hand_number = 20
+
+        self._sync_and_rebalance(coordinator)
+
+        self.assertEqual(coordinator._tables[1].hand_number, 20)
 
     def test_spectator_snapshot_shows_a_table_without_its_hole_cards(self):
         coordinator = self._build_coordinator(

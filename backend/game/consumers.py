@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from django.db import transaction
+from django.db.models import Max
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.layers import get_channel_layer
 from django.contrib.auth.models import AnonymousUser, User
@@ -313,6 +314,23 @@ def _db_save_hand(tournament_id, data):
 def _db_set_progress(tournament_id, level_index, hands_in_level):
     Tournament.objects.filter(id=tournament_id).update(
         current_level_index=level_index, hands_in_level=hands_in_level,
+    )
+
+
+@database_sync_to_async
+def _db_get_last_hand_number(tournament_id):
+    """The highest hand number this tournament has on record, or 0 for a new one.
+
+    The hand count a table carries is in-memory state, so a tournament picked up
+    after a restart would otherwise deal its next hand as hand 1 — leaving two
+    hands numbered 1 in the same night and a finish screen, which reads the last
+    number rather than counting the rows, reporting a fraction of what was
+    played.
+    """
+    return (
+        Hand.objects.filter(tournament_id=tournament_id)
+        .aggregate(highest=Max("hand_number"))["highest"]
+        or 0
     )
 
 
@@ -1041,6 +1059,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             return
 
         levels = await _db_get_levels(self.tournament_id)
+        last_hand_number = await _db_get_last_hand_number(self.tournament_id)
         spingo = tournament.format == "spingo"
         coordinator = MultiTableTournamentCoordinator(
             tournament_id=self.tournament_id,
@@ -1089,6 +1108,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             pay_side_bets=_db_pay_side_bets,
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
+            last_hand_number=last_hand_number,
             # The drawn prize, carried to the table so it can be revealed there
             # and read again by anybody who reconnects mid-game.
             spin=spin_payload(tournament),

@@ -13,7 +13,7 @@ from collections import defaultdict
 from django.db import transaction
 
 from .bounties import BountyConfig, prize_pool_share_cents
-from .models import LedgerEntry, Settlement, Tournament
+from .models import DebtTransfer, LedgerEntry, Settlement, Tournament
 
 
 def settle_tournament(tournament):
@@ -74,6 +74,10 @@ def settle_tournament(tournament):
             )
             for user_id, stake in stakes.items()
         ])
+
+        # What this night added to the pile, paired off and written down while we
+        # are still inside the transaction that recorded it.
+        plan_transfers()
     return True
 
 
@@ -149,12 +153,106 @@ def suggested_transfers(current=None):
     return transfers
 
 
+def _promised():
+    """{user_id: cents} — what the promises still standing will bring each player.
+
+    Positive means promises are pointed at them, negative means they have
+    promised it to somebody. Sums to zero, since every promise has two ends.
+    """
+    promised = defaultdict(int)
+    for transfer in DebtTransfer.objects.all():
+        remaining = transfer.remaining_cents
+        if remaining:
+            promised[transfer.to_user_id] += remaining
+            promised[transfer.from_user_id] -= remaining
+    return promised
+
+
+def plan_transfers():
+    """Write down payments for debt that no promise covers yet.
+
+    Existing promises are left exactly as they are, however the balances have
+    moved since — that is the whole point of writing them down. What gets paired
+    off is the gap between where a player's balance actually stands and where the
+    promises already made would leave them, so a new night adds payments instead
+    of rewriting the ones people are already acting on.
+
+    Working from the gap rather than from the raw balance also copes with a
+    player who owed money last month and is up overall this month: the promise
+    they made still stands, and the winnings that cancel it arrive as somebody
+    else's promise to them rather than by quietly erasing it.
+    """
+    net = balances()
+    promised = _promised()
+
+    unpromised = {
+        user_id: net.get(user_id, 0) - promised.get(user_id, 0)
+        for user_id in set(net) | set(promised)
+    }
+    unpromised = {user_id: cents for user_id, cents in unpromised.items() if cents}
+
+    fresh = [
+        DebtTransfer(
+            from_user_id=transfer["from_user_id"],
+            to_user_id=transfer["to_user_id"],
+            amount_cents=transfer["amount_cents"],
+        )
+        for transfer in suggested_transfers(unpromised)
+    ]
+    return DebtTransfer.objects.bulk_create(fresh)
+
+
+def open_transfers():
+    """The payments still outstanding, in the order they were agreed."""
+    return [
+        {
+            "from_user_id": transfer.from_user_id,
+            "to_user_id": transfer.to_user_id,
+            "amount_cents": transfer.remaining_cents,
+        }
+        for transfer in DebtTransfer.objects.all()
+        if transfer.remaining_cents
+    ]
+
+
 def owed_between(from_user_id, to_user_id):
-    """How much the suggestion says one owes the other, in cents."""
+    """How much of what one promised the other is still outstanding, in cents."""
     return sum(
-        t["amount_cents"] for t in suggested_transfers()
-        if t["from_user_id"] == from_user_id and t["to_user_id"] == to_user_id
+        transfer.remaining_cents
+        for transfer in DebtTransfer.objects.filter(
+            from_user_id=from_user_id, to_user_id=to_user_id,
+        )
     )
+
+
+def apply_settlement(from_user_id, to_user_id, amount_cents):
+    """Record money received, against the promises it pays off.
+
+    Oldest debt first, so a part payment clears the thing they have owed longest.
+    Returns the Settlement, or None when it is more than is outstanding between
+    these two — which is the one thing the receiver must not be able to invent,
+    since the balance it would move belongs to somebody else.
+    """
+    with transaction.atomic():
+        transfers = list(
+            DebtTransfer.objects.filter(from_user_id=from_user_id, to_user_id=to_user_id)
+        )
+        if amount_cents > sum(transfer.remaining_cents for transfer in transfers):
+            return None
+
+        left = amount_cents
+        for transfer in transfers:
+            if left <= 0:
+                break
+            taken = min(left, transfer.remaining_cents)
+            if taken:
+                transfer.paid_cents += taken
+                transfer.save(update_fields=["paid_cents"])
+                left -= taken
+
+        return Settlement.objects.create(
+            from_user_id=from_user_id, to_user_id=to_user_id, amount_cents=amount_cents,
+        )
 
 
 def settle_finished(tournament_id):

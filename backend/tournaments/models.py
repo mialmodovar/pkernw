@@ -231,3 +231,47 @@ class Settlement(models.Model):
 
     def __str__(self):
         return f"{self.from_user.username} paid {self.to_user.username} {self.amount_cents}c"
+
+
+class DebtTransfer(models.Model):
+    """One agreed payment: who pays whom, decided once and then left alone.
+
+    Who owes whom is not in the results — the results say what each night cost
+    and paid each player, and somebody has to pair the losers off against the
+    winners. That pairing used to be worked out afresh on every read, which made
+    it move: recording one payment changed the balances it was derived from, so
+    the next read paired everybody up differently and told players who had
+    already handed over cash to pay somebody else instead.
+
+    So a pairing is written down. It is a promise between two people, and the
+    only thing that changes about it afterwards is how much of it has been paid.
+    New debt from a later night gets its own promises; it never re-opens these.
+    """
+
+    from_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debts_owed",
+    )
+    to_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debts_due",
+    )
+    amount_cents = models.IntegerField()
+    # Part payment is normal — somebody hands over a note and owes the change.
+    paid_cents = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    @property
+    def remaining_cents(self):
+        return max(0, self.amount_cents - self.paid_cents)
+
+    @property
+    def is_settled(self):
+        return self.remaining_cents == 0
+
+    def __str__(self):
+        return (
+            f"{self.from_user.username} owes {self.to_user.username} "
+            f"{self.remaining_cents}c of {self.amount_cents}c"
+        )

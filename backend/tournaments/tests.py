@@ -1457,6 +1457,87 @@ class LedgerTests(TestCase):
 
 		self.assertEqual({user: cents for user, cents in current.items() if cents}, {})
 
+	def _promises(self):
+		from tournaments.models import DebtTransfer
+		return {
+			(t.from_user.username, t.to_user.username): t.remaining_cents
+			for t in DebtTransfer.objects.select_related("from_user", "to_user")
+			if t.remaining_cents
+		}
+
+	def _three_way_night(self):
+		t = self._tournament(buy_in=1000)
+		self._seat(t, "ana", 0, 1)
+		self._seat(t, "bea", 1, 2)
+		self._seat(t, "caio", 2, 3)
+		self._settle(t)
+		return t
+
+	def test_settling_a_night_writes_the_promises_down(self):
+		self._three_way_night()
+
+		# Pot 3000: ana takes 2100, bea 900, caio nothing.
+		self.assertEqual(self._promises(), {("caio", "ana"): 1000, ("bea", "ana"): 100})
+
+	def test_paying_a_debt_leaves_everybody_elses_alone(self):
+		"""The bug: recording one payment used to re-pair everyone."""
+		from tournaments.ledger import apply_settlement
+		self._three_way_night()
+		before = self._promises()
+
+		apply_settlement(self.users["caio"].id, self.users["ana"].id, 1000)
+
+		after = self._promises()
+		# The paid promise is gone and nothing else moved — same pair, same amount.
+		self.assertEqual(after, {("bea", "ana"): before[("bea", "ana")]})
+
+	def test_a_part_payment_leaves_the_rest_of_that_promise(self):
+		from tournaments.ledger import apply_settlement
+		self._three_way_night()
+
+		apply_settlement(self.users["caio"].id, self.users["ana"].id, 400)
+
+		self.assertEqual(self._promises(), {("caio", "ana"): 600, ("bea", "ana"): 100})
+
+	def test_a_receiver_cannot_claim_more_than_is_promised(self):
+		from tournaments.ledger import apply_settlement
+		self._three_way_night()
+
+		self.assertIsNone(apply_settlement(self.users["bea"].id, self.users["ana"].id, 5000))
+		# Refused outright: nothing recorded, nothing moved.
+		self.assertEqual(self._promises(), {("caio", "ana"): 1000, ("bea", "ana"): 100})
+
+	def test_a_later_night_adds_promises_without_moving_the_old_ones(self):
+		"""A night that turns a debtor into a winner does not erase what they owe.
+
+		caio owes ana from the first night and wins the second. The promise he
+		already made stands; the money that cancels it reaches him as somebody
+		else's promise to him.
+		"""
+		self._three_way_night()
+
+		second = self._tournament(buy_in=1000)
+		self._seat(second, "caio", 0, 1)
+		self._seat(second, "ana", 1, 2)
+		self._seat(second, "bea", 2, 3)
+		self._settle(second)
+
+		promises = self._promises()
+		self.assertEqual(promises[("caio", "ana")], 1000)
+		self.assertEqual(promises[("bea", "ana")], 100)
+		# Everything owed still nets out to what the results say.
+		self._assert_promises_clear_the_balances()
+
+	def _assert_promises_clear_the_balances(self):
+		from tournaments.ledger import balances
+		from tournaments.models import DebtTransfer
+		net = dict(balances())
+		for transfer in DebtTransfer.objects.all():
+			remaining = transfer.remaining_cents
+			net[transfer.from_user_id] = net.get(transfer.from_user_id, 0) + remaining
+			net[transfer.to_user_id] = net.get(transfer.to_user_id, 0) - remaining
+		self.assertEqual({u: c for u, c in net.items() if c}, {})
+
 
 class SettlementEndpointTests(APITestCase):
 	def setUp(self):

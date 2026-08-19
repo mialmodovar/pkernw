@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import Avatar from "../Avatar";
 import useGameStore from "../../store/gameStore";
-import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
+import { levelIsEnding, levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "../lobby/EmojiPicker";
 import ThemeSettings from "../lobby/ThemeSettings";
@@ -196,6 +196,44 @@ function TournamentName({ name }) {
   );
 }
 
+/**
+ * How long this level has left, beside the level it belongs to.
+ *
+ * It used to sit at the far end of the bar, past the avatar, which put the
+ * question ("when do the blinds go up?") and its answer at opposite corners of
+ * the screen — and in a Spin n Go, where the levels are minutes long and the
+ * blinds climb fast, the number nobody could find was the one that decides
+ * whether you have time to wait for a hand. Reading the two together is the
+ * whole point, so they are one group now.
+ *
+ * What is left, not what has gone: a timed level says how long you have, and a
+ * level counted in hands answers the same question in its own units rather than
+ * making you subtract. The tally stays in the tooltip.
+ */
+function LevelClock({ level, remaining }) {
+  const label = levelRemainingLabel(level, remaining);
+  if (!label) return null;
+
+  const isTimed = level.duration_minutes != null;
+  const urgent = levelIsEnding(level, remaining);
+
+  return (
+    <span
+      className={`shrink-0 rounded px-1.5 py-0.5 font-mono font-semibold tabular-nums
+                  border border-(--color-border) ${
+        urgent ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+      }`}
+      title={
+        isTimed
+          ? "Time until the blinds go up"
+          : `Hand ${level.hands_in_level || 0} of ${level.duration_hands} — until the blinds go up`
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function BlindLevelBar({ name = null, controls = null, onHome = null }) {
   const level = useGameStore((s) => s.level);
   const remaining = useLevelCountdown();
@@ -213,7 +251,6 @@ export default function BlindLevelBar({ name = null, controls = null, onHome = n
     );
   }
 
-  const isTimed = level.duration_minutes != null;
   const isBreak = Boolean(level.is_break);
 
   return (
@@ -228,19 +265,11 @@ export default function BlindLevelBar({ name = null, controls = null, onHome = n
             : `Level ${level.blind_level_number || 1} - SB ${level.small_blind} / BB ${level.big_blind}`}
           {!isBreak && level.ante > 0 && <> / Ante {level.ante}</>}
         </span>
+        <LevelClock level={level} remaining={remaining} />
         {controls}
       </div>
       <div className="flex items-center gap-2 md:gap-3 ml-auto">
         <IdentityChip onHome={onHome} />
-        {/* What is left, not what has gone: a timed level says how long you
-            have, and a level counted in hands should answer the same question
-            rather than make you subtract. The tally is still in the tooltip. */}
-        <span
-          className="text-(--color-text-muted)"
-          title={isTimed ? undefined : `Hand ${level.hands_in_level || 0} of ${level.duration_hands}`}
-        >
-          {levelRemainingLabel(level, remaining)}
-        </span>
       </div>
     </div>
   );

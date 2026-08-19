@@ -46,6 +46,21 @@ export function formatClock(seconds) {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+/** Blinds about to move, and worth catching the eye of somebody mid-decision. */
+export const LEVEL_ENDING_SECONDS = 60;
+
+/**
+ * Whether the clock should read as urgent.
+ *
+ * Only a timed level can say this: a level counted in hands ends when the hand
+ * ends, so there is no last minute to warn anybody about.
+ */
+export function levelIsEnding(level, remainingSeconds) {
+  if (!level || level.duration_minutes == null) return false;
+  if (remainingSeconds == null) return false;
+  return remainingSeconds <= LEVEL_ENDING_SECONDS;
+}
+
 /**
  * How much of this level is left, however the level measures itself.
  *

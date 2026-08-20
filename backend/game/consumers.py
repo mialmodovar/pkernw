@@ -218,6 +218,50 @@ def _db_set_tournament_status(tournament_id, status):
 
 
 @database_sync_to_async
+def _db_open_mystery(tournament_id, draws):
+    """Cut the mystery pool into envelopes and write them down.
+
+    The pool is every entry's bounty, rebuys included and the entries of players
+    who busted long before this moment included too — they paid for a bounty and
+    it is in there. Counted here rather than in the engine because it is a
+    question about rows, and because the row is where the answer has to end up.
+
+    Idempotent: a pool already opened is returned as it stands rather than cut
+    again, so two callers cannot mint two pools out of the same buy-ins.
+    """
+    from django.db import transaction
+
+    from tournaments import mystery
+
+    with transaction.atomic():
+        tournament = Tournament.objects.select_for_update().filter(id=tournament_id).first()
+        if tournament is None:
+            return []
+        if tournament.mystery_opened_at is not None:
+            return list(tournament.mystery_envelopes or [])
+
+        entries = sum(
+            1 + (count or 0)
+            for count in tournament.players.values_list("rebuy_count", flat=True)
+        )
+        pool = mystery.pool_cents(tournament.bounty_cents or 0, entries)
+        envelopes = mystery.envelope_amounts(pool, draws)
+
+        tournament.mystery_envelopes = envelopes
+        tournament.mystery_opened_at = timezone.now()
+        tournament.save(update_fields=["mystery_envelopes", "mystery_opened_at"])
+        return envelopes
+
+
+@database_sync_to_async
+def _db_persist_mystery(tournament_id, envelopes):
+    """What is left in the pool after a draw. The row is the only copy."""
+    Tournament.objects.filter(id=tournament_id).update(
+        mystery_envelopes=[int(amount) for amount in envelopes],
+    )
+
+
+@database_sync_to_async
 def _db_settle_tournament(tournament_id):
     """Work out who owes whom, now that the results are final.
 
@@ -1088,6 +1132,16 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             allow_rebuys=tournament.allow_rebuys,
             max_rebuys=tournament.max_rebuys,
             rebuy_level=tournament.rebuy_level,
+            late_reg_level=tournament.late_reg_level,
+            # Mystery bounties: how many places pay, when the envelopes open,
+            # and the pool as the row has it — which after a restart is a pool
+            # already opened and partly drawn.
+            paid_places=len(tournament.payout_structure or []),
+            mystery_release=tournament.mystery_release,
+            mystery_envelopes=list(tournament.mystery_envelopes or []),
+            mystery_opened=tournament.mystery_opened_at is not None,
+            open_mystery=lambda draws: _db_open_mystery(self.tournament_id, draws),
+            persist_mystery=lambda envelopes: _db_persist_mystery(self.tournament_id, envelopes),
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,

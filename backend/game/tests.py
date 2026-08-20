@@ -2211,3 +2211,166 @@ class HandHistoryNamingTests(APITestCase):
             {action["display_name"] for action in detail["actions"]},
             {"The Host", "hh_plain"},
         )
+
+
+class BountyLiveTests(TransactionTestCase):
+    """Whole knockout tournaments, played over the socket, settled at the end.
+
+    The bounty arithmetic has unit tests either side of it — the split, the
+    ledger, the coordinator — and this is the wiring between them: real hands,
+    real busts, real splits when two people bust somebody at once, and then the
+    settlement that pays for it. What it checks is that every cent the buy-ins
+    put up comes back out again.
+    """
+
+    def tearDown(self):
+        _tournament_runners.clear()
+        _game_tasks.clear()
+
+    def _setup(self, *, bounty_mode, bounty_cents=1000, players=4, **extra):
+        from tournaments.models import BlindLevel
+
+        users = [
+            User.objects.create_user(username=f"ko_{bounty_mode}_{index}", password="x")
+            for index in range(players)
+        ]
+        tournament = Tournament.objects.create(
+            host=users[0], name=f"{bounty_mode} night", status="running",
+            starting_chips=1000, buy_in_cents=2000,
+            bounty_mode=bounty_mode, bounty_cents=bounty_cents,
+            max_players=players, players_per_table=players,
+            late_reg_level=0, allow_rebuys=False, max_rebuys=0, rebuy_level=0,
+            time_bank_seconds=5, showdown_seconds=2,
+            payout_structure=[
+                {"place": 1, "label": "1st", "percentage": 70},
+                {"place": 2, "label": "2nd", "percentage": 30},
+            ],
+            **extra,
+        )
+        # Blinds high enough against the stacks that the thing ends in a
+        # handful of hands rather than in real time.
+        BlindLevel.objects.bulk_create([
+            BlindLevel(
+                tournament=tournament, level_number=index + 1, is_break=False,
+                small_blind=sb, big_blind=bb, ante=0, duration_minutes=2,
+            )
+            for index, (sb, bb) in enumerate(((50, 100), (150, 300), (400, 800), (1000, 2000)))
+        ])
+        table = tournament.ensure_table(1)
+        starting_bounty = bounty_cents if bounty_mode in ("fixed", "progressive") else 0
+        for index, user in enumerate(users):
+            TournamentPlayer.objects.create(
+                tournament=tournament, user=user, table=table, seat=index, seat_at_table=index,
+                chips=tournament.starting_chips, time_bank_seconds_remaining=5,
+                bounty_cents=starting_bounty,
+            )
+        return tournament, users
+
+    async def _play_it_out(self, tournament, users, timeout=180):
+        comms = []
+        for user in users:
+            communicator = WebsocketCommunicator(
+                TournamentConsumer.as_asgi(), f"/ws/tournament/{tournament.id}/",
+            )
+            communicator.scope["user"] = user
+            communicator.scope["url_route"] = {"kwargs": {"tournament_id": str(tournament.id)}}
+            connected, _ = await communicator.connect(timeout=5)
+            self.assertTrue(connected, f"{user.username} could not connect")
+            comms.append(communicator)
+
+        for communicator in comms:
+            await communicator.send_json_to({"type": "ready", "value": True})
+
+        seen = {"bounty_won": [], "mystery_opened": [], "mystery_sealed": []}
+        complete = None
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while complete is None and loop.time() < deadline:
+            for communicator in comms:
+                if await communicator.receive_nothing(timeout=0.05):
+                    continue
+                message = await communicator.receive_json_from()
+                kind = message.get("type")
+                if kind in seen:
+                    seen[kind].append(message)
+                if kind == "action_required":
+                    valid = message.get("valid_actions") or []
+                    # Everybody shoves, so the busts come thick and fast — and
+                    # so split pots happen, which is the case worth catching.
+                    action = "raise" if "raise" in valid else (
+                        "call" if "call" in valid else "check"
+                    )
+                    await communicator.send_json_to({
+                        "type": "player_action",
+                        "action": action,
+                        "amount": message.get("max_raise", 0),
+                    })
+                if kind == "tournament_complete":
+                    complete = message
+                    break
+
+        for communicator in comms:
+            await communicator.disconnect()
+        return complete, seen
+
+    def _settled(self, tournament):
+        from tournaments.models import LedgerEntry
+
+        return list(LedgerEntry.objects.filter(tournament=tournament).select_related("user"))
+
+    def test_a_progressive_knockout_tournament_pays_out_every_cent_it_took(self):
+        tournament, users = self._setup(bounty_mode="progressive")
+        complete, seen = async_to_sync(self._play_it_out)(tournament, users)
+
+        self.assertIsNotNone(complete, "the tournament never finished")
+        self.assertTrue(seen["bounty_won"], "nobody ever collected a bounty")
+
+        tournament.refresh_from_db()
+        self.assertEqual(tournament.status, "finished")
+        entries = self._settled(tournament)
+        self.assertEqual(len(entries), len(users))
+
+        # Every buy-in, and every part of every buy-in, accounted for.
+        self.assertEqual(sum(e.stake_cents for e in entries), 2000 * len(users))
+        self.assertEqual(sum(e.bounty_prize_cents for e in entries), 1000 * len(users))
+        self.assertEqual(sum(e.prize_cents for e in entries), 2000 * len(users))
+        # Nobody was paid a negative amount out of somebody else's pocket.
+        self.assertTrue(all(e.prize_cents >= 0 for e in entries))
+
+    def test_a_fixed_knockout_tournament_pays_out_every_cent_it_took(self):
+        tournament, users = self._setup(bounty_mode="fixed")
+        complete, _ = async_to_sync(self._play_it_out)(tournament, users)
+
+        self.assertIsNotNone(complete, "the tournament never finished")
+        entries = self._settled(tournament)
+        self.assertEqual(sum(e.bounty_prize_cents for e in entries), 1000 * len(users))
+        self.assertEqual(sum(e.prize_cents for e in entries), 2000 * len(users))
+
+    def test_a_mystery_tournament_opens_its_envelopes_and_pays_them_all_out(self):
+        """Registration is closed from level one here, so they open on the
+        first hand that busts somebody — which is the rule under test."""
+        tournament, users = self._setup(
+            bounty_mode="mystery", mystery_release="reg_closed",
+        )
+        complete, seen = async_to_sync(self._play_it_out)(tournament, users)
+
+        self.assertIsNotNone(complete, "the tournament never finished")
+        self.assertTrue(seen["mystery_opened"], "the envelopes never opened")
+
+        opened = seen["mystery_opened"][0]
+        # One envelope per knockout still to come, and the pool is every
+        # buy-in's bounty.
+        self.assertEqual(opened["pool_cents"], 1000 * len(users))
+        self.assertEqual(len(opened["envelopes"]), opened["players_left"] - 1)
+
+        tournament.refresh_from_db()
+        entries = self._settled(tournament)
+        # Whatever was drawn, plus whatever was left sealed, is the pool.
+        self.assertEqual(sum(e.bounty_prize_cents for e in entries), 1000 * len(users))
+        self.assertEqual(sum(e.prize_cents for e in entries), 2000 * len(users))
+        # And every envelope that was drawn came off the board.
+        drawn = [message for message in seen["bounty_won"] if message.get("mystery")]
+        self.assertEqual(
+            len(opened["envelopes"]) - len(tournament.mystery_envelopes),
+            len({(m["victim_name"], m["mystery"]["envelopes_left"]) for m in drawn}),
+        )

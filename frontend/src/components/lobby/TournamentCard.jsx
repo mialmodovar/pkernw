@@ -116,7 +116,10 @@ export default function TournamentCard({
     t.club_name ? (t.league_name || "club night") : null,
     // The format and what it is worth, in one fact — "PKO" on its own said the
     // rules and left the money out.
-    bountyOn ? `${t.bounty_mode === "progressive" ? "PKO" : "KO"} ${euros(koPoolCents)}` : null,
+    bountyOn
+      ? `${{ progressive: "PKO", mystery: "Mystery", fixed: "KO" }[t.bounty_mode] || "KO"} `
+        + `${euros(koPoolCents)}`
+      : null,
     t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
     // Only worth saying while you can still act on it, and in minutes once the
     // clock is running — "until level 4" is a fact about the schedule, and how

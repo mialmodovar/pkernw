@@ -1,3 +1,4 @@
+import random
 import time
 
 from django.contrib.auth import get_user_model
@@ -4448,3 +4449,841 @@ class FastGamesStayOutOfTheTournamentListTests(APITestCase):
 
 		active = self._scope("mine_active")
 		self.assertEqual([row["format"] for row in active], ["sitngo"])
+
+
+class MysteryEnvelopeTests(TestCase):
+	"""Cutting a pool into envelopes. Arithmetic, and no database."""
+
+	def _amounts(self, pool, count):
+		from tournaments import mystery
+
+		return mystery.envelope_amounts(pool, count)
+
+	def test_the_envelopes_always_add_up_to_the_pool(self):
+		"""The one invariant that matters: nothing is dropped, nothing invented.
+
+		Walked over a wide spread of pools and fields rather than a couple of
+		tidy numbers, because the flooring is where a cent would go missing and
+		it only goes missing on numbers that do not divide.
+		"""
+		for pool in (0, 1, 99, 100, 4501, 90000, 123457, 10**7):
+			for count in (0, 1, 2, 3, 5, 8, 9, 27, 100):
+				with self.subTest(pool=pool, count=count):
+					amounts = self._amounts(pool, count)
+					self.assertEqual(sum(amounts), pool if count else 0)
+					self.assertEqual(len(amounts), count if pool else 0)
+
+	def test_nobody_ever_draws_an_empty_envelope(self):
+		for pool, count in ((90000, 9), (100, 9), (9, 9), (500, 100)):
+			with self.subTest(pool=pool, count=count):
+				self.assertTrue(all(amount > 0 for amount in self._amounts(pool, count)))
+
+	def test_a_pool_too_small_to_go_round_still_adds_up(self):
+		"""Seven cents between nine players cannot pay everybody.
+
+		It must still not invent a cent, which is the part that matters.
+		"""
+		amounts = self._amounts(7, 9)
+		self.assertEqual(sum(amounts), 7)
+		self.assertEqual(len(amounts), 9)
+
+	def test_the_envelopes_come_back_biggest_first(self):
+		amounts = self._amounts(90000, 9)
+		self.assertEqual(amounts, sorted(amounts, reverse=True))
+
+	def test_one_envelope_is_worth_chasing(self):
+		"""A mystery bounty where every envelope is the same is a fixed bounty.
+
+		The top one should be several times an ordinary one, and a good share of
+		the whole pool — that is the thing people are playing for.
+		"""
+		amounts = self._amounts(90000, 9)
+		self.assertGreater(amounts[0], amounts[-1] * 3)
+		self.assertGreater(amounts[0], sum(amounts) * 0.2)
+
+	def test_the_same_numbers_cut_the_same_pool(self):
+		"""The board is public in these events; only the draw is a gamble."""
+		self.assertEqual(self._amounts(90000, 9), self._amounts(90000, 9))
+
+	def test_opening_one_takes_it_out_of_the_pool(self):
+		from tournaments import mystery
+
+		envelopes = [500, 300, 200]
+		amount, remaining = mystery.take(envelopes, 1)
+
+		self.assertEqual(amount, 300)
+		self.assertEqual(remaining, [500, 200])
+		# The list handed in is not touched — the caller decides what to keep.
+		self.assertEqual(envelopes, [500, 300, 200])
+
+	def test_opening_one_that_is_not_there_takes_nothing(self):
+		from tournaments import mystery
+
+		amount, remaining = mystery.take([500], 4)
+		self.assertEqual(amount, 0)
+		self.assertEqual(remaining, [500])
+
+	def test_the_draw_can_land_on_any_envelope(self):
+		from tournaments import mystery
+
+		class Fixed:
+			def __init__(self, value):
+				self.value = value
+
+			def randrange(self, _stop):
+				return self.value
+
+		envelopes = [500, 300, 200]
+		drawn = {mystery.take(envelopes, mystery.draw_index(envelopes, Fixed(i)))[0] for i in range(3)}
+		self.assertEqual(drawn, {500, 300, 200})
+
+
+class MysteryReleaseTests(TestCase):
+	"""When the envelopes open."""
+
+	def _closed(self, level, late_reg=4, rebuy=4, allow_rebuys=True):
+		from tournaments import mystery
+
+		return mystery.registration_closed(level, late_reg, rebuy, allow_rebuys)
+
+	def test_the_field_is_not_final_while_anybody_can_still_enter(self):
+		self.assertFalse(self._closed(1))
+		self.assertFalse(self._closed(4))
+		self.assertTrue(self._closed(5))
+
+	def test_the_field_is_not_final_while_anybody_can_still_buy_back_in(self):
+		"""Either one open means another buy-in, and another buy-in is another
+		bounty that belongs in a pool that has already been cut up."""
+		self.assertFalse(self._closed(5, late_reg=2, rebuy=6))
+		self.assertTrue(self._closed(7, late_reg=2, rebuy=6))
+
+	def test_rebuys_that_are_switched_off_never_hold_it_open(self):
+		self.assertTrue(self._closed(3, late_reg=2, rebuy=9, allow_rebuys=False))
+
+	def test_opening_at_the_money_waits_for_the_money(self):
+		from tournaments import mystery
+
+		def release(remaining):
+			return mystery.should_release(
+				"itm", remaining_players=remaining, paid_places=3, registration_is_closed=True,
+			)
+
+		self.assertFalse(release(9))
+		self.assertFalse(release(4))
+		self.assertTrue(release(3))
+		self.assertTrue(release(2))
+
+	def test_opening_at_the_money_needs_a_money_to_open_at(self):
+		from tournaments import mystery
+
+		self.assertFalse(mystery.should_release(
+			"itm", remaining_players=2, paid_places=0, registration_is_closed=True,
+		))
+
+	def test_opening_when_registration_closes_ignores_how_many_are_left(self):
+		from tournaments import mystery
+
+		self.assertTrue(mystery.should_release(
+			"reg_closed", remaining_players=50, paid_places=3, registration_is_closed=True,
+		))
+		self.assertFalse(mystery.should_release(
+			"reg_closed", remaining_players=3, paid_places=3, registration_is_closed=False,
+		))
+
+	def test_an_unknown_rule_falls_back_to_the_money(self):
+		from tournaments import mystery
+
+		self.assertEqual(mystery.clean_release("whenever"), "itm")
+		self.assertEqual(mystery.clean_release(None), "itm")
+		self.assertEqual(mystery.clean_release("reg_closed"), "reg_closed")
+
+
+class MysteryCoordinatorTests(TestCase):
+	"""The envelopes opening, and being drawn, while a tournament runs."""
+
+	def _coordinator(self, *, release="itm", paid_places=3, envelopes=None, opened=False,
+	                 tournament_events=None, table_events=None, late_reg_level=0,
+	                 rebuy_level=0, allow_rebuys=False, pool=90000):
+		from tournaments.bounties import BountyConfig
+
+		async def noop(*args, **kwargs):
+			return None
+
+		async def capture_tournament(event_type, payload):
+			if tournament_events is not None:
+				tournament_events.append((event_type, payload))
+
+		async def capture_table(table_number, event_type, payload):
+			if table_events is not None:
+				table_events.append((event_type, payload))
+
+		self.opened_with = []
+		self.persisted = []
+
+		async def open_mystery(draws):
+			from tournaments import mystery
+
+			self.opened_with.append(draws)
+			return mystery.envelope_amounts(pool, draws)
+
+		async def persist_mystery(remaining):
+			self.persisted.append(list(remaining))
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=capture_tournament,
+			broadcast_table=capture_table,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+			bounty=BountyConfig(mode="mystery", amount_cents=1000),
+			paid_places=paid_places,
+			mystery_release=release,
+			mystery_envelopes=envelopes,
+			mystery_opened=opened,
+			open_mystery=open_mystery,
+			persist_mystery=persist_mystery,
+			late_reg_level=late_reg_level,
+			rebuy_level=rebuy_level,
+			allow_rebuys=allow_rebuys,
+		)
+
+	def _player(self, coordinator, tp_id, name, chips=1000):
+		player = EnginePlayer(name=name, chips=chips)
+		player._tp_id = tp_id
+		player._user_id = tp_id * 11
+		player._seat = tp_id
+		player._global_seat = tp_id
+		player._table_number = 1
+		player._bounty_cents = 0
+		player._bounty_won_cents = 0
+		coordinator._players_by_id[tp_id] = player
+		coordinator._players_by_user_id[player._user_id] = player
+		return player
+
+	def test_a_knockout_before_the_envelopes_open_pays_nothing(self):
+		"""Which is the format. Everybody busting out early was worth something
+		to somebody, and nobody knows what until it opens."""
+		table = []
+		coordinator = self._coordinator(table_events=table)
+		victim = self._player(coordinator, 1, "victim", chips=0)
+		hunter = self._player(coordinator, 2, "hunter")
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		self.assertEqual(hunter._bounty_won_cents, 0)
+		# The knockout still happened and still counts.
+		self.assertEqual(hunter._knockouts, 1)
+		self.assertEqual([event for event, _ in table], ["mystery_sealed"])
+
+	def test_a_knockout_after_they_open_draws_one(self):
+		table = []
+		coordinator = self._coordinator(
+			envelopes=[5000, 3000, 2000], opened=True, table_events=table,
+		)
+		victim = self._player(coordinator, 1, "victim", chips=0)
+		hunter = self._player(coordinator, 2, "hunter")
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		self.assertIn(hunter._bounty_won_cents, (5000, 3000, 2000))
+		self.assertEqual(len(coordinator._mystery_envelopes), 2)
+		# What is left is written down, because the row is the only copy.
+		self.assertEqual(self.persisted[-1], coordinator._mystery_envelopes)
+		event, payload = table[-1]
+		self.assertEqual(event, "bounty_won")
+		self.assertEqual(payload["mystery"]["envelope_cents"], hunter._bounty_won_cents)
+		self.assertEqual(payload["mystery"]["envelopes_left"], 2)
+
+	def test_the_pool_only_ever_shrinks(self):
+		"""Draw the whole thing and the cents come out exactly as they went in."""
+		from tournaments import mystery
+
+		envelopes = mystery.envelope_amounts(90000, 5)
+		coordinator = self._coordinator(envelopes=envelopes, opened=True)
+		hunter = self._player(coordinator, 99, "hunter")
+
+		collected = 0
+		for index in range(5):
+			victim = self._player(coordinator, index, f"victim{index}", chips=0)
+			async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+			collected = hunter._bounty_won_cents
+
+		self.assertEqual(collected, 90000)
+		self.assertEqual(coordinator._mystery_envelopes, [])
+
+	def test_a_pot_busted_by_two_people_splits_the_envelope(self):
+		coordinator = self._coordinator(envelopes=[5001], opened=True)
+		victim = self._player(coordinator, 1, "victim", chips=0)
+		first = self._player(coordinator, 2, "first")
+		second = self._player(coordinator, 3, "second")
+
+		async_to_sync(coordinator._pay_bounty)(victim, [first, second])
+
+		# One envelope, split, and the odd cent to the first of them.
+		self.assertEqual(first._bounty_won_cents + second._bounty_won_cents, 5001)
+		self.assertEqual(first._bounty_won_cents, 2501)
+		self.assertEqual(first._knockouts, 1)
+		self.assertEqual(second._knockouts, 1)
+
+	def test_an_empty_pool_pays_nothing_rather_than_inventing_it(self):
+		coordinator = self._coordinator(envelopes=[], opened=True)
+		victim = self._player(coordinator, 1, "victim", chips=0)
+		hunter = self._player(coordinator, 2, "hunter")
+
+		async_to_sync(coordinator._pay_bounty)(victim, [hunter])
+
+		self.assertEqual(hunter._bounty_won_cents, 0)
+
+	def test_nobody_gets_an_envelope_for_a_player_nobody_busted(self):
+		coordinator = self._coordinator(envelopes=[5000], opened=True)
+		victim = self._player(coordinator, 1, "victim", chips=0)
+
+		async_to_sync(coordinator._pay_bounty)(victim, [])
+
+		self.assertEqual(coordinator._mystery_envelopes, [5000])
+
+	def _open_with(self, coordinator, players):
+		for index in range(players):
+			self._player(coordinator, index, f"p{index}")
+		async_to_sync(coordinator._maybe_open_mystery)()
+
+	def test_the_envelopes_open_at_the_money(self):
+		events = []
+		coordinator = self._coordinator(paid_places=3, tournament_events=events)
+		self._open_with(coordinator, 3)
+
+		self.assertTrue(coordinator._mystery_opened)
+		# One envelope per knockout still to come: everybody but the winner.
+		self.assertEqual(self.opened_with, [2])
+		self.assertEqual(len(coordinator._mystery_envelopes), 2)
+		self.assertEqual([event for event, _ in events], ["mystery_opened"])
+		payload = events[0][1]
+		self.assertEqual(payload["pool_cents"], sum(coordinator._mystery_envelopes))
+		self.assertEqual(payload["players_left"], 3)
+
+	def test_they_stay_sealed_above_the_money(self):
+		coordinator = self._coordinator(paid_places=3)
+		self._open_with(coordinator, 4)
+
+		self.assertFalse(coordinator._mystery_opened)
+		self.assertEqual(self.opened_with, [])
+
+	def test_they_stay_sealed_while_the_field_can_still_grow(self):
+		"""A pool that can still grow is a pool that cannot be cut up.
+
+		A late entry after the envelopes were counted would be one more knockout
+		than there are envelopes to pay it with.
+		"""
+		coordinator = self._coordinator(paid_places=3, late_reg_level=4)
+		coordinator._level_index = 0
+		self._open_with(coordinator, 3)
+
+		self.assertFalse(coordinator._mystery_opened)
+
+	def test_they_open_when_registration_closes_however_many_are_left(self):
+		coordinator = self._coordinator(release="reg_closed", paid_places=3, late_reg_level=0)
+		self._open_with(coordinator, 8)
+
+		self.assertTrue(coordinator._mystery_opened)
+		self.assertEqual(self.opened_with, [7])
+
+	def test_a_pool_is_never_cut_twice(self):
+		coordinator = self._coordinator(paid_places=3)
+		self._open_with(coordinator, 3)
+		first = list(coordinator._mystery_envelopes)
+
+		async_to_sync(coordinator._maybe_open_mystery)()
+
+		self.assertEqual(self.opened_with, [2])
+		self.assertEqual(coordinator._mystery_envelopes, first)
+
+
+class MysteryLedgerTests(TestCase):
+	"""What a mystery tournament settles to."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="m_host", password="x")
+		self.users = {
+			name: User.objects.create_user(username=f"m_{name}", password="x")
+			for name in ("ana", "bea", "caio", "dina")
+		}
+
+	def _tournament(self, envelopes=None, **kwargs):
+		return Tournament.objects.create(
+			host=self.host, name="Mystery", status="finished",
+			buy_in_cents=2000, bounty_mode="mystery", bounty_cents=1000,
+			mystery_envelopes=envelopes or [],
+			payout_structure=[
+				{"place": 1, "label": "1st", "percentage": 70},
+				{"place": 2, "label": "2nd", "percentage": 30},
+			],
+			**kwargs,
+		)
+
+	def _seat(self, tournament, name, seat, finish, won=0):
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=self.users[name], seat=seat, chips=0,
+			finish_position=finish, is_eliminated=finish != 1,
+			bounty_cents=0, bounty_won_cents=won,
+		)
+
+	def _settle(self, tournament):
+		from tournaments.ledger import settle_tournament
+
+		return settle_tournament(tournament)
+
+	def test_the_places_play_for_the_buy_in_less_the_bounty(self):
+		tournament = self._tournament()
+		self._seat(tournament, "ana", 0, 1, won=3000)
+		self._seat(tournament, "bea", 1, 2, won=1000)
+		self._seat(tournament, "caio", 2, 3)
+		self._seat(tournament, "dina", 3, 4)
+
+		self._settle(tournament)
+
+		from tournaments.models import LedgerEntry
+
+		entries = {e.user.username: e for e in LedgerEntry.objects.select_related("user")}
+		# Four buy-ins of 20.00, half of each into the mystery pool: 40.00 for
+		# the places, split 70/30.
+		self.assertEqual(entries["m_ana"].prize_cents, 2800 + 3000)
+		self.assertEqual(entries["m_bea"].prize_cents, 1200 + 1000)
+		self.assertEqual(entries["m_ana"].stake_cents, 2000)
+
+	def test_what_you_drew_is_what_you_keep(self):
+		"""No head carried anything, so there is nothing to hand back."""
+		tournament = self._tournament()
+		self._seat(tournament, "ana", 0, 1, won=4000)
+		self._seat(tournament, "bea", 1, 2)
+
+		self._settle(tournament)
+
+		from tournaments.models import LedgerEntry
+
+		entries = {e.user.username: e for e in LedgerEntry.objects.select_related("user")}
+		self.assertEqual(entries["m_ana"].bounty_prize_cents, 4000)
+		self.assertEqual(entries["m_bea"].bounty_prize_cents, 0)
+
+	def test_envelopes_nobody_drew_go_to_the_winner(self):
+		"""Somebody quitting or timing out is a knockout that never happened.
+
+		Its envelope was never drawn, and the pool still has to add up to what
+		went into it — so the winner gets whatever nobody took. Note that what
+		is paid out is bounded by the pool rather than by the numbers left on
+		the board: four entries at 10.00 apiece is a 40.00 pool however many
+		envelopes happen to be listed on the row.
+		"""
+		tournament = self._tournament(envelopes=[2000, 1000])
+		self._seat(tournament, "ana", 0, 1, won=1000)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+		self._seat(tournament, "dina", 3, 4)
+
+		self._settle(tournament)
+
+		from tournaments.models import LedgerEntry
+
+		winner = LedgerEntry.objects.get(user=self.users["ana"])
+		# She drew 10.00; the 30.00 nobody drew is hers as well.
+		self.assertEqual(winner.bounty_prize_cents, 4000)
+		self.assertEqual(
+			sum(e.bounty_prize_cents for e in LedgerEntry.objects.all()), 1000 * 4,
+		)
+
+	def test_the_whole_pool_is_paid_out_and_no_more(self):
+		"""Every cent taken out of the buy-ins comes back out somewhere."""
+		tournament = self._tournament(envelopes=[500])
+		self._seat(tournament, "ana", 0, 1, won=2000)
+		self._seat(tournament, "bea", 1, 2, won=1500)
+		self._seat(tournament, "caio", 2, 3)
+		self._seat(tournament, "dina", 3, 4)
+
+		self._settle(tournament)
+
+		from tournaments.models import LedgerEntry
+
+		paid_in = 1000 * 4
+		paid_out = sum(e.bounty_prize_cents for e in LedgerEntry.objects.all())
+		self.assertEqual(paid_out, paid_in)
+		self.assertEqual(paid_out, 2000 + 1500 + 500)
+
+
+class MysteryConfigurationTests(APITestCase):
+	"""Opening a mystery bounty tournament."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="my_host", password="x", is_staff=True)
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _payload(self, **overrides):
+		return {
+			"name": "Mystery Night",
+			"buy_in_cents": 2000,
+			"bounty_mode": "mystery",
+			"bounty_cents": 1000,
+			"payout_structure": [{"place": 1, "label": "1st", "percentage": 100}],
+			**overrides,
+		}
+
+	def test_a_mystery_tournament_is_created_with_a_release_rule(self):
+		response = self.client.post(reverse("tournament-list"), self._payload(), format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		tournament = Tournament.objects.get(id=response.data["id"])
+		self.assertEqual(tournament.bounty_mode, "mystery")
+		self.assertEqual(tournament.mystery_release, "itm")
+		# Sealed, and nothing cut yet.
+		self.assertEqual(tournament.mystery_envelopes, [])
+		self.assertIsNone(tournament.mystery_opened_at)
+
+	def test_the_host_does_not_get_a_bounty_on_their_head(self):
+		"""There are no heads in a mystery game; the money is in the pool."""
+		response = self.client.post(reverse("tournament-list"), self._payload(), format="json")
+
+		seat = Tournament.objects.get(id=response.data["id"]).players.get()
+		self.assertEqual(seat.bounty_cents, 0)
+
+	def test_it_can_be_set_to_open_when_registration_closes(self):
+		response = self.client.post(
+			reverse("tournament-list"), self._payload(mystery_release="reg_closed"), format="json",
+		)
+
+		self.assertEqual(
+			Tournament.objects.get(id=response.data["id"]).mystery_release, "reg_closed",
+		)
+
+	def test_opening_at_the_money_needs_a_money(self):
+		response = self.client.post(
+			reverse("tournament-list"),
+			self._payload(mystery_release="itm", payout_structure=[]),
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("mystery_release", response.data)
+
+	def test_a_mystery_bounty_still_has_to_come_out_of_a_buy_in(self):
+		response = self.client.post(
+			reverse("tournament-list"), self._payload(bounty_cents=2000), format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_release_rule_nobody_offers_is_refused(self):
+		"""Refused rather than quietly turned into one of ours.
+
+		The engine still defaults an unknown value — see mystery.clean_release —
+		because a row written by hand or by an older client has to run somehow.
+		A form post is a different thing: somebody asked for something that does
+		not exist and should be told so.
+		"""
+		response = self.client.post(
+			reverse("tournament-list"), self._payload(mystery_release="whenever"), format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("mystery_release", response.data)
+
+	def test_the_release_rule_cannot_be_changed_once_people_have_joined(self):
+		created = self.client.post(
+			reverse("tournament-list"), self._payload(mystery_release="reg_closed"), format="json",
+		)
+
+		self.client.patch(
+			reverse("tournament-edit", args=[created.data["id"]]),
+			{"mystery_release": "itm"}, format="json",
+		)
+
+		self.assertEqual(
+			Tournament.objects.get(id=created.data["id"]).mystery_release, "reg_closed",
+		)
+
+
+class BountyConservationTests(TestCase):
+	"""The money can neither leak nor multiply, whatever order it moves in.
+
+	The bounty tests above check one knockout at a time against numbers worked
+	out by hand. This checks the property those numbers are examples of, over
+	hundreds of knockouts in orders nobody thought to write down: whatever is on
+	the heads plus whatever has been collected is always exactly what the
+	buy-ins put in.
+
+	That invariant is the whole of a knockout tournament being trustworthy. If
+	it fails, somebody is being paid out of somebody else's pocket.
+	"""
+
+	def _coordinator(self, bounty):
+		async def noop(*args, **kwargs):
+			return None
+
+		return MultiTableTournamentCoordinator(
+			tournament_id=1,
+			players_per_table=9,
+			levels=[{"small_blind": 25, "big_blind": 50, "ante": 0, "duration_hands": 8}],
+			broadcast_tournament=noop,
+			broadcast_table=noop,
+			request_action=noop,
+			notify_user=noop,
+			load_players=noop,
+			persist_assignments=noop,
+			persist_player_states=noop,
+			bounty=bounty,
+		)
+
+	def _field(self, coordinator, size, bounty_cents):
+		players = []
+		for index in range(size):
+			player = EnginePlayer(name=f"p{index}", chips=1000)
+			player._tp_id = index
+			player._user_id = index * 11
+			player._seat = index
+			player._global_seat = index
+			player._table_number = 1
+			player._bounty_cents = bounty_cents
+			player._bounty_won_cents = 0
+			coordinator._players_by_id[index] = player
+			players.append(player)
+		return players
+
+	def _in_the_system(self, players):
+		return sum(
+			getattr(p, "_bounty_cents", 0) + getattr(p, "_bounty_won_cents", 0) for p in players
+		)
+
+	def _run_field(self, mode, *, size, bounty_cents, split_pct, seed):
+		from tournaments.bounties import BountyConfig
+
+		rng = random.Random(seed)
+		coordinator = self._coordinator(
+			BountyConfig(mode=mode, amount_cents=bounty_cents, progressive_split_pct=split_pct)
+		)
+		players = self._field(coordinator, size, bounty_cents)
+		pool = self._in_the_system(players)
+		self.assertEqual(pool, size * bounty_cents)
+
+		alive = list(players)
+		while len(alive) > 1:
+			victim = alive.pop(rng.randrange(len(alive)))
+			# Sometimes one player busts them, sometimes a split pot does.
+			hunters = rng.sample(alive, min(len(alive), rng.choice([1, 1, 1, 2, 3])))
+			async_to_sync(coordinator._pay_bounty)(
+				victim, hunters, is_final=len(alive) == 1,
+			)
+			# Checked after every single knockout, not just at the end: a leak
+			# that reverses itself later is still a wrong number on screen.
+			self.assertEqual(
+				self._in_the_system(players), pool,
+				f"pool moved after busting {victim.name}",
+			)
+		return players, pool
+
+	def test_a_fixed_pool_is_conserved_through_a_whole_field(self):
+		for seed in range(20):
+			with self.subTest(seed=seed):
+				self._run_field("fixed", size=9, bounty_cents=1000, split_pct=50, seed=seed)
+
+	def test_a_progressive_pool_is_conserved_through_a_whole_field(self):
+		"""The one where cents move in two directions at once.
+
+		A progressive knockout splits a head between cash and the winner's own
+		head, and does it again for every eliminator in a split pot. Every one
+		of those divisions is a chance to drop a cent.
+		"""
+		for seed in range(20):
+			with self.subTest(seed=seed):
+				self._run_field("progressive", size=9, bounty_cents=1000, split_pct=50, seed=seed)
+
+	def test_a_progressive_pool_survives_an_awkward_split(self):
+		"""Sixty-seven percent of an odd number, three ways, repeatedly."""
+		for seed in range(20):
+			with self.subTest(seed=seed):
+				self._run_field("progressive", size=8, bounty_cents=333, split_pct=67, seed=seed)
+
+	def test_the_only_head_left_at_the_end_is_the_winners(self):
+		"""Nobody knocks the winner out, so nobody collects their head.
+
+		Whatever is still on it — their own buy-in's worth, plus everything a
+		progressive game added to it — is theirs, and settlement hands it back.
+		That is exactly why ledger.settle_tournament adds `bounty_cents` to
+		`bounty_won_cents` rather than paying out the takings alone, and it is
+		the difference between the bounty pool adding up and a buy-in's worth
+		going missing every tournament.
+		"""
+		for mode in ("fixed", "progressive"):
+			with self.subTest(mode=mode):
+				players, pool = self._run_field(
+					mode, size=6, bounty_cents=1000, split_pct=50, seed=7,
+				)
+				with_heads = [p for p in players if getattr(p, "_bounty_cents", 0) > 0]
+				self.assertEqual(len(with_heads), 1)
+				# A fixed game leaves exactly one buy-in's worth on it; a
+				# progressive one leaves that plus everything they were paid in
+				# heads along the way.
+				self.assertGreaterEqual(getattr(with_heads[0], "_bounty_cents", 0), 1000)
+				# And the two halves still make the whole pool.
+				self.assertEqual(
+					sum(getattr(p, "_bounty_won_cents", 0) for p in players)
+					+ getattr(with_heads[0], "_bounty_cents", 0),
+					pool,
+				)
+
+	def test_a_mystery_pool_is_conserved_through_a_whole_field(self):
+		"""The same property, for a pool that is drawn rather than carried."""
+		from tournaments import mystery
+		from tournaments.bounties import BountyConfig
+
+		async def noop(*args, **kwargs):
+			return None
+
+		for seed in range(20):
+			with self.subTest(seed=seed):
+				size, bounty_cents = 9, 1000
+				pool = size * bounty_cents
+				envelopes = mystery.envelope_amounts(pool, size - 1)
+
+				coordinator = self._coordinator(
+					BountyConfig(mode="mystery", amount_cents=bounty_cents)
+				)
+				coordinator._mystery_envelopes = list(envelopes)
+				coordinator._mystery_opened = True
+				coordinator.persist_mystery = noop
+				players = self._field(coordinator, size, bounty_cents=0)
+
+				rng = random.Random(seed)
+				alive = list(players)
+				while len(alive) > 1:
+					victim = alive.pop(rng.randrange(len(alive)))
+					hunters = rng.sample(alive, min(len(alive), rng.choice([1, 1, 2])))
+					async_to_sync(coordinator._pay_bounty)(victim, hunters)
+					collected = sum(getattr(p, "_bounty_won_cents", 0) for p in players)
+					self.assertEqual(collected + sum(coordinator._mystery_envelopes), pool)
+
+				self.assertEqual(coordinator._mystery_envelopes, [])
+				self.assertEqual(
+					sum(getattr(p, "_bounty_won_cents", 0) for p in players), pool,
+				)
+
+
+class WinnersOwnBountyTests(TestCase):
+	"""The winner is paid their own bounty at the end.
+
+	Nobody knocks the winner out, so nobody ever collects the bounty their own
+	buy-in put up — and in a progressive game nobody collects what they added to
+	their own head along the way either. It is theirs, and the settlement is
+	where they get it. Without this a buy-in's worth of every tournament would
+	quietly go missing, and the winner would be the one paying for it.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="w_host", password="x")
+		self.users = {
+			name: User.objects.create_user(username=f"w_{name}", password="x")
+			for name in ("ana", "bea", "caio")
+		}
+
+	def _tournament(self, mode, **extra):
+		return Tournament.objects.create(
+			host=self.host, name="Knockouts", status="finished",
+			buy_in_cents=2000, bounty_mode=mode, bounty_cents=1000,
+			payout_structure=[{"place": 1, "label": "1st", "percentage": 100}],
+			**extra,
+		)
+
+	def _seat(self, tournament, name, seat, finish, *, on_head=0, won=0):
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=self.users[name], seat=seat, chips=0,
+			finish_position=finish, is_eliminated=finish != 1,
+			bounty_cents=on_head, bounty_won_cents=won,
+		)
+
+	def _settle(self, tournament):
+		from tournaments.ledger import settle_tournament
+
+		settle_tournament(tournament)
+		from tournaments.models import LedgerEntry
+
+		return {
+			entry.user.username: entry
+			for entry in LedgerEntry.objects.filter(tournament=tournament).select_related("user")
+		}
+
+	def test_a_fixed_winner_is_paid_their_own_bounty(self):
+		tournament = self._tournament("fixed")
+		# Ana won, having busted both of them; her own head is untouched.
+		self._seat(tournament, "ana", 0, 1, on_head=1000, won=2000)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		entries = self._settle(tournament)
+
+		# Two heads collected plus her own, which is the whole pool.
+		self.assertEqual(entries["w_ana"].bounty_prize_cents, 3000)
+		self.assertEqual(
+			sum(e.bounty_prize_cents for e in entries.values()), 1000 * 3,
+		)
+
+	def test_a_progressive_winner_is_paid_everything_left_on_their_head(self):
+		tournament = self._tournament("progressive", bounty_progressive_split_pct=50)
+		# Half of each bounty she won went onto her own head, and it is still
+		# sitting there because nobody busted her.
+		self._seat(tournament, "ana", 0, 1, on_head=2000, won=1000)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		entries = self._settle(tournament)
+
+		self.assertEqual(entries["w_ana"].bounty_prize_cents, 3000)
+		self.assertEqual(sum(e.bounty_prize_cents for e in entries.values()), 3000)
+
+	def test_a_mystery_winner_is_paid_every_envelope_nobody_drew(self):
+		tournament = self._tournament("mystery", mystery_envelopes=[1200])
+		self._seat(tournament, "ana", 0, 1, won=1800)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		entries = self._settle(tournament)
+
+		# She drew 18.00; the 12.00 nobody drew is hers too.
+		self.assertEqual(entries["w_ana"].bounty_prize_cents, 3000)
+		self.assertEqual(sum(e.bounty_prize_cents for e in entries.values()), 3000)
+
+	def test_a_mystery_pool_that_never_opened_still_goes_to_the_winner(self):
+		"""A field that collapsed before the envelopes were cut.
+
+		The money came out of the buy-ins either way, so it has to come back out
+		somewhere — and the winner is the only one with a claim on a knockout
+		nobody was paid for.
+		"""
+		tournament = self._tournament("mystery")
+		self._seat(tournament, "ana", 0, 1)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		entries = self._settle(tournament)
+
+		self.assertEqual(entries["w_ana"].bounty_prize_cents, 3000)
+		self.assertEqual(sum(e.bounty_prize_cents for e in entries.values()), 3000)
+
+	def test_the_winners_own_bounty_shows_up_in_what_they_take_home(self):
+		"""Not just in the bounty column: the prize a player is paid is the
+		placing money and the knockouts together, which is the figure the
+		finish screen and the debt ledger both read."""
+		tournament = self._tournament("fixed")
+		self._seat(tournament, "ana", 0, 1, on_head=1000, won=2000)
+		self._seat(tournament, "bea", 1, 2)
+		self._seat(tournament, "caio", 2, 3)
+
+		entries = self._settle(tournament)
+
+		# Three buy-ins of 20.00, half of each played for by placing: 30.00 to
+		# first, plus 30.00 of bounties.
+		self.assertEqual(entries["w_ana"].prize_cents, 3000 + 3000)
+		self.assertEqual(entries["w_ana"].net_cents, 6000 - 2000)

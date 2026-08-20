@@ -1,6 +1,11 @@
 from django.db import models
 from django.conf import settings
 
+from .mystery import (
+    DEFAULT_RELEASE as DEFAULT_MYSTERY_RELEASE,
+    RELEASE_CHOICES as MYSTERY_RELEASE_CHOICES,
+)
+
 
 class Tournament(models.Model):
     STATUS_CHOICES = [
@@ -24,6 +29,7 @@ class Tournament(models.Model):
         ("none",        "No bounties"),
         ("fixed",       "Fixed knockout"),
         ("progressive", "Progressive knockout"),
+        ("mystery",     "Mystery bounty"),
     ]
     # What kind of game this row is. A standard tournament is somebody's night:
     # a host opens it, sets the stakes and starts it. The fast formats have no
@@ -97,6 +103,21 @@ class Tournament(models.Model):
     # Progressive only: what share of a captured bounty is paid out in cash. The
     # rest goes onto the winner's own head, which is what makes it progressive.
     bounty_progressive_split_pct = models.IntegerField(default=50)
+    # Mystery bounties only: when the envelopes open. Until they do, knockouts
+    # pay nothing at all and the pool sits there growing — which is the whole
+    # of what makes them mysterious. See tournaments/mystery.py.
+    mystery_release = models.CharField(
+        max_length=12, choices=MYSTERY_RELEASE_CHOICES, default=DEFAULT_MYSTERY_RELEASE,
+    )
+    # What is still in the pool, biggest first, in cents. Written when the
+    # envelopes open and again after every draw, so a server restart cannot
+    # hand out a pool twice — the list on the row is the pool, and there is no
+    # copy of it anywhere else.
+    mystery_envelopes = models.JSONField(default=list, blank=True)
+    # When they opened. Null while they are still sealed; the flag rather than
+    # an empty list, because a pool that has been drawn down to nothing is also
+    # an empty list and the two mean opposite things.
+    mystery_opened_at = models.DateTimeField(null=True, blank=True)
     # Matches the create form's default, so a tournament made anywhere else —
     # the admin, a shell — behaves like one made through the app.
     rabbit_hunting_enabled = models.BooleanField(default=True)

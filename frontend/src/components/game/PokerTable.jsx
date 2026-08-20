@@ -30,6 +30,9 @@ import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
 import { backersOf } from "./sideBets";
 import FinisherOverlay from "./FinisherOverlay";
+import MysteryBoard from "./MysteryBoard";
+import MysteryOpening from "./MysteryOpening";
+import MysteryReveal from "./MysteryReveal";
 import ThrownItem from "./ThrownItem";
 import AimOverlay from "./AimOverlay";
 
@@ -272,6 +275,12 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
           game opens — a drawn prize is not derivable from the buy-in, and a coin
           prize is not something the chips on the table say. */}
       {fast && <FastPrizePlaque fast={fast} compact={compact} />}
+
+      {/* Mystery bounties: what is left on the board all game, the envelope
+          being opened, and — over everything — the moment the pool is cut. */}
+      <MysteryBoard compact={compact} />
+      <MysteryReveal />
+      <MysteryOpening />
 
       {/* Everything currently in the air. Seat positions are percentages of
           the frame, and both the flight and the aiming need pixels, so they

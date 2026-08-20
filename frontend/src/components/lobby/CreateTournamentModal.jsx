@@ -67,6 +67,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [bountyMode, setBountyMode] = useState("none");
   const [bountyEuros, setBountyEuros] = useState(0);
   const [bountySplit, setBountySplit] = useState(50);
+  const [mysteryRelease, setMysteryRelease] = useState("itm");
   // On by default: seeing the cards that would have come is the kind of thing
   // a friendly game wants, and a host who disagrees can turn it off here.
   const [rabbitHuntingEnabled, setRabbitHuntingEnabled] = useState(true);
@@ -195,6 +196,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       setBountyMode(data.bounty_mode || "none");
       setBountyEuros((data.bounty_cents || 0) / 100);
       setBountySplit(data.bounty_progressive_split_pct || 50);
+      setMysteryRelease(data.mystery_release || "itm");
 
       // Stripped of the database's own columns, so these are levels to create
       // rather than levels that already exist.
@@ -337,6 +339,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       bounty_mode: bountyOn ? bountyMode : "none",
       bounty_cents: bountyCents,
       bounty_progressive_split_pct: bountyMode === "progressive" ? Number(bountySplit) : 50,
+      mystery_release: mysteryRelease,
       rabbit_hunting_enabled: rabbitHuntingEnabled,
       showdown_seconds: showdownSeconds,
       auto_remove_offline_seconds: autoRemoveOfflineEnabled ? autoRemoveOfflineSeconds : 0,
@@ -353,6 +356,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       delete payload.bounty_mode;
       delete payload.bounty_cents;
       delete payload.bounty_progressive_split_pct;
+      delete payload.mystery_release;
     }
     if (!advanced) {
       // The two answers, turned into a structure. Everything else is the
@@ -806,8 +810,26 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                 <option value="none">Off</option>
                 <option value="fixed">Fixed KO</option>
                 <option value="progressive">Progressive KO</option>
+                <option value="mystery">Mystery bounty</option>
               </select>
             </label>
+
+            {/* When the envelopes open. The only thing a mystery game needs
+                configuring beyond the amount — everything else about it follows
+                from the pool. */}
+            {euroMode && bountyMode === "mystery" && (
+              <label className="flex items-center justify-between text-sm gap-3">
+                <span className="text-(--color-text-muted) text-xs">Envelopes open</span>
+                <select
+                  className="input-field px-2 py-1 rounded w-40 transition-colors"
+                  value={mysteryRelease}
+                  onChange={(e) => setMysteryRelease(e.target.value)}
+                >
+                  <option value="itm">At the money</option>
+                  <option value="reg_closed">When registration closes</option>
+                </select>
+              </label>
+            )}
 
             {bountyOn && (
               <>
@@ -840,6 +862,12 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                 <p className="text-xs text-(--color-text-muted) leading-snug">
                   {bountyCents >= buyInCents && buyInCents > 0
                     ? "The bounty has to be smaller than the buy-in."
+                    : bountyMode === "mystery"
+                    ? `Of each ${(buyInCents / 100).toFixed(2)}€ buy-in, ${((buyInCents - bountyCents) / 100).toFixed(2)}€ goes to the places below and ${(bountyCents / 100).toFixed(2)}€ into a sealed pool. `
+                      + (mysteryRelease === "reg_closed"
+                        ? "When registration closes the pool is cut into envelopes of wildly different sizes, and every knockout after that draws one."
+                        : "When the field reaches the money the pool is cut into envelopes of wildly different sizes, and every knockout after that draws one.")
+                      + " Knockouts before then pay nothing — that is the point of them."
                     : `Of each ${(buyInCents / 100).toFixed(2)}€ buy-in, ${((buyInCents - bountyCents) / 100).toFixed(2)}€ goes to the places below and ${(bountyCents / 100).toFixed(2)}€ onto that player's head. `
                       + (bountyMode === "progressive"
                         ? `Knock someone out and ${bountySplit}% of their bounty is cash in hand; the other ${100 - bountySplit}% is added to your own head.`

@@ -115,6 +115,14 @@ const useGameStore = create((set) => ({
   equityShake: null,
   equityShakeSequence: 0,
   clearEquityShake: (id) => set((s) => (s.equityShake?.id === id ? { equityShake: null } : {})),
+  // Mystery bounties: the board, and whether it has been opened. Null at every
+  // table that is not playing one.
+  mystery: null,
+  mysterySequence: 0,
+  /** Spent by whatever plays the opening, so it plays once. */
+  clearMysteryAnnouncement: () => set((s) => (
+    s.mystery ? { mystery: { ...s.mystery, announcement: null } } : {}
+  )),
   countdown: null,    // seconds remaining before tournament starts
   // Which instant format this table is and what it pays: {key, label, seats,
   // stake_coins, multiplier, prize_coins}, or null at a tournament table.
@@ -681,14 +689,70 @@ const useGameStore = create((set) => ({
             cashCents: data.cash_cents,
             toHeadCents: data.to_head_cents,
             victimName: data.victim_name,
+            // A drawn envelope rather than a known bounty. Carries what was in
+            // it and what it stands against, so the reveal can make more of the
+            // ones worth making more of.
+            mystery: data.mystery || null,
             // Two knockouts in a row on the same seat are the same object by
             // value, so the animation needs something that always changes.
             id: s.bountyFlashSequence + 1,
           },
           bountyFlashSequence: s.bountyFlashSequence + 1,
+          // What is left on the board, so the count beside the table follows
+          // every draw without waiting for anything else to arrive.
+          ...(data.mystery
+            ? {
+                mystery: {
+                  ...(s.mystery || {}),
+                  envelopesLeft: data.mystery.envelopes_left,
+                  poolLeftCents: data.mystery.pool_left_cents,
+                  topLeftCents: data.mystery.top_left_cents,
+                  opened: true,
+                },
+              }
+            : {}),
           messages: appendLog(s, entry(s, "info",
-            `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
-            + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
+            data.mystery
+              ? `${data.name} drew ${formatEuros(data.mystery.envelope_cents)} for ${data.victim_name}`
+                + (data.mystery.is_top_prize ? " — the biggest envelope left" : "")
+                + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : "")
+              : `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
+                + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
+        }));
+        break;
+
+      // The envelopes have been cut and the pool is now in play. The one moment
+      // in a mystery tournament that is worth stopping the table for.
+      case "mystery_opened":
+        set((s) => ({
+          mystery: {
+            opened: true,
+            envelopes: data.envelopes || [],
+            poolCents: data.pool_cents || 0,
+            poolLeftCents: data.pool_cents || 0,
+            topCents: data.top_cents || 0,
+            topLeftCents: data.top_cents || 0,
+            envelopesLeft: (data.envelopes || []).length,
+            playersLeft: data.players_left || 0,
+            reason: data.reason || null,
+            // Shown once, and dismissed by whatever draws it.
+            announcement: s.mysterySequence + 1,
+          },
+          mysterySequence: s.mysterySequence + 1,
+          messages: appendLog(s, entry(s, "info",
+            `Mystery bounties are open — ${formatEuros(data.pool_cents || 0)} in `
+            + `${(data.envelopes || []).length} envelopes, biggest `
+            + `${formatEuros(data.top_cents || 0)}`)),
+        }));
+        break;
+
+      // A knockout while the pool is still sealed. Worth saying out loud: it
+      // was worth something, and nobody knows what yet.
+      case "mystery_sealed":
+        set((s) => ({
+          messages: appendLog(s, entry(s, "info",
+            `${(data.eliminators || []).join(" & ")} knocked out ${data.victim_name} — `
+            + "bounty still sealed")),
         }));
         break;
 
@@ -940,6 +1004,7 @@ const useGameStore = create((set) => ({
       // Cleared, or a tournament table opened after a Spin n Go would keep its
       // violet felt and print a prize nobody is playing for.
       fast: null,
+      mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,

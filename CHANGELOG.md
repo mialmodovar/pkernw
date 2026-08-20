@@ -9,6 +9,19 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Mystery bounties.** A knockout tournament where nobody's head is worth
+  anything in particular: the same half of every buy-in goes into a sealed pool
+  instead, and knockouts pay nothing at all until the pool is cut into envelopes
+  of wildly different sizes. From that moment on, busting somebody draws one —
+  most are worth about a buy-in, one is worth the night. The envelopes open
+  either **at the money** or **when registration closes**, whichever the host
+  picks, and both wait for the field to be final: a pool that can still grow is
+  a pool that cannot be cut up. The board of what is left is public, because
+  knowing what is still in there is most of the tension; only the draw is a
+  gamble. The table makes a moment of both — the pool being opened stops the
+  felt for a few seconds and deals the envelopes out one by one, and a draw
+  tears open with the amount landing out of it, scaled to what it was worth
+  against everything still on the board.
 - **Sit n Go, in two shapes.** Beside the Spin n Go tab: **Heads Up** — two
   players, front to front, twenty-five big blinds each, five to ten minutes —
   and **6-Max**, thirty big blinds with the top two paid, ten to fifteen. Two
@@ -46,6 +59,12 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The winner is paid their own bounty, in every mode.** They always were —
+  settlement has always handed back the head nobody collected — but it was only
+  covered by one test of one case. It is now pinned for fixed, progressive and
+  mystery alike, along with the property underneath it: whatever is on the heads
+  plus whatever has been collected is always exactly what the buy-ins put in,
+  checked after every knockout across hundreds of randomly ordered fields.
 - **You stay logged in.** The session was two hours of access on a seven-day
   refresh, and the browser kept the first refresh token it was given — so an
   active player was signed out a week after they first logged in, whatever they

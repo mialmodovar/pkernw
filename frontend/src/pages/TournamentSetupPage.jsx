@@ -402,13 +402,22 @@ export default function TournamentSetupPage() {
                   said nothing about the half of the buy-in riding on people's
                   heads — on the one page a knocked-out player can still read. */}
               <Fact label="Knockouts">
-                {bountyOn
-                  ? `${tournament.bounty_mode === "progressive" ? "Progressive" : "Fixed"} · `
+                {!bountyOn
+                  ? "No bounties"
+                  : tournament.bounty_mode === "mystery"
+                  // A mystery game puts nothing on anybody's head, so saying it
+                  // does — as this line used to for every mode — would be
+                  // describing a different tournament.
+                  ? `Mystery · ${formatEuros(tournament.bounty_cents)} of each buy-in into a sealed `
+                    + `pool of ${formatEuros(koPoolCents)} · envelopes open `
+                    + (tournament.mystery_release === "reg_closed"
+                      ? "when registration closes"
+                      : "at the money")
+                  : `${tournament.bounty_mode === "progressive" ? "Progressive" : "Fixed"} · `
                     + `${formatEuros(tournament.bounty_cents)} of each buy-in onto your head`
                     + (tournament.bounty_mode === "progressive"
                       ? ` · ${tournament.bounty_progressive_split_pct}% of a bounty is cash, the rest onto yours`
-                      : "")
-                  : "No bounties"}
+                      : "")}
               </Fact>
               <Fact label="Time bank">
                 {tournament.time_bank_seconds ? `${tournament.time_bank_seconds}s` : "None"}
@@ -454,7 +463,9 @@ export default function TournamentSetupPage() {
                     // ever divide the first one. A single "prize pool" figure
                     // with the bounties folded into it is the number this page
                     // used to print, and it was never what anybody got paid.
-                    ? `Places ${formatEuros(potCents)} · KO pool ${formatEuros(koPoolCents)} · `
+                    ? `Places ${formatEuros(potCents)} · `
+                      + `${tournament.bounty_mode === "mystery" ? "Mystery pool" : "KO pool"} `
+                      + `${formatEuros(koPoolCents)} · `
                       + `${entries} ${entries === 1 ? "entry" : "entries"} at ${formatEuros(buyInCents)}, `
                       + `${formatEuros(tournament.bounty_cents)} of each onto a head. `
                       + "Settle up in Calotes, payments happen outside this app."

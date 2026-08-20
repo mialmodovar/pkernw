@@ -179,11 +179,13 @@ export default function LobbyPage() {
     await useLobbyStore.getState().deleteTournament(tournament.id);
   };
   return (
-    // Bounded to the viewport so the tournament list can scroll inside itself
-    // rather than taking the whole page with it. dvh rather than vh: on a phone
-    // the browser chrome is part of the height and moves as you scroll.
-    <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6
-                    lg:h-[calc(100%-4rem)]">
+    // The tournament list is long and scrolls inside itself, so that tab is
+    // bounded to the viewport. The fast-game tabs are a fixed handful of cards
+    // and scroll with the page instead — a scrollbar inside a column that has
+    // room to spare only makes the page feel cramped.
+    <div className={`max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 ${
+      activeTab.formats ? "lg:min-h-[calc(100%-4rem)]" : "lg:h-[calc(100%-4rem)]"
+    }`}>
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <RecoveryCodePanel />

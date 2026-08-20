@@ -35,8 +35,9 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto space-y-5">
+    <div className="space-y-5">
       {shown.map((format) => (
+
         <section key={format.key} className="space-y-3">
           {/* The format, said properly and always — even on a tab that shows
               only one. What kind of game this is is the first thing anybody

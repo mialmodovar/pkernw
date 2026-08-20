@@ -132,6 +132,7 @@ def _format_payload(fmt):
     return {
         "key": fmt.key,
         "label": fmt.label,
+        "icon": fmt.icon,
         "blurb": fmt.blurb,
         "seats": fmt.seats,
         "duration": fmt.duration,

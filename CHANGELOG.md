@@ -27,6 +27,24 @@ remembering.
   its own. Adding a fourth format is a row in a table.
 
 ### Changed
+- **The instant-game lobby says what kind of game it is.** Every format now
+  leads with its own name, face and shape — three players, 15bb, three to five
+  minutes — instead of a small grey heading the Spin n Go tab did not draw at
+  all. The tier cards were big and said little: the only figure on one was an
+  unlabelled buy-in, large enough to read as a prize, over a row kept empty for
+  faces that were not there. A card now says what it costs and what it pays, both
+  labelled, with the seats as a row of pips beside the count; the full odds are
+  still a click away under Details.
+- **Chips or big blinds is a setting on your account.** It was kept in the
+  browser, so it followed you from table to table but not from one device to the
+  next. Which of the two you think in is a habit, not a property of the machine
+  you happen to be sitting at.
+
+### Fixed
+- **The hand history calls people what they call themselves.** A replay named
+  every player by their login name, ignoring the display name they had set — at
+  the one moment their play is being talked about. Rows are still filed under the
+  login name, which is what the ledger and the stats key on.
 - **Instant games stay out of the tournament list.** A Spin n Go you played three
   of before breakfast is not history in the sense that list means, and thirty of
   them would bury the night somebody actually arranged. Finished and waiting fast

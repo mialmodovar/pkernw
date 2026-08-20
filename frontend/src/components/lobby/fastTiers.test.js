@@ -1,23 +1,77 @@
 import { describe, expect, it } from "vitest";
 
-import { isMyTier, payoutRows, prizeRows, seatCounts, tierAction, tierBlurb } from "./fastTiers";
+import {
+  formatMeta, isMyTier, payoutRows, prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
+} from "./fastTiers";
 
 const tier = { key: "spingo", stake: 25, seats_needed: 3, game: null, odds: [] };
 const huTier = { key: "hu", stake: 10, seats_needed: 2, game: null, payouts: [] };
 
-describe("tierBlurb", () => {
-  it("says what the format is", () => {
-    expect(tierBlurb({ seats: 3, big_blinds: 15, duration: "3-5 min" }))
-      .toBe("3-max · 15bb · 3-5 min");
-  });
-
-  it("calls two players heads up, because nobody says 2-max", () => {
-    expect(tierBlurb({ seats: 2, big_blinds: 25, duration: "5-10 min" }))
-      .toBe("Heads up · 25bb · 5-10 min");
+describe("formatMeta", () => {
+  it("says the shape of the game in players, blinds and minutes", () => {
+    expect(formatMeta({ seats: 3, big_blinds: 15, duration: "3-5 min" }))
+      .toBe("3 players · 15bb · 3-5 min");
+    expect(formatMeta({ seats: 2, big_blinds: 25, duration: "5-10 min" }))
+      .toBe("2 players · 25bb · 5-10 min");
   });
 
   it("survives a format that has not loaded", () => {
-    expect(tierBlurb(null)).toBe("");
+    expect(formatMeta(null)).toBe("");
+  });
+});
+
+describe("prizeSummary", () => {
+  it("gives a drawn game its range, which is the whole point of it", () => {
+    const drawn = {
+      odds: [
+        { multiplier: 2, prize_coins: 50 },
+        { multiplier: 10, prize_coins: 250 },
+        { multiplier: 100, prize_coins: 2500 },
+      ],
+    };
+    expect(prizeSummary(drawn, { draws_multiplier: true })).toEqual({
+      label: "Prize", value: "🪙 50 – 🪙 2,500",
+    });
+  });
+
+  it("names the winner's share where one place is paid", () => {
+    const hu = { payouts: [{ place: 1, label: "1st", percentage: 100, coins: 20 }] };
+    expect(prizeSummary(hu, { draws_multiplier: false })).toEqual({
+      label: "Winner takes", value: "🪙 20",
+    });
+  });
+
+  it("lists both shares where two places are paid", () => {
+    const sixmax = {
+      payouts: [
+        { place: 1, coins: 97 },
+        { place: 2, coins: 52 },
+      ],
+    };
+    expect(prizeSummary(sixmax, { draws_multiplier: false })).toEqual({
+      label: "Top 2 paid", value: "🪙 97 · 🪙 52",
+    });
+  });
+
+  it("says something rather than nothing when the prizes have not arrived", () => {
+    expect(prizeSummary({}, { draws_multiplier: true }).value).toBe("drawn at the table");
+    expect(prizeSummary({}, { draws_multiplier: false }).value).toBe("—");
+  });
+});
+
+describe("seatPips", () => {
+  it("is one pip per seat, filled from the left", () => {
+    expect(seatPips({ seats_needed: 3, game: { seats: 1 } })).toEqual([true, false, false]);
+  });
+
+  it("is all empty at a table nobody has sat at", () => {
+    expect(seatPips({ seats_needed: 2 })).toEqual([false, false]);
+  });
+
+  it("fills up as a table does", () => {
+    expect(seatPips({ seats_needed: 6, game: { seats: 6 } })).toEqual(
+      [true, true, true, true, true, true],
+    );
   });
 });
 

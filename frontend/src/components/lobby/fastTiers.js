@@ -9,13 +9,19 @@
  * adding a fourth needs nothing here.
  */
 
-/** "Heads up · 25bb · 5-10 min" — the shape of the game in one line. */
-export function tierBlurb(format) {
+/** "2 players · 25bb · 5-10 min" — the shape of the game in one line.
+ *
+ *  Said in players rather than as "2-max", which is technically right and
+ *  nobody says out loud. The format's name is right beside this, so it does not
+ *  need repeating here.
+ */
+export function formatMeta(format) {
   if (!format) return "";
-  // Two players is heads up. Calling it "2-max" is technically right and
-  // nobody says it.
-  const seats = format.seats === 2 ? "Heads up" : `${format.seats}-max`;
-  return [seats, `${format.big_blinds}bb`, format.duration].filter(Boolean).join(" · ");
+  return [
+    `${format.seats} players`,
+    `${format.big_blinds}bb`,
+    format.duration,
+  ].filter(Boolean).join(" · ");
 }
 
 /** How full the waiting game is, as [seated, needed]. */
@@ -52,6 +58,51 @@ export function tierAction(tier, { mine = null, balance = null } = {}) {
     return { kind: "broke", label: "Sit", enabled: false, note: "Not enough coins" };
   }
   return { kind: "sit", label: "Sit", enabled: true, note: null };
+}
+
+/**
+ * What you are playing for, in the one line a card has room for.
+ *
+ * This used to be behind a "Prizes" button, which meant the only number on the
+ * card was what it cost — a card that says what it takes and not what it pays.
+ * The button is still there for the whole table; this is the headline.
+ *
+ * Returns {label, value}, so a card can lay the two out rather than parse a
+ * sentence back apart.
+ */
+export function prizeSummary(tier, format) {
+  const coins = (amount) => `\u{1FA99} ${Number(amount || 0).toLocaleString()}`;
+
+  if (format?.draws_multiplier) {
+    const prizes = (tier.odds || []).map((row) => row.prize_coins).filter(Boolean);
+    if (!prizes.length) return { label: "Prize", value: "drawn at the table" };
+    // The range is the format: most of the time it is the bottom of it, and the
+    // top is the reason anybody sits down.
+    return {
+      label: "Prize",
+      value: `${coins(Math.min(...prizes))} – ${coins(Math.max(...prizes))}`,
+    };
+  }
+
+  const payouts = tier.payouts || [];
+  if (payouts.length === 0) return { label: "Prize", value: "—" };
+  if (payouts.length === 1) return { label: "Winner takes", value: coins(payouts[0].coins) };
+  return {
+    label: `Top ${payouts.length} paid`,
+    value: payouts.map((row) => coins(row.coins)).join(" · "),
+  };
+}
+
+/**
+ * The seats, as filled and empty.
+ *
+ * A row of pips says "one of three" faster than the words do, and it is the
+ * thing being watched while you wait — the count beside it is for anybody who
+ * wants the number rather than the shape.
+ */
+export function seatPips(tier) {
+  const [seated, needed] = seatCounts(tier);
+  return Array.from({ length: needed }, (_, index) => index < seated);
 }
 
 /** The prize ladder of a drawn game, longest odds last, ready to print. */

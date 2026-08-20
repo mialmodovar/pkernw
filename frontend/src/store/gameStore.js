@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
 import { formatEuros } from "../components/game/formatMoney";
 
@@ -221,11 +222,36 @@ const useGameStore = create((set) => ({
   tableCount: 0,
   tableSummaries: [],
   tableAssignmentNotice: null,
-  showBB: readStoredFlag(SHOW_BB_KEY, false),   // display chips as BB count
+  // Chips or big blinds. Kept on the account as well as in this browser: which
+  // of the two a player thinks in is a habit, not a property of the table they
+  // happen to be at or the machine they are sitting at. The local copy is read
+  // synchronously so a table drawn before /auth/me/ answers is already in the
+  // right units — the same reason the theme keeps one.
+  showBB: readStoredFlag(SHOW_BB_KEY, false),
   toggleBB: () => set((s) => {
     const showBB = !s.showBB;
     writeStoredFlag(SHOW_BB_KEY, showBB);
+    // A failed save leaves this browser right and the account stale; the next
+    // toggle retries, and nothing anybody can see is lost.
+    api.patch("/auth/me/preferences/", { show_bb: showBB }).catch(() => {});
     return { showBB };
+  }),
+
+  /**
+   * Reconcile with the account, once /auth/me/ has answered.
+   *
+   * The account wins when it has an opinion, because that is what makes the
+   * setting follow you to another browser. When it has none, the preference
+   * picked on this device is pushed up rather than thrown away.
+   */
+  hydratePreferences: (preferences) => set((s) => {
+    const stored = preferences?.show_bb;
+    if (typeof stored === "boolean") {
+      writeStoredFlag(SHOW_BB_KEY, stored);
+      return { showBB: stored };
+    }
+    if (s.showBB) api.patch("/auth/me/preferences/", { show_bb: true }).catch(() => {});
+    return {};
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
   // Keep your own cards face down until you look at them. Off by default —

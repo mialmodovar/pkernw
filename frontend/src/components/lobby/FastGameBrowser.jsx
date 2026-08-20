@@ -4,7 +4,9 @@ import useFastGameStore from "../../store/fastGameStore";
 import useWalletStore from "../../store/walletStore";
 import PlayerFaces from "./PlayerFaces";
 import { drawLabel, historyNet, myResult, netLabel, winnerName } from "./fastHistory";
-import { payoutRows, prizeRows, seatCounts, tierAction, tierBlurb } from "./fastTiers";
+import {
+  formatMeta, payoutRows, prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
+} from "./fastTiers";
 
 /**
  * The games you sit down at, for whichever tab is asking.
@@ -35,42 +37,86 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
     <div className="flex-1 min-h-0 overflow-y-auto space-y-5">
       {shown.map((format) => (
         <section key={format.key} className="space-y-3">
-          {/* The heading earns its place only where a tab shows more than one
-              format — the Spin n Go tab would just be saying its own name. */}
-          {shown.length > 1 && (
-            <h2 className="text-sm font-semibold text-(--color-silver)">
-              {format.label}
-              <span className="ml-2 text-xs font-normal text-(--color-text-muted)">
-                {tierBlurb(format)}
-              </span>
-            </h2>
-          )}
-          <p className="text-sm text-(--color-text-muted) leading-snug">{format.blurb}</p>
+          {/* The format, said properly and always — even on a tab that shows
+              only one. What kind of game this is is the first thing anybody
+              needs, and it used to be a small grey heading that the Spin n Go
+              tab did not draw at all. */}
+          <header className="flex items-start gap-3">
+            <span className="text-3xl leading-none shrink-0" aria-hidden="true">{format.icon}</span>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-(--color-silver) tracking-wide">
+                {format.label}
+              </h2>
+              <p className="text-xs text-(--color-highlight-text) tabular-nums">
+                {formatMeta(format)}
+              </p>
+              <p className="text-xs text-(--color-text-muted) leading-snug mt-1 max-w-prose">
+                {format.blurb}
+              </p>
+            </div>
+          </header>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {format.tiers.map((tier) => {
               const [seated, needed] = seatCounts(tier);
               const action = tierAction(tier, { mine: myGame, balance });
               const busy = sitting === `${tier.key}:${tier.stake}`;
               const detailKey = `${tier.key}:${tier.stake}`;
+              const prize = prizeSummary(tier, format);
+              const waiting = tier.game?.waiting || [];
 
               return (
-                <div key={detailKey} className="panel-raised rounded-xl p-4 space-y-3">
+                <div
+                  key={detailKey}
+                  className={`panel-raised rounded-xl p-3 space-y-2.5 transition-colors ${
+                    seated > 0 ? "border-(--color-border-strong)" : ""
+                  }`}
+                >
+                  {/* What it costs, labelled. On its own the number could be
+                      read as what it pays — which is the line under it. */}
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-2xl font-bold text-(--color-highlight-text) tabular-nums">
-                      🪙 {tier.stake}
+                    <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
+                      Buy-in
                     </span>
-                    <span className="text-xs text-(--color-text-muted) tabular-nums">
-                      {seated} / {needed} seated
+                    <span className="text-xl font-bold text-(--color-silver) tabular-nums">
+                      🪙 {tier.stake}
                     </span>
                   </div>
 
-                  <p className="text-xs text-(--color-text-muted)">{tierBlurb(format)}</p>
+                  {/* What it pays. This was behind the Prizes button, which left
+                      the cost as the only figure on the card. */}
+                  <div className="flex items-baseline justify-between gap-2 pt-2
+                                  border-t border-(--color-border)">
+                    <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
+                      {prize.label}
+                    </span>
+                    <span className="text-sm font-semibold text-(--color-highlight-text) tabular-nums">
+                      {prize.value}
+                    </span>
+                  </div>
 
-                  {/* Who is already waiting. An empty row on an empty table
-                      rather than a placeholder: the faces are the reason to look. */}
-                  <div className="h-6 flex items-center">
-                    <PlayerFaces players={tier.game?.waiting || []} />
+                  {/* Seats, as a shape and a number. The faces only take a row
+                      when there are faces — an empty table used to keep an empty
+                      one, which is most of what made these cards hollow. */}
+                  <div className="flex items-center gap-2">
+                    <span className="flex gap-1" aria-hidden="true">
+                      {seatPips(tier).map((filled, index) => (
+                        <span
+                          key={index}
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            filled ? "bg-(--color-highlight-text)" : "bg-(--color-border-strong)"
+                          }`}
+                        />
+                      ))}
+                    </span>
+                    <span className="text-[11px] text-(--color-text-muted) tabular-nums">
+                      {seated} of {needed} seated
+                    </span>
+                    {waiting.length > 0 && (
+                      <span className="ml-auto">
+                        <PlayerFaces players={waiting} size="w-5 h-5" />
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -101,11 +147,12 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                     <button
                       type="button"
                       aria-pressed={oddsOpen === detailKey}
-                      onClick={() => setOddsOpen(oddsOpen === detailKey ? null : detailKey)}
-                      className="px-3 py-2 rounded text-xs font-semibold panel-raised
+                      title={format.draws_multiplier ? "Every multiplier and its odds" : "How the pot is split"}
+                      className="px-2 py-2 rounded text-[11px] font-semibold
                                  text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
+                      onClick={() => setOddsOpen(oddsOpen === detailKey ? null : detailKey)}
                     >
-                      Prizes
+                      {oddsOpen === detailKey ? "Hide" : "Details"}
                     </button>
                   </div>
 

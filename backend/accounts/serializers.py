@@ -48,7 +48,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "avatar_url", "display_name", "theme")
+        fields = ("avatar_emoji", "avatar_url", "display_name", "theme", "preferences")
 
     def get_display_name(self, profile):
         return shown_name(profile.user.username, profile.display_name)
@@ -110,6 +110,19 @@ class DisplayNameSerializer(serializers.Serializer):
         if taken:
             raise serializers.ValidationError("Somebody already plays under that name.")
         return name
+
+
+class PreferencesUpdateSerializer(serializers.Serializer):
+    """How this player wants a table to read.
+
+    One flag so far. Spelled out rather than taken as a free blob: what the
+    client sends ends up in a JSON column, and a column that accepts anything is
+    one nothing can be assumed about later.
+    """
+
+    # Chips or big blinds. A stack of 12,400 and a stack of 31bb are the same
+    # stack, and which one a player thinks in is a habit, not a table setting.
+    show_bb = serializers.BooleanField()
 
 
 class ThemeUpdateSerializer(serializers.Serializer):

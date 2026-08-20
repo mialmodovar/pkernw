@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import api from "../api/http";
+import useGameStore from "./gameStore";
 import useThemeStore from "./themeStore";
 
 const useAuthStore = create((set, get) => ({
@@ -12,6 +13,7 @@ const useAuthStore = create((set, get) => ({
     try {
       const { data } = await api.get("/auth/me/");
       useThemeStore.getState().hydrate(data.profile?.theme);
+      useGameStore.getState().hydratePreferences(data.profile?.preferences);
       set({ user: data, loading: false });
     } catch {
       set({ user: null, loading: false });
@@ -24,6 +26,7 @@ const useAuthStore = create((set, get) => ({
     localStorage.setItem("refresh", data.refresh);
     const me = await api.get("/auth/me/");
     useThemeStore.getState().hydrate(me.data.profile?.theme);
+    useGameStore.getState().hydratePreferences(me.data.profile?.preferences);
     set({ user: me.data });
   },
 

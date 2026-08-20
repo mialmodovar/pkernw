@@ -676,3 +676,68 @@ class MoneyAndItmStatTests(APITestCase):
 		stats = self.client.get(reverse("my_stats")).data
 		self.assertEqual(stats["itm_pct"], 0)
 		self.assertEqual(stats["winnings_cents"], 0)
+
+
+class TablePreferencesTests(APITestCase):
+	"""Chips or big blinds, kept on the account rather than in a browser."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="pref_player", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def test_a_new_account_has_no_opinion_yet(self):
+		me = self.client.get(reverse("me")).data
+
+		self.assertEqual(me["profile"]["preferences"], {})
+
+	def test_saving_the_preference_puts_it_on_the_account(self):
+		response = self.client.patch(
+			reverse("update_preferences"), {"show_bb": True}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data, {"show_bb": True})
+		# And it comes back with the account, which is what makes it follow a
+		# player to another browser.
+		me = self.client.get(reverse("me")).data
+		self.assertEqual(me["profile"]["preferences"]["show_bb"], True)
+
+	def test_the_preference_can_be_turned_back_off(self):
+		self.client.patch(reverse("update_preferences"), {"show_bb": True}, format="json")
+		self.client.patch(reverse("update_preferences"), {"show_bb": False}, format="json")
+
+		me = self.client.get(reverse("me")).data
+		self.assertEqual(me["profile"]["preferences"]["show_bb"], False)
+
+	def test_a_preference_this_client_does_not_know_about_survives_being_edited(self):
+		"""Merged rather than replaced.
+
+		A newer client on another device may have saved something this one has
+		never heard of, and toggling blinds here must not wipe it.
+		"""
+		from accounts.models import Profile
+
+		profile, _ = Profile.objects.get_or_create(user=self.user)
+		profile.preferences = {"show_bb": False, "something_newer": "kept"}
+		profile.save(update_fields=["preferences"])
+
+		self.client.patch(reverse("update_preferences"), {"show_bb": True}, format="json")
+
+		profile.refresh_from_db()
+		self.assertEqual(profile.preferences, {"show_bb": True, "something_newer": "kept"})
+
+	def test_rubbish_is_refused_rather_than_stored(self):
+		response = self.client.patch(
+			reverse("update_preferences"), {"show_bb": "yes please"}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_somebody_else_cannot_set_your_preferences(self):
+		self.client.force_authenticate(None)
+
+		response = self.client.patch(
+			reverse("update_preferences"), {"show_bb": True}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

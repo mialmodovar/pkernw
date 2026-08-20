@@ -31,6 +31,10 @@ class FastFormat:
 
     key: str
     label: str
+    # One glyph for the format, so a tab tells you what kind of game it is
+    # before you have read anything. Served rather than picked in the client:
+    # the format's name and its face belong together.
+    icon: str
     blurb: str
     # Which Tournament.format the rows carry. Two of these are Sit n Gos and
     # differ only in how many seats they have.
@@ -66,6 +70,7 @@ FORMATS = {
     "spingo": FastFormat(
         key="spingo",
         label="Spin n Go",
+        icon="\U0001F3A1",
         blurb="Three players. The prize is drawn when the third one sits — usually twice the "
               "buy-in, occasionally a hundred times it. Winner takes all of it.",
         tournament_format="spingo",
@@ -83,6 +88,7 @@ FORMATS = {
     "hu": FastFormat(
         key="hu",
         label="Heads Up",
+        icon="\u2694\ufe0f",
         blurb="One on one, front to front. Twenty-five big blinds each and blinds that climb "
               "every two minutes — there is nowhere to hide and no reason to wait.",
         tournament_format="sitngo",
@@ -113,6 +119,7 @@ FORMATS = {
     "sixmax": FastFormat(
         key="sixmax",
         label="6-Max",
+        icon="\U0001F465",
         blurb="Six seats, thirty big blinds, and the top two paid. The shortest thing here "
               "that still plays like a tournament.",
         tournament_format="sitngo",

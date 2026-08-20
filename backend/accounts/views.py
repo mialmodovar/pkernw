@@ -17,6 +17,7 @@ from .serializers import (
     AvatarUpdateSerializer,
     DisplayNameSerializer,
     RegisterSerializer,
+    PreferencesUpdateSerializer,
     ThemeUpdateSerializer,
     UserSerializer,
 )
@@ -136,6 +137,25 @@ def avatar_image_for_user(request, user_id):
     response["X-Content-Type-Options"] = "nosniff"
     response["Content-Disposition"] = "inline"
     return response
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_preferences(request):
+    """How this player wants a table to read, saved to the account.
+
+    Merged rather than replaced: the client sends the flag it just changed, and
+    a preference it has not heard of — one added by a newer client on another
+    device — should survive being edited from an older one.
+    """
+    serializer = PreferencesUpdateSerializer(data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.preferences = {**(profile.preferences or {}), **serializer.validated_data}
+    profile.save(update_fields=["preferences"])
+
+    return Response(profile.preferences, status=status.HTTP_200_OK)
 
 
 @api_view(["PATCH"])

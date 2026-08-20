@@ -7,6 +7,8 @@ from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
 
 from tournaments.models import Tournament, TournamentPlayer, TournamentTable
 
@@ -2141,4 +2143,71 @@ class FastGameLiveTests(TransactionTestCase):
         # Everybody else paid to sit and took nothing back.
         self.assertEqual(
             Wallet.objects.get(user_id=game.players.get(finish_position=6).user_id).balance, 75,
+        )
+
+
+class HandHistoryNamingTests(APITestCase):
+    """What the replay calls people.
+
+    The login name is what a row is filed under; the display name is what
+    somebody asked to be called. A hand history is other people talking about a
+    hand you played, so it is the second one that belongs there.
+    """
+
+    def setUp(self):
+        from accounts.models import Profile
+
+        self.host = User.objects.create_user(username="hh_host", password="x")
+        Profile.objects.update_or_create(user=self.host, defaults={"display_name": "The Host"})
+        self.plain = User.objects.create_user(username="hh_plain", password="x")
+
+        self.tournament = Tournament.objects.create(host=self.host, name="Replay", status="running")
+        self.seats = {
+            user.username: TournamentPlayer.objects.create(
+                tournament=self.tournament, user=user, seat=index, seat_at_table=index, chips=1000,
+            )
+            for index, user in enumerate((self.host, self.plain))
+        }
+        self.client.force_authenticate(self.host)
+
+    def _hand_with_actions(self):
+        from game.models import Hand, HandAction
+
+        hand = Hand.objects.create(
+            tournament=self.tournament, hand_number=1, level_index=0, dealer_seat=0,
+            community_cards=[], pot_total=100, result={}, status="complete",
+        )
+        for username, seat in (("hh_host", 0), ("hh_plain", 1)):
+            HandAction.objects.create(
+                hand=hand, player=self.seats[username], seat=seat,
+                street="preflop", action="call", amount=50,
+            )
+        return hand
+
+    def test_the_replay_carries_the_name_a_player_chose(self):
+        self._hand_with_actions()
+
+        rows = self.client.get(reverse("tournament-hands", args=[self.tournament.id])).data
+        by_seat = {action["seat"]: action for action in rows[0]["actions"]}
+
+        self.assertEqual(by_seat[0]["display_name"], "The Host")
+        # Still filed under the login name, which is what everything else keys on.
+        self.assertEqual(by_seat[0]["username"], "hh_host")
+
+    def test_somebody_who_set_no_name_is_called_what_they_signed_up_as(self):
+        self._hand_with_actions()
+
+        rows = self.client.get(reverse("tournament-hands", args=[self.tournament.id])).data
+        by_seat = {action["seat"]: action for action in rows[0]["actions"]}
+
+        self.assertEqual(by_seat[1]["display_name"], "hh_plain")
+
+    def test_one_hand_read_on_its_own_is_named_the_same_way(self):
+        hand = self._hand_with_actions()
+
+        detail = self.client.get(reverse("hand-detail", args=[hand.id])).data
+
+        self.assertEqual(
+            {action["display_name"] for action in detail["actions"]},
+            {"The Host", "hh_plain"},
         )

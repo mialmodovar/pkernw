@@ -59,6 +59,22 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **All your tables, along the top of the one you are at.** A player can be
+  seated in three games at once and watching a fourth; the app could hold one in
+  its head. Leaving a table lost it, and the way back was a single button that
+  guessed which one you meant. Every open table is now a tab — with the hand you
+  were dealt there, so you can tell them apart at a glance — and switching is one
+  click. A watched table can be closed, because nothing on the server knows you
+  are looking; a seat cannot, because you are in it. From the lobby, "back to
+  the table" now means the table you were last at rather than the newest one.
+- **The lobby header stops shouting.** Three game modes set in the size of a page
+  title read as three competing headings with no page under any of them. They are
+  a segmented control now, with the mode's own face on each. Creating a
+  tournament sits with the tab it belongs to, and the table sandbox — a layout
+  tool, not a way to play — is an icon rather than a button the same size as one.
+- **Your coins live with your name.** Top left beside your face on a wide screen,
+  and up in the corner on a phone, where the profile card is a long scroll away.
+  A quiet pulse on the daily claim when there is one waiting, which takes it.
 - **The winner is paid their own bounty, in every mode.** They always were —
   settlement has always handed back the head nobody collected — but it was only
   covered by one test of one case. It is now pinned for fixed, progressive and

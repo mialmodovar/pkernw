@@ -8,6 +8,15 @@ const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
 const HIDE_HAND_KEY = "poker.hideHand";
 
+/** This table's hand, filed under the table it was dealt at. */
+const rememberHand = (state, cards) => {
+  if (!state.tournamentId) return state.hands;
+  return {
+    ...state.hands,
+    [state.tournamentId]: { cards: cards || [], at: Date.now() },
+  };
+};
+
 const readStoredFlag = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
@@ -132,10 +141,12 @@ const useGameStore = create((set) => ({
   // is opened. Only the memory below needs it, but it needs it badly: a hand
   // remembered from one table must never be shown against another.
   tournamentId: null,
-  // The last hand dealt to you, kept after the table is left so the shortcut
-  // back to it can show what you are holding. Deliberately outside reset: the
+  // The last hand dealt to you at each table, kept after the table is left so
+  // the tabs and the shortcut back can show what you are holding. Keyed by
+  // tournament, because a player can have three open at once and a hand from
+  // one must never be shown against another. Deliberately outside reset: the
   // whole point is that it survives leaving the page.
-  lastHand: null,
+  hands: {},
   // Who is ready to start, and how many seats there are to be ready. The count
   // exists so the overlay can say 3/5 without having to work out which of the
   // players it can see are actually seated.
@@ -308,9 +319,9 @@ const useGameStore = create((set) => ({
           handNumber: data.hand_number || 0,
           holeCards: data.hole_cards && data.hole_cards.length ? data.hole_cards : s.holeCards,
           // A reconnect mid-hand is the other way your hand arrives, and the
-          // shortcut back to the table should know about it too.
+          // tabs should know about it too.
           ...(data.hole_cards && data.hole_cards.length
-            ? { lastHand: { tournamentId: s.tournamentId, cards: data.hole_cards, at: Date.now() } }
+            ? { hands: rememberHand(s, data.hole_cards) }
             : {}),
           currentTableNumber: data.current_table_number ?? s.currentTableNumber,
           currentTableId: data.current_table_id ?? s.currentTableId,
@@ -421,7 +432,7 @@ const useGameStore = create((set) => ({
       case "hole_cards":
         set((s) => ({
           holeCards: data.cards || [],
-          lastHand: { tournamentId: s.tournamentId, cards: data.cards || [], at: Date.now() },
+          hands: rememberHand(s, data.cards),
         }));
         break;
 

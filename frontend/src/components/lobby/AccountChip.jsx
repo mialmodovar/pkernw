@@ -5,46 +5,56 @@ import useAuthStore from "../../store/authStore";
 import useWalletStore from "../../store/walletStore";
 
 /**
- * Who you are and what you are holding, in the corner where an account lives.
+ * Who you are and what you are holding, compactly.
  *
- * The balance was only ever in the sidebar panel, which is where you go to
- * claim it — not where you look while deciding whether you can afford to sit
- * down. It belongs beside your own name, which is where everybody's eye goes
- * for "am I still me and how much have I got".
+ * The sidebar's profile card says this on a wide screen, where it sits top left
+ * beside everything else about you. On a phone that card is a long way down the
+ * page — the lobby stacks — so the same two facts come up to the corner, which
+ * is where an account lives on every other app anybody has used.
  */
-export default function AccountChip() {
+export default function AccountChip({ className = "" }) {
   const user = useAuthStore((s) => s.user);
   const balance = useWalletStore((s) => s.balance);
+  const canClaim = useWalletStore((s) => s.canClaim);
+  const dailyAmount = useWalletStore((s) => s.dailyAmount);
+  const claim = useWalletStore((s) => s.claim);
   const fetchWallet = useWalletStore((s) => s.fetchWallet);
 
-  // The sidebar panel fetches this too, and the store is shared — but this is
-  // drawn on pages that panel is not, so it cannot rely on it having asked.
   useEffect(() => { fetchWallet(); }, [fetchWallet]);
 
   if (!user) return null;
+  const name = user.profile?.display_name || user.username;
 
   return (
-    <div
-      className="flex items-center gap-2 panel-raised rounded-full pl-1 pr-3 py-1"
-      title={`${user.profile?.display_name || user.username}${
-        balance == null ? "" : ` · ${balance.toLocaleString()} coins`
-      }`}
-    >
+    <div className={`flex items-center gap-2 panel-raised rounded-full pl-1 pr-2.5 py-1 ${className}`}>
       <Avatar
         url={user.profile?.avatar_url}
         emoji={user.profile?.avatar_emoji}
-        name={user.profile?.display_name || user.username}
+        name={name}
         className="w-7 h-7 rounded-full shrink-0"
         emojiClassName="text-base"
       />
-      <span className="text-sm text-(--color-silver) max-w-[9rem] truncate">
-        {user.profile?.display_name || user.username}
+      <span className="min-w-0 leading-tight">
+        <span className="block text-xs text-(--color-silver) max-w-[7rem] truncate">{name}</span>
+        {balance != null && (
+          <span className="block text-xs font-semibold text-(--color-highlight-text) tabular-nums">
+            🪙 {balance.toLocaleString()}
+          </span>
+        )}
       </span>
-      {balance != null && (
-        <span className="text-sm font-semibold text-(--color-highlight-text) tabular-nums
-                         border-l border-(--color-border) pl-2">
-          🪙 {balance.toLocaleString()}
-        </span>
+      {/* Only when there is something to take, and it takes it. */}
+      {canClaim && (
+        <button
+          type="button"
+          onClick={claim}
+          title={`Take today's ${dailyAmount} coins`}
+          aria-label={`Claim today's ${dailyAmount} coins`}
+          className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold
+                     bg-(--color-highlight-dim) border border-(--color-highlight-edge)
+                     text-(--color-highlight-pale) animate-pulse-soft"
+        >
+          +{dailyAmount}
+        </button>
       )}
     </div>
   );

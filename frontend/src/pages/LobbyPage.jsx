@@ -23,9 +23,9 @@ import WatchPanel from "../components/lobby/WatchPanel";
 // `formats` is which of the instant formats a tab shows; the tournament tab has
 // none, being the one place where games are arranged rather than sat down at.
 const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments", formats: null },
-  { key: "spingo", label: "Spin n Go", formats: ["spingo"] },
-  { key: "sitngo", label: "Sit n Go", formats: ["hu", "sixmax"] },
+  { key: "tournaments", label: "Tournaments", icon: "🏆", formats: null },
+  { key: "spingo", label: "Spin n Go", icon: "🎡", formats: ["spingo"] },
+  { key: "sitngo", label: "Sit n Go", icon: "⚔️", formats: ["hu", "sixmax"] },
 ];
 
 /**
@@ -186,10 +186,29 @@ export default function LobbyPage() {
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
-        <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* The two game modes, as the page's own heading. Same pill as the
-              league tabs on a club page and the filter chips below. */}
-          <div className="flex gap-2 items-center" role="tablist" aria-label="Game mode">
+        {/* A phone stacks this page, which puts the profile card a long scroll
+            away — so on a small screen the account comes up to the corner. On a
+            wide one it is already top left in the sidebar and this would be
+            saying it twice. */}
+        <div className="shrink-0 flex items-center justify-end gap-2 lg:hidden">
+          <AccountChip />
+          <button onClick={logout}
+            className="px-3 py-1.5 panel-raised hover:border-(--color-border-strong) rounded
+                       text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors">
+            Logout
+          </button>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-3">
+          {/* One segmented control rather than three headline-sized pills. These
+              are a way of switching what the page is showing, and they were
+              set in the size of a page title — which read as three competing
+              headings with no page underneath any of them. */}
+          <div
+            className="flex items-center gap-0.5 p-0.5 rounded-lg panel-raised overflow-x-auto"
+            role="tablist"
+            aria-label="Game mode"
+          >
             {LOBBY_TABS.map((one) => (
               <button
                 key={one.key}
@@ -197,34 +216,47 @@ export default function LobbyPage() {
                 role="tab"
                 aria-selected={tab === one.key}
                 onClick={() => setTab(one.key)}
-                className={`px-4 py-1.5 rounded-full text-lg font-bold tracking-wide border transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
+                            whitespace-nowrap transition-colors ${
                   tab === one.key
-                    ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
-                    : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+                    ? "bg-(--color-accent) text-(--color-accent-text)"
+                    : "text-(--color-text-muted) hover:text-(--color-silver)"
                 }`}
               >
+                <span aria-hidden="true">{one.icon}</span>
                 {one.label}
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-3 items-center">
+
+          {/* Only what this tab can act on. Creating a tournament belongs to
+              the Tournaments tab; nothing here opens a Spin n Go, which is what
+              the Sit button on the card is for. */}
+          <div className="ml-auto flex items-center gap-2">
             {tab === "tournaments" && (runsThePlace(user) || staffsAClub) && (
               <>
-                <button onClick={() => navigate("/dev/table")}
-                  title="Open the game table with mock players, for layout work"
-                  className="btn-secondary px-3 py-2 rounded font-semibold text-sm transition-colors">
-                  Table sandbox
-                </button>
                 <button onClick={() => navigate("/tournaments/new")}
-                  className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
-                  Create Tournament
+                  className="btn-accent px-3 py-1.5 rounded font-semibold text-sm transition-colors
+                             whitespace-nowrap">
+                  New tournament
+                </button>
+                {/* A layout tool, not a way to play, so it is an icon beside
+                    the thing it is a tool for rather than a button the same
+                    size as one. */}
+                <button onClick={() => navigate("/dev/table")}
+                  title="Table sandbox — the felt with mock players, for layout work"
+                  aria-label="Table sandbox"
+                  className="btn-secondary w-8 h-8 rounded flex items-center justify-center
+                             text-sm transition-colors">
+                  🛠
                 </button>
               </>
             )}
-            {/* Your name and your coins, in the corner an account belongs in. */}
-            <AccountChip />
             <button onClick={logout}
-              className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">
+              title="Log out"
+              className="hidden lg:block px-3 py-1.5 panel-raised hover:border-(--color-border-strong)
+                         rounded text-sm text-(--color-text-muted) hover:text-(--color-silver)
+                         transition-colors">
               Logout
             </button>
           </div>

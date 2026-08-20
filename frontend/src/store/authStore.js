@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import api from "../api/http";
 import useGameStore from "./gameStore";
+import useTablesStore from "./tablesStore";
 import useThemeStore from "./themeStore";
 
 const useAuthStore = create((set, get) => ({
@@ -89,6 +90,8 @@ const useAuthStore = create((set, get) => ({
     // otherwise the next player to log in on this browser would inherit the
     // skin, and have it saved onto their own profile.
     useThemeStore.getState().clear();
+    // The next person at this browser starts with none of your tables open.
+    useTablesStore.getState().clear();
     set({ user: null });
   },
 }));

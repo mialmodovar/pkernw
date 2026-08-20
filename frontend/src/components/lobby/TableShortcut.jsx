@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import api from "../../api/http";
 import useAuthStore from "../../store/authStore";
 import useGameStore from "../../store/gameStore";
+import useTablesStore from "../../store/tablesStore";
 import PlayingCard from "../game/PlayingCard";
 import { handToShow, resumeLabel, tableToResume } from "./resumeTable";
 
@@ -32,27 +32,25 @@ export default function TableShortcut() {
   const { user } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const lastHand = useGameStore((s) => s.lastHand);
-  const [seats, setSeats] = useState([]);
+  const hands = useGameStore((s) => s.hands);
+  const seats = useTablesStore((s) => s.seats);
+  const refreshSeats = useTablesStore((s) => s.refreshSeats);
+  const lastTableId = useTablesStore((s) => s.lastTableId);
 
   const hidden = !user || HIDDEN_ON.some((pattern) => pattern.test(location.pathname));
 
   useEffect(() => {
     if (hidden) return undefined;
-    let cancelled = false;
-    const load = () => api.get("/tournaments/", { params: { scope: "mine_active" } })
-      .then(({ data }) => { if (!cancelled) setSeats(data); })
-      // A door that cannot be drawn is not worth an error over somebody's lobby.
-      .catch(() => {});
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [hidden, location.pathname]);
+    refreshSeats();
+    const timer = setInterval(refreshSeats, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [hidden, location.pathname, refreshSeats]);
 
-  const table = hidden ? null : tableToResume(seats);
+  const table = hidden ? null : tableToResume(seats, lastTableId);
   if (!table) return null;
 
-  const cards = handToShow(lastHand, table);
+  const cards = handToShow(hands, table);
+  const others = seats.filter((one) => one.id !== table.id).length;
 
   return (
     <button
@@ -68,6 +66,11 @@ export default function TableShortcut() {
           {table.status === "paused" ? "Paused at" : "You're playing"}
         </span>
         <span className="text-sm font-bold max-w-[11rem] truncate">{resumeLabel(table)}</span>
+        {/* Say when there are more, so somebody with three going knows this is
+            a way back to one of them rather than to all of them. */}
+        {others > 0 && (
+          <span className="text-[10px] opacity-80">+{others} more table{others === 1 ? "" : "s"}</span>
+        )}
       </span>
 
       {/* Your hand, small. A container query unit sizes the cards, so they need a

@@ -1,11 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Avatar from "../Avatar";
 import useAuthStore from "../../store/authStore";
+import useWalletStore from "../../store/walletStore";
 import EmojiPicker from "./EmojiPicker";
 import ThemeSettings from "./ThemeSettings";
 
+/**
+ * Who you are, and what you are holding.
+ *
+ * The balance used to live only in the coin panel further down — the place you
+ * go to claim it, rather than the place you look while deciding whether you can
+ * afford to sit down. It belongs against your own name, which is where anybody
+ * looks for "am I still me and how much have I got".
+ */
 export default function ProfileCard() {
   const { user, updateAvatar } = useAuthStore();
+  const balance = useWalletStore((s) => s.balance);
+  const canClaim = useWalletStore((s) => s.canClaim);
+  const dailyAmount = useWalletStore((s) => s.dailyAmount);
+  const claim = useWalletStore((s) => s.claim);
+  const fetchWallet = useWalletStore((s) => s.fetchWallet);
+
+  // The coin panel asks for this too and the store is shared, but the name is
+  // drawn before that panel is and should not wait on it.
+  useEffect(() => { fetchWallet(); }, [fetchWallet]);
   // One panel at a time: both drop out of the same card, and two of them open
   // at once would overlap.
   const [openPanel, setOpenPanel] = useState(null);
@@ -31,12 +49,39 @@ export default function ProfileCard() {
           <p className="font-semibold text-(--color-silver) truncate">
             {user?.profile?.display_name || user?.username}
           </p>
-          <button
-            onClick={() => toggle("avatar")}
-            className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
-          >
-            Change appearance
-          </button>
+          {balance == null ? (
+            <button
+              onClick={() => toggle("avatar")}
+              className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
+            >
+              Change appearance
+            </button>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <span
+                title={`${balance.toLocaleString()} coins`}
+                className="text-sm font-semibold text-(--color-highlight-text) tabular-nums"
+              >
+                🪙 {balance.toLocaleString()}
+              </span>
+              {/* Only when there is something to take. A dot on the coins with
+                  the reason on hover: the panel below is where claiming
+                  happens, and this is what sends you to it. */}
+              {canClaim && (
+                <button
+                  onClick={claim}
+                  title={`Take today's ${dailyAmount} coins`}
+                  aria-label={`Claim today's ${dailyAmount} coins`}
+                  className="flex items-center gap-1 rounded-full px-1.5 py-0.5
+                             bg-(--color-highlight-dim) border border-(--color-highlight-edge)
+                             text-[10px] font-semibold text-(--color-highlight-pale)
+                             animate-pulse-soft transition-colors"
+                >
+                  +{dailyAmount}
+                </button>
+              )}
+            </span>
+          )}
         </div>
         <button
           onClick={() => toggle("settings")}

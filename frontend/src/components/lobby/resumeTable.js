@@ -29,13 +29,22 @@ export function seatIsLive(tournament) {
 /**
  * Which table to offer, out of everything the lobby knows about.
  *
- * More than one is possible — a coin tournament running while a Spin n Go fires
- * — and the newest is the right answer: it is the one that just started dealing.
+ * More than one is ordinary — two Sit n Gos and a tournament is an evening —
+ * so the one you were last at wins: that is the one you stepped away from and
+ * the one you mean by "back to the table". Failing that, the newest, which is
+ * the one that has just started dealing.
  */
-export function tableToResume(tournaments = []) {
+export function tableToResume(tournaments = [], lastTableId = null) {
   const live = tournaments.filter(seatIsLive);
   if (!live.length) return null;
+  const last = live.find((one) => Number(one.id) === Number(lastTableId));
+  if (last) return last;
   return live.reduce((newest, one) => (one.id > newest.id ? one : newest));
+}
+
+/** Every table you are seated at, newest first — the tabs at the top of one. */
+export function liveSeats(tournaments = []) {
+  return tournaments.filter(seatIsLive).sort((a, b) => b.id - a.id);
 }
 
 /**
@@ -63,10 +72,43 @@ export function resumeLabel(tournament) {
  * the hand — a pair of aces from ten minutes ago is not information, it is a
  * reason to misplay the next decision.
  */
-export function handToShow(lastHand, tournament, now = Date.now()) {
-  if (!lastHand || !tournament) return [];
-  if (lastHand.tournamentId != null && Number(lastHand.tournamentId) !== Number(tournament.id)) return [];
-  if (!lastHand.cards?.length) return [];
-  if (now - (lastHand.at || 0) > HAND_FRESH_MS) return [];
-  return lastHand.cards;
+export function handToShow(hands, tournament, now = Date.now()) {
+  const hand = hands?.[tournament?.id] || null;
+  if (!hand || !tournament) return [];
+  if (!hand.cards?.length) return [];
+  if (now - (hand.at || 0) > HAND_FRESH_MS) return [];
+  return hand.cards;
+}
+
+/**
+ * Every table you have open, as the strip along the top of one draws them.
+ *
+ * Seats first and newest first, then whatever you are watching. The two are
+ * different kinds of thing: a seat comes from the server and cannot be closed
+ * because you are in it, while a watched table is this browser's own note and
+ * can be shut whenever you have seen enough.
+ *
+ * A table you are both seated at and watching is one table, and the seat wins —
+ * it is the truer of the two, and two tabs for one game is how somebody ends up
+ * folding the wrong hand.
+ */
+export function openTableTabs(seats = [], watching = []) {
+  const seated = liveSeats(seats).map((one) => ({
+    id: one.id,
+    label: resumeLabel(one),
+    kind: "seat",
+    status: one.status,
+  }));
+  const seatedIds = new Set(seated.map((one) => Number(one.id)));
+
+  const watched = watching
+    .filter((one) => !seatedIds.has(Number(one.id)))
+    .map((one) => ({
+      id: one.id,
+      label: one.name || `Table ${one.table ?? ""}`.trim(),
+      kind: "watch",
+      table: one.table,
+    }));
+
+  return [...seated, ...watched];
 }

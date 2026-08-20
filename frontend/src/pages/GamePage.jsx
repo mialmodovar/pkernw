@@ -20,7 +20,9 @@ import { useTurnAlert } from "../components/game/useTurnAlert";
 import { useTimeoutAlert } from "../components/game/useTimeoutAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
+import TableTabs from "../components/game/TableTabs";
 import { markArrivedAtTable } from "../components/lobby/autoOpenTable";
+import useTablesStore from "../store/tablesStore";
 import BreakOverlay from "../components/game/BreakOverlay";
 import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
 import HandReview from "../components/game/HandReview";
@@ -102,6 +104,9 @@ export default function GamePage() {
     // You are at a table. Anything that would later "take you to your table" is
     // from here on a drag backwards, so the arrival redirect is spent.
     markArrivedAtTable();
+    // And this is the table "back to the table" means from now on, whichever
+    // others are open.
+    useTablesStore.getState().visited(id);
     // Stamped with the tournament, so the hand this table deals is remembered
     // against the right game once the page is left again.
     reset(id);
@@ -110,6 +115,17 @@ export default function GamePage() {
     const unsubStatus = onStatus(setConnectionStatus);
     return () => { unsub(); unsubStatus(); disconnect(); };
   }, [sandbox, id, watching, handleEvent, reset, setConnectionStatus]);
+
+  // Watching a table is this browser's business — nothing on the server knows
+  // or cares — so it is remembered here, and stays a tab until it is closed.
+  useEffect(() => {
+    if (sandbox || watching == null) return;
+    useTablesStore.getState().openWatch({
+      id: Number(id),
+      table: watching,
+      name: tournament?.name || `Table ${watching}`,
+    });
+  }, [sandbox, id, watching, tournament?.name]);
 
   // Chip counts drive the rank, average stack and chip leader, and they only
   // live in the DB, so refresh them periodically rather than once on mount.
@@ -319,6 +335,9 @@ export default function GamePage() {
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
+      {/* Every other table you have open. Draws nothing when this is the only
+          one, which is most of the time. */}
+      {!sandbox && <TableTabs currentId={Number(id)} />}
       {watching != null && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">

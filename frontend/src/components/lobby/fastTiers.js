@@ -29,35 +29,71 @@ export function seatCounts(tier) {
   return [tier.game?.seats || 0, tier.seats_needed || 0];
 }
 
-/** Whether this tier is the one your own seat is at. */
+/** Whether this game of yours is one at this tier. */
 export function isMyTier(tier, mine) {
   return Boolean(mine && mine.key === tier.key && mine.stake === tier.stake);
 }
 
 /**
- * What this tier's button should do and say.
+ * The games of your own at this tier, waiting ones first.
  *
- * `mine` is your own live game, from the lobby payload — a seat at this tier
- * makes the button a way out of it, and a seat anywhere else makes every tier
- * unavailable, because one game at a time is the rule the server enforces.
+ * More than one is possible: a game of yours that is already dealing does not
+ * hold the tier, so you can be playing one and queued for the next.
  */
-export function tierAction(tier, { mine = null, balance = null } = {}) {
-  if (isMyTier(tier, mine)) {
-    if (mine.status === "lobby") {
-      return { kind: "leave", label: "Leave", enabled: true, note: "Waiting for players" };
-    }
-    return { kind: "open", label: "Open table", enabled: true, note: "Your game is running" };
-  }
-  if (mine != null) {
+export function myTierGames(tier, myGames) {
+  const mine = (myGames || []).filter((game) => isMyTier(tier, game));
+  return [
+    ...mine.filter((game) => game.status === "lobby"),
+    ...mine.filter((game) => game.status !== "lobby"),
+  ];
+}
+
+/** The seat of yours at this tier that has not been dealt to, if there is one. */
+export function myQueueAt(tier, myGames) {
+  return myTierGames(tier, myGames).find((game) => game.status === "lobby") || null;
+}
+
+/** Games of yours at this tier that are already dealing — tables to open. */
+export function myTablesAt(tier, myGames) {
+  return myTierGames(tier, myGames).filter((game) => game.status !== "lobby");
+}
+
+/**
+ * What this tier's main button should do and say.
+ *
+ * Three answers: you are in this one already, so the button is the way out of
+ * it; you cannot afford it; or you can sit. Being in a game at *another* tier
+ * is deliberately not one of them — that used to close the whole lobby, which
+ * is a rule with nothing behind it now the tables have a tab strip.
+ */
+export function tierAction(tier, { queued = null, balance = null } = {}) {
+  if (queued) {
+    const seated = queued.seats || 0;
+    const needed = queued.seats_needed || tier.seats_needed || 0;
     return {
-      kind: "busy", label: "Sit", enabled: false,
-      note: `You are already in a ${mine.label || "game"}`,
+      kind: "unregister",
+      label: "Unregister",
+      enabled: true,
+      note: `You are seated \u00b7 waiting for ${Math.max(0, needed - seated)} more`,
+      game: queued,
     };
   }
   if (balance != null && balance < tier.stake) {
     return { kind: "broke", label: "Sit", enabled: false, note: "Not enough coins" };
   }
   return { kind: "sit", label: "Sit", enabled: true, note: null };
+}
+
+/** What the row for one of your own games at a tier says and offers. */
+export function myGameAction(game) {
+  if (game?.status === "lobby") {
+    const [seated, needed] = [game.seats || 0, game.seats_needed || 0];
+    return {
+      kind: "leave", label: "Leave",
+      note: `Waiting · ${seated} of ${needed} seated`,
+    };
+  }
+  return { kind: "open", label: "Open table", note: "Your game here is dealing" };
 }
 
 /**

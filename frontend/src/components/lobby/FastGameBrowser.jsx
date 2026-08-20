@@ -5,7 +5,8 @@ import useWalletStore from "../../store/walletStore";
 import PlayerFaces from "./PlayerFaces";
 import { drawLabel, historyNet, myResult, netLabel, winnerName } from "./fastHistory";
 import {
-  formatMeta, payoutRows, prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
+  formatMeta, myGameAction, myQueueAt, myTablesAt, payoutRows, prizeRows, prizeSummary,
+  seatCounts, seatPips, tierAction,
 } from "./fastTiers";
 
 /**
@@ -19,7 +20,7 @@ import {
  * regardless, because a queue fills up whether or not you are looking at its tab.
  */
 export default function FastGameBrowser({ formatKeys, onOpenTable }) {
-  const { formats, myGame, history, top, loading, error, sit, leave, sitting } = useFastGameStore();
+  const { formats, myGames, history, top, loading, error, sit, leave, sitting } = useFastGameStore();
   const balance = useWalletStore((s) => s.balance);
   const [oddsOpen, setOddsOpen] = useState(null);
 
@@ -58,25 +59,40 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
 
           <div className="grid gap-3 sm:grid-cols-2">
             {format.tiers.map((tier) => {
-              const [seated, needed] = seatCounts(tier);
-              const action = tierAction(tier, { mine: myGame, balance });
+              // Your own seat at this tier, if you have one: the button is the
+              // way out of it, and any game of yours here that is already
+              // dealing gets a row of its own underneath.
+              const queued = myQueueAt(tier, myGames);
+              const playing = myTablesAt(tier, myGames);
+              const action = tierAction(tier, { queued, balance });
+              // The seats drawn are the ones you are waiting on. The tier
+              // itself reports the queue you *could* join, which is a different
+              // game once you are in one of them.
+              const shown = queued ? { ...tier, game: queued } : tier;
+              const [seated, needed] = seatCounts(shown);
               const busy = sitting === `${tier.key}:${tier.stake}`;
               const detailKey = `${tier.key}:${tier.stake}`;
               const prize = prizeSummary(tier, format);
-              const waiting = tier.game?.waiting || [];
+              const waiting = shown.game?.waiting || [];
 
               return (
                 <div
                   key={detailKey}
                   className={`panel-raised rounded-xl p-3 space-y-2.5 transition-colors ${
-                    seated > 0 ? "border-(--color-border-strong)" : ""
+                    queued
+                      ? "border-(--color-highlight-text)"
+                      : seated > 0 ? "border-(--color-border-strong)" : ""
                   }`}
                 >
                   {/* What it costs, labelled. On its own the number could be
                       read as what it pays — which is the line under it. */}
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
-                      Buy-in
+                      {queued ? (
+                        <span className="text-(--color-highlight-text) font-semibold">
+                          ✓ You are in
+                        </span>
+                      ) : "Buy-in"}
                     </span>
                     <span className="text-xl font-bold text-(--color-silver) tabular-nums">
                       🪙 {tier.stake}
@@ -100,7 +116,7 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                       one, which is most of what made these cards hollow. */}
                   <div className="flex items-center gap-2">
                     <span className="flex gap-1" aria-hidden="true">
-                      {seatPips(tier).map((filled, index) => (
+                      {seatPips(shown).map((filled, index) => (
                         <span
                           key={index}
                           className={`w-1.5 h-1.5 rounded-full ${
@@ -124,8 +140,8 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                       type="button"
                       disabled={!action.enabled || busy}
                       onClick={async () => {
-                        if (action.kind === "leave") return leave();
-                        if (action.kind === "open") return onOpenTable?.(myGame.id);
+                        // Your own seat: the same button gives it back.
+                        if (action.kind === "unregister") return leave(action.game.id);
                         // Whoever fills the table is taken to it there and then.
                         // The others learn from their next poll — see the watch
                         // in LobbyPage, which fires on the change, never on the
@@ -136,7 +152,7 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                       }}
                       className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
                         action.enabled && !busy
-                          ? action.kind === "leave"
+                          ? action.kind === "unregister"
                             ? "btn-secondary"
                             : "btn-accent"
                           : "btn-secondary opacity-50 cursor-not-allowed"
@@ -159,6 +175,35 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                   {action.note && (
                     <p className="text-xs text-(--color-text-muted)">{action.note}</p>
                   )}
+
+                  {/* A game of yours at this tier that is already dealing. It
+                      does not hold the tier — you can be playing one and queued
+                      for the next — so it gets its own way back to the felt. */}
+                  {playing.map((game) => {
+                    const own = myGameAction(game);
+                    return (
+                      <div
+                        key={game.id}
+                        className="flex items-center gap-2 pt-2 border-t border-(--color-border)"
+                      >
+                        <span className="flex-1 min-w-0 truncate text-[11px]
+                                         text-(--color-highlight-text) tabular-nums">
+                          {own.note}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => (
+                            own.kind === "leave" ? leave(game.id) : onOpenTable?.(game.id)
+                          )}
+                          className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                            own.kind === "leave" ? "btn-secondary" : "btn-accent"
+                          }`}
+                        >
+                          {own.label}
+                        </button>
+                      </div>
+                    );
+                  })}
 
                   {oddsOpen === detailKey && (
                     <TierPrizes tier={tier} drawn={format.draws_multiplier} />

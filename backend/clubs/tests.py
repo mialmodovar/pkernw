@@ -342,6 +342,25 @@ class ClubTournamentPermissionTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 		self.assertEqual(Tournament.objects.get(id=response.data["id"]).season_id, self.season.id)
 
+	def test_a_staff_member_of_a_club_can_open_one_too(self):
+		"""Not only the owner. This is the rule the create page used to get
+		wrong on the way in: it asked the account's own staff flag, so a club
+		organiser was shown a button the server would have honoured and then
+		told "Staff only" by the page in between."""
+		colleague = User.objects.create_user(username="c_deputy", password="secret123")
+		Membership.objects.create(club=self.club, user=colleague, role=Membership.STAFF)
+
+		self.assertFalse(colleague.is_staff)
+		response = self._create(colleague, club=self.club.id)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+	def test_a_club_organiser_can_also_open_a_one_off_with_no_club(self):
+		response = self._create(self.organiser)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertIsNone(Tournament.objects.get(id=response.data["id"]).club_id)
+
 	def test_a_plain_member_cannot(self):
 		response = self._create(self.member, club=self.club.id)
 

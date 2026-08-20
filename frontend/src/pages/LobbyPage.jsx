@@ -6,7 +6,7 @@ import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
-import { runsThePlace } from "../components/auth/runsThePlace";
+import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
 import RecoveryCodePanel from "../components/lobby/RecoveryCodePanel";
 import StatsPanel from "../components/lobby/StatsPanel";
@@ -43,11 +43,14 @@ const LOBBY_TABS = [
  */
 function useFastGameWatch({ user }) {
   const navigate = useNavigate();
-  const { myGame, fetchLobby } = useFastGameStore();
-  const waiting = myGame?.status === "lobby";
-  const status = myGame?.status ?? null;
-  const gameId = myGame?.id ?? null;
-  const previous = useRef({ id: null, status: null });
+  const { myGames, fetchLobby } = useFastGameStore();
+  // All of them, because you can be queued at several tiers at once and any of
+  // them can be the one that fills.
+  const waiting = myGames.some((game) => game.status === "lobby");
+  // A stable key over id-and-status pairs: the effect below wants to run when a
+  // game changes state, not every time the poll hands back the same list.
+  const signature = myGames.map((game) => `${game.id}:${game.status}`).join(",");
+  const previous = useRef(new Map());
 
   useEffect(() => {
     if (!user) return;
@@ -67,16 +70,23 @@ function useFastGameWatch({ user }) {
 
   useEffect(() => {
     const before = previous.current;
-    previous.current = { id: gameId, status };
-    // The last seat just filled while you were looking at this page. Any other
-    // combination — including finding yourself already in a running game — is
-    // not a moment, and must not move you.
-    const justFired = gameId != null && gameId === before.id
-      && before.status === "lobby" && status === "running";
+    const games = signature
+      ? signature.split(",").map((pair) => {
+        const [id, status] = pair.split(":");
+        return { id: Number(id), status };
+      })
+      : [];
+    // The last seat of one of them just filled while you were looking at this
+    // page. Any other combination — including finding yourself already in a
+    // running game — is not a moment, and must not move you.
+    const fired = games.find(
+      (game) => before.get(game.id) === "lobby" && game.status === "running",
+    );
+    previous.current = new Map(games.map((game) => [game.id, game.status]));
     // Replaced rather than pushed, so "back" from the table is the lobby you
     // were looking at and not a bounce straight back to the felt.
-    if (justFired) navigate(`/tournament/${gameId}/play`, { replace: true });
-  }, [gameId, status, navigate]);
+    if (fired) navigate(`/tournament/${fired.id}/play`, { replace: true });
+  }, [signature, navigate]);
 }
 
 export default function LobbyPage() {
@@ -89,7 +99,7 @@ export default function LobbyPage() {
   const [tab, setTab] = useState("tournaments");
   const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
   const onClubsLoaded = useCallback((clubs) => {
-    setStaffsAClub(clubs.some((club) => club.my_role === "owner" || club.my_role === "staff"));
+    setStaffsAClub(organisesForAClub(clubs));
   }, []);
 
   // The three scopes overlap — a tournament you are seated at and that is open

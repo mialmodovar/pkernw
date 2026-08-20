@@ -25,8 +25,8 @@ from . import fastgames, spingo
 from .coinbank import balance_of, charge_entry, refund_entry, stake_memo
 from .models import BlindLevel, Tournament, TournamentPlayer
 
-# The statuses a seat of yours still ties you up in. A finished one does not:
-# you can sit straight back down.
+# The statuses a seat of yours is still live in. A finished one is not: it
+# belongs to the history rather than to the tables you have open.
 LIVE_STATUSES = ("lobby", "running", "paused")
 
 # How many of your own games to look back over, and how many record draws to
@@ -68,12 +68,17 @@ def _game_payload(tournament):
     }
 
 
-def _open_game(fmt, stake, *, locked=False):
+def _open_game(fmt, stake, *, user=None, locked=False):
     """The queue for this tier — the game a player sitting now would join.
 
     The oldest one that is not yet full, so a tier with two half-filled games
     finishes the first before starting on the second. Seat count is part of the
     lookup: it is the only thing telling one Sit n Go from the other.
+
+    A game `user` is already sitting in is not a queue they can join: one player
+    must never hold two of the three seats. Sitting at a tier you are already
+    waiting at therefore opens a second game rather than doubling up in the
+    first, which is what a second registration means everywhere else too.
     """
     games = Tournament.objects.filter(
         format=fmt.tournament_format,
@@ -81,6 +86,8 @@ def _open_game(fmt, stake, *, locked=False):
         buy_in_coins=stake,
         status="lobby",
     )
+    if user is not None:
+        games = games.exclude(players__user=user)
     if locked:
         games = games.select_for_update()
     for game in games.order_by("created_at"):
@@ -89,25 +96,55 @@ def _open_game(fmt, stake, *, locked=False):
     return None
 
 
-def _my_live_game(user):
-    """A fast game of yours that is waiting or dealing — of any kind.
+def _my_queue_at(fmt, stake, user):
+    """A game of yours at this exact tier that has not started yet.
 
-    One at a time, across all three formats: they all start the moment they fill
-    and they would all be dealing to you at once.
+    One waiting seat per tier is the limit. Beyond that, pressing Sit again at a
+    tier you are already queued at only splits the tier into two half-full
+    tables that each need strangers to fill — you would be waiting on more
+    people for the same number of games. Once yours is dealing it stops
+    blocking, so a player who wants a second Heads Up can queue one the moment
+    the first is underway.
     """
     return (
+        Tournament.objects.filter(
+            format=fmt.tournament_format,
+            players_per_table=fmt.seats,
+            buy_in_coins=stake,
+            status="lobby",
+            players__user=user,
+        )
+        .order_by("created_at")
+        .first()
+    )
+
+
+def _my_live_games(user):
+    """Every fast game of yours that is waiting or dealing, of any kind.
+
+    A list rather than one game. Registering for a Heads Up while a Spin n Go
+    fills up is the ordinary way to use a lobby of instant games, and the tables
+    have had a tab strip across the top since they could be opened at once — so
+    the thing this used to enforce, one game at a time, was a limit with nothing
+    behind it. What is still impossible is two seats in the same game; see
+    _open_game.
+
+    Newest first, because the one you just sat at is the one you are waiting on.
+    """
+    return list(
         Tournament.objects.filter(
             format__in=fastgames.FAST_TOURNAMENT_FORMATS,
             status__in=LIVE_STATUSES,
             players__user=user,
         )
+        .distinct()
         .order_by("-created_at")
-        .first()
+        .prefetch_related("players__user__profile", "players__user__avatar_image")
     )
 
 
-def _tier_payload(fmt, stake):
-    game = _open_game(fmt, stake)
+def _tier_payload(fmt, stake, user=None):
+    game = _open_game(fmt, stake, user=user)
     tier = {
         "key": fmt.key,
         "stake": stake,
@@ -128,7 +165,7 @@ def _tier_payload(fmt, stake):
     return tier
 
 
-def _format_payload(fmt):
+def _format_payload(fmt, user=None):
     return {
         "key": fmt.key,
         "label": fmt.label,
@@ -139,7 +176,7 @@ def _format_payload(fmt):
         "big_blinds": fmt.big_blinds,
         "level_minutes": fmt.level_minutes,
         "draws_multiplier": fmt.draws_multiplier,
-        "tiers": [_tier_payload(fmt, stake) for stake in fmt.stakes],
+        "tiers": [_tier_payload(fmt, stake, user) for stake in fmt.stakes],
     }
 
 
@@ -218,7 +255,7 @@ def fast_lobby(request):
     whichever tab is on screen, because a game you are queued for fires whether
     or not you are looking at it.
     """
-    my_game = _my_live_game(request.user)
+    my_games = _my_live_games(request.user)
 
     mine_finished = list(_finished_games(
         Tournament.objects.filter(players__user=request.user),
@@ -234,8 +271,13 @@ def fast_lobby(request):
     )
 
     return Response({
-        "formats": [_format_payload(fastgames.FORMATS[key]) for key in fastgames.FORMAT_KEYS],
-        "my_game": _game_payload(my_game) if my_game is not None else None,
+        "formats": [
+            _format_payload(fastgames.FORMATS[key], request.user)
+            for key in fastgames.FORMAT_KEYS
+        ],
+        # Every seat you hold, not just the latest one: the lobby draws one row
+        # per game and the tab strip at the table needs all of them.
+        "my_games": [_game_payload(game) for game in my_games],
         "balance": balance_of(request.user),
         "history": [
             _finished_payload(game, me=request.user, returns=returns) for game in mine_finished
@@ -258,10 +300,13 @@ def fast_sit(request):
         return Response({"error": "That is not a table on offer"}, status=status.HTTP_400_BAD_REQUEST)
     fmt = fastgames.format_for(key)
 
-    existing = _my_live_game(request.user)
-    if existing is not None:
+    queued = _my_queue_at(fmt, stake, request.user)
+    if queued is not None:
         return Response(
-            {"error": "You are already in a game", "game": _game_payload(existing)},
+            {
+                "error": "You are already waiting at this table",
+                "game": _game_payload(queued),
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -269,7 +314,7 @@ def fast_sit(request):
         return Response({"error": "Not enough coins"}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
-        game = _open_game(fmt, stake, locked=True)
+        game = _open_game(fmt, stake, user=request.user, locked=True)
         if game is None:
             game = _new_game(fmt, stake, request.user)
         elif game.players.count() >= fmt.seats:
@@ -329,9 +374,19 @@ def _seat(fmt, game, user):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def fast_leave(request):
-    """Give up a seat that has not been dealt to, and take the coins back."""
+    """Give up a seat that has not been dealt to, and take the coins back.
+
+    Which seat, now that a player can hold several: `game` names it, and without
+    one the newest queue you are in is assumed — the one a Leave button drawn
+    before this endpoint could name ids would have meant.
+    """
+    try:
+        wanted = int(request.data.get("game")) if request.data.get("game") else None
+    except (TypeError, ValueError):
+        return Response({"error": "That is not a game"}, status=status.HTTP_400_BAD_REQUEST)
+
     with transaction.atomic():
-        game = (
+        queued = (
             Tournament.objects.select_for_update()
             .filter(
                 format__in=fastgames.FAST_TOURNAMENT_FORMATS,
@@ -339,8 +394,10 @@ def fast_leave(request):
                 players__user=request.user,
             )
             .order_by("-created_at")
-            .first()
         )
+        if wanted is not None:
+            queued = queued.filter(pk=wanted)
+        game = queued.first()
         if game is None:
             return Response(
                 {"error": "You have no game waiting to start"},

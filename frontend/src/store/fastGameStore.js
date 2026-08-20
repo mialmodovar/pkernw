@@ -4,8 +4,8 @@ import api from "../api/http";
 import useWalletStore from "./walletStore";
 
 /**
- * The games you sit down at: the formats, your seat in one, and the coins it
- * cost.
+ * The games you sit down at: the formats, the seats you hold, and the coins
+ * they cost.
  *
  * One store and one request for all of them, because they are one lobby read
  * from three tabs — and because a queue you are sitting in fills up whether or
@@ -18,7 +18,10 @@ import useWalletStore from "./walletStore";
  */
 const useFastGameStore = create((set, get) => ({
   formats: [],
-  myGame: null,
+  // Every game of yours that is waiting or dealing, newest first. A list rather
+  // than one, because sitting at a Heads Up while a Spin n Go fills up is the
+  // ordinary way to use this lobby.
+  myGames: [],
   // Your own finished games, newest first, and the biggest draws anybody has
   // had. Both arrive on the same poll as the tiers.
   history: [],
@@ -32,7 +35,7 @@ const useFastGameStore = create((set, get) => ({
     if (data.balance != null) useWalletStore.getState().setBalance(data.balance);
     set({
       ...(data.formats ? { formats: data.formats } : {}),
-      ...("my_game" in data ? { myGame: data.my_game } : {}),
+      ...(data.my_games ? { myGames: data.my_games } : {}),
       ...(data.history ? { history: data.history } : {}),
       ...(data.top ? { top: data.top } : {}),
     });
@@ -55,7 +58,12 @@ const useFastGameStore = create((set, get) => ({
     set({ error: "", sitting: `${key}:${stake}` });
     try {
       const { data } = await api.post("/tournaments/fast/sit/", { key, stake });
-      get().apply({ ...data, my_game: data.game });
+      // The new seat, alongside the ones already held — the poll below settles
+      // the list, this is so the card changes the moment it is pressed.
+      get().apply({
+        ...data,
+        my_games: [data.game, ...get().myGames.filter((one) => one.id !== data.game.id)],
+      });
       // The tier counts moved for everybody, not just for us.
       await get().fetchLobby({ silent: true });
       return data.game;
@@ -68,11 +76,14 @@ const useFastGameStore = create((set, get) => ({
     }
   },
 
-  leave: async () => {
+  leave: async (gameId = null) => {
     set({ error: "" });
     try {
-      const { data } = await api.post("/tournaments/fast/leave/");
-      get().apply({ ...data, my_game: null });
+      const { data } = await api.post("/tournaments/fast/leave/", { game: gameId });
+      get().apply({
+        ...data,
+        my_games: get().myGames.filter((one) => one.id !== gameId),
+      });
     } catch (error) {
       set({ error: error.response?.data?.error || "Could not leave that table." });
     }

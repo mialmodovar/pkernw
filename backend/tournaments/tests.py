@@ -3651,12 +3651,13 @@ class SpinGoLobbyTests(APITestCase):
 		self.assertEqual(self._balance(self.players["ana"]), 10)
 		self.assertFalse(Tournament.objects.filter(format="spingo").exists())
 
-	def test_a_player_can_only_be_in_one_spin_n_go_at_a_time(self):
+	def test_a_player_can_wait_at_both_tiers_at_once(self):
 		self._sit("ana")
 		response = self._sit("ana", stake=50)
 
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertEqual(self._balance(self.players["ana"]), 475)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(self._balance(self.players["ana"]), 425)
+		self.assertEqual(Tournament.objects.filter(format="spingo").count(), 2)
 
 	def test_an_unknown_stake_is_refused(self):
 		self.client.force_authenticate(self.players["ana"])
@@ -3736,19 +3737,41 @@ class SpinGoLobbyTests(APITestCase):
 		by_stake = {tier["stake"]: tier for tier in spingo["tiers"]}
 		self.assertEqual(by_stake[25]["game"]["seats"], 1)
 		self.assertIsNone(by_stake[50]["game"])
-		self.assertIsNone(lobby.data["my_game"])
+		self.assertEqual(lobby.data["my_games"], [])
 
-	def test_the_lobby_says_where_your_own_seat_is(self):
+	def test_the_lobby_says_where_your_own_seats_are(self):
 		self._sit("ana")
 
 		self.client.force_authenticate(self.players["ana"])
 		lobby = self.client.get(reverse("fast-lobby"))
-		self.assertEqual(lobby.data["my_game"]["stake"], 25)
-		self.assertEqual(lobby.data["my_game"]["key"], "spingo")
+		mine = lobby.data["my_games"]
+		self.assertEqual(len(mine), 1)
+		self.assertEqual(mine[0]["stake"], 25)
+		self.assertEqual(mine[0]["key"], "spingo")
 		self.assertEqual(lobby.data["balance"], 475)
-		self.assertEqual(
-			[face["username"] for face in lobby.data["my_game"]["waiting"]], ["ana"],
-		)
+		self.assertEqual([face["username"] for face in mine[0]["waiting"]], ["ana"])
+
+	def test_a_queue_you_are_already_in_is_not_offered_back_to_you(self):
+		"""The tier card shows what you could join, not what you are in.
+
+		One player holding two of three seats would be a game that fires with
+		two people at it, so the queue you are waiting in is not a queue you can
+		sit at again — sitting again opens another game beside it.
+		"""
+		self._sit("ana")
+
+		self.client.force_authenticate(self.players["ana"])
+		lobby = self.client.get(reverse("fast-lobby")).data
+		spingo = next(one for one in lobby["formats"] if one["key"] == "spingo")
+		by_stake = {tier["stake"]: tier for tier in spingo["tiers"]}
+		self.assertIsNone(by_stake[25]["game"])
+
+		# And to somebody else it is still a table with one player waiting.
+		self.client.force_authenticate(self.players["bea"])
+		theirs = self.client.get(reverse("fast-lobby")).data
+		spingo = next(one for one in theirs["formats"] if one["key"] == "spingo")
+		by_stake = {tier["stake"]: tier for tier in spingo["tiers"]}
+		self.assertEqual(by_stake[25]["game"]["seats"], 1)
 
 
 class CoinBuyInTests(APITestCase):
@@ -4360,12 +4383,88 @@ class SitNGoTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertFalse(Tournament.objects.exists())
 
-	def test_one_fast_game_at_a_time_whichever_kind(self):
-		self._sit("a", "hu", 10)
-		response = self._sit("a", "sixmax", 25)
+	def test_you_can_sit_at_several_games_at_once(self):
+		"""Registering for one game must not close the rest of the lobby.
 
-		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		The tables have carried a tab strip since more than one could be open,
+		so a lobby that refuses the second registration is refusing the thing
+		the strip exists for.
+		"""
+		self._sit("a", "hu", 10)
+		second = self._sit("a", "sixmax", 25)
+		third = self._sit("a", "spingo", 25)
+
+		self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(third.status_code, status.HTTP_201_CREATED)
+		# Ten, twenty-five and twenty-five, all actually charged.
+		self.assertEqual(self._balance("a"), 440)
+
+		lobby = self.client.get(reverse("fast-lobby")).data
+		self.assertEqual(
+			sorted(game["key"] for game in lobby["my_games"]), ["hu", "sixmax", "spingo"],
+		)
+
+	def test_one_waiting_seat_per_tier_and_no_more(self):
+		"""Pressing Sit again at a tier you are queued at buys nothing.
+
+		It would split the tier into two half-full tables, each still waiting on
+		strangers — more coins committed for the same one game.
+		"""
+		self._sit("a", "hu", 10)
+		again = self._sit("a", "hu", 10)
+
+		self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(again.data["error"], "You are already waiting at this table")
+		self.assertEqual(Tournament.objects.filter(format="sitngo").count(), 1)
 		self.assertEqual(self._balance("a"), 490)
+
+	def test_a_tier_opens_up_again_once_your_game_there_is_dealing(self):
+		self._sit("a", "hu", 10)
+		self._sit("b", "hu", 10)
+		self.assertEqual(Tournament.objects.get(format="sitngo").status, "running")
+
+		second = self._sit("a", "hu", 10)
+
+		self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.filter(format="sitngo").count(), 2)
+		self.assertEqual(self._balance("a"), 480)
+
+	def test_never_two_of_your_own_seats_in_one_game(self):
+		"""The seat count is the field: one player holding two of them would
+		fire a three-handed game with two people at it."""
+		self._sit("a", "hu", 10)
+		self._sit("b", "hu", 10)
+		self._sit("a", "hu", 10)
+
+		for game in Tournament.objects.filter(format="sitngo"):
+			with self.subTest(game=game.id):
+				seated = list(game.players.values_list("user_id", flat=True))
+				self.assertEqual(len(seated), len(set(seated)))
+
+	def test_a_second_seat_still_needs_paying_for(self):
+		self._top_up(self.players["a"], 55)
+		self._sit("a", "hu", 50)
+		refused = self._sit("a", "sixmax", 25)
+
+		self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(refused.data["error"], "Not enough coins")
+		self.assertEqual(self._balance("a"), 5)
+
+	def test_leaving_names_which_of_your_queues_to_leave(self):
+		self._sit("a", "hu", 10)
+		self._sit("a", "sixmax", 25)
+		hu = Tournament.objects.get(format="sitngo", players_per_table=2)
+
+		self.client.force_authenticate(self.players["a"])
+		response = self.client.post(reverse("fast-leave"), {"game": hu.id}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self._balance("a"), 475)
+		self.assertFalse(Tournament.objects.filter(pk=hu.id).exists())
+		# The other queue is untouched: leaving one is not leaving the lobby.
+		self.assertEqual(
+			Tournament.objects.filter(format="sitngo", players_per_table=6).count(), 1,
+		)
 
 	def test_leaving_a_sit_n_go_queue_refunds_it(self):
 		self._sit("a", "sixmax", 100)

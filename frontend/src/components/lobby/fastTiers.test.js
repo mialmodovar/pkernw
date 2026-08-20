@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  formatMeta, isMyTier, payoutRows, prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
+  formatMeta, isMyTier, myGameAction, myQueueAt, myTablesAt, myTierGames, payoutRows,
+  prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
 } from "./fastTiers";
 
 const tier = { key: "spingo", stake: 25, seats_needed: 3, game: null, odds: [] };
@@ -107,20 +108,84 @@ describe("tierAction", () => {
     });
   });
 
-  it("turns into a way out of a tier you are waiting in", () => {
-    const mine = { key: "spingo", stake: 25, status: "lobby" };
-    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({ kind: "leave", enabled: true });
+  it("still offers a seat while you are waiting at another tier", () => {
+    // The regression this replaces: holding one seat closed every tier in the
+    // lobby, so a second registration was impossible.
+    expect(tierAction(tier, { balance: 500 })).toMatchObject({ kind: "sit", enabled: true });
   });
 
-  it("sends you to the table once your own game is running", () => {
-    const mine = { key: "spingo", stake: 25, status: "running" };
-    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({ kind: "open", enabled: true });
+  it("becomes a way out of the tier you are seated at", () => {
+    const queued = { id: 7, status: "lobby", seats: 2, seats_needed: 3 };
+    expect(tierAction(tier, { queued, balance: 500 })).toMatchObject({
+      kind: "unregister",
+      label: "Unregister",
+      enabled: true,
+      note: "You are seated · waiting for 1 more",
+      game: queued,
+    });
   });
 
-  it("closes every other tier while you are in one, and says which", () => {
-    const mine = { key: "hu", stake: 50, status: "lobby", label: "Heads Up" };
-    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({
-      kind: "busy", enabled: false, note: "You are already in a Heads Up",
+  it("offers the way out even to somebody who could no longer afford to sit", () => {
+    const queued = { id: 7, status: "lobby", seats: 1, seats_needed: 2 };
+    expect(tierAction(huTier, { queued, balance: 0 })).toMatchObject({ kind: "unregister" });
+  });
+});
+
+describe("myQueueAt and myTablesAt", () => {
+  const mine = [
+    { id: 3, key: "spingo", stake: 25, status: "running" },
+    { id: 5, key: "spingo", stake: 25, status: "lobby" },
+    { id: 6, key: "hu", stake: 10, status: "lobby" },
+  ];
+
+  it("tells the seat you are waiting on from the game already dealing", () => {
+    expect(myQueueAt(tier, mine).id).toBe(5);
+    expect(myTablesAt(tier, mine).map((game) => game.id)).toEqual([3]);
+  });
+
+  it("has nothing to say about a tier you are not at", () => {
+    expect(myQueueAt({ key: "sixmax", stake: 25 }, mine)).toBe(null);
+    expect(myTablesAt({ key: "sixmax", stake: 25 }, mine)).toEqual([]);
+  });
+
+  it("survives a lobby that has not loaded", () => {
+    expect(myQueueAt(tier, undefined)).toBe(null);
+  });
+});
+
+describe("myTierGames", () => {
+  const mine = [
+    { id: 3, key: "spingo", stake: 25, status: "running" },
+    { id: 4, key: "hu", stake: 10, status: "lobby" },
+    { id: 5, key: "spingo", stake: 25, status: "lobby" },
+    { id: 6, key: "spingo", stake: 50, status: "lobby" },
+  ];
+
+  it("picks out only the games at this tier", () => {
+    expect(myTierGames(tier, mine).map((game) => game.id)).toEqual([5, 3]);
+  });
+
+  it("puts the queue you are waiting in ahead of the game already dealing", () => {
+    const [first] = myTierGames(tier, mine);
+    expect(first.status).toBe("lobby");
+  });
+
+  it("is empty at a tier you have no seat at", () => {
+    expect(myTierGames(huTier, [])).toEqual([]);
+    expect(myTierGames(huTier, undefined)).toEqual([]);
+  });
+});
+
+describe("myGameAction", () => {
+  it("offers a way out of a queue, and says how full it is", () => {
+    expect(myGameAction({ status: "lobby", seats: 2, seats_needed: 3 })).toEqual({
+      kind: "leave", label: "Leave", note: "Waiting · 2 of 3 seated",
+    });
+  });
+
+  it("offers the table once the cards are out", () => {
+    expect(myGameAction({ status: "running" })).toMatchObject({
+      kind: "open", label: "Open table",
     });
   });
 });

@@ -38,11 +38,20 @@ export function tableToResume(tournaments = []) {
   return live.reduce((newest, one) => (one.id > newest.id ? one : newest));
 }
 
-/** What the button says it is taking you back to. */
+/**
+ * What the button says it is taking you back to.
+ *
+ * A tournament has a name somebody chose. An instant game has a name the server
+ * generated, which is the format and the stake — and that is exactly what is
+ * worth printing, so it is rebuilt here rather than trusted to read well.
+ */
 export function resumeLabel(tournament) {
   if (!tournament) return "";
-  if (tournament.format === "spingo") {
-    return `Spin n Go · \u{1FA99} ${tournament.buy_in_coins}`;
+  const fast = { spingo: "Spin n Go", sitngo: "Sit n Go" }[tournament.format];
+  if (fast) {
+    const seats = tournament.players_per_table === 2 ? "Heads up" : `${tournament.players_per_table}-max`;
+    const label = tournament.format === "spingo" ? fast : `${fast} · ${seats}`;
+    return `${label} · \u{1FA99} ${tournament.buy_in_coins}`;
   }
   return tournament.name || "your table";
 }

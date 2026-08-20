@@ -115,9 +115,10 @@ const useGameStore = create((set) => ({
   equityShakeSequence: 0,
   clearEquityShake: (id) => set((s) => (s.equityShake?.id === id ? { equityShake: null } : {})),
   countdown: null,    // seconds remaining before tournament starts
-  // A Spin n Go's drawn prize: {stake_coins, multiplier, prize_coins}, or null
-  // at a tournament table. Everything the format looks like hangs off this.
-  spin: null,
+  // Which instant format this table is and what it pays: {key, label, seats,
+  // stake_coins, multiplier, prize_coins}, or null at a tournament table.
+  // Everything the felt looks like hangs off this.
+  fast: null,
   // Which tournament the live state belongs to, stamped by reset when a table
   // is opened. Only the memory below needs it, but it needs it badly: a hand
   // remembered from one table must never be shown against another.
@@ -291,9 +292,9 @@ const useGameStore = create((set) => ({
           // A reload mid-hand gets the calls already made, so the table does
           // not read as though nobody had said anything.
           sideBets: data.side_bets?.bets || [],
-          // Carried on the snapshot too, so a reload mid-game gets the prize
-          // back rather than a table with no stakes on it.
-          spin: data.spin ?? s.spin,
+          // Carried on the snapshot too, so a reload mid-game gets the format
+          // and the prize back rather than a table with no stakes on it.
+          fast: data.fast ?? s.fast,
           sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;
@@ -309,9 +310,9 @@ const useGameStore = create((set) => ({
           messages: [],
           tableCount: data.table_count || 0,
           tableSummaries: data.tables || [],
-          // What a Spin n Go is being played for. Null on a tournament, which
-          // is what leaves the table looking like a tournament's table.
-          spin: data.spin || null,
+          // What this table is. Null on a tournament, which is what leaves it
+          // looking like a tournament's table.
+          fast: data.fast || null,
         });
         break;
 
@@ -905,7 +906,7 @@ const useGameStore = create((set) => ({
       tournamentId,
       // Cleared, or a tournament table opened after a Spin n Go would keep its
       // violet felt and print a prize nobody is playing for.
-      spin: null,
+      fast: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,

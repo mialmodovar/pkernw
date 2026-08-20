@@ -165,22 +165,30 @@ def stop_tournament_engine(tournament_id: int) -> bool:
     return had_engine
 
 
-def spin_payload(tournament) -> Optional[dict]:
-    """What a Spin n Go is being played for, or None if this is a tournament.
+def fast_payload(tournament) -> Optional[dict]:
+    """What kind of fast game this is and what it pays, or None for a tournament.
 
-    Read off the row rather than drawn here: the multiplier was decided when the
-    third player sat down, and the table is only reporting it.
+    Read off the row rather than worked out here: the multiplier was decided when
+    the last player sat down, and the table is only reporting it. The table reads
+    this to know which felt to lay — a two-handed game and a nine-handed one are
+    not the same room — and to reveal the draw where there is one.
     """
-    if getattr(tournament, "format", "standard") != "spingo":
-        return None
-    from tournaments.spingo import prize_coins
+    from tournaments.fastgames import FORMATS, key_for_tournament, pot_coins
 
+    key = key_for_tournament(tournament)
+    if key is None:
+        return None
+
+    fmt = FORMATS[key]
     stake = tournament.buy_in_coins or 0
     multiplier = tournament.spin_multiplier or 0
     return {
+        "key": key,
+        "label": fmt.label,
+        "seats": fmt.seats,
         "stake_coins": stake,
         "multiplier": multiplier,
-        "prize_coins": prize_coins(stake, multiplier),
+        "prize_coins": pot_coins(fmt, stake, fmt.seats, multiplier),
     }
 
 
@@ -1060,7 +1068,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
 
         levels = await _db_get_levels(self.tournament_id)
         last_hand_number = await _db_get_last_hand_number(self.tournament_id)
-        spingo = tournament.format == "spingo"
+        fast = fast_payload(tournament)
         coordinator = MultiTableTournamentCoordinator(
             tournament_id=self.tournament_id,
             players_per_table=tournament.players_per_table,
@@ -1109,13 +1117,14 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
             last_hand_number=last_hand_number,
-            # The drawn prize, carried to the table so it can be revealed there
-            # and read again by anybody who reconnects mid-game.
-            spin=spin_payload(tournament),
+            # What kind of game this is and what it pays, carried to the table so
+            # it can lay the right felt, reveal a draw, and tell anybody who
+            # reconnects mid-game what they are playing for.
+            fast=fast,
             # Half a minute of loading time is for a tournament people arrived
-            # for. A Spin n Go fires the moment the third player sits, and they
-            # are all already looking at it.
-            countdown_seconds=8 if spingo else 30,
+            # for. A fast game fires the moment its last seat fills, and everyone
+            # in it is already looking at it.
+            countdown_seconds=8 if fast else 30,
         )
         # Booting a paused tournament must not start dealing; run() waits for
         # the host to resume before it announces the start.

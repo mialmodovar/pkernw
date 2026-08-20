@@ -29,12 +29,14 @@ def can_manage_tournament(user, tournament):
     """
     if tournament is None or not (user and user.is_authenticated):
         return False
-    # Nobody runs a Spin n Go. The host column points at whoever sat down first
-    # because the database needs it to point somewhere, and that must not hand
-    # them a pause button over two strangers' game — or a delete button over a
-    # prize pool three people paid into. Not even the superuser: there is
-    # nothing to intervene in that outliving the format's five minutes.
-    if tournament.format == "spingo":
+    # Nobody runs a game people sat down at. The host column points at whoever
+    # sat first because the database needs it to point somewhere, and that must
+    # not hand them a pause button over two strangers' game — or a delete button
+    # over a prize pool everybody paid into. Not even the superuser: there is
+    # nothing to intervene in that outlives the format's ten minutes.
+    from .fastgames import FAST_TOURNAMENT_FORMATS
+
+    if tournament.format in FAST_TOURNAMENT_FORMATS:
         return False
     if is_superuser(user):
         return True

@@ -14,7 +14,7 @@ from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_second
 from .consumers import (
     CHAT_MESSAGE_BUDGET, MEDIA_MESSAGE_BUDGET, TournamentConsumer, _action_queues,
     _game_tasks, _media_presence, _player_channels, _request_action, _tournament_runners,
-    spin_payload,
+    fast_payload,
 )
 
 User = get_user_model()
@@ -1927,61 +1927,81 @@ class OutsTests(TestCase):
 		self.assertEqual(villain, [])
 
 
-class SpinPayloadTests(TestCase):
-    """What the table is told a Spin n Go is worth."""
+class FastPayloadTests(TestCase):
+    """What the table is told it is dealing."""
 
-    def test_a_tournament_carries_no_draw(self):
+    def test_a_tournament_is_not_a_fast_game(self):
         tournament = Tournament.objects.create(
             host=User.objects.create_user(username="sp_host", password="x"),
             name="Thursday", buy_in_coins=50,
         )
-        self.assertIsNone(spin_payload(tournament))
+        self.assertIsNone(fast_payload(tournament))
 
     def test_a_spin_n_go_carries_the_stake_the_multiplier_and_the_prize(self):
         tournament = Tournament.objects.create(
             host=User.objects.create_user(username="sp_host2", password="x"),
             name="Spin n Go", format="spingo", buy_in_coins=25, spin_multiplier=10,
+            players_per_table=3,
         )
-        self.assertEqual(spin_payload(tournament), {
+        self.assertEqual(fast_payload(tournament), {
+            "key": "spingo", "label": "Spin n Go", "seats": 3,
             "stake_coins": 25, "multiplier": 10, "prize_coins": 250,
         })
 
+    def test_a_heads_up_carries_its_two_seats_and_the_buy_ins(self):
+        """The felt reads `seats` to know which table to lay.
 
-class SpinGoLiveTests(TransactionTestCase):
-    """A whole Spin n Go, played over the socket, coins in and coins out.
+        Two seats is a different room from three, and the client cannot work it
+        out from the players — half of them may not have connected yet.
+        """
+        tournament = Tournament.objects.create(
+            host=User.objects.create_user(username="sp_host3", password="x"),
+            name="Heads Up", format="sitngo", buy_in_coins=50,
+            max_players=2, players_per_table=2,
+        )
+        self.assertEqual(fast_payload(tournament), {
+            "key": "hu", "label": "Heads Up", "seats": 2,
+            "stake_coins": 50, "multiplier": 0, "prize_coins": 100,
+        })
 
-    The one test that goes all the way through: the engine boots off the first
-    connect, three fifteen-blind stacks play it out, and the wallet is checked
-    afterwards. Everything else about the format is arithmetic somewhere with a
-    test of its own — this is the wiring between those, which is the part that
-    unit tests cannot say anything about.
+
+class FastGameLiveTests(TransactionTestCase):
+    """A whole fast game, played over the socket, coins in and coins out.
+
+    The tests that go all the way through: the engine boots off the first
+    connect, the stacks play it out, and the wallets are checked afterwards.
+    Everything else about these formats is arithmetic somewhere with a test of
+    its own — this is the wiring between them, which is the part unit tests
+    cannot say anything about.
     """
 
     def tearDown(self):
         _tournament_runners.clear()
         _game_tasks.clear()
 
-    def _setup_game(self):
+    def _setup_game(self, key, stake, multiplier=0):
         from sidegames.economy import spend, wallet_for
         from sidegames.models import Wallet
-        from tournaments import spingo
+        from tournaments import fastgames
         from tournaments.models import BlindLevel
 
+        fmt = fastgames.FORMATS[key]
         users = []
-        for name in ("live_ana", "live_bea", "live_caio"):
-            user = User.objects.create_user(username=name, password="x")
+        for index in range(fmt.seats):
+            user = User.objects.create_user(username=f"live_{key}_{index}", password="x")
             wallet_for(user)
-            Wallet.objects.filter(user=user).update(balance=100)
+            Wallet.objects.filter(user=user).update(balance=stake * 4)
             users.append(user)
 
         # Fired, as the sit endpoint leaves it: running, with the draw already
-        # made. A multiplier of two is the common case and the cheapest to check.
+        # made where the format has one.
         game = Tournament.objects.create(
             host=users[0],
-            **{**spingo.tournament_defaults(25), "status": "running", "spin_multiplier": 2},
+            **{**fastgames.tournament_defaults(fmt, stake),
+               "status": "running", "spin_multiplier": multiplier},
         )
         BlindLevel.objects.bulk_create([
-            BlindLevel(tournament=game, **row) for row in spingo.level_rows()
+            BlindLevel(tournament=game, **row) for row in fastgames.level_rows(fmt)
         ])
         table = game.ensure_table(1)
         for index, user in enumerate(users):
@@ -1989,7 +2009,7 @@ class SpinGoLiveTests(TransactionTestCase):
                 tournament=game, user=user, table=table, seat=index, seat_at_table=index,
                 chips=game.starting_chips, time_bank_seconds_remaining=game.time_bank_seconds,
             )
-            spend(user, 25, "stake", memo=f"tournament:{game.id}")
+            spend(user, stake, "stake", memo=f"tournament:{game.id}")
         return game, users
 
     async def _play_it_out(self, game, users, timeout=120):
@@ -2018,8 +2038,8 @@ class SpinGoLiveTests(TransactionTestCase):
                     continue
                 message = await communicator.receive_json_from()
                 kind = message.get("type")
-                if kind in ("tournament_started", "game_state") and message.get("spin"):
-                    seen_spin.update(message["spin"])
+                if kind in ("tournament_started", "game_state") and message.get("fast"):
+                    seen_spin.update(message["fast"])
                 if kind == "action_required":
                     valid = message.get("valid_actions") or []
                     # Shove whenever it is legal. Fifteen blinds three-handed is
@@ -2044,13 +2064,14 @@ class SpinGoLiveTests(TransactionTestCase):
     def test_a_spin_n_go_plays_out_and_pays_the_winner_in_coins(self):
         from sidegames.models import CoinLedger, Wallet
 
-        game, users = self._setup_game()
-        complete, seen_spin = async_to_sync(self._play_it_out)(game, users)
+        game, users = self._setup_game("spingo", 25, multiplier=2)
+        complete, seen = async_to_sync(self._play_it_out)(game, users)
 
-        self.assertIsNotNone(complete, "the tournament never finished")
+        self.assertIsNotNone(complete, "the game never finished")
         # The draw reached the table, which is the only place it is ever shown.
-        self.assertEqual(seen_spin.get("multiplier"), 2)
-        self.assertEqual(seen_spin.get("prize_coins"), 50)
+        self.assertEqual(seen.get("key"), "spingo")
+        self.assertEqual(seen.get("multiplier"), 2)
+        self.assertEqual(seen.get("prize_coins"), 50)
 
         game.refresh_from_db()
         self.assertEqual(game.status, "finished")
@@ -2060,3 +2081,64 @@ class SpinGoLiveTests(TransactionTestCase):
         self.assertEqual(payouts.first().user_id, winner.user_id)
         # A hundred to start, twenty-five to sit, fifty for winning it.
         self.assertEqual(Wallet.objects.get(user_id=winner.user_id).balance, 125)
+
+    def test_a_heads_up_sit_n_go_plays_out_between_two_seats(self):
+        """Two players is the shape the engine bends most for.
+
+        The button posts the small blind and acts first before the flop, and last
+        after it — rules that only exist heads-up. If any of that were wrong the
+        hand would stall waiting on a seat that is not there, so getting to a
+        finish at all is most of what this proves.
+        """
+        from sidegames.models import CoinLedger, Wallet
+
+        game, users = self._setup_game("hu", 50)
+        complete, seen = async_to_sync(self._play_it_out)(game, users)
+
+        self.assertIsNotNone(complete, "the heads-up never finished")
+        self.assertEqual(seen.get("key"), "hu")
+        self.assertEqual(seen.get("seats"), 2)
+        # No draw here: a Sit n Go pays out exactly what went in.
+        self.assertEqual(seen.get("multiplier"), 0)
+        self.assertEqual(seen.get("prize_coins"), 100)
+
+        game.refresh_from_db()
+        self.assertEqual(game.status, "finished")
+        self.assertEqual(
+            sorted(game.players.values_list("finish_position", flat=True)), [1, 2],
+        )
+        winner = game.players.get(finish_position=1)
+        payouts = CoinLedger.objects.filter(reason="payout", memo=f"tournament:{game.id}")
+        self.assertEqual([row.amount for row in payouts], [100])
+        # Two hundred to start, fifty to sit, the whole hundred for winning.
+        self.assertEqual(Wallet.objects.get(user_id=winner.user_id).balance, 250)
+        loser = game.players.exclude(finish_position=1).get()
+        self.assertEqual(Wallet.objects.get(user_id=loser.user_id).balance, 150)
+
+    def test_a_six_max_sit_n_go_plays_out_and_pays_two_places(self):
+        from sidegames.models import CoinLedger, Wallet
+
+        game, users = self._setup_game("sixmax", 25)
+        complete, seen = async_to_sync(self._play_it_out)(game, users, timeout=240)
+
+        self.assertIsNotNone(complete, "the six-max never finished")
+        self.assertEqual(seen.get("seats"), 6)
+
+        game.refresh_from_db()
+        self.assertEqual(game.status, "finished")
+        # A hundred and fifty in, split sixty-five thirty-five: 97 and 52, with
+        # the rounding remainder going to first.
+        payouts = {
+            row.user_id: row.amount for row in
+            CoinLedger.objects.filter(reason="payout", memo=f"tournament:{game.id}")
+        }
+        self.assertEqual(sorted(payouts.values(), reverse=True), [98, 52])
+        self.assertEqual(sum(payouts.values()), 150)
+        first = game.players.get(finish_position=1)
+        second = game.players.get(finish_position=2)
+        self.assertEqual(payouts[first.user_id], 98)
+        self.assertEqual(payouts[second.user_id], 52)
+        # Everybody else paid to sit and took nothing back.
+        self.assertEqual(
+            Wallet.objects.get(user_id=game.players.get(finish_position=6).user_id).balance, 75,
+        )

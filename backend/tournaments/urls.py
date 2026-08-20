@@ -1,8 +1,8 @@
 from django.urls import path
-from .spingo_views import (
-    spingo_lobby,
-    spingo_sit,
-    spingo_leave,
+from .fastgames_views import (
+    fast_lobby,
+    fast_sit,
+    fast_leave,
 )
 from .views import (
     TournamentListCreateView,
@@ -22,11 +22,11 @@ from .views import (
 urlpatterns = [
     path("",                       TournamentListCreateView.as_view(), name="tournament-list"),
     # Before the <int:pk> routes below, which would otherwise never see these —
-    # and named apart from them, because a Spin n Go is not joined, started or
-    # edited like a tournament is.
-    path("spingo/",                spingo_lobby,                       name="spingo-lobby"),
-    path("spingo/sit/",            spingo_sit,                         name="spingo-sit"),
-    path("spingo/leave/",          spingo_leave,                       name="spingo-leave"),
+    # and named apart from them, because a game you sit down at is not joined,
+    # started or edited the way a tournament is.
+    path("fast/",                  fast_lobby,                         name="fast-lobby"),
+    path("fast/sit/",              fast_sit,                           name="fast-sit"),
+    path("fast/leave/",            fast_leave,                         name="fast-leave"),
     path("<int:pk>/",              TournamentDetailView.as_view(),     name="tournament-detail"),
     path("<int:pk>/join/",         join_tournament,                    name="tournament-join"),
     path("<int:pk>/start/",        start_tournament,                   name="tournament-start"),

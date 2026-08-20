@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest";
+
+import { isMyTier, payoutRows, prizeRows, seatCounts, tierAction, tierBlurb } from "./fastTiers";
+
+const tier = { key: "spingo", stake: 25, seats_needed: 3, game: null, odds: [] };
+const huTier = { key: "hu", stake: 10, seats_needed: 2, game: null, payouts: [] };
+
+describe("tierBlurb", () => {
+  it("says what the format is", () => {
+    expect(tierBlurb({ seats: 3, big_blinds: 15, duration: "3-5 min" }))
+      .toBe("3-max · 15bb · 3-5 min");
+  });
+
+  it("calls two players heads up, because nobody says 2-max", () => {
+    expect(tierBlurb({ seats: 2, big_blinds: 25, duration: "5-10 min" }))
+      .toBe("Heads up · 25bb · 5-10 min");
+  });
+
+  it("survives a format that has not loaded", () => {
+    expect(tierBlurb(null)).toBe("");
+  });
+});
+
+describe("seatCounts", () => {
+  it("is empty until somebody sits", () => {
+    expect(seatCounts(tier)).toEqual([0, 3]);
+  });
+
+  it("counts whoever is waiting", () => {
+    expect(seatCounts({ ...tier, game: { seats: 2 } })).toEqual([2, 3]);
+  });
+});
+
+describe("isMyTier", () => {
+  it("matches on the format and the stake together", () => {
+    expect(isMyTier(tier, { key: "spingo", stake: 25 })).toBe(true);
+    // Same stake, different game.
+    expect(isMyTier(tier, { key: "sixmax", stake: 25 })).toBe(false);
+    // Same game, different stake.
+    expect(isMyTier(tier, { key: "spingo", stake: 50 })).toBe(false);
+    expect(isMyTier(tier, null)).toBe(false);
+  });
+});
+
+describe("tierAction", () => {
+  it("offers a seat to somebody who can afford one", () => {
+    expect(tierAction(tier, { balance: 500 })).toMatchObject({ kind: "sit", enabled: true });
+  });
+
+  it("refuses a seat nobody can pay for, rather than letting the server do it", () => {
+    expect(tierAction(huTier, { balance: 5 })).toMatchObject({
+      kind: "broke", enabled: false, note: "Not enough coins",
+    });
+  });
+
+  it("turns into a way out of a tier you are waiting in", () => {
+    const mine = { key: "spingo", stake: 25, status: "lobby" };
+    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({ kind: "leave", enabled: true });
+  });
+
+  it("sends you to the table once your own game is running", () => {
+    const mine = { key: "spingo", stake: 25, status: "running" };
+    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({ kind: "open", enabled: true });
+  });
+
+  it("closes every other tier while you are in one, and says which", () => {
+    const mine = { key: "hu", stake: 50, status: "lobby", label: "Heads Up" };
+    expect(tierAction(tier, { mine, balance: 500 })).toMatchObject({
+      kind: "busy", enabled: false, note: "You are already in a Heads Up",
+    });
+  });
+});
+
+describe("prizeRows", () => {
+  it("prints the long odds without trailing zeroes on the short ones", () => {
+    const rows = prizeRows({
+      odds: [
+        { multiplier: 2, chance_pct: 72, prize_coins: 50 },
+        { multiplier: 100, chance_pct: 0.05, prize_coins: 2500 },
+      ],
+    });
+    expect(rows.map((row) => row.chance)).toEqual(["72%", "0.05%"]);
+  });
+
+  it("is empty for a game that pays places rather than a draw", () => {
+    expect(prizeRows(huTier)).toEqual([]);
+  });
+});
+
+describe("payoutRows", () => {
+  it("is what a Sit n Go pays, straight off the wire", () => {
+    const rows = payoutRows({ payouts: [{ place: 1, label: "1st", percentage: 65, coins: 97 }] });
+    expect(rows[0].coins).toBe(97);
+  });
+
+  it("is empty for a drawn game", () => {
+    expect(payoutRows(tier)).toEqual([]);
+  });
+});

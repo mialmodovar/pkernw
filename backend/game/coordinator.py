@@ -99,9 +99,9 @@ class MultiTableTournamentCoordinator:
         allow_rebuys: bool = False,
         max_rebuys: Optional[int] = 0,
         rebuy_level: int = 0,
-        # A Spin n Go's drawn prize: {"stake_coins", "multiplier", "prize_coins"}
-        # or None for a tournament, which is what every other format is.
-        spin: Optional[dict] = None,
+        # Which fast format this is and what it pays — see consumers.fast_payload
+        # — or None for a tournament, which is what most games are.
+        fast: Optional[dict] = None,
         countdown_seconds: int = 30,
     ):
         self.tournament_id = tournament_id
@@ -129,7 +129,7 @@ class MultiTableTournamentCoordinator:
         # None is unlimited, so it cannot be flattened to a number here.
         self.max_rebuys = None if max_rebuys is None else max(0, max_rebuys)
         self.rebuy_level = max(0, rebuy_level or 0)
-        self.spin = spin or None
+        self.fast = fast or None
         # How long the table holds before the first hand. It is loading time, not
         # a rule of the game, so a format that fires with everybody already
         # watching asks for less of it.
@@ -241,7 +241,7 @@ class MultiTableTournamentCoordinator:
                 "level": self._level_payload(),
                 "table_count": len(self._tables),
                 "tables": self.table_summaries(),
-                "spin": self.spin,
+                "fast": self.fast,
             },
         )
 
@@ -801,9 +801,10 @@ class MultiTableTournamentCoordinator:
             # the blind level straight away, instead of waiting for the next
             # level_change broadcast.
             "level": self._level_payload(),
-            # The drawn prize, for the same reason: a player who reloads during
-            # a Spin n Go should still be able to see what they are playing for.
-            "spin": self.spin,
+            # The format and its prize, for the same reason: a player who reloads
+            # mid-game should still see what they are playing for, and the felt
+            # should not change shape under them.
+            "fast": self.fast,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:

@@ -16,8 +16,9 @@ import SpinReveal from "./SpinReveal";
 export default function StartCountdown({ myUserId }) {
   const countdown = useGameStore((s) => s.countdown);
   // A Spin n Go spends its short countdown showing what was drawn, which is the
-  // one thing about the game nobody chose and everybody wants to see.
-  const spin = useGameStore((s) => s.spin);
+  // one thing about the game nobody chose and everybody wants to see. The other
+  // instant formats have nothing to reveal, so they say what they are instead.
+  const fast = useGameStore((s) => s.fast);
   const readyUserIds = useGameStore((s) => s.readyUserIds);
   const readyTotal = useGameStore((s) => s.readyTotal);
   const players = useGameStore((s) => s.players);
@@ -35,9 +36,21 @@ export default function StartCountdown({ myUserId }) {
 
   return (
     <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20 px-4 text-center">
-      {spin ? (
+      {fast ? (
         <>
-          <SpinReveal spin={spin} />
+          {fast.multiplier > 0 ? (
+            <SpinReveal spin={fast} />
+          ) : (
+            <div className="flex flex-col items-center">
+              <div className="text-(--color-text-muted) text-sm tracking-[0.2em] uppercase mb-2">
+                {fast.label} · {"\u{1FA99}"} {fast.stake_coins} each
+              </div>
+              <div className="text-4xl font-bold tabular-nums text-(--color-highlight-text)">
+                {"\u{1FA99}"} {Number(fast.prize_coins || 0).toLocaleString()}
+              </div>
+              <div className="text-(--color-text-muted) text-sm mt-1">in the middle</div>
+            </div>
+          )}
           <div className="text-(--color-text-muted) text-sm mt-3">
             Cards in <span className="tabular-nums">{countdown}</span>
           </div>

@@ -9,6 +9,30 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Sit n Go, in two shapes.** Beside the Spin n Go tab: **Heads Up** — two
+  players, front to front, twenty-five big blinds each, five to ten minutes —
+  and **6-Max**, thirty big blinds with the top two paid, ten to fifteen. Two
+  buy-ins each (10 and 50 coins heads up, 25 and 100 six-handed), blinds every
+  two minutes, and the same rule as the Spin n Go: you sit, and when the last
+  seat fills the cards are in the air. No draw here — a Sit n Go pays out exactly
+  what was paid in, split the way the format splits it, with nothing raked off.
+- **A heads-up table that looks like one.** Two players get a smaller, rounder
+  felt with a seat at each end, facing each other, rather than a ring built for
+  eight with six empty chairs in it. The engine already knew the heads-up rules —
+  the button posts the small blind, acts first before the flop and last after it
+  — and now the felt reads the way the game is played.
+- **One lobby behind three tabs.** Spin n Go and Sit n Go are the same machinery
+  with different numbers, so they now share a catalogue, an endpoint and a
+  settlement: the lobby fetches every format in one request and each tab draws
+  its own. Adding a fourth format is a row in a table.
+
+### Changed
+- **Instant games stay out of the tournament list.** A Spin n Go you played three
+  of before breakfast is not history in the sense that list means, and thirty of
+  them would bury the night somebody actually arranged. Finished and waiting fast
+  games are listed in their own tabs, with their own results; the Tournaments tab
+  is for nights people arranged. A game of yours that is *dealing* still reaches
+  the shortcut back to the table, which is the one place it has to.
 - **Spin n Go.** A second game mode, beside Tournaments at the top of the lobby.
   Two tiers, 25 or 50 coins, three seats each: you sit, and when the third
   player sits the prize is drawn — a multiplier between 2× and 100× on the

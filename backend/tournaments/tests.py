@@ -3576,13 +3576,13 @@ class SpinGoLobbyTests(APITestCase):
 
 		return Wallet.objects.get(user=user).balance
 
-	def _sit(self, name, stake=25):
+	def _sit(self, name, stake=25, key="spingo"):
 		self.client.force_authenticate(self.players[name])
-		return self.client.post(reverse("spingo-sit"), {"stake": stake}, format="json")
+		return self.client.post(reverse("fast-sit"), {"key": key, "stake": stake}, format="json")
 
 	def _leave(self, name):
 		self.client.force_authenticate(self.players[name])
-		return self.client.post(reverse("spingo-leave"), {}, format="json")
+		return self.client.post(reverse("fast-leave"), {}, format="json")
 
 	def test_the_first_player_to_sit_opens_the_queue_and_pays_for_their_seat(self):
 		response = self._sit("ana")
@@ -3595,8 +3595,11 @@ class SpinGoLobbyTests(APITestCase):
 		game = Tournament.objects.get(format="spingo")
 		self.assertEqual(game.buy_in_coins, 25)
 		self.assertEqual(game.max_players, 3)
-		self.assertEqual(game.levels.count(), 7)
 		self.assertEqual(game.starting_chips, 1500)
+		# The whole ladder, not a number that has to be edited whenever it grows.
+		from tournaments import spingo
+
+		self.assertEqual(game.levels.count(), len(spingo.BLINDS))
 
 	def test_the_second_player_sits_at_the_same_table(self):
 		self._sit("ana")
@@ -3656,7 +3659,9 @@ class SpinGoLobbyTests(APITestCase):
 
 	def test_an_unknown_stake_is_refused(self):
 		self.client.force_authenticate(self.players["ana"])
-		response = self.client.post(reverse("spingo-sit"), {"stake": 30}, format="json")
+		response = self.client.post(
+			reverse("fast-sit"), {"key": "spingo", "stake": 30}, format="json",
+		)
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertFalse(Tournament.objects.exists())
@@ -3725,21 +3730,23 @@ class SpinGoLobbyTests(APITestCase):
 		listed = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
 		self.assertEqual(listed.data, [])
 
-		tiers = self.client.get(reverse("spingo-lobby"))
-		by_stake = {tier["stake"]: tier for tier in tiers.data["tiers"]}
+		lobby = self.client.get(reverse("fast-lobby"))
+		spingo = next(one for one in lobby.data["formats"] if one["key"] == "spingo")
+		by_stake = {tier["stake"]: tier for tier in spingo["tiers"]}
 		self.assertEqual(by_stake[25]["game"]["seats"], 1)
 		self.assertIsNone(by_stake[50]["game"])
-		self.assertIsNone(tiers.data["my_game"])
+		self.assertIsNone(lobby.data["my_game"])
 
 	def test_the_lobby_says_where_your_own_seat_is(self):
 		self._sit("ana")
 
 		self.client.force_authenticate(self.players["ana"])
-		tiers = self.client.get(reverse("spingo-lobby"))
-		self.assertEqual(tiers.data["my_game"]["stake"], 25)
-		self.assertEqual(tiers.data["balance"], 475)
+		lobby = self.client.get(reverse("fast-lobby"))
+		self.assertEqual(lobby.data["my_game"]["stake"], 25)
+		self.assertEqual(lobby.data["my_game"]["key"], "spingo")
+		self.assertEqual(lobby.data["balance"], 475)
 		self.assertEqual(
-			[face["username"] for face in tiers.data["my_game"]["waiting"]], ["ana"],
+			[face["username"] for face in lobby.data["my_game"]["waiting"]], ["ana"],
 		)
 
 
@@ -4030,7 +4037,7 @@ class SpinGoHistoryTests(APITestCase):
 		return game
 
 	def _lobby(self):
-		return self.client.get(reverse("spingo-lobby")).data
+		return self.client.get(reverse("fast-lobby")).data
 
 	def test_your_own_finished_games_come_back_newest_first(self):
 		self._finished(2)
@@ -4062,9 +4069,10 @@ class SpinGoHistoryTests(APITestCase):
 		self.assertFalse(top[0]["i_won"])
 		self.assertTrue(top[2]["i_won"])
 
-	def test_a_game_that_never_drew_is_in_neither_list(self):
-		# A queue that was deleted mid-fill leaves nothing behind, but a row that
-		# somehow finished without a draw has no prize to report either.
+	def test_a_spin_n_go_that_never_drew_is_in_neither_list(self):
+		# The multiplier is stamped when the game fires, so a finished row
+		# without one is something left behind rather than a game anybody
+		# played — and it has no prize to report in either list.
 		self._finished(0)
 
 		lobby = self._lobby()
@@ -4124,3 +4132,319 @@ class CoinPrizeReportingTests(APITestCase):
 
 		detail = self.client.get(reverse("tournament-detail", args=[game.id])).data
 		self.assertEqual(detail["players"][0]["prize_coins"], 0)
+
+
+class FastFormatRulesTests(TestCase):
+	"""The catalogue itself. Arithmetic that has to add up before anything is staked."""
+
+	def test_every_format_pays_out_exactly_what_it_takes_in(self):
+		from tournaments import fastgames
+
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			with self.subTest(format=key):
+				self.assertEqual(sum(row[2] for row in fmt.payouts), 100)
+
+	def test_every_format_is_a_real_table_shape(self):
+		from tournaments import fastgames
+
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			with self.subTest(format=key):
+				# The engine seats between two and nine, and pays no more
+				# places than it has players.
+				self.assertGreaterEqual(fmt.seats, 2)
+				self.assertLessEqual(fmt.seats, 9)
+				self.assertLessEqual(len(fmt.payouts), fmt.seats)
+				self.assertTrue(fmt.stakes)
+				# Two buy-ins each, and the cheaper one first so the tier cards
+				# read in the order anybody would climb them.
+				self.assertEqual(list(fmt.stakes), sorted(fmt.stakes))
+
+	def test_the_formats_are_turbos_and_start_shallow(self):
+		from tournaments import fastgames
+
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			with self.subTest(format=key):
+				self.assertLessEqual(fmt.level_minutes, 3)
+				# Deep enough to play, short enough to be over: nothing here
+				# starts with more than forty blinds or fewer than ten.
+				self.assertGreaterEqual(fmt.big_blinds, 10)
+				self.assertLessEqual(fmt.big_blinds, 40)
+
+	def test_the_blinds_only_ever_climb(self):
+		from tournaments import fastgames
+
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			with self.subTest(format=key):
+				bigs = [level[1] for level in fmt.blinds]
+				self.assertEqual(bigs, sorted(bigs))
+				self.assertEqual(len(set(bigs)), len(bigs))
+				# Every level has the small blind under the big one, which is
+				# the only thing the engine assumes about a level.
+				for small, big, _ante in fmt.blinds:
+					self.assertLess(small, big)
+
+	def test_the_ladder_outlasts_the_chips(self):
+		"""The last level never raises, so it has to be one nobody can sit in.
+
+		By the end of the ladder the big blind should be past the whole prize
+		pool of chips — otherwise a game could reach the final level and sit
+		there forever.
+		"""
+		from tournaments import fastgames
+
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			with self.subTest(format=key):
+				chips_in_play = fmt.starting_chips * fmt.seats
+				self.assertGreaterEqual(fmt.blinds[-1][1] * 2, chips_in_play)
+
+	def test_a_heads_up_game_is_two_seats_and_a_six_max_is_six(self):
+		from tournaments import fastgames
+
+		self.assertEqual(fastgames.FORMATS["hu"].seats, 2)
+		self.assertEqual(fastgames.FORMATS["sixmax"].seats, 6)
+		# Heads up is the shorter of the two, which is the whole reason to
+		# offer both.
+		self.assertLess(
+			len(fastgames.FORMATS["hu"].blinds), len(fastgames.FORMATS["sixmax"].blinds),
+		)
+
+	def test_a_finished_row_says_which_format_it_was(self):
+		from tournaments import fastgames
+
+		host = User.objects.create_user(username="ff_host", password="x")
+		for key in fastgames.FORMAT_KEYS:
+			fmt = fastgames.FORMATS[key]
+			game = Tournament.objects.create(
+				host=host, **fastgames.tournament_defaults(fmt, fmt.stakes[0]),
+			)
+			with self.subTest(format=key):
+				self.assertEqual(fastgames.key_for_tournament(game), key)
+
+	def test_a_tournament_is_not_a_fast_game(self):
+		from tournaments import fastgames
+
+		host = User.objects.create_user(username="ff_host2", password="x")
+		night = Tournament.objects.create(host=host, name="Thursday")
+		self.assertIsNone(fastgames.key_for_tournament(night))
+
+	def test_the_pot_is_the_buy_ins_unless_it_was_drawn(self):
+		from tournaments import fastgames
+
+		hu = fastgames.FORMATS["hu"]
+		self.assertEqual(fastgames.pot_coins(hu, 50, 2), 100)
+		sixmax = fastgames.FORMATS["sixmax"]
+		self.assertEqual(fastgames.pot_coins(sixmax, 25, 6), 150)
+		spin = fastgames.FORMATS["spingo"]
+		self.assertEqual(fastgames.pot_coins(spin, 25, 3, multiplier=10), 250)
+
+
+class SitNGoTests(APITestCase):
+	"""Sitting down at a Sit n Go, and it firing when the seats fill."""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=f"s_{name}", password="x")
+			for name in ("a", "b", "c", "d", "e", "f", "g")
+		}
+		for user in self.players.values():
+			self._top_up(user, 500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _top_up(self, user, coins):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		wallet_for(user)
+		Wallet.objects.filter(user=user).update(balance=coins)
+
+	def _balance(self, name):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=self.players[name]).balance
+
+	def _sit(self, name, key, stake):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(reverse("fast-sit"), {"key": key, "stake": stake}, format="json")
+
+	def test_two_players_fill_a_heads_up_and_it_deals(self):
+		self._sit("a", "hu", 10)
+		response = self._sit("b", "hu", 10)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		game = Tournament.objects.get(format="sitngo")
+		self.assertEqual(game.status, "running")
+		self.assertEqual(game.players.count(), 2)
+		# Two seats, one table, and the seats opposite each other — which is
+		# what the felt draws from players_per_table.
+		self.assertEqual(game.players_per_table, 2)
+		self.assertEqual(game.max_players, 2)
+		self.assertEqual(sorted(game.players.values_list("seat_at_table", flat=True)), [0, 1])
+		self.assertEqual(self._balance("a"), 490)
+
+	def test_a_heads_up_pays_the_winner_everything(self):
+		self._sit("a", "hu", 50)
+		self._sit("b", "hu", 50)
+		game = Tournament.objects.get(format="sitngo")
+
+		self.assertEqual(game.payout_structure, [{"place": 1, "label": "1st", "percentage": 100}])
+		self.assertEqual(game.spin_multiplier, 0)
+
+	def test_six_players_fill_a_six_max_and_five_do_not(self):
+		for name in ("a", "b", "c", "d", "e"):
+			self._sit(name, "sixmax", 25)
+
+		game = Tournament.objects.get(format="sitngo")
+		self.assertEqual(game.status, "lobby")
+
+		self._sit("f", "sixmax", 25)
+		game.refresh_from_db()
+		self.assertEqual(game.status, "running")
+		self.assertEqual(game.players.count(), 6)
+
+	def test_a_seventh_player_opens_a_second_six_max(self):
+		for name in ("a", "b", "c", "d", "e", "f"):
+			self._sit(name, "sixmax", 25)
+		self._sit("g", "sixmax", 25)
+
+		self.assertEqual(Tournament.objects.filter(format="sitngo").count(), 2)
+		self.assertEqual(Tournament.objects.filter(format="sitngo", status="lobby").count(), 1)
+
+	def test_the_two_sit_n_gos_are_different_queues(self):
+		"""Same format column, told apart by their seat count.
+
+		A heads-up player must never be seated into a six-max, and the only
+		thing distinguishing the rows is how many chairs they have.
+		"""
+		self._sit("a", "hu", 10)
+		self._sit("b", "sixmax", 25)
+
+		self.assertEqual(Tournament.objects.filter(format="sitngo").count(), 2)
+		seats = sorted(Tournament.objects.filter(format="sitngo").values_list(
+			"players_per_table", flat=True,
+		))
+		self.assertEqual(seats, [2, 6])
+
+	def test_each_format_offers_two_buy_ins(self):
+		self.client.force_authenticate(self.players["a"])
+		lobby = self.client.get(reverse("fast-lobby")).data
+
+		by_key = {one["key"]: one for one in lobby["formats"]}
+		self.assertEqual(sorted(by_key), ["hu", "sixmax", "spingo"])
+		for key, expected in (("hu", [10, 50]), ("sixmax", [25, 100]), ("spingo", [25, 50])):
+			with self.subTest(format=key):
+				self.assertEqual([tier["stake"] for tier in by_key[key]["tiers"]], expected)
+
+	def test_a_sit_n_go_tier_says_what_it_pays_rather_than_drawing_for_it(self):
+		self.client.force_authenticate(self.players["a"])
+		lobby = self.client.get(reverse("fast-lobby")).data
+		sixmax = next(one for one in lobby["formats"] if one["key"] == "sixmax")
+		tier = sixmax["tiers"][0]
+
+		self.assertFalse(sixmax["draws_multiplier"])
+		self.assertNotIn("odds", tier)
+		# Six seats at twenty-five is a hundred and fifty, split 65/35.
+		self.assertEqual([row["coins"] for row in tier["payouts"]], [97, 52])
+
+	def test_a_stake_from_another_format_is_refused(self):
+		# 100 is a six-max buy-in, not a heads-up one.
+		response = self._sit("a", "hu", 100)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertFalse(Tournament.objects.exists())
+
+	def test_one_fast_game_at_a_time_whichever_kind(self):
+		self._sit("a", "hu", 10)
+		response = self._sit("a", "sixmax", 25)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(self._balance("a"), 490)
+
+	def test_leaving_a_sit_n_go_queue_refunds_it(self):
+		self._sit("a", "sixmax", 100)
+		self.client.force_authenticate(self.players["a"])
+		response = self.client.post(reverse("fast-leave"), {}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(self._balance("a"), 500)
+		self.assertFalse(Tournament.objects.filter(format="sitngo").exists())
+
+	def test_nobody_runs_a_sit_n_go(self):
+		from tournaments.permissions import can_manage_tournament
+
+		self._sit("a", "hu", 10)
+		game = Tournament.objects.get(format="sitngo")
+		boss = User.objects.create_superuser(username="s_boss", password="x")
+
+		self.assertFalse(can_manage_tournament(self.players["a"], game))
+		self.assertFalse(can_manage_tournament(boss, game))
+
+
+class FastGamesStayOutOfTheTournamentListTests(APITestCase):
+	"""The lobby's tournament tab is for nights people arranged."""
+
+	def setUp(self):
+		self.player = User.objects.create_user(username="fl_player", password="x")
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		wallet_for(self.player)
+		Wallet.objects.filter(user=self.player).update(balance=500)
+		self.client.force_authenticate(self.player)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _finished_fast(self, key):
+		from tournaments import fastgames
+
+		fmt = fastgames.FORMATS[key]
+		game = Tournament.objects.create(
+			host=self.player,
+			**{**fastgames.tournament_defaults(fmt, fmt.stakes[0]),
+			   "status": "finished", "spin_multiplier": 2 if fmt.draws_multiplier else 0,
+			   "finished_at": timezone.now()},
+		)
+		TournamentPlayer.objects.create(
+			tournament=game, user=self.player, seat=0, chips=0, finish_position=1,
+		)
+		return game
+
+	def _scope(self, scope):
+		return self.client.get(reverse("tournament-list"), {"scope": scope}).data
+
+	def test_a_finished_fast_game_is_not_in_the_tournament_history(self):
+		for key in ("spingo", "hu", "sixmax"):
+			self._finished_fast(key)
+		night = Tournament.objects.create(
+			host=self.player, name="Thursday", status="finished",
+		)
+		TournamentPlayer.objects.create(
+			tournament=night, user=self.player, seat=0, chips=0, finish_position=1,
+		)
+
+		past = self._scope("past")
+		self.assertEqual([row["name"] for row in past], ["Thursday"])
+
+	def test_a_waiting_fast_game_is_not_in_the_tournament_list(self):
+		self.client.post(reverse("fast-sit"), {"key": "hu", "stake": 10}, format="json")
+
+		self.assertEqual(self._scope("upcoming"), [])
+
+	def test_a_live_fast_game_is_still_in_your_own_active_list(self):
+		"""The shortcut back to your table reads that scope.
+
+		Keeping fast games out of it would leave a player who wandered off to
+		the lobby with no way back to a game that is dealing to them.
+		"""
+		game = self._finished_fast("hu")
+		Tournament.objects.filter(pk=game.pk).update(status="running", finished_at=None)
+
+		active = self._scope("mine_active")
+		self.assertEqual([row["format"] for row in active], ["sitngo"])

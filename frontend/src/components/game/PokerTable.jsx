@@ -17,6 +17,14 @@ import ChipStack from "./ChipStack";
 import ChipFlight from "./ChipFlight";
 import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
+import {
+  CLASSIC_ASPECT,
+  PORTRAIT,
+  SHORT_TABLES,
+  landscapeGeometry,
+  pointAt,
+  slotPosition,
+} from "./tableSeats";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
@@ -25,49 +33,6 @@ import FinisherOverlay from "./FinisherOverlay";
 import ThrownItem from "./ThrownItem";
 import AimOverlay from "./AimOverlay";
 
-
-// Seats sit on the felt ellipse. Slots are laid out from the table's CAPACITY,
-// not from the number of players present, so nobody's seat shifts when
-// someone busts.
-// Kept short of the container edges so a seat's full card/marker/nameplate
-// stack still fits inside the table area instead of being covered by the
-// action panel below.
-//
-// `power` bends the ellipse towards a stadium: below 1 it pushes slots off the
-// arc and onto the long sides, which is what makes a tall phone table read as a
-// poker table instead of a ring of nameplates.
-const PORTRAIT = { radiusX: 35, radiusY: 36, power: 0.7 };
-
-// Three-handed, on a table built for three. The house oval seats eight, and
-// three players sitting round it are three people at opposite ends of an empty
-// room — so a Spin n Go gets its own smaller, rounder felt with the seats pulled
-// in. Combined with the violet felt and the gold rim in index.css, the format is
-// recognisable from the shape of the table before anything is dealt.
-const SPIN_PORTRAIT = { radiusX: 30, radiusY: 30, power: 0.85 };
-const SPIN_LANDSCAPE = { radiusX: 32, radiusY: 33, power: 1 };
-const SPIN_FELT_INSET = {
-  compact: "inset-x-[16%] inset-y-[13%] rounded-[46%/32%]",
-  wide: "inset-x-[24%] inset-y-[16%] rounded-[50%]",
-};
-
-// The shape a 5:3 table has always had, and the point at which the ring starts
-// needing help.
-const CLASSIC_ASPECT = 5 / 3;
-
-/** The seat ring for a table of a given width-to-height ratio.
- *
- * The frame is no longer a fixed 900×540: it fills the room it is given, so on
- * a wide window the felt is a long oval. Sampling an ellipse at equal angles
- * crowds the slots towards the two ends of its long axis, which on a stretched
- * table means clusters at the far left and right with nobody along the near and
- * far rails. The same bend the phone layout uses fixes it — pushed a little
- * harder the wider the table gets — and at the classic ratio nothing bends at
- * all, so an ordinary window looks exactly as it did.
- */
-function landscapeGeometry(aspect) {
-  const stretch = Math.max(0, aspect - CLASSIC_ASPECT);
-  return { radiusX: 42, radiusY: 38, power: Math.max(0.72, 1 - stretch * 0.28) };
-}
 
 /** How big the frame currently is, measured rather than assumed: it is CSS
  *  that decides, from the space left over by everything above and below the
@@ -88,25 +53,6 @@ function useFrameSize(ref) {
   }, [ref]);
 
   return size;
-}
-
-function bend(value, power) {
-  return power === 1 ? value : Math.sign(value) * Math.abs(value) ** power;
-}
-
-function pointAt(index, capacity, scale, geometry) {
-  const angle = (index / capacity) * 2 * Math.PI;
-  const { radiusX, radiusY, power } = geometry;
-  return {
-    left: `${50 - radiusX * scale * bend(Math.sin(angle), power)}%`,
-    top: `${50 + radiusY * scale * bend(Math.cos(angle), power)}%`,
-  };
-}
-
-function slotPosition(index, capacity, geometry) {
-  if (capacity <= 0) return { top: "50%", left: "50%" };
-  // index 0 sits bottom-centre; the rest run around the table towards the left.
-  return pointAt(index, capacity, 1, geometry);
 }
 
 // How far in from a seat its chips sit, as a share of the table's height, so
@@ -226,13 +172,17 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   const throws = useGameStore((s) => s.throws);
   const frameSize = useFrameSize(frame);
   const aspect = frameSize.aspect;
-  // A Spin n Go's drawn prize, and the reason this table does not look like the
-  // other one. Null everywhere else.
-  const spin = useGameStore((s) => s.spin);
+  // Which instant format this is, if it is one at all. Null at a tournament,
+  // which is what leaves this looking like a tournament's table.
+  const fast = useGameStore((s) => s.fast);
+  // The felt is laid for the seats the format has rather than the players who
+  // have connected: half of them may still be loading, and a table that changes
+  // shape as people arrive is worse than one that starts the right size.
+  const shortTable = SHORT_TABLES[fast?.seats] || null;
   // The phone shape is fixed — the frame there is always the tall one — so only
   // the landscape ring is read off the measurement.
-  const geometry = spin
-    ? (compact ? SPIN_PORTRAIT : SPIN_LANDSCAPE)
+  const geometry = shortTable
+    ? (compact ? shortTable.portrait : shortTable.landscape)
     : (compact ? PORTRAIT : landscapeGeometry(aspect));
 
   // Winners are known from pot_awarded; their best five get the gold ring, and
@@ -309,19 +259,19 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // the felt is measured against the felt rather than against the window.
   return (
     <div ref={frame} className={`@container table-frame relative mx-auto ${quake}`}>
-      {/* Felt. A Spin n Go's is smaller, rounder and violet — see SPIN_PORTRAIT
-          above and .felt-spin in index.css. */}
-      <div className={`felt absolute ${spin ? "felt-spin" : ""} ${
-        spin
-          ? (compact ? SPIN_FELT_INSET.compact : SPIN_FELT_INSET.wide)
+      {/* Felt. Short-handed formats get a smaller one (see SHORT_TABLES above),
+          and the Spin n Go gets the violet — .felt-spin in index.css. */}
+      <div className={`felt absolute ${fast?.key === "spingo" ? "felt-spin" : ""} ${
+        shortTable
+          ? (compact ? shortTable.compact : shortTable.wide)
           : (compact ? "inset-x-[10%] inset-y-[7%] rounded-[46%/26%]" : "inset-x-[9%] inset-y-[19%] rounded-[50%]")
       }`} />
 
-      {/* What is being played for, written on the felt. A Spin n Go's prize is
-          not derivable from the buy-in the way a tournament's is — it was drawn
-          — so it is worth having in front of the players the whole way through
-          rather than only in the reveal that opens the game. */}
-      {spin && <SpinPrizePlaque spin={spin} compact={compact} />}
+      {/* What is being played for, written on the felt. Worth having in front of
+          the players the whole way through rather than only in the moment the
+          game opens — a drawn prize is not derivable from the buy-in, and a coin
+          prize is not something the chips on the table say. */}
+      {fast && <FastPrizePlaque fast={fast} compact={compact} />}
 
       {/* Everything currently in the air. Seat positions are percentages of
           the frame, and both the flight and the aiming need pixels, so they
@@ -494,13 +444,16 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
 }
 
 
-/** The drawn prize, printed on the felt above the board.
+/** The prize, printed on the felt above the board.
 
- *  Deliberately quiet — it sits on the felt for the whole game, so it is a
- *  plaque rather than a banner. The reveal is SpinReveal's job.
+ *  Deliberately quiet — it sits there for the whole game, so it is a plaque
+ *  rather than a banner. The moment a draw lands is SpinReveal's job.
  */
-function SpinPrizePlaque({ spin, compact }) {
-  if (!spin?.prize_coins) return null;
+function FastPrizePlaque({ fast, compact }) {
+  if (!fast?.prize_coins) return null;
+  const title = fast.multiplier
+    ? `${fast.stake_coins} coins × ${fast.multiplier}, winner takes all`
+    : `${fast.label} · ${fast.stake_coins} coins a seat`;
   return (
     <div
       className={`absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none
@@ -508,15 +461,21 @@ function SpinPrizePlaque({ spin, compact }) {
                   border-[rgb(var(--highlight-rgb)/0.45)]
                   bg-[rgba(12,7,18,0.72)] px-3 py-1
                   ${compact ? "top-[16%] text-[11px]" : "top-[24%] text-xs"}`}
-      title={`${spin.stake_coins} coins × ${spin.multiplier}, winner takes all`}
+      title={title}
     >
       <span className="font-semibold text-(--color-highlight-text) tabular-nums">
-        {"\u{1FA99}"} {spin.prize_coins.toLocaleString()}
+        {"\u{1FA99}"} {fast.prize_coins.toLocaleString()}
       </span>
-      <span className="text-(--color-text-muted)">·</span>
-      <span className="font-semibold text-(--color-highlight-text) tabular-nums">
-        {spin.multiplier}×
-      </span>
+      {/* The multiplier is the whole story of a Spin n Go and does not exist
+          anywhere else, so it is the one thing that earns a second line here. */}
+      {fast.multiplier > 0 && (
+        <>
+          <span className="text-(--color-text-muted)">·</span>
+          <span className="font-semibold text-(--color-highlight-text) tabular-nums">
+            {fast.multiplier}×
+          </span>
+        </>
+      )}
     </div>
   );
 }

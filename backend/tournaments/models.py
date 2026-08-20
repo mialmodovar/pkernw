@@ -26,13 +26,15 @@ class Tournament(models.Model):
         ("progressive", "Progressive knockout"),
     ]
     # What kind of game this row is. A standard tournament is somebody's night:
-    # a host opens it, sets the stakes and starts it. A Spin n Go has no host at
-    # all — the server makes it when a player sits and fires it when the third
-    # one does — so the difference has to survive creation, which a setting that
-    # only existed in the create form would not.
+    # a host opens it, sets the stakes and starts it. The fast formats have no
+    # host at all — the server makes one when a player sits and fires it when the
+    # seats fill — so the difference has to survive creation, which a setting
+    # that only existed in the create form would not. Which Sit n Go a row is
+    # follows from players_per_table; see tournaments/fastgames.py.
     FORMAT_CHOICES = [
         ("standard", "Tournament"),
         ("spingo",   "Spin n Go"),
+        ("sitngo",   "Sit n Go"),
     ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")

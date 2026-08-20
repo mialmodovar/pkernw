@@ -65,8 +65,10 @@ def coin_pot(tournament, entries: int) -> int:
     """
     if not is_coin_game(tournament):
         return 0
-    if tournament.format == "spingo":
-        return (tournament.buy_in_coins or 0) * max(0, tournament.spin_multiplier or 0)
+    # A drawn prize is the one case where the pot has nothing to do with how
+    # many people paid in. Everything else, tournaments included, is the buy-ins.
+    if (tournament.spin_multiplier or 0) > 0:
+        return (tournament.buy_in_coins or 0) * tournament.spin_multiplier
     return (tournament.buy_in_coins or 0) * max(0, entries)
 
 

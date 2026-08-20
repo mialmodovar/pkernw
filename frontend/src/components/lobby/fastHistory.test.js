@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { drawLabel, historyNet, myResult, myReturn, netLabel, winnerName } from "./spinGoHistory";
+import { drawLabel, historyNet, myResult, myReturn, netLabel, winnerName } from "./fastHistory";
 
-const won = { stake: 25, multiplier: 10, prize_coins: 250, i_won: true, my_finish: 1 };
-const lost = { stake: 25, multiplier: 2, prize_coins: 50, i_won: false, my_finish: 3 };
+const won = { stake: 25, multiplier: 10, prize_coins: 250, i_won: true, my_finish: 1, my_return: 250 };
+const lost = { stake: 25, multiplier: 2, prize_coins: 50, i_won: false, my_finish: 3, my_return: 0 };
+// Six-max pays two places, so coming second is not coming away with nothing.
+const runnerUp = { stake: 25, prize_coins: 150, i_won: false, my_finish: 2, my_return: 52 };
 
 describe("drawLabel", () => {
   it("says the draw and what it paid", () => {
     expect(drawLabel(won)).toBe("10× · 🪙 250");
+  });
+
+  it("says only the prize where there was no draw", () => {
+    expect(drawLabel(runnerUp)).toBe("🪙 150");
   });
 });
 
@@ -24,9 +30,10 @@ describe("myResult", () => {
     expect(myResult(won)).toBe("won");
   });
 
-  it("places the other two", () => {
+  it("places everybody else", () => {
     expect(myResult(lost)).toBe("3rd");
     expect(myResult({ ...lost, my_finish: 2 })).toBe("2nd");
+    expect(myResult({ ...lost, my_finish: 6 })).toBe("6th");
   });
 
   it("says nothing about a game you were not in", () => {
@@ -35,16 +42,23 @@ describe("myResult", () => {
 });
 
 describe("myReturn", () => {
-  it("is the prize when you won it and nothing when you did not", () => {
+  it("is what the ledger paid you, not what the winner got", () => {
     expect(myReturn(won)).toBe(250);
     expect(myReturn(lost)).toBe(0);
+    // The case a "did you win?" rule would get wrong.
+    expect(myReturn(runnerUp)).toBe(52);
   });
 });
 
 describe("historyNet", () => {
-  it("nets the stakes against the prizes", () => {
+  it("nets the stakes against what came back", () => {
     // 250 back on one 25 stake, then two more stakes gone.
     expect(historyNet([won, lost, lost])).toBe(175);
+  });
+
+  it("counts a paid second place", () => {
+    // 52 back on a 25 stake.
+    expect(historyNet([runnerUp])).toBe(27);
   });
 
   it("is a loss when nothing came back", () => {

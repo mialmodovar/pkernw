@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
-import useSpinGoStore from "../store/spinGoStore";
+import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
-import SpinGoBrowser from "../components/lobby/SpinGoBrowser";
+import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -14,20 +14,24 @@ import CalotesPanel from "../components/lobby/CalotesPanel";
 import CoinPanel from "../components/lobby/CoinPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
-// The two things you can be playing. Written as a list rather than two buttons
-// so the strip is one loop, the way the filter chips inside the tournament
-// browser are — and so a third format has one place to be added.
+// The three things you can be playing. Written as a list rather than three
+// buttons so the strip is one loop, the way the filter chips inside the
+// tournament browser are — and so a fourth has one place to be added.
+//
+// `formats` is which of the instant formats a tab shows; the tournament tab has
+// none, being the one place where games are arranged rather than sat down at.
 const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments" },
-  { key: "spingo", label: "Spin n Go" },
+  { key: "tournaments", label: "Tournaments", formats: null },
+  { key: "spingo", label: "Spin n Go", formats: ["spingo"] },
+  { key: "sitngo", label: "Sit n Go", formats: ["hu", "sixmax"] },
 ];
 
 /**
- * Watch your own Spin n Go and leave for the table the moment it fires.
+ * Watch your own instant game and leave for the table the moment it fires.
  *
- * Kept here rather than inside the Spin n Go tab, because you can sit down and
- * then go back to reading the tournament list — and the game starts dealing
- * whether or not that tab is the one on screen.
+ * Kept here rather than inside the tab it belongs to, because you can sit down
+ * and then go and read something else — and the game starts dealing whether or
+ * not its tab is the one on screen.
  *
  * Strictly on the change from waiting to dealing. Sending you to the table
  * because you are *in* a running game is the mistake this used to make: it made
@@ -36,9 +40,9 @@ const LOBBY_TABS = [
  * useAutoOpenTable, which spends its redirect once; walking back here on purpose
  * has TableShortcut for a way back and no argument about it.
  */
-function useSpinGoWatch({ user }) {
+function useFastGameWatch({ user }) {
   const navigate = useNavigate();
-  const { myGame, fetchTiers } = useSpinGoStore();
+  const { myGame, fetchLobby } = useFastGameStore();
   const waiting = myGame?.status === "lobby";
   const status = myGame?.status ?? null;
   const gameId = myGame?.id ?? null;
@@ -46,8 +50,8 @@ function useSpinGoWatch({ user }) {
 
   useEffect(() => {
     if (!user) return;
-    fetchTiers();
-  }, [user, fetchTiers]);
+    fetchLobby();
+  }, [user, fetchLobby]);
 
   // Two paces, like the tournament list: a queue you are sitting in can fill up
   // at any second and is worth knowing about immediately, and everything else
@@ -55,17 +59,17 @@ function useSpinGoWatch({ user }) {
   useEffect(() => {
     if (!user) return undefined;
     const id = setInterval(() => {
-      fetchTiers({ silent: true }).catch(() => {});
+      fetchLobby({ silent: true }).catch(() => {});
     }, waiting ? 2000 : 8000);
     return () => clearInterval(id);
-  }, [user, fetchTiers, waiting]);
+  }, [user, fetchLobby, waiting]);
 
   useEffect(() => {
     const before = previous.current;
     previous.current = { id: gameId, status };
-    // The third player just sat down while you were looking at this page. Any
-    // other combination — including finding yourself already in a running game —
-    // is not a moment, and must not move you.
+    // The last seat just filled while you were looking at this page. Any other
+    // combination — including finding yourself already in a running game — is
+    // not a moment, and must not move you.
     const justFired = gameId != null && gameId === before.id
       && before.status === "lobby" && status === "running";
     // Replaced rather than pushed, so "back" from the table is the lobby you
@@ -82,6 +86,7 @@ export default function LobbyPage() {
   // button follows the same rule the server does.
   const [staffsAClub, setStaffsAClub] = useState(false);
   const [tab, setTab] = useState("tournaments");
+  const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
   const onClubsLoaded = useCallback((clubs) => {
     setStaffsAClub(clubs.some((club) => club.my_role === "owner" || club.my_role === "staff"));
   }, []);
@@ -94,14 +99,18 @@ export default function LobbyPage() {
     for (const tournament of [...mineActive, ...upcoming, ...past]) {
       byId.set(tournament.id, { ...byId.get(tournament.id), ...tournament });
     }
-    return [...byId.values()];
+    // The server keeps fast games out of the browsable list and out of the
+    // history; what it cannot keep them out of is your own active seats, which
+    // is how the shortcut back to a table finds one. So they are dropped here
+    // instead — this list is nights people arranged.
+    return [...byId.values()].filter((one) => (one.format || "standard") === "standard");
   }, [mineActive, upcoming, past]);
 
   // A seat of yours that has started, or was already running when you opened
   // the app, takes you to the table — there is a hand waiting on you and this
   // list is not where you can play it.
   useAutoOpenTable({ tournaments, user, loading });
-  useSpinGoWatch({ user });
+  useFastGameWatch({ user });
 
   // Waiting on a tournament of your own to begin is the one thing on this page
   // that is worth knowing about the second it happens, because it starts
@@ -216,8 +225,14 @@ export default function LobbyPage() {
           </div>
         </div>
 
-        {tab === "spingo" ? (
-          <SpinGoBrowser onOpenTable={onOpenTable} />
+        {activeTab.formats ? (
+          <FastGameBrowser
+            // Remounted per tab so the prize panels a player opened on one do
+            // not come back open on the other.
+            key={activeTab.key}
+            formatKeys={activeTab.formats}
+            onOpenTable={onOpenTable}
+          />
         ) : loading ? (
           <p className="text-(--color-text-muted)">Loading...</p>
         ) : (

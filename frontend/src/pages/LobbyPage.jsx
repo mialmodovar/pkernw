@@ -7,7 +7,6 @@ import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { runsThePlace } from "../components/auth/runsThePlace";
-import AccountChip from "../components/lobby/AccountChip";
 import ProfileCard from "../components/lobby/ProfileCard";
 import RecoveryCodePanel from "../components/lobby/RecoveryCodePanel";
 import StatsPanel from "../components/lobby/StatsPanel";
@@ -81,7 +80,7 @@ function useFastGameWatch({ user }) {
 }
 
 export default function LobbyPage() {
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
   // Opening a tournament now takes site staff or a club you help run, and the
@@ -174,7 +173,7 @@ export default function LobbyPage() {
     // rather than taking the whole page with it. dvh rather than vh: on a phone
     // the browser chrome is part of the height and moves as you scroll.
     <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6
-                    lg:h-[calc(100dvh-4rem)]">
+                    lg:h-[calc(100%-4rem)]">
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
         <RecoveryCodePanel />
@@ -186,19 +185,6 @@ export default function LobbyPage() {
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
-        {/* A phone stacks this page, which puts the profile card a long scroll
-            away — so on a small screen the account comes up to the corner. On a
-            wide one it is already top left in the sidebar and this would be
-            saying it twice. */}
-        <div className="shrink-0 flex items-center justify-end gap-2 lg:hidden">
-          <AccountChip />
-          <button onClick={logout}
-            className="px-3 py-1.5 panel-raised hover:border-(--color-border-strong) rounded
-                       text-sm text-(--color-text-muted) hover:text-(--color-silver) transition-colors">
-            Logout
-          </button>
-        </div>
-
         <div className="shrink-0 flex items-center gap-3">
           {/* One segmented control rather than three headline-sized pills. These
               are a way of switching what the page is showing, and they were
@@ -252,13 +238,6 @@ export default function LobbyPage() {
                 </button>
               </>
             )}
-            <button onClick={logout}
-              title="Log out"
-              className="hidden lg:block px-3 py-1.5 panel-raised hover:border-(--color-border-strong)
-                         rounded text-sm text-(--color-text-muted) hover:text-(--color-silver)
-                         transition-colors">
-              Logout
-            </button>
           </div>
         </div>
 

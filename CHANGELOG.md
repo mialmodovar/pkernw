@@ -59,6 +59,20 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **One header, on every page.** Modelled on the table's, which is the one that
+  worked: who you are and what you are holding on the right, the way back on the
+  left, and nothing that moves as you navigate. Every page used to invent its
+  own — on a phone the lobby put your account and the logout button at the
+  *bottom*, under six panels, because they lived inside the scrolling column
+  rather than above it. The blind level and the clock are not in it: they are
+  about the hand, not about the app, and they stay on the felt where they are
+  read. The tournament lobby no longer opens in a second browser tab either.
+- **Setting up a prize pool is two sliders.** A host decides "the top fifth get
+  paid" and "half the buy-in goes on heads" — not a grid of place numbers,
+  labels and percentages that has to total exactly 100 by hand. Places paid is
+  now a share of the field and the split follows from it; the knockout bounty is
+  a share of the buy-in. The grid is still there for a night that wants a
+  particular structure, and it opens with whatever is already on screen.
 - **All your tables, along the top of the one you are at.** A player can be
   seated in three games at once and watching a fourth; the app could hold one in
   its head. Leaving a table lost it, and the way back was a single button that

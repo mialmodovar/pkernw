@@ -266,10 +266,6 @@ export default function GamePage() {
   // whoever is actually around to fix it.
   const canManage = Boolean(tournament?.can_manage);
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
-  // Your seat is live, so the lobby gets a window of its own: leaving this tab
-  // drops the table socket, and a hand does not wait for you to read standings.
-  const amPlaying = watching == null && mySeat !== null && !myEliminationFinish;
-
   const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
   const actionPanel = (bare = false) => (
@@ -333,7 +329,7 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
       {/* Every other table you have open. Draws nothing when this is the only
           one, which is most of the time. */}
@@ -378,7 +374,6 @@ export default function GamePage() {
       )}
       <BlindLevelBar
         name={tournament?.name}
-        onHome={() => navigate("/")}
         controls={(
           <div className="flex items-center gap-2">
             {canManage && (tournamentStatus === "paused" ? (
@@ -458,19 +453,7 @@ export default function GamePage() {
             <span className="hidden md:inline">Info</span>
           </button>
           <ActionHistory onReview={() => setReviewOpen(true)} />
-          {amPlaying ? (
-            <a
-              href={`/tournament/${id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="This tournament's lobby, in a new window so you keep your seat"
-              className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
-                         rounded text-xs font-semibold transition-colors"
-            >
-              <LobbyIcon />
-              <span className="hidden md:inline">Lobby ↗</span>
-            </a>
-          ) : watching == null && (
+          {watching == null && (
             <button
               onClick={() => navigate(`/tournament/${id}`)}
               title="This tournament's lobby"

@@ -15,6 +15,7 @@ import GamePage from "./pages/GamePage";
 import DevTablePage from "./pages/DevTablePage";
 import StaffRoute from "./components/auth/StaffRoute";
 import BuildStamp from "./components/BuildStamp";
+import AppHeader from "./components/AppHeader";
 import TableShortcut from "./components/lobby/TableShortcut";
 
 export default function App() {
@@ -31,8 +32,15 @@ export default function App() {
   }
 
   return (
-    <>
+    // A column: the header, then whatever page fills the rest of the screen.
+    // The table needs to know exactly how much room it has — the felt is sized
+    // from it — so the page gets a box rather than the viewport.
+    <div className="min-h-dvh h-dvh flex flex-col">
       <BuildStamp />
+      {/* Above the pages rather than inside any of them: a header that scrolls
+          away with the column it lives in is not a header. */}
+      <AppHeader />
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -48,10 +56,11 @@ export default function App() {
       <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
+      </div>
       {/* Outside the routes on purpose: a seat being dealt to is a fact about
           the whole app, not about the page you happen to be reading. It hides
           itself at the table and on the login pages. */}
       <TableShortcut />
-    </>
+    </div>
   );
 }

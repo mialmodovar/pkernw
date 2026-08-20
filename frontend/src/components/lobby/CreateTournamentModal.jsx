@@ -4,6 +4,9 @@ import BlindStructureEditor from "./BlindStructureEditor";
 import { DEFAULT_HANDS } from "./blindStructureDefaults";
 import { formatCoins } from "./buyIn";
 import {
+  DEFAULT_PAID_PCT, bountyCentsFor, bountyPctOf, paidPct, payoutCurve, placesPaid,
+} from "./payoutCurve";
+import {
   SPEEDS,
   SPEED_NAMES,
   buildBlindStructure,
@@ -57,6 +60,10 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const [currency, setCurrency] = useState("coins");
   const [buyInEuros, setBuyInEuros] = useState(0);
   const [buyInCoins, setBuyInCoins] = useState(DEFAULT_COIN_BUY_IN);
+  // How much of the field gets paid. The split follows from it, and the grid
+  // below is only opened by somebody who wants to move a number by hand.
+  const [paidPctOfField, setPaidPctOfField] = useState(DEFAULT_PAID_PCT);
+  const [customPayouts, setCustomPayouts] = useState(false);
   const [payoutRows, setPayoutRows] = useState([
     { place: 1, label: "1st", percentage: 50 },
     { place: 2, label: "2nd", percentage: 30 },
@@ -65,7 +72,10 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   // Knockouts come out of the buy-in, so the whole section lives under the
   // prize pool and switches off with it.
   const [bountyMode, setBountyMode] = useState("none");
-  const [bountyEuros, setBountyEuros] = useState(0);
+  // A share of the buy-in rather than an amount: "half of it goes on heads" is
+  // the decision, and the euros follow from it. The amount is still what gets
+  // sent — see bountyCents below.
+  const [bountyPct, setBountyPct] = useState(50);
   const [bountySplit, setBountySplit] = useState(50);
   const [mysteryRelease, setMysteryRelease] = useState("itm");
   // On by default: seeing the cards that would have come is the kind of thing
@@ -188,13 +198,25 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       setAutoRemoveOfflineEnabled(data.auto_remove_offline_seconds > 0);
       if (data.auto_remove_offline_seconds > 0) setAutoRemoveOfflineSeconds(data.auto_remove_offline_seconds);
 
-      const payouts = data.payout_structure || [];
-      if (payouts.length > 0) setPayoutRows(payouts);
+      const loaded = data.payout_structure || [];
+      if (loaded.length > 0) {
+        setPayoutRows(loaded);
+        // The template's own field size, not whatever is currently typed into
+        // the form: this effect runs once and must not depend on the rest of it.
+        setPaidPctOfField(paidPct(data.max_players || loaded.length, loaded.length));
+        // A structure that is not the one this form would have generated is one
+        // somebody arranged on purpose, and it opens the grid rather than being
+        // quietly rewritten.
+        const generated = payoutCurve(loaded.length);
+        const same = loaded.length === generated.length
+          && loaded.every((row, index) => row.percentage === generated[index].percentage);
+        setCustomPayouts(!same);
+      }
       setCurrency((data.buy_in_cents || 0) > 0 ? "euros" : "coins");
       setBuyInEuros((data.buy_in_cents || 0) / 100);
       setBuyInCoins(data.buy_in_coins || DEFAULT_COIN_BUY_IN);
       setBountyMode(data.bounty_mode || "none");
-      setBountyEuros((data.bounty_cents || 0) / 100);
+      setBountyPct(bountyPctOf(data.buy_in_cents || 0, data.bounty_cents || 0));
       setBountySplit(data.bounty_progressive_split_pct || 50);
       setMysteryRelease(data.mystery_release || "itm");
 
@@ -220,14 +242,18 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const normalizedLateRegLevel = Math.min(Math.max(lateRegLevel, 1), blindLevelCount || 1);
   const normalizedRebuyLevel = Math.min(Math.max(rebuyLevel, 1), blindLevelCount || 1);
   const normalizedTimeBankRefillLevel = Math.min(Math.max(timeBankRefillLevel, 1), blindLevelCount || 1);
-  const payoutTotal = payoutRows.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
+  // Generated from the share of the field unless somebody has taken the grid
+  // over. One source of truth either way: this is what gets sent.
+  const paidPlaces = placesPaid(maxPlayers, paidPctOfField);
+  const payouts = customPayouts ? payoutRows : payoutCurve(paidPlaces);
+  const payoutTotal = payouts.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
   const euroMode = currency === "euros";
   // Cents, so the euro shares below match what the ledger will record to the cent.
   const buyInCents = euroMode ? Math.max(0, Math.round(Number(buyInEuros || 0) * 100)) : 0;
   // Coins are whole. Half a coin is not a thing anybody can be charged.
   const stakeCoins = euroMode ? 0 : Math.max(0, Math.round(Number(buyInCoins || 0)));
   const bountyOn = euroMode && bountyMode !== "none";
-  const bountyCents = bountyOn ? Math.max(0, Math.round(Number(bountyEuros || 0) * 100)) : 0;
+  const bountyCents = bountyOn ? bountyCentsFor(buyInCents, bountyPct) : 0;
   // The percentages below share out only what is left after the bounties, so
   // the euro figures beside them stay honest.
   const potCents = Math.max(0, buyInCents - bountyCents) * maxPlayers;
@@ -275,8 +301,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
         return;
       }
     }
-    if (!payoutRows.length) {
-      setError("Add at least one payout row.");
+    if (!payouts.length) {
+      setError("Somebody has to get paid.");
       return;
     }
     if (Math.round(payoutTotal * 100) / 100 !== 100) {
@@ -329,7 +355,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
       time_bank_refill_every_hands: timeBankEnabled && timeBankRefillRule === "hands" ? timeBankRefillEveryHands : null,
       time_bank_refill_level: timeBankEnabled && timeBankRefillRule === "blind_level" ? normalizedTimeBankRefillLevel : null,
-      payout_structure: payoutRows.map((row) => ({
+      payout_structure: payouts.map((row) => ({
         place: row.place,
         label: row.label,
         percentage: row.percentage,
@@ -834,15 +860,25 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
             {bountyOn && (
               <>
                 <label className="flex items-center justify-between text-sm gap-3">
-                  <span className="text-(--color-text-muted) text-xs">Bounty per player (€)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.5"
-                    className="input-field px-2 py-1 rounded w-28 text-right transition-colors"
-                    value={bountyEuros}
-                    onChange={(e) => setBountyEuros(e.target.value)}
-                  />
+                  <span className="text-(--color-text-muted) text-xs">
+                    Bounty
+                    <span className="block opacity-70">share of each buy-in</span>
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="range"
+                      min={10}
+                      max={90}
+                      step={5}
+                      className="w-28"
+                      value={bountyPct}
+                      aria-label="Bounty share of the buy-in"
+                      onChange={(e) => setBountyPct(Number(e.target.value))}
+                    />
+                    <span className="w-24 text-right text-sm text-(--color-silver) tabular-nums">
+                      {bountyPct}% · {(bountyCents / 100).toFixed(2)}€
+                    </span>
+                  </span>
                 </label>
 
                 {bountyMode === "progressive" && (
@@ -878,6 +914,62 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
           </div>
 
           <div className="space-y-2">
+            {/* What a host actually decides. The split follows from it, and the
+                grid below is for the rare night that wants a particular one. */}
+            <label className="flex items-center justify-between text-sm gap-3">
+              <span className="text-(--color-text-muted) text-xs">
+                Places paid
+                <span className="block opacity-70">share of the field</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                <input
+                  type="range"
+                  min={5}
+                  max={100}
+                  step={5}
+                  className="w-28"
+                  value={paidPctOfField}
+                  aria-label="Share of the field that gets paid"
+                  disabled={customPayouts}
+                  onChange={(e) => setPaidPctOfField(Number(e.target.value))}
+                />
+                <span className="w-24 text-right text-sm text-(--color-silver) tabular-nums">
+                  {customPayouts
+                    ? `${payouts.length} places`
+                    : `${paidPctOfField}% · ${paidPlaces} place${paidPlaces === 1 ? "" : "s"}`}
+                </span>
+              </span>
+            </label>
+
+            {/* What that comes to, at a glance, without opening anything. */}
+            {!customPayouts && (
+              <p className="text-xs text-(--color-text-muted) leading-snug">
+                {payouts.map((row) => `${row.label} ${row.percentage}%`).join(" · ")}
+                {potCents > 0 && (
+                  <span className="block mt-0.5">
+                    {payouts.map((row) => (
+                      `${row.label} ${(potCents * row.percentage / 10000).toFixed(2)}€`
+                    )).join(" · ")}
+                  </span>
+                )}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                // Opening the grid takes what is on screen with it, so nothing
+                // a host has already set up changes under them.
+                if (!customPayouts) setPayoutRows(payouts);
+                setCustomPayouts((open) => !open);
+              }}
+              className="text-xs text-[#d9c07a] transition-colors"
+            >
+              {customPayouts ? "Back to a share of the field" : "Set the shares by hand"}
+            </button>
+          </div>
+
+          <div className={`space-y-2 ${customPayouts ? "" : "hidden"}`}>
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-(--color-text-muted)">
               <span>Place</span>
               <span>Label</span>
@@ -935,13 +1027,20 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
               </button>
               <span className={`text-xs ${Math.round(payoutTotal * 100) / 100 !== 100 ? "text-[#c76b7a]" : "text-(--color-text-muted)"}`}>
                 Total {payoutTotal.toFixed(2)}%
-                {buyInCents > 0 && ` · ${bountyOn ? "places" : "pot"} up to ${(potCents / 100).toFixed(2)}€`}
-                {bountyOn && ` · KO pool ${(bountyCents * maxPlayers / 100).toFixed(2)}€`}
-                {stakeCoins > 0 && ` · pot up to ${formatCoins(stakeCoins * maxPlayers)}`}
               </span>
             </div>
           </div>
         </div>
+        )}
+
+        {!editing && (buyInCents > 0 || stakeCoins > 0) && (
+          <p className="text-xs text-(--color-text-muted) leading-snug -mt-1">
+            At {maxPlayers} players:
+            {buyInCents > 0 && ` ${(potCents / 100).toFixed(2)}€ to the places`}
+            {stakeCoins > 0 && ` ${formatCoins(stakeCoins * maxPlayers)} to the places`}
+            {bountyOn && ` · ${(bountyCents * maxPlayers / 100).toFixed(2)}€ in `
+              + `${bountyMode === "mystery" ? "the mystery pool" : "bounties"}`}
+          </p>
         )}
 
         <div className="panel-raised rounded-lg p-3 space-y-3">

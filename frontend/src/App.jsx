@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import useAuthStore from "./store/authStore";
+import { connect as connectPresence, disconnect as disconnectPresence } from "./api/presence";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -17,9 +18,20 @@ import BuildStamp from "./components/BuildStamp";
 import TableShortcut from "./components/lobby/TableShortcut";
 
 export default function App() {
-  const { init, loading } = useAuthStore();
+  const { init, loading, user } = useAuthStore();
+  // Identity, not the object: the profile is rewritten whenever an avatar or a
+  // display name changes, and that must not cycle the socket.
+  const userId = user?.id ?? null;
 
   useEffect(() => { init(); }, [init]);
+
+  // Held open for as long as somebody is logged in, from whatever page they
+  // are on: this is what everyone else's watch list reads as "online".
+  useEffect(() => {
+    if (!userId) return undefined;
+    connectPresence();
+    return disconnectPresence;
+  }, [userId]);
 
   if (loading) {
     return (

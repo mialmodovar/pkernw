@@ -1,18 +1,25 @@
 import base64
 from datetime import timedelta
 
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
 from game.models import Hand, HandAction
+from poker_platform.asgi import application
 from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
 
+from . import presence
 from .avatars import AVATAR_MAX_BYTES
+from .consumers import PresenceConsumer
 from .models import AvatarImage, Profile
 
 User = get_user_model()
@@ -219,6 +226,31 @@ class WatchingTests(APITestCase):
 		row = self.client.get(reverse("watching")).data[0]
 		self.assertTrue(row["online"])
 		self.assertTrue(row["playing_now"])
+
+	def test_having_the_app_open_is_enough_to_be_online(self):
+		"""Online used to mean "sitting at a table with a socket open", so
+		somebody reading the lobby with the app in front of them showed as
+		offline to everybody watching them."""
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self.assertFalse(self.client.get(reverse("watching")).data[0]["online"])
+
+		presence.arrived(self.them.id)
+		self.addCleanup(presence.left, self.them.id)
+
+		row = self.client.get(reverse("watching")).data[0]
+		self.assertTrue(row["online"])
+		# At no table, so no ring and nowhere to go and watch them.
+		self.assertFalse(row["playing_now"])
+
+	def test_closing_one_of_two_tabs_does_not_take_you_offline(self):
+		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		presence.arrived(self.them.id)
+		presence.arrived(self.them.id)
+		self.addCleanup(presence.left, self.them.id)
+
+		presence.left(self.them.id)
+
+		self.assertTrue(self.client.get(reverse("watching")).data[0]["online"])
 
 	def test_the_row_carries_an_uploaded_avatar_when_there_is_one(self):
 		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
@@ -676,3 +708,89 @@ class MoneyAndItmStatTests(APITestCase):
 		stats = self.client.get(reverse("my_stats")).data
 		self.assertEqual(stats["itm_pct"], 0)
 		self.assertEqual(stats["winnings_cents"], 0)
+
+
+class PresenceSocketTests(TestCase):
+	"""The socket the app holds open, and the count of who has one."""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="present", password="secret123")
+
+	def tearDown(self):
+		presence._socket_counts.clear()
+
+	def _communicator(self, user):
+		communicator = WebsocketCommunicator(PresenceConsumer.as_asgi(), "/ws/presence/")
+		communicator.scope["user"] = user
+		return communicator
+
+	def test_a_connected_socket_makes_its_owner_online(self):
+		async def scenario():
+			socket = self._communicator(self.user)
+			connected, _ = await socket.connect()
+			self.assertTrue(connected)
+			self.assertIn(self.user.id, presence.online_user_ids())
+			await socket.disconnect()
+
+		async_to_sync(scenario)()
+		self.assertNotIn(self.user.id, presence.online_user_ids())
+
+	def test_two_sockets_survive_one_of_them_closing(self):
+		async def scenario():
+			first, second = self._communicator(self.user), self._communicator(self.user)
+			await first.connect()
+			await second.connect()
+
+			await first.disconnect()
+			self.assertIn(self.user.id, presence.online_user_ids())
+
+			await second.disconnect()
+			self.assertNotIn(self.user.id, presence.online_user_ids())
+
+		async_to_sync(scenario)()
+
+	def test_a_socket_with_nobody_behind_it_is_refused(self):
+		async def scenario():
+			socket = self._communicator(AnonymousUser())
+			connected, _ = await socket.connect()
+			self.assertFalse(connected)
+			await socket.disconnect()
+
+		async_to_sync(scenario)()
+		self.assertEqual(presence.online_user_ids(), set())
+
+
+class PresenceRoutingTests(TransactionTestCase):
+	"""The whole path a browser takes: the URL, the token, the consumer.
+
+	The tests above hand the consumer a user directly, so on their own they
+	would still pass if the route were never registered or the token never
+	read.
+	"""
+
+	def tearDown(self):
+		presence._socket_counts.clear()
+
+	def test_the_app_reaches_presence_with_a_token_in_the_query_string(self):
+		user = User.objects.create_user(username="router", password="secret123")
+		token = str(AccessToken.for_user(user))
+
+		async def scenario():
+			socket = WebsocketCommunicator(application, f"/ws/presence/?token={token}")
+			connected, _ = await socket.connect()
+			self.assertTrue(connected)
+			self.assertIn(user.id, presence.online_user_ids())
+			await socket.disconnect()
+
+		async_to_sync(scenario)()
+		self.assertEqual(presence.online_user_ids(), set())
+
+	def test_a_socket_with_no_token_is_refused(self):
+		async def scenario():
+			socket = WebsocketCommunicator(application, "/ws/presence/")
+			connected, _ = await socket.connect()
+			self.assertFalse(connected)
+			await socket.disconnect()
+
+		async_to_sync(scenario)()
+		self.assertEqual(presence.online_user_ids(), set())

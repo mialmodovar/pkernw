@@ -17,6 +17,7 @@ from tournaments.models import TournamentPlayer
 from .avatars import avatar_url
 from .naming import shown_name
 from .models import AvatarImage, Profile, Watch
+from .presence import online_user_ids
 
 User = get_user_model()
 
@@ -50,9 +51,14 @@ def presence(user_ids):
     """Who is online, and what they are playing — the two facts a watch list is
     for. Returned together because they are read together, and because one
     without the other is misleading: online but nowhere, or at a table with
-    nobody home."""
+    nobody home.
+
+    Online is either socket: the app itself, or a table. A player at a table
+    counts even while their presence socket is mid-reconnect, and one reading
+    the lobby counts without being at a table at all — which for a long time
+    they did not, and showed as offline with the app open in front of them."""
     tables = live_tournaments(user_ids)
-    online = connected_user_ids()
+    online = connected_user_ids() | online_user_ids()
     return {
         user_id: {
             "online": user_id in online,

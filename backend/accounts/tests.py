@@ -988,3 +988,95 @@ class RecoveryCodeReportingTests(APITestCase):
 
 		self.assertNotIn("recovery_code", me["profile"])
 		self.assertNotIn("recovery_code_hash", me["profile"])
+
+
+class StatsByGameTypeTests(APITestCase):
+	"""Stats for one kind of game at a time.
+
+	A three-handed Spin n Go and a nine-handed tournament are different games,
+	and a single average across both describes neither.
+	"""
+
+	def setUp(self):
+		from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
+
+		self.Tournament, self.TournamentPlayer = Tournament, TournamentPlayer
+		self.user = User.objects.create_user(username="stat_player", password="x")
+		self.client.force_authenticate(self.user)
+
+		# A tournament won, a Spin n Go lost, a Sit n Go second.
+		self._played("standard", finish=1, prize=5000, payouts=2)
+		self._played("spingo", finish=3, prize=0, payouts=1, seats=3)
+		self._played("sitngo", finish=2, prize=1200, payouts=2, seats=6)
+
+	def _played(self, fmt, *, finish, prize, payouts, seats=9):
+		from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
+
+		tournament = Tournament.objects.create(
+			host=self.user, name=f"{fmt} night", format=fmt, status="finished",
+			max_players=seats, players_per_table=seats, buy_in_cents=2000,
+			payout_structure=[
+				{"place": place, "label": f"{place}", "percentage": 100 // payouts}
+				for place in range(1, payouts + 1)
+			],
+		)
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.user, seat=0, chips=0,
+			finish_position=finish, is_eliminated=finish != 1,
+		)
+		LedgerEntry.objects.create(
+			tournament=tournament, user=self.user, stake_cents=2000, prize_cents=prize,
+		)
+		return tournament
+
+	def _stats(self, game=None):
+		return self.client.get(reverse("my_stats"), {"game": game} if game else {}).data
+
+	def test_everything_is_counted_together_by_default(self):
+		stats = self._stats()
+
+		self.assertEqual(stats["scope"], "all")
+		self.assertEqual(stats["tournaments_played"], 3)
+		self.assertEqual(stats["winnings_cents"], 6200)
+
+	def test_tournaments_alone(self):
+		stats = self._stats("tournaments")
+
+		self.assertEqual(stats["tournaments_played"], 1)
+		self.assertEqual(stats["winnings_cents"], 5000)
+		self.assertEqual(stats["best_finish"], 1)
+		self.assertEqual(stats["cashes"], 1)
+
+	def test_spin_n_gos_alone(self):
+		stats = self._stats("spingo")
+
+		self.assertEqual(stats["tournaments_played"], 1)
+		self.assertEqual(stats["winnings_cents"], 0)
+		# Third of three, in a format that pays one.
+		self.assertEqual(stats["cashes"], 0)
+		self.assertEqual(stats["itm_pct"], 0)
+
+	def test_sit_n_gos_alone(self):
+		stats = self._stats("sitngo")
+
+		self.assertEqual(stats["tournaments_played"], 1)
+		self.assertEqual(stats["winnings_cents"], 1200)
+		self.assertEqual(stats["cashes"], 1)
+		self.assertEqual(stats["itm_pct"], 100)
+
+	def test_the_scopes_add_up_to_the_whole(self):
+		"""Nothing is counted twice and nothing is missed."""
+		parts = [self._stats(one) for one in ("tournaments", "spingo", "sitngo")]
+
+		self.assertEqual(sum(one["tournaments_played"] for one in parts), 3)
+		self.assertEqual(sum(one["winnings_cents"] for one in parts), 6200)
+
+	def test_a_game_nobody_offers_reads_as_everything(self):
+		"""A stats panel is not worth a 400."""
+		stats = self._stats("backgammon")
+
+		self.assertEqual(stats["scope"], "all")
+		self.assertEqual(stats["tournaments_played"], 3)
+
+	def test_the_answer_says_which_scope_it_is(self):
+		self.assertEqual(self._stats("spingo")["scope"], "spingo")

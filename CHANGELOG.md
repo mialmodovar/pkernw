@@ -59,6 +59,11 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **Stats, one kind of game at a time.** A Spin n Go is three-handed for five
+  minutes and a tournament is nine-handed for an evening; a VPIP averaged across
+  both describes neither, and neither does an in-the-money rate. The stats panel
+  now has a selector — all, tournaments, Spin n Go, Sit n Go — and everything in
+  it follows: games played, cashes, winnings, best hand and the preflop reads.
 - **One header, on every page.** Modelled on the table's, which is the one that
   worked: who you are and what you are holding on the right, the way back on the
   left, and nothing that moves as you navigate. Every page used to invent its

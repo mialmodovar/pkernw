@@ -58,8 +58,17 @@ function MeterRow({ label, pct }) {
   );
 }
 
+// The games worth telling apart, and what to call each of them here. "All" is
+// first because it is what most people want most of the time.
+const SCOPES = [
+  { key: "all", label: "All" },
+  { key: "tournaments", label: "🏆" , title: "Tournaments" },
+  { key: "spingo", label: "🎡", title: "Spin n Go" },
+  { key: "sitngo", label: "⚔️", title: "Sit n Go" },
+];
+
 export default function StatsPanel() {
-  const { stats, fetchStats } = useStatsStore();
+  const { stats, scope, fetchStats } = useStatsStore();
   const [replaying, setReplaying] = useState(false);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -70,9 +79,33 @@ export default function StatsPanel() {
 
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
-      <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">Stats</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">Stats</h2>
+        {/* Which game these are about. Averaging a five-minute three-hander in
+            with an evening's tournament describes neither. */}
+        <div className="flex items-center gap-0.5 p-0.5 rounded panel-raised"
+          role="tablist" aria-label="Which games these stats cover">
+          {SCOPES.map((one) => (
+            <button
+              key={one.key}
+              type="button"
+              role="tab"
+              aria-selected={scope === one.key}
+              title={one.title || "Every game"}
+              onClick={() => fetchStats(one.key)}
+              className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition-colors ${
+                scope === one.key
+                  ? "bg-(--color-accent) text-(--color-accent-text)"
+                  : "text-(--color-text-muted) hover:text-(--color-silver)"
+              }`}
+            >
+              {one.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <StatTile label="Tournaments" value={stats.tournaments_played} />
+        <StatTile label={scope === "all" ? "Games" : "Played"} value={stats.tournaments_played} />
         {/* The count is the fact; the rate is what it means. A cash in four is
             a different player from a cash in forty, and the count alone cannot
             tell you which one you are looking at. */}
@@ -106,7 +139,11 @@ export default function StatsPanel() {
           <p className="text-xs text-(--color-text-muted)">{stats.hands_played} hands played</p>
         </div>
       ) : (
-        <p className="text-xs text-(--color-text-muted) pt-1">Not enough hand data yet.</p>
+        <p className="text-xs text-(--color-text-muted) pt-1">
+          {scope === "all"
+            ? "Not enough hand data yet."
+            : "No hands in this kind of game yet."}
+        </p>
       )}
 
       {replaying && best && <BestHandModal best={best} onClose={() => setReplaying(false)} />}

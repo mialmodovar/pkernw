@@ -13,7 +13,7 @@ const REFRESH_MS = 10_000;
 
 // Where the pill has no business being. The table itself, obviously, and the
 // login pages, which nobody reaches with a seat live.
-const HIDDEN_ON = [/^\/tournament\/\d+\/(play|watch)\b/, /^\/(login|register)\b/];
+const HIDDEN_ON = [/^\/tournament\/\d+\/(play|watch)\b/, /^\/(login|register|recover)\b/];
 
 /**
  * A way back to the table, from wherever you have wandered off to.

@@ -114,3 +114,66 @@ def watching(request):
 def unwatch(request, username):
     request.user.watching.filter(watched__username__iexact=username).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Enough to pick somebody out of, few enough that the list stays a list. A
+# search that returns forty names is a directory, and nobody reads one.
+SEARCH_LIMIT = 8
+# One letter matches most of the room, which is not a suggestion.
+SEARCH_MIN = 2
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def search_players(request):
+    """Players whose name starts with, or contains, what has been typed.
+
+    For the box that suggests people to watch. Matched on both names somebody
+    has — what they signed up as and what they go by — because the person
+    looking knows one of them and not necessarily which.
+
+    Yourself and the people you already watch are left out: neither is somebody
+    you can usefully be offered.
+    """
+    query = str(request.query_params.get("q") or "").strip()
+    if len(query) < SEARCH_MIN:
+        return Response([])
+
+    already = set(request.user.watching.values_list("watched_id", flat=True))
+    already.add(request.user.id)
+
+    named = set(
+        Profile.objects.filter(display_name__icontains=query)
+        .values_list("user_id", flat=True)
+    )
+    matches = list(
+        User.objects.filter(Q(username__icontains=query) | Q(id__in=named))
+        .exclude(id__in=already)
+        # Whoever's name starts with what was typed comes first: somebody
+        # typing "an" means Ana before Yohan.
+        .order_by("username")[:SEARCH_LIMIT * 3]
+    )
+
+    profiles = {
+        row[0]: row[1:]
+        for row in Profile.objects.filter(user__in=matches)
+        .values_list("user_id", "avatar_emoji", "display_name")
+    }
+    stamps = dict(
+        AvatarImage.objects.filter(user__in=matches).values_list("user_id", "updated_at")
+    )
+
+    def rank(user):
+        display = (profiles.get(user.id) or ("", ""))[1] or ""
+        starts = user.username.lower().startswith(query.lower()) or display.lower().startswith(query.lower())
+        return (0 if starts else 1, user.username.lower())
+
+    return Response([
+        {
+            "username": user.username,
+            "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
+            "avatar_emoji": (profiles.get(user.id) or ("", ""))[0] or "\U0001F0CF",
+            "avatar_url": avatar_url(user.id, stamps.get(user.id)),
+        }
+        for user in sorted(matches, key=rank)[:SEARCH_LIMIT]
+    ])

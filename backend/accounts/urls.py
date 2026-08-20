@@ -3,9 +3,10 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     RegisterView, MeView, avatar_image, avatar_image_for_user, update_avatar,
     update_display_name, update_preferences, update_theme,
+    recover_password, reset_recovery_code,
 )
 from .stats import my_stats, player_profile
-from .watching import unwatch, watching
+from .watching import search_players, unwatch, watching
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
@@ -19,6 +20,10 @@ urlpatterns = [
     path("avatar/<int:user_id>/", avatar_image_for_user, name="avatar_image_for_user"),
     path("me/theme/", update_theme, name="update_theme"),
     path("me/preferences/", update_preferences, name="update_preferences"),
+    path("me/recovery-code/", reset_recovery_code, name="reset_recovery_code"),
+    # Public, obviously: somebody who could log in would not be here.
+    path("recover/", recover_password, name="recover_password"),
+    path("players/search/", search_players, name="search_players"),
     path("me/stats/", my_stats, name="my_stats"),
     path("watching/", watching, name="watching"),
     path("watching/<str:username>/", unwatch, name="unwatch"),

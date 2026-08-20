@@ -741,3 +741,250 @@ class TablePreferencesTests(APITestCase):
 		)
 
 		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class RecoveryCodeTests(APITestCase):
+	"""Getting back in without an email address."""
+
+	def _register(self, username="rec_player", password="secret123"):
+		return self.client.post(
+			reverse("register"), {"username": username, "password": password}, format="json",
+		)
+
+	def test_registering_hands_back_a_recovery_code_once(self):
+		response = self._register()
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		code = response.data["recovery_code"]
+		# Sixteen characters in four groups, the way it is meant to be written
+		# down and read back.
+		self.assertEqual(len(code.split("-")), 4)
+		self.assertEqual(len(code.replace("-", "")), 16)
+		# Kept as a hash, never in the clear — the same rule as the password.
+		from accounts.models import Profile
+
+		profile = Profile.objects.get(user__username="rec_player")
+		self.assertTrue(profile.recovery_code_hash)
+		self.assertNotIn(code.replace("-", ""), profile.recovery_code_hash)
+
+	def test_the_code_sets_a_new_password(self):
+		code = self._register().data["recovery_code"]
+
+		response = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": code, "new_password": "brand new"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		login = self.client.post(
+			reverse("token_obtain"),
+			{"username": "rec_player", "password": "brand new"}, format="json",
+		)
+		self.assertEqual(login.status_code, status.HTTP_200_OK)
+
+	def test_a_used_code_does_not_work_twice(self):
+		"""A code that has got somebody in once is a password in a chat history."""
+		code = self._register().data["recovery_code"]
+		first = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": code, "new_password": "brand new"},
+			format="json",
+		)
+
+		again = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": code, "new_password": "later still"},
+			format="json",
+		)
+
+		self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+		# The replacement came back with the first recovery, and that one works.
+		self.assertNotEqual(first.data["recovery_code"], code)
+		third = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": first.data["recovery_code"],
+			 "new_password": "later still"},
+			format="json",
+		)
+		self.assertEqual(third.status_code, status.HTTP_200_OK)
+
+	def test_the_code_is_read_the_way_it_was_written_down(self):
+		code = self._register().data["recovery_code"]
+		typed = code.replace("-", " ").lower()
+
+		response = self.client.post(
+			reverse("recover_password"),
+			{"username": "REC_PLAYER", "recovery_code": typed, "new_password": "brand new"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+	def test_a_wrong_code_is_refused(self):
+		self._register()
+
+		response = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": "AAAA-BBBB-CCCC-DDDD",
+			 "new_password": "brand new"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_name_nobody_has_is_refused_the_same_way(self):
+		"""The refusal must not say which half was wrong.
+
+		Telling "no such player" apart from "wrong code" hands over the guest
+		list to anybody who asks for it.
+		"""
+		self._register()
+
+		unknown = self.client.post(
+			reverse("recover_password"),
+			{"username": "nobody_here", "recovery_code": "AAAA-BBBB-CCCC-DDDD",
+			 "new_password": "brand new"},
+			format="json",
+		)
+		wrong_code = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": "AAAA-BBBB-CCCC-DDDD",
+			 "new_password": "brand new"},
+			format="json",
+		)
+
+		self.assertEqual(unknown.status_code, wrong_code.status_code)
+		self.assertEqual(unknown.data["error"], wrong_code.data["error"])
+
+	def test_a_short_password_is_refused(self):
+		code = self._register().data["recovery_code"]
+
+		response = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": code, "new_password": "abc"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_player_can_replace_their_own_code(self):
+		self._register()
+		user = User.objects.get(username="rec_player")
+		self.client.force_authenticate(user)
+
+		response = self.client.post(reverse("reset_recovery_code"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		new_code = response.data["recovery_code"]
+		self.client.force_authenticate(None)
+		works = self.client.post(
+			reverse("recover_password"),
+			{"username": "rec_player", "recovery_code": new_code, "new_password": "brand new"},
+			format="json",
+		)
+		self.assertEqual(works.status_code, status.HTTP_200_OK)
+
+	def test_an_account_from_before_recovery_codes_cannot_be_taken_with_a_guess(self):
+		"""A blank hash must never match anything, empty code included."""
+		from accounts.models import Profile
+
+		user = User.objects.create_user(username="rec_old", password="secret123")
+		Profile.objects.update_or_create(user=user, defaults={"recovery_code_hash": ""})
+
+		for attempt in ("", "AAAA-BBBB-CCCC-DDDD"):
+			with self.subTest(code=attempt):
+				response = self.client.post(
+					reverse("recover_password"),
+					{"username": "rec_old", "recovery_code": attempt, "new_password": "brand new"},
+					format="json",
+				)
+				self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class PlayerSearchTests(APITestCase):
+	"""The box that suggests people to watch."""
+
+	def setUp(self):
+		from accounts.models import Profile
+
+		self.me = User.objects.create_user(username="searcher", password="x")
+		self.ana = User.objects.create_user(username="ana", password="x")
+		self.yohan = User.objects.create_user(username="yohan", password="x")
+		self.hidden = User.objects.create_user(username="zephyr", password="x")
+		Profile.objects.update_or_create(user=self.yohan, defaults={"display_name": "Big Ana Fan"})
+		self.client.force_authenticate(self.me)
+
+	def _search(self, query):
+		response = self.client.get(reverse("search_players"), {"q": query})
+		return [row["username"] for row in response.data]
+
+	def test_one_letter_is_not_a_suggestion(self):
+		self.assertEqual(self._search("a"), [])
+
+	def test_it_matches_the_name_they_signed_up_with(self):
+		self.assertIn("ana", self._search("an"))
+
+	def test_it_matches_the_name_they_go_by(self):
+		"""Whoever is looking knows one of the two names, not which one."""
+		self.assertIn("yohan", self._search("Big Ana"))
+
+	def test_whoever_starts_with_it_comes_first(self):
+		results = self._search("ana")
+		self.assertEqual(results[0], "ana")
+
+	def test_it_never_suggests_you_to_yourself(self):
+		self.assertNotIn("searcher", self._search("search"))
+
+	def test_it_stops_suggesting_somebody_you_already_watch(self):
+		self.client.post(reverse("watching"), {"username": "ana"}, format="json")
+
+		self.assertNotIn("ana", self._search("ana"))
+
+	def test_it_says_what_each_player_is_called_and_looks_like(self):
+		row = self.client.get(reverse("search_players"), {"q": "yohan"}).data[0]
+
+		self.assertEqual(row["display_name"], "Big Ana Fan")
+		self.assertIn("avatar_emoji", row)
+		self.assertIn("avatar_url", row)
+
+	def test_a_stranger_cannot_browse_the_player_list(self):
+		self.client.force_authenticate(None)
+
+		response = self.client.get(reverse("search_players"), {"q": "ana"})
+
+		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class RecoveryCodeReportingTests(APITestCase):
+	"""Whether the account says it has a way back in."""
+
+	def test_a_new_account_reports_that_it_has_one(self):
+		self.client.post(
+			reverse("register"), {"username": "has_code", "password": "secret123"}, format="json",
+		)
+		self.client.force_authenticate(User.objects.get(username="has_code"))
+
+		me = self.client.get(reverse("me")).data
+
+		self.assertTrue(me["profile"]["has_recovery_code"])
+
+	def test_an_account_from_before_recovery_codes_reports_that_it_has_none(self):
+		"""Which is what puts the offer of one on their lobby."""
+		user = User.objects.create_user(username="no_code", password="secret123")
+		self.client.force_authenticate(user)
+
+		me = self.client.get(reverse("me")).data
+
+		self.assertFalse(me["profile"]["has_recovery_code"])
+
+	def test_the_code_itself_is_never_reported(self):
+		self.client.post(
+			reverse("register"), {"username": "secret_code", "password": "secret123"}, format="json",
+		)
+		self.client.force_authenticate(User.objects.get(username="secret_code"))
+
+		me = self.client.get(reverse("me")).data
+
+		self.assertNotIn("recovery_code", me["profile"])
+		self.assertNotIn("recovery_code_hash", me["profile"])

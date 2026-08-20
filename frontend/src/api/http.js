@@ -21,6 +21,11 @@ api.interceptors.response.use(
         try {
           const { data } = await axios.post("/api/auth/refresh/", { refresh });
           localStorage.setItem("access", data.access);
+          // The server rotates the refresh token, so each refresh hands back a
+          // new one with a fresh month on it. Dropping it here would leave the
+          // browser holding the original until it expired, and sign the player
+          // out a month after they first logged in however often they played.
+          if (data.refresh) localStorage.setItem("refresh", data.refresh);
           orig.headers.Authorization = `Bearer ${data.access}`;
           return api(orig);
         } catch {

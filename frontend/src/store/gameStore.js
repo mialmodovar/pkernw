@@ -237,6 +237,13 @@ const useGameStore = create((set) => ({
     return { showBB };
   }),
 
+  /** Set it outright rather than flipping it — what the onboarding asks for. */
+  setShowBB: (showBB) => set(() => {
+    writeStoredFlag(SHOW_BB_KEY, showBB);
+    api.patch("/auth/me/preferences/", { show_bb: showBB }).catch(() => {});
+    return { showBB };
+  }),
+
   /**
    * Reconcile with the account, once /auth/me/ has answered.
    *

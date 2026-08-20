@@ -7,7 +7,9 @@ import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { runsThePlace } from "../components/auth/runsThePlace";
+import AccountChip from "../components/lobby/AccountChip";
 import ProfileCard from "../components/lobby/ProfileCard";
+import RecoveryCodePanel from "../components/lobby/RecoveryCodePanel";
 import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
@@ -175,6 +177,7 @@ export default function LobbyPage() {
                     lg:h-[calc(100dvh-4rem)]">
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
+        <RecoveryCodePanel />
         <StatsPanel />
         <CalotesPanel />
         <WatchPanel />
@@ -218,6 +221,8 @@ export default function LobbyPage() {
                 </button>
               </>
             )}
+            {/* Your name and your coins, in the corner an account belongs in. */}
+            <AccountChip />
             <button onClick={logout}
               className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">
               Logout

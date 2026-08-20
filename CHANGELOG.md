@@ -26,7 +26,31 @@ remembering.
   settlement: the lobby fetches every format in one request and each tab draws
   its own. Adding a fourth format is a row in a table.
 
+- **Signing up walks you into a game.** It used to be a username, a password and
+  a table colour, which left somebody standing in an empty lobby with no club,
+  nobody to watch and no idea two of the three game modes existed. It now also
+  asks whether you read stacks in chips or big blinds, offers the clubs anybody
+  can join (and takes an invite code), suggests players to follow as you type
+  their name, and finishes by saying what there is to play — tournaments, Spin n
+  Go and Sit n Go, with how long each one takes. Everything after the account is
+  skippable and takes about a minute.
+- **A way back in when you forget your password.** No email is ever sent — this
+  is a poker game for a group of friends, not a mail provider — so an account
+  gets a recovery code when it is made, shown once, and that code sets a new
+  password. It is stored hashed, exactly like a password, and it is replaced the
+  moment it is used: a code that has got somebody in once is a password sitting
+  in whatever they wrote it down in. Accounts made before this are offered one
+  from the lobby.
+- **Your coins, beside your name.** The balance was only in the sidebar panel
+  where you go to claim it, rather than where you look while deciding whether you
+  can afford to sit down.
+
 ### Changed
+- **You stay logged in.** The session was two hours of access on a seven-day
+  refresh, and the browser kept the first refresh token it was given — so an
+  active player was signed out a week after they first logged in, whatever they
+  did in between. Refresh tokens now last a month and are rotated on every use,
+  so anybody who opens the app inside a month is never asked to log in again.
 - **The instant-game lobby says what kind of game it is.** Every format now
   leads with its own name, face and shape — three players, 15bb, three to five
   minutes — instead of a small grey heading the Spin n Go tab did not draw at

@@ -31,7 +31,12 @@ const useAuthStore = create((set, get) => ({
   },
 
   register: async (username, password) => {
-    await api.post("/auth/register/", { username, password });
+    // The reply carries the recovery code, which exists in this response and
+    // nowhere else afterwards — only its hash is kept. Handed back to the
+    // caller rather than stored: the sign-up screen shows it once and then it
+    // is gone.
+    const { data } = await api.post("/auth/register/", { username, password });
+    return data;
   },
 
   updateAvatar: async (emoji) => {

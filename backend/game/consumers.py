@@ -165,22 +165,30 @@ def stop_tournament_engine(tournament_id: int) -> bool:
     return had_engine
 
 
-def spin_payload(tournament) -> Optional[dict]:
-    """What a Spin n Go is being played for, or None if this is a tournament.
+def fast_payload(tournament) -> Optional[dict]:
+    """What kind of fast game this is and what it pays, or None for a tournament.
 
-    Read off the row rather than drawn here: the multiplier was decided when the
-    third player sat down, and the table is only reporting it.
+    Read off the row rather than worked out here: the multiplier was decided when
+    the last player sat down, and the table is only reporting it. The table reads
+    this to know which felt to lay — a two-handed game and a nine-handed one are
+    not the same room — and to reveal the draw where there is one.
     """
-    if getattr(tournament, "format", "standard") != "spingo":
-        return None
-    from tournaments.spingo import prize_coins
+    from tournaments.fastgames import FORMATS, key_for_tournament, pot_coins
 
+    key = key_for_tournament(tournament)
+    if key is None:
+        return None
+
+    fmt = FORMATS[key]
     stake = tournament.buy_in_coins or 0
     multiplier = tournament.spin_multiplier or 0
     return {
+        "key": key,
+        "label": fmt.label,
+        "seats": fmt.seats,
         "stake_coins": stake,
         "multiplier": multiplier,
-        "prize_coins": prize_coins(stake, multiplier),
+        "prize_coins": pot_coins(fmt, stake, fmt.seats, multiplier),
     }
 
 
@@ -207,6 +215,50 @@ def _db_set_tournament_status(tournament_id, status):
         # What "it took three hours" is measured against at the other end.
         fields["finished_at"] = timezone.now()
     Tournament.objects.filter(id=tournament_id).update(**fields)
+
+
+@database_sync_to_async
+def _db_open_mystery(tournament_id, draws):
+    """Cut the mystery pool into envelopes and write them down.
+
+    The pool is every entry's bounty, rebuys included and the entries of players
+    who busted long before this moment included too — they paid for a bounty and
+    it is in there. Counted here rather than in the engine because it is a
+    question about rows, and because the row is where the answer has to end up.
+
+    Idempotent: a pool already opened is returned as it stands rather than cut
+    again, so two callers cannot mint two pools out of the same buy-ins.
+    """
+    from django.db import transaction
+
+    from tournaments import mystery
+
+    with transaction.atomic():
+        tournament = Tournament.objects.select_for_update().filter(id=tournament_id).first()
+        if tournament is None:
+            return []
+        if tournament.mystery_opened_at is not None:
+            return list(tournament.mystery_envelopes or [])
+
+        entries = sum(
+            1 + (count or 0)
+            for count in tournament.players.values_list("rebuy_count", flat=True)
+        )
+        pool = mystery.pool_cents(tournament.bounty_cents or 0, entries)
+        envelopes = mystery.envelope_amounts(pool, draws)
+
+        tournament.mystery_envelopes = envelopes
+        tournament.mystery_opened_at = timezone.now()
+        tournament.save(update_fields=["mystery_envelopes", "mystery_opened_at"])
+        return envelopes
+
+
+@database_sync_to_async
+def _db_persist_mystery(tournament_id, envelopes):
+    """What is left in the pool after a draw. The row is the only copy."""
+    Tournament.objects.filter(id=tournament_id).update(
+        mystery_envelopes=[int(amount) for amount in envelopes],
+    )
 
 
 @database_sync_to_async
@@ -1060,7 +1112,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
 
         levels = await _db_get_levels(self.tournament_id)
         last_hand_number = await _db_get_last_hand_number(self.tournament_id)
-        spingo = tournament.format == "spingo"
+        fast = fast_payload(tournament)
         coordinator = MultiTableTournamentCoordinator(
             tournament_id=self.tournament_id,
             players_per_table=tournament.players_per_table,
@@ -1080,6 +1132,16 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             allow_rebuys=tournament.allow_rebuys,
             max_rebuys=tournament.max_rebuys,
             rebuy_level=tournament.rebuy_level,
+            late_reg_level=tournament.late_reg_level,
+            # Mystery bounties: how many places pay, when the envelopes open,
+            # and the pool as the row has it — which after a restart is a pool
+            # already opened and partly drawn.
+            paid_places=len(tournament.payout_structure or []),
+            mystery_release=tournament.mystery_release,
+            mystery_envelopes=list(tournament.mystery_envelopes or []),
+            mystery_opened=tournament.mystery_opened_at is not None,
+            open_mystery=lambda draws: _db_open_mystery(self.tournament_id, draws),
+            persist_mystery=lambda envelopes: _db_persist_mystery(self.tournament_id, envelopes),
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),
             broadcast_table=lambda table_number, event_type, payload: _broadcast_table(
                 self.tournament_id,
@@ -1109,13 +1171,14 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
             last_hand_number=last_hand_number,
-            # The drawn prize, carried to the table so it can be revealed there
-            # and read again by anybody who reconnects mid-game.
-            spin=spin_payload(tournament),
+            # What kind of game this is and what it pays, carried to the table so
+            # it can lay the right felt, reveal a draw, and tell anybody who
+            # reconnects mid-game what they are playing for.
+            fast=fast,
             # Half a minute of loading time is for a tournament people arrived
-            # for. A Spin n Go fires the moment the third player sits, and they
-            # are all already looking at it.
-            countdown_seconds=8 if spingo else 30,
+            # for. A fast game fires the moment its last seat fills, and everyone
+            # in it is already looking at it.
+            countdown_seconds=8 if fast else 30,
         )
         # Booting a paused tournament must not start dealing; run() waits for
         # the host to resume before it announces the start.

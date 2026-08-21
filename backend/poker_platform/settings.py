@@ -159,7 +159,14 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # A month, and rotated on every refresh, so somebody who opens the app at
+    # all inside a month is never asked to log in again. Seven days sounds like
+    # a long session until you have been signed out mid-week for the third time;
+    # this is a home poker game, not a bank.
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    # Each refresh hands back a new one, so an active player's window keeps
+    # moving rather than expiring a month after they first logged in.
+    "ROTATE_REFRESH_TOKENS": True,
 }
 
 # ── Channels ──────────────────────────────────────────────────────────────

@@ -12,3 +12,29 @@
 export function runsThePlace(user) {
   return Boolean(user?.is_staff || user?.is_superuser);
 }
+
+/**
+ * Whether any of these clubs is one you help organise.
+ *
+ * `my_role` comes off the club payload, and the two roles that mean "organises"
+ * are the same two the server checks in clubs/permissions.py.
+ */
+export function organisesForAClub(clubs) {
+  return (clubs || []).some(
+    (club) => club?.my_role === "owner" || club?.my_role === "staff",
+  );
+}
+
+/**
+ * Whether this person may open a tournament.
+ *
+ * Two ways in, matching StaffCreatesTournaments on the server: site staff, who
+ * run the installation, and anybody who is staff or owner of a club, who runs
+ * their own community's nights. Club staff was the case the create page used to
+ * miss — it asked runsThePlace alone, so an owner of a club was shown the
+ * button on the lobby, allowed through by the server, and then told "Staff
+ * only" by the page in between.
+ */
+export function opensTournaments(user, clubs) {
+  return runsThePlace(user) || organisesForAClub(clubs);
+}

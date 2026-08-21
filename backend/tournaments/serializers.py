@@ -17,6 +17,7 @@ from .permissions import can_manage_tournament
 
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry
+from .mystery import DEFAULT_RELEASE as DEFAULT_MYSTERY_RELEASE, clean_release
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
 
 
@@ -357,6 +358,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
                   "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "mystery_release",
                   "showdown_seconds",
                   "registered", "host_display_name",
                   "auto_remove_offline_seconds", "created_at", "started_at", "finished_at")
@@ -411,6 +413,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "mystery_release", "mystery_envelopes", "mystery_opened_at",
                   "showdown_seconds",
                   "created_at")
 
@@ -473,6 +476,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                   "time_bank_refill_every_hands", "time_bank_refill_level",
                   "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
+                  "mystery_release",
                   "showdown_seconds",
                   "levels")
 
@@ -598,7 +602,7 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             if not season.is_open:
                 raise serializers.ValidationError({"season": "That season is closed."})
 
-        if bounty_mode not in {"none", "fixed", "progressive"}:
+        if bounty_mode not in {"none", "fixed", "progressive", "mystery"}:
             raise serializers.ValidationError({"bounty_mode": "Choose a valid knockout mode."})
         if bounty_mode == "none":
             attrs["bounty_cents"] = 0
@@ -622,6 +626,17 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                 )
         else:
             attrs["bounty_progressive_split_pct"] = 50
+
+        if bounty_mode == "mystery":
+            attrs["mystery_release"] = clean_release(attrs.get("mystery_release"))
+            # The money is one of the two moments the envelopes can open, and a
+            # tournament that has not said who gets paid has no such moment.
+            if attrs["mystery_release"] == "itm" and not attrs["payout_structure"]:
+                raise serializers.ValidationError(
+                    {"mystery_release": "Opening at the money needs a payout structure to have a money."}
+                )
+        else:
+            attrs["mystery_release"] = DEFAULT_MYSTERY_RELEASE
 
         if levels:
             blind_level_count = sum(1 for level in levels if not level.get("is_break", False))
@@ -704,6 +719,7 @@ LOCKED_AFTER_CREATION = (
     "bounty_mode",
     "bounty_cents",
     "bounty_progressive_split_pct",
+    "mystery_release",
 )
 
 

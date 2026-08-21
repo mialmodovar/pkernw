@@ -106,6 +106,20 @@ describe("namesBySeat", () => {
   it("reads the names off the actions, which are the only place they are", () => {
     expect(namesBySeat(hand).get(3)).toBe("hero");
   });
+
+  it("calls people what they call themselves", () => {
+    const named = {
+      actions: [
+        { username: "ana", display_name: "Ana P", seat: 0, street: "preflop", action: "blind" },
+      ],
+    };
+    expect(namesBySeat(named).get(0)).toBe("Ana P");
+  });
+
+  it("falls back to the login name for a hand saved before display names", () => {
+    const older = { actions: [{ username: "ana", seat: 0, street: "preflop", action: "blind" }] };
+    expect(namesBySeat(older).get(0)).toBe("ana");
+  });
 });
 
 describe("showdownOf", () => {

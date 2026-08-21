@@ -25,7 +25,7 @@ def tournament_hands(request, pk):
 
     hands = (
         Hand.objects.filter(tournament_id=pk, status="complete")
-        .prefetch_related("actions__player__user")
+        .prefetch_related("actions__player__user__profile")
         .order_by("-hand_number", "-id")[:limit]
     )
     return Response(HandSerializer(hands, many=True).data)
@@ -42,7 +42,7 @@ def hand_detail(request, pk):
     """
     hand = (
         Hand.objects.filter(pk=pk, status="complete")
-        .prefetch_related("actions__player__user")
+        .prefetch_related("actions__player__user__profile")
         .first()
     )
     if hand is None:

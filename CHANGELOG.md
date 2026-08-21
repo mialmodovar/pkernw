@@ -9,6 +9,126 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Mystery bounties.** A knockout tournament where nobody's head is worth
+  anything in particular: the same half of every buy-in goes into a sealed pool
+  instead, and knockouts pay nothing at all until the pool is cut into envelopes
+  of wildly different sizes. From that moment on, busting somebody draws one —
+  most are worth about a buy-in, one is worth the night. The envelopes open
+  either **at the money** or **when registration closes**, whichever the host
+  picks, and both wait for the field to be final: a pool that can still grow is
+  a pool that cannot be cut up. The board of what is left is public, because
+  knowing what is still in there is most of the tension; only the draw is a
+  gamble. The table makes a moment of both — the pool being opened stops the
+  felt for a few seconds and deals the envelopes out one by one, and a draw
+  tears open with the amount landing out of it, scaled to what it was worth
+  against everything still on the board.
+- **Sit n Go, in two shapes.** Beside the Spin n Go tab: **Heads Up** — two
+  players, front to front, twenty-five big blinds each, five to ten minutes —
+  and **6-Max**, thirty big blinds with the top two paid, ten to fifteen. Two
+  buy-ins each (10 and 50 coins heads up, 25 and 100 six-handed), blinds every
+  two minutes, and the same rule as the Spin n Go: you sit, and when the last
+  seat fills the cards are in the air. No draw here — a Sit n Go pays out exactly
+  what was paid in, split the way the format splits it, with nothing raked off.
+- **A heads-up table that looks like one.** Two players get a smaller, rounder
+  felt with a seat at each end, facing each other, rather than a ring built for
+  eight with six empty chairs in it. The engine already knew the heads-up rules —
+  the button posts the small blind, acts first before the flop and last after it
+  — and now the felt reads the way the game is played.
+- **One lobby behind three tabs.** Spin n Go and Sit n Go are the same machinery
+  with different numbers, so they now share a catalogue, an endpoint and a
+  settlement: the lobby fetches every format in one request and each tab draws
+  its own. Adding a fourth format is a row in a table.
+
+- **Signing up walks you into a game.** It used to be a username, a password and
+  a table colour, which left somebody standing in an empty lobby with no club,
+  nobody to watch and no idea two of the three game modes existed. It now also
+  asks whether you read stacks in chips or big blinds, offers the clubs anybody
+  can join (and takes an invite code), suggests players to follow as you type
+  their name, and finishes by saying what there is to play — tournaments, Spin n
+  Go and Sit n Go, with how long each one takes. Everything after the account is
+  skippable and takes about a minute.
+- **A way back in when you forget your password.** No email is ever sent — this
+  is a poker game for a group of friends, not a mail provider — so an account
+  gets a recovery code when it is made, shown once, and that code sets a new
+  password. It is stored hashed, exactly like a password, and it is replaced the
+  moment it is used: a code that has got somebody in once is a password sitting
+  in whatever they wrote it down in. Accounts made before this are offered one
+  from the lobby.
+- **Your coins, beside your name.** The balance was only in the sidebar panel
+  where you go to claim it, rather than where you look while deciding whether you
+  can afford to sit down.
+
+### Changed
+- **Stats, one kind of game at a time.** A Spin n Go is three-handed for five
+  minutes and a tournament is nine-handed for an evening; a VPIP averaged across
+  both describes neither, and neither does an in-the-money rate. The stats panel
+  now has a selector — all, tournaments, Spin n Go, Sit n Go — and everything in
+  it follows: games played, cashes, winnings, best hand and the preflop reads.
+- **One header, on every page.** Modelled on the table's, which is the one that
+  worked: who you are and what you are holding on the right, the way back on the
+  left, and nothing that moves as you navigate. Every page used to invent its
+  own — on a phone the lobby put your account and the logout button at the
+  *bottom*, under six panels, because they lived inside the scrolling column
+  rather than above it. The blind level and the clock are not in it: they are
+  about the hand, not about the app, and they stay on the felt where they are
+  read. The tournament lobby no longer opens in a second browser tab either.
+- **Setting up a prize pool is two sliders.** A host decides "the top fifth get
+  paid" and "half the buy-in goes on heads" — not a grid of place numbers,
+  labels and percentages that has to total exactly 100 by hand. Places paid is
+  now a share of the field and the split follows from it; the knockout bounty is
+  a share of the buy-in. The grid is still there for a night that wants a
+  particular structure, and it opens with whatever is already on screen.
+- **All your tables, along the top of the one you are at.** A player can be
+  seated in three games at once and watching a fourth; the app could hold one in
+  its head. Leaving a table lost it, and the way back was a single button that
+  guessed which one you meant. Every open table is now a tab — with the hand you
+  were dealt there, so you can tell them apart at a glance — and switching is one
+  click. A watched table can be closed, because nothing on the server knows you
+  are looking; a seat cannot, because you are in it. From the lobby, "back to
+  the table" now means the table you were last at rather than the newest one.
+- **The lobby header stops shouting.** Three game modes set in the size of a page
+  title read as three competing headings with no page under any of them. They are
+  a segmented control now, with the mode's own face on each. Creating a
+  tournament sits with the tab it belongs to, and the table sandbox — a layout
+  tool, not a way to play — is an icon rather than a button the same size as one.
+- **Your coins live with your name.** Top left beside your face on a wide screen,
+  and up in the corner on a phone, where the profile card is a long scroll away.
+  A quiet pulse on the daily claim when there is one waiting, which takes it.
+- **The winner is paid their own bounty, in every mode.** They always were —
+  settlement has always handed back the head nobody collected — but it was only
+  covered by one test of one case. It is now pinned for fixed, progressive and
+  mystery alike, along with the property underneath it: whatever is on the heads
+  plus whatever has been collected is always exactly what the buy-ins put in,
+  checked after every knockout across hundreds of randomly ordered fields.
+- **You stay logged in.** The session was two hours of access on a seven-day
+  refresh, and the browser kept the first refresh token it was given — so an
+  active player was signed out a week after they first logged in, whatever they
+  did in between. Refresh tokens now last a month and are rotated on every use,
+  so anybody who opens the app inside a month is never asked to log in again.
+- **The instant-game lobby says what kind of game it is.** Every format now
+  leads with its own name, face and shape — three players, 15bb, three to five
+  minutes — instead of a small grey heading the Spin n Go tab did not draw at
+  all. The tier cards were big and said little: the only figure on one was an
+  unlabelled buy-in, large enough to read as a prize, over a row kept empty for
+  faces that were not there. A card now says what it costs and what it pays, both
+  labelled, with the seats as a row of pips beside the count; the full odds are
+  still a click away under Details.
+- **Chips or big blinds is a setting on your account.** It was kept in the
+  browser, so it followed you from table to table but not from one device to the
+  next. Which of the two you think in is a habit, not a property of the machine
+  you happen to be sitting at.
+
+### Fixed
+- **The hand history calls people what they call themselves.** A replay named
+  every player by their login name, ignoring the display name they had set — at
+  the one moment their play is being talked about. Rows are still filed under the
+  login name, which is what the ledger and the stats key on.
+- **Instant games stay out of the tournament list.** A Spin n Go you played three
+  of before breakfast is not history in the sense that list means, and thirty of
+  them would bury the night somebody actually arranged. Finished and waiting fast
+  games are listed in their own tabs, with their own results; the Tournaments tab
+  is for nights people arranged. A game of yours that is *dealing* still reaches
+  the shortcut back to the table, which is the one place it has to.
 - **Spin n Go.** A second game mode, beside Tournaments at the top of the lobby.
   Two tiers, 25 or 50 coins, three seats each: you sit, and when the third
   player sits the prize is drawn — a multiplier between 2× and 100× on the

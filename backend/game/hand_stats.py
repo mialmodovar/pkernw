@@ -81,18 +81,24 @@ def _steal_positions(seats_in_hand, dealer_seat):
     }
 
 
-def compute_player_stats(user_ids):
-    """Return {user_id: stats} over every hand those users have played."""
+def compute_player_stats(user_ids, formats=None):
+    """Return {user_id: stats} over every hand those users have played.
+
+    `formats` narrows it to one kind of game — a three-handed Spin n Go and a
+    nine-handed tournament are different games and averaging them together
+    describes neither. None means all of them, which is what everything asking
+    about a player at a table wants.
+    """
     user_ids = list(user_ids)
     if not user_ids:
         return {}
 
     # Every entry of every hand any of these users took part in — the other
     # players' actions are needed to know what each user was facing.
-    hand_ids = set(
-        HandAction.objects.filter(player__user_id__in=user_ids, street="preflop")
-        .values_list("hand_id", flat=True)
-    )
+    played = HandAction.objects.filter(player__user_id__in=user_ids, street="preflop")
+    if formats is not None:
+        played = played.filter(hand__tournament__format__in=formats)
+    hand_ids = set(played.values_list("hand_id", flat=True))
     if not hand_ids:
         return {user_id: _empty() for user_id in user_ids}
 

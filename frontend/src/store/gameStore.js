@@ -1,11 +1,21 @@
 import { create } from "zustand";
 
+import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
 import { formatEuros } from "../components/game/formatMoney";
 
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
 const HIDE_HAND_KEY = "poker.hideHand";
+
+/** This table's hand, filed under the table it was dealt at. */
+const rememberHand = (state, cards) => {
+  if (!state.tournamentId) return state.hands;
+  return {
+    ...state.hands,
+    [state.tournamentId]: { cards: cards || [], at: Date.now() },
+  };
+};
 
 const readStoredFlag = (key, fallback) => {
   try {
@@ -114,18 +124,29 @@ const useGameStore = create((set) => ({
   equityShake: null,
   equityShakeSequence: 0,
   clearEquityShake: (id) => set((s) => (s.equityShake?.id === id ? { equityShake: null } : {})),
+  // Mystery bounties: the board, and whether it has been opened. Null at every
+  // table that is not playing one.
+  mystery: null,
+  mysterySequence: 0,
+  /** Spent by whatever plays the opening, so it plays once. */
+  clearMysteryAnnouncement: () => set((s) => (
+    s.mystery ? { mystery: { ...s.mystery, announcement: null } } : {}
+  )),
   countdown: null,    // seconds remaining before tournament starts
-  // A Spin n Go's drawn prize: {stake_coins, multiplier, prize_coins}, or null
-  // at a tournament table. Everything the format looks like hangs off this.
-  spin: null,
+  // Which instant format this table is and what it pays: {key, label, seats,
+  // stake_coins, multiplier, prize_coins}, or null at a tournament table.
+  // Everything the felt looks like hangs off this.
+  fast: null,
   // Which tournament the live state belongs to, stamped by reset when a table
   // is opened. Only the memory below needs it, but it needs it badly: a hand
   // remembered from one table must never be shown against another.
   tournamentId: null,
-  // The last hand dealt to you, kept after the table is left so the shortcut
-  // back to it can show what you are holding. Deliberately outside reset: the
+  // The last hand dealt to you at each table, kept after the table is left so
+  // the tabs and the shortcut back can show what you are holding. Keyed by
+  // tournament, because a player can have three open at once and a hand from
+  // one must never be shown against another. Deliberately outside reset: the
   // whole point is that it survives leaving the page.
-  lastHand: null,
+  hands: {},
   // Who is ready to start, and how many seats there are to be ready. The count
   // exists so the overlay can say 3/5 without having to work out which of the
   // players it can see are actually seated.
@@ -220,11 +241,43 @@ const useGameStore = create((set) => ({
   tableCount: 0,
   tableSummaries: [],
   tableAssignmentNotice: null,
-  showBB: readStoredFlag(SHOW_BB_KEY, false),   // display chips as BB count
+  // Chips or big blinds. Kept on the account as well as in this browser: which
+  // of the two a player thinks in is a habit, not a property of the table they
+  // happen to be at or the machine they are sitting at. The local copy is read
+  // synchronously so a table drawn before /auth/me/ answers is already in the
+  // right units — the same reason the theme keeps one.
+  showBB: readStoredFlag(SHOW_BB_KEY, false),
   toggleBB: () => set((s) => {
     const showBB = !s.showBB;
     writeStoredFlag(SHOW_BB_KEY, showBB);
+    // A failed save leaves this browser right and the account stale; the next
+    // toggle retries, and nothing anybody can see is lost.
+    api.patch("/auth/me/preferences/", { show_bb: showBB }).catch(() => {});
     return { showBB };
+  }),
+
+  /** Set it outright rather than flipping it — what the onboarding asks for. */
+  setShowBB: (showBB) => set(() => {
+    writeStoredFlag(SHOW_BB_KEY, showBB);
+    api.patch("/auth/me/preferences/", { show_bb: showBB }).catch(() => {});
+    return { showBB };
+  }),
+
+  /**
+   * Reconcile with the account, once /auth/me/ has answered.
+   *
+   * The account wins when it has an opinion, because that is what makes the
+   * setting follow you to another browser. When it has none, the preference
+   * picked on this device is pushed up rather than thrown away.
+   */
+  hydratePreferences: (preferences) => set((s) => {
+    const stored = preferences?.show_bb;
+    if (typeof stored === "boolean") {
+      writeStoredFlag(SHOW_BB_KEY, stored);
+      return { showBB: stored };
+    }
+    if (s.showBB) api.patch("/auth/me/preferences/", { show_bb: true }).catch(() => {});
+    return {};
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
   // Keep your own cards face down until you look at them. Off by default —
@@ -266,9 +319,9 @@ const useGameStore = create((set) => ({
           handNumber: data.hand_number || 0,
           holeCards: data.hole_cards && data.hole_cards.length ? data.hole_cards : s.holeCards,
           // A reconnect mid-hand is the other way your hand arrives, and the
-          // shortcut back to the table should know about it too.
+          // tabs should know about it too.
           ...(data.hole_cards && data.hole_cards.length
-            ? { lastHand: { tournamentId: s.tournamentId, cards: data.hole_cards, at: Date.now() } }
+            ? { hands: rememberHand(s, data.hole_cards) }
             : {}),
           currentTableNumber: data.current_table_number ?? s.currentTableNumber,
           currentTableId: data.current_table_id ?? s.currentTableId,
@@ -291,9 +344,9 @@ const useGameStore = create((set) => ({
           // A reload mid-hand gets the calls already made, so the table does
           // not read as though nobody had said anything.
           sideBets: data.side_bets?.bets || [],
-          // Carried on the snapshot too, so a reload mid-game gets the prize
-          // back rather than a table with no stakes on it.
-          spin: data.spin ?? s.spin,
+          // Carried on the snapshot too, so a reload mid-game gets the format
+          // and the prize back rather than a table with no stakes on it.
+          fast: data.fast ?? s.fast,
           sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;
@@ -309,9 +362,9 @@ const useGameStore = create((set) => ({
           messages: [],
           tableCount: data.table_count || 0,
           tableSummaries: data.tables || [],
-          // What a Spin n Go is being played for. Null on a tournament, which
-          // is what leaves the table looking like a tournament's table.
-          spin: data.spin || null,
+          // What this table is. Null on a tournament, which is what leaves it
+          // looking like a tournament's table.
+          fast: data.fast || null,
         });
         break;
 
@@ -379,7 +432,7 @@ const useGameStore = create((set) => ({
       case "hole_cards":
         set((s) => ({
           holeCards: data.cards || [],
-          lastHand: { tournamentId: s.tournamentId, cards: data.cards || [], at: Date.now() },
+          hands: rememberHand(s, data.cards),
         }));
         break;
 
@@ -647,14 +700,70 @@ const useGameStore = create((set) => ({
             cashCents: data.cash_cents,
             toHeadCents: data.to_head_cents,
             victimName: data.victim_name,
+            // A drawn envelope rather than a known bounty. Carries what was in
+            // it and what it stands against, so the reveal can make more of the
+            // ones worth making more of.
+            mystery: data.mystery || null,
             // Two knockouts in a row on the same seat are the same object by
             // value, so the animation needs something that always changes.
             id: s.bountyFlashSequence + 1,
           },
           bountyFlashSequence: s.bountyFlashSequence + 1,
+          // What is left on the board, so the count beside the table follows
+          // every draw without waiting for anything else to arrive.
+          ...(data.mystery
+            ? {
+                mystery: {
+                  ...(s.mystery || {}),
+                  envelopesLeft: data.mystery.envelopes_left,
+                  poolLeftCents: data.mystery.pool_left_cents,
+                  topLeftCents: data.mystery.top_left_cents,
+                  opened: true,
+                },
+              }
+            : {}),
           messages: appendLog(s, entry(s, "info",
-            `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
-            + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
+            data.mystery
+              ? `${data.name} drew ${formatEuros(data.mystery.envelope_cents)} for ${data.victim_name}`
+                + (data.mystery.is_top_prize ? " — the biggest envelope left" : "")
+                + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : "")
+              : `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
+                + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
+        }));
+        break;
+
+      // The envelopes have been cut and the pool is now in play. The one moment
+      // in a mystery tournament that is worth stopping the table for.
+      case "mystery_opened":
+        set((s) => ({
+          mystery: {
+            opened: true,
+            envelopes: data.envelopes || [],
+            poolCents: data.pool_cents || 0,
+            poolLeftCents: data.pool_cents || 0,
+            topCents: data.top_cents || 0,
+            topLeftCents: data.top_cents || 0,
+            envelopesLeft: (data.envelopes || []).length,
+            playersLeft: data.players_left || 0,
+            reason: data.reason || null,
+            // Shown once, and dismissed by whatever draws it.
+            announcement: s.mysterySequence + 1,
+          },
+          mysterySequence: s.mysterySequence + 1,
+          messages: appendLog(s, entry(s, "info",
+            `Mystery bounties are open — ${formatEuros(data.pool_cents || 0)} in `
+            + `${(data.envelopes || []).length} envelopes, biggest `
+            + `${formatEuros(data.top_cents || 0)}`)),
+        }));
+        break;
+
+      // A knockout while the pool is still sealed. Worth saying out loud: it
+      // was worth something, and nobody knows what yet.
+      case "mystery_sealed":
+        set((s) => ({
+          messages: appendLog(s, entry(s, "info",
+            `${(data.eliminators || []).join(" & ")} knocked out ${data.victim_name} — `
+            + "bounty still sealed")),
         }));
         break;
 
@@ -905,7 +1014,8 @@ const useGameStore = create((set) => ({
       tournamentId,
       // Cleared, or a tournament table opened after a Spin n Go would keep its
       // violet felt and print a prize nobody is playing for.
-      spin: null,
+      fast: null,
+      mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,

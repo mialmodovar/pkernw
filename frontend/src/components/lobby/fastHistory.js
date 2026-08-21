@@ -8,9 +8,10 @@
  * record leads with who did it.
  */
 
-/** "10× · 🪙 250" — the draw and what it paid. */
+/** "10× · 🪙 250" for a drawn game, "🪙 100" for one that pays what it took. */
 export function drawLabel(row) {
-  return `${row.multiplier}× · \u{1FA99} ${Number(row.prize_coins || 0).toLocaleString()}`;
+  const prize = `\u{1FA99} ${Number(row.prize_coins || 0).toLocaleString()}`;
+  return row.multiplier ? `${row.multiplier}× · ${prize}` : prize;
 }
 
 /** Who won it, as a nickname. Nobody's real name goes on a leaderboard. */
@@ -18,21 +19,30 @@ export function winnerName(row) {
   return row.winner?.display_name || row.winner?.username || "—";
 }
 
+// Enough places for the biggest of these formats, which seats six.
+const ORDINALS = ["", "1st", "2nd", "3rd", "4th", "5th", "6th"];
+
 /**
  * How your own game went, in two words.
  *
- * Third of three is last, and saying "3rd" flatters it; the format is short
- * enough that people remember whether they won, not what they placed.
+ * "Won" rather than "1st": these are short enough that people remember whether
+ * they won, not what they placed.
  */
 export function myResult(row) {
   if (row.i_won) return "won";
   if (row.my_finish == null) return "";
-  return `${row.my_finish}${row.my_finish === 2 ? "nd" : "rd"}`;
+  return ORDINALS[row.my_finish] || `${row.my_finish}th`;
 }
 
-/** What you took out of it — the prize if you won, nothing if you did not. */
+/**
+ * What you took out of it.
+ *
+ * The server reads this off the coin ledger rather than working it out from
+ * where you came, because a six-max pays two places — second taking something
+ * is exactly the case that arithmetic here would miss.
+ */
 export function myReturn(row) {
-  return row.i_won ? row.prize_coins : 0;
+  return row?.my_return || 0;
 }
 
 /**

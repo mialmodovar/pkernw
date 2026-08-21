@@ -64,6 +64,23 @@ def settle_tournament(tournament):
             for p in players
         } if bounty.enabled else {}
 
+        # A mystery pool sits on nobody's head, so there is nothing to hand
+        # back: what a player collected is what they drew. Whatever nobody drew
+        # goes to the winner, and that is worked out from the pool rather than
+        # from the envelopes still on the board — the board is empty both when
+        # every envelope has been drawn and when the tournament ended before
+        # they were ever cut, and those two mean opposite things. Subtracting
+        # what was collected from what the buy-ins put in is right either way,
+        # and is what stops a pool that never opened simply vanishing.
+        if bounty.is_mystery:
+            bounty_prizes = {p.user_id: (p.bounty_won_cents or 0) for p in players}
+            pool = bounty.amount_cents * sum(entries.values())
+            unclaimed = pool - sum(bounty_prizes.values())
+            if unclaimed > 0:
+                champion = next((p for p in players if p.finish_position == 1), None)
+                if champion is not None:
+                    bounty_prizes[champion.user_id] = bounty_prizes.get(champion.user_id, 0) + unclaimed
+
         LedgerEntry.objects.bulk_create([
             LedgerEntry(
                 tournament=tournament,

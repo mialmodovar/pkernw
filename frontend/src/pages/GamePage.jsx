@@ -20,7 +20,9 @@ import { useTurnAlert } from "../components/game/useTurnAlert";
 import { useTimeoutAlert } from "../components/game/useTimeoutAlert";
 import TournamentInfoPanel from "../components/game/TournamentInfoPanel";
 import EliminationScreen from "../components/game/EliminationScreen";
+import TableTabs from "../components/game/TableTabs";
 import { markArrivedAtTable } from "../components/lobby/autoOpenTable";
+import useTablesStore from "../store/tablesStore";
 import BreakOverlay from "../components/game/BreakOverlay";
 import TournamentCompleteScreen from "../components/game/TournamentCompleteScreen";
 import HandReview from "../components/game/HandReview";
@@ -102,6 +104,9 @@ export default function GamePage() {
     // You are at a table. Anything that would later "take you to your table" is
     // from here on a drag backwards, so the arrival redirect is spent.
     markArrivedAtTable();
+    // And this is the table "back to the table" means from now on, whichever
+    // others are open.
+    useTablesStore.getState().visited(id);
     // Stamped with the tournament, so the hand this table deals is remembered
     // against the right game once the page is left again.
     reset(id);
@@ -110,6 +115,17 @@ export default function GamePage() {
     const unsubStatus = onStatus(setConnectionStatus);
     return () => { unsub(); unsubStatus(); disconnect(); };
   }, [sandbox, id, watching, handleEvent, reset, setConnectionStatus]);
+
+  // Watching a table is this browser's business — nothing on the server knows
+  // or cares — so it is remembered here, and stays a tab until it is closed.
+  useEffect(() => {
+    if (sandbox || watching == null) return;
+    useTablesStore.getState().openWatch({
+      id: Number(id),
+      table: watching,
+      name: tournament?.name || `Table ${watching}`,
+    });
+  }, [sandbox, id, watching, tournament?.name]);
 
   // Chip counts drive the rank, average stack and chip leader, and they only
   // live in the DB, so refresh them periodically rather than once on mount.
@@ -250,10 +266,6 @@ export default function GamePage() {
   // whoever is actually around to fix it.
   const canManage = Boolean(tournament?.can_manage);
   const tournamentStatus = isPaused ? "paused" : tournament?.status;
-  // Your seat is live, so the lobby gets a window of its own: leaving this tab
-  // drops the table socket, and a hand does not wait for you to read standings.
-  const amPlaying = watching == null && mySeat !== null && !myEliminationFinish;
-
   const amSittingOut = Boolean(players.find((p) => p.seat === mySeat)?.is_sitting_out);
   const handleAction = (action, amount) => send({ type: "player_action", action, amount });
   const actionPanel = (bare = false) => (
@@ -317,8 +329,11 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
+      {/* Every other table you have open. Draws nothing when this is the only
+          one, which is most of the time. */}
+      {!sandbox && <TableTabs currentId={Number(id)} />}
       {watching != null && (
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
@@ -359,7 +374,6 @@ export default function GamePage() {
       )}
       <BlindLevelBar
         name={tournament?.name}
-        onHome={() => navigate("/")}
         controls={(
           <div className="flex items-center gap-2">
             {canManage && (tournamentStatus === "paused" ? (
@@ -439,19 +453,7 @@ export default function GamePage() {
             <span className="hidden md:inline">Info</span>
           </button>
           <ActionHistory onReview={() => setReviewOpen(true)} />
-          {amPlaying ? (
-            <a
-              href={`/tournament/${id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="This tournament's lobby, in a new window so you keep your seat"
-              className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
-                         rounded text-xs font-semibold transition-colors"
-            >
-              <LobbyIcon />
-              <span className="hidden md:inline">Lobby ↗</span>
-            </a>
-          ) : watching == null && (
+          {watching == null && (
             <button
               onClick={() => navigate(`/tournament/${id}`)}
               title="This tournament's lobby"

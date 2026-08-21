@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from tournaments import mystery
 from tournaments.bounties import BountyConfig, split_knockout
 
 from .engine.hand import HandEngine, cards_to_list
@@ -99,10 +100,29 @@ class MultiTableTournamentCoordinator:
         allow_rebuys: bool = False,
         max_rebuys: Optional[int] = 0,
         rebuy_level: int = 0,
-        # A Spin n Go's drawn prize: {"stake_coins", "multiplier", "prize_coins"}
-        # or None for a tournament, which is what every other format is.
-        spin: Optional[dict] = None,
+        # Through which level somebody may still enter. The engine only needs
+        # it to answer "is the field final yet", which is what a mystery pool
+        # has to know before it can be cut into envelopes.
+        late_reg_level: int = 0,
+        # Which fast format this is and what it pays — see consumers.fast_payload
+        # — or None for a tournament, which is what most games are.
+        fast: Optional[dict] = None,
         countdown_seconds: int = 30,
+        # Mystery bounties: how many places pay (the money is one of the two
+        # moments the envelopes can open), the pool as it stands, and whether it
+        # has been opened. Read off the row on boot so a restart mid-tournament
+        # picks up the same envelopes rather than cutting a second pool.
+        paid_places: int = 0,
+        mystery_release: str = "",
+        mystery_envelopes: Optional[List[int]] = None,
+        mystery_opened: bool = False,
+        # Cuts the pool into envelopes and writes them down, returning the list.
+        # The count of entries is a database question, so the answer comes from
+        # there rather than from anything the engine has been carrying.
+        open_mystery: Optional[Callable[[int], Awaitable[List[int]]]] = None,
+        # What is left after a draw. Written every time, because the row is the
+        # only copy of the pool there is.
+        persist_mystery: Optional[Callable[[List[int]], Awaitable[None]]] = None,
     ):
         self.tournament_id = tournament_id
         self.players_per_table = players_per_table
@@ -129,11 +149,18 @@ class MultiTableTournamentCoordinator:
         # None is unlimited, so it cannot be flattened to a number here.
         self.max_rebuys = None if max_rebuys is None else max(0, max_rebuys)
         self.rebuy_level = max(0, rebuy_level or 0)
-        self.spin = spin or None
+        self.late_reg_level = max(0, late_reg_level or 0)
+        self.fast = fast or None
         # How long the table holds before the first hand. It is loading time, not
         # a rule of the game, so a format that fires with everybody already
         # watching asks for less of it.
         self.countdown_seconds = max(0, countdown_seconds or 0)
+        self.paid_places = max(0, paid_places or 0)
+        self.mystery_release = mystery.clean_release(mystery_release)
+        self._mystery_envelopes: List[int] = list(mystery_envelopes or [])
+        self._mystery_opened = bool(mystery_opened)
+        self.open_mystery = open_mystery
+        self.persist_mystery = persist_mystery
         self.broadcast_tournament = broadcast_tournament
         self.broadcast_table = broadcast_table
         self.request_action = request_action
@@ -241,7 +268,7 @@ class MultiTableTournamentCoordinator:
                 "level": self._level_payload(),
                 "table_count": len(self._tables),
                 "tables": self.table_summaries(),
-                "spin": self.spin,
+                "fast": self.fast,
             },
         )
 
@@ -268,6 +295,12 @@ class MultiTableTournamentCoordinator:
             await self._sit_out_long_gone_players()
             await self._remove_timed_out_offline_players()
             await self._rebalance_tables()
+
+            # Before the hand as well as after the busts below. Opening at the
+            # close of registration is a fact about the clock, not about anybody
+            # going out — and a table short enough to lose half its field in one
+            # hand would otherwise have gone past the moment without noticing.
+            await self._maybe_open_mystery()
 
             level = self._current_level()
             await self.broadcast_tournament(
@@ -344,6 +377,11 @@ class MultiTableTournamentCoordinator:
                     eliminators,
                     is_final=remaining_count <= 1,
                 )
+
+            # Checked after the busts are counted, so "down to the money" is
+            # judged on who is actually left rather than on who was left before
+            # the hand that got us there.
+            await self._maybe_open_mystery()
 
             # Offered before the pause below, so the wait it asks for is the
             # wait the table actually takes.
@@ -801,9 +839,10 @@ class MultiTableTournamentCoordinator:
             # the blind level straight away, instead of waiting for the next
             # level_change broadcast.
             "level": self._level_payload(),
-            # The drawn prize, for the same reason: a player who reloads during
-            # a Spin n Go should still be able to see what they are playing for.
-            "spin": self.spin,
+            # The format and its prize, for the same reason: a player who reloads
+            # mid-game should still see what they are playing for, and the felt
+            # should not change shape under them.
+            "fast": self.fast,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:
@@ -1544,6 +1583,129 @@ class MultiTableTournamentCoordinator:
             }
         return {"finisher_gif_id": chosen["gif_id"], "finisher_sound": chosen["sound"]}
 
+    async def _maybe_open_mystery(self) -> None:
+        """Open the envelopes, if this is the moment.
+
+        Once and once only: the pool is cut on the strength of how many players
+        are left, and cutting it twice would invent a second pool out of the
+        same buy-ins.
+
+        Note that both release rules require registration to be closed. A pool
+        that can still grow is a pool that cannot be cut up — a late entry after
+        the envelopes were counted is one more knockout than there are envelopes
+        to pay it with. In practice the money arrives long after late
+        registration does, so this only ever bites on a format short enough for
+        the two to collide.
+        """
+        if not self.bounty.is_mystery or self._mystery_opened or self.open_mystery is None:
+            return
+
+        remaining = self._active_player_count()
+        closed = mystery.registration_closed(
+            self.current_blind_level_number,
+            self.late_reg_level,
+            self.rebuy_level,
+            self.allow_rebuys,
+        )
+        if not closed:
+            return
+        if not mystery.should_release(
+            self.mystery_release,
+            remaining_players=remaining,
+            paid_places=self.paid_places,
+            registration_is_closed=closed,
+        ):
+            return
+
+        # One envelope per knockout still to come: everybody left but the
+        # winner is going to be busted by somebody.
+        draws = max(0, remaining - 1)
+        if draws <= 0:
+            return
+
+        envelopes = await self.open_mystery(draws)
+        self._mystery_envelopes = list(envelopes or [])
+        self._mystery_opened = True
+
+        await self.broadcast_tournament(
+            "mystery_opened",
+            {
+                "envelopes": list(self._mystery_envelopes),
+                "pool_cents": sum(self._mystery_envelopes),
+                "top_cents": max(self._mystery_envelopes, default=0),
+                "players_left": remaining,
+                "reason": self.mystery_release,
+            },
+        )
+
+    async def _draw_mystery(self, victim, eliminators) -> None:
+        """One knockout, one envelope, split between whoever did it.
+
+        Nothing is paid before the envelopes open — that is the format, and it
+        is why a mystery bounty is worth chasing at all. The knockout still
+        counts: it happened, and the count is what the table reads.
+        """
+        for eliminator in eliminators:
+            eliminator._knockouts = getattr(eliminator, "_knockouts", 0) + 1
+
+        if not self._mystery_opened:
+            await self._broadcast_to_table(
+                victim._table_number,
+                "mystery_sealed",
+                {
+                    "victim_name": victim.name,
+                    "eliminators": [one.name for one in eliminators],
+                    "knockouts": getattr(eliminators[0], "_knockouts", 0),
+                },
+            )
+            return
+
+        if not self._mystery_envelopes:
+            # More knockouts than envelopes should be impossible — see the note
+            # in _maybe_open_mystery — but paying out of an empty pool would be
+            # inventing money, so it does not.
+            print(f"[MYSTERY] tournament {self.tournament_id}: knockout with no envelope left")
+            return
+
+        index = mystery.draw_index(self._mystery_envelopes, random)
+        amount, remaining = mystery.take(self._mystery_envelopes, index)
+        self._mystery_envelopes = remaining
+        if self.persist_mystery is not None:
+            await self.persist_mystery(list(remaining))
+
+        # Split like any other bounty, so a pot busted by two people pays them
+        # both and the cents still add up.
+        base, extra = divmod(amount, len(eliminators))
+        top = max(remaining, default=0)
+        for index, eliminator in enumerate(eliminators):
+            share = base + (1 if index < extra else 0)
+            eliminator._bounty_won_cents = getattr(eliminator, "_bounty_won_cents", 0) + share
+            await self._broadcast_to_table(
+                eliminator._table_number,
+                "bounty_won",
+                {
+                    "seat": eliminator._seat,
+                    "name": eliminator.name,
+                    "victim_name": victim.name,
+                    "cash_cents": share,
+                    "to_head_cents": 0,
+                    "bounty_cents": getattr(eliminator, "_bounty_cents", 0),
+                    "bounty_won_cents": eliminator._bounty_won_cents,
+                    "knockouts": getattr(eliminator, "_knockouts", 0),
+                    "split_ways": len(eliminators),
+                    # What the table needs to make something of it: that this
+                    # was drawn rather than known, what the whole envelope held,
+                    # and how it stands against what is left in the pool.
+                    "mystery": {
+                        "envelope_cents": amount,
+                        "envelopes_left": len(remaining),
+                        "pool_left_cents": sum(remaining),
+                        "top_left_cents": top,
+                        "is_top_prize": amount >= top and amount > 0,
+                    },
+                },
+            )
+
     async def _pay_bounty(
         self,
         victim: EnginePlayer,
@@ -1557,7 +1719,12 @@ class MultiTableTournamentCoordinator:
         stays on their head and settlement hands it back, which is the only
         answer that keeps the pool adding up.
         """
-        if not self.bounty.enabled or not eliminators:
+        if not eliminators:
+            return
+        if self.bounty.is_mystery:
+            await self._draw_mystery(victim, eliminators)
+            return
+        if not self.bounty.enabled:
             return
         on_head = getattr(victim, "_bounty_cents", 0)
         if on_head <= 0:

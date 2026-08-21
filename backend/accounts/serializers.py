@@ -5,6 +5,7 @@ from game.finishers import MAX_FINISHERS, clean_finisher
 from game.giphy import GIF_ID_PATTERN, clean_gif_id
 
 from .avatars import avatar_url
+from . import recovery
 from .models import AvatarImage, Profile
 from .naming import DISPLAY_NAME_MAX, shown_name
 
@@ -27,13 +28,35 @@ HEX_COLOUR = r"^#[0-9a-fA-F]{6}$"
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
+    # Handed back exactly once, at the moment the account is made. Only its hash
+    # is kept, so this is the only time anybody — including us — can read it.
+    recovery_code = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("id", "username", "password")
+        fields = ("id", "username", "password", "recovery_code")
+
+    def get_recovery_code(self, user):
+        return getattr(user, "_recovery_code", "")
 
     def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
+        user = User.objects.create_user(**validated_data)
+        code = recovery.new_code()
+        Profile.objects.update_or_create(
+            user=user, defaults={"recovery_code_hash": recovery.hash_code(code)},
+        )
+        # Carried on the instance rather than saved: the serializer prints it
+        # into this one response and it exists nowhere else afterwards.
+        user._recovery_code = code
+        return user
+
+
+class RecoverPasswordSerializer(serializers.Serializer):
+    """Setting a new password with a recovery code instead of the old one."""
+
+    username = serializers.CharField(max_length=150)
+    recovery_code = serializers.CharField(max_length=64)
+    new_password = serializers.CharField(min_length=6)
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -46,9 +69,17 @@ class ProfileSerializer(serializers.ModelSerializer):
     # display name is set — so no client has to know the fallback rule.
     display_name = serializers.SerializerMethodField()
 
+    # Whether there is a way back into this account without one. Never the code
+    # itself — that is readable exactly once, at the moment it is made.
+    has_recovery_code = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "avatar_url", "display_name", "theme")
+        fields = ("avatar_emoji", "avatar_url", "display_name", "theme", "preferences",
+                  "has_recovery_code")
+
+    def get_has_recovery_code(self, profile):
+        return bool(profile.recovery_code_hash)
 
     def get_display_name(self, profile):
         return shown_name(profile.user.username, profile.display_name)
@@ -110,6 +141,19 @@ class DisplayNameSerializer(serializers.Serializer):
         if taken:
             raise serializers.ValidationError("Somebody already plays under that name.")
         return name
+
+
+class PreferencesUpdateSerializer(serializers.Serializer):
+    """How this player wants a table to read.
+
+    One flag so far. Spelled out rather than taken as a free blob: what the
+    client sends ends up in a JSON column, and a column that accepts anything is
+    one nothing can be assumed about later.
+    """
+
+    # Chips or big blinds. A stack of 12,400 and a stack of 31bb are the same
+    # stack, and which one a player thinks in is a habit, not a table setting.
+    show_bb = serializers.BooleanField()
 
 
 class ThemeUpdateSerializer(serializers.Serializer):

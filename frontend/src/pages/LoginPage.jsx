@@ -49,6 +49,11 @@ export default function LoginPage() {
           No account? <Link to="/register" state={{ from: { pathname: wanted } }}
             className="link-accent">Register</Link>
         </p>
+        {/* No email is ever sent, so this is the recovery code from sign-up
+            rather than a reset link. See accounts/recovery.py. */}
+        <p className="text-center text-xs text-(--color-text-muted)">
+          <Link to="/recover" className="link-accent">Forgotten your password?</Link>
+        </p>
       </form>
     </div>
   );

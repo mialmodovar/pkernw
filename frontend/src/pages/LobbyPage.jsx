@@ -2,32 +2,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import useLobbyStore from "../store/lobbyStore";
-import useSpinGoStore from "../store/spinGoStore";
+import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
-import SpinGoBrowser from "../components/lobby/SpinGoBrowser";
+import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
-import { runsThePlace } from "../components/auth/runsThePlace";
+import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
+import RecoveryCodePanel from "../components/lobby/RecoveryCodePanel";
 import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
 import CoinPanel from "../components/lobby/CoinPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
-// The two things you can be playing. Written as a list rather than two buttons
-// so the strip is one loop, the way the filter chips inside the tournament
-// browser are — and so a third format has one place to be added.
+// The three things you can be playing. Written as a list rather than three
+// buttons so the strip is one loop, the way the filter chips inside the
+// tournament browser are — and so a fourth has one place to be added.
+//
+// `formats` is which of the instant formats a tab shows; the tournament tab has
+// none, being the one place where games are arranged rather than sat down at.
 const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments" },
-  { key: "spingo", label: "Spin n Go" },
+  { key: "tournaments", label: "Tournaments", icon: "🏆", formats: null },
+  { key: "spingo", label: "Spin n Go", icon: "🎡", formats: ["spingo"] },
+  { key: "sitngo", label: "Sit n Go", icon: "⚔️", formats: ["hu", "sixmax"] },
 ];
 
 /**
- * Watch your own Spin n Go and leave for the table the moment it fires.
+ * Watch your own instant game and leave for the table the moment it fires.
  *
- * Kept here rather than inside the Spin n Go tab, because you can sit down and
- * then go back to reading the tournament list — and the game starts dealing
- * whether or not that tab is the one on screen.
+ * Kept here rather than inside the tab it belongs to, because you can sit down
+ * and then go and read something else — and the game starts dealing whether or
+ * not its tab is the one on screen.
  *
  * Strictly on the change from waiting to dealing. Sending you to the table
  * because you are *in* a running game is the mistake this used to make: it made
@@ -36,18 +41,21 @@ const LOBBY_TABS = [
  * useAutoOpenTable, which spends its redirect once; walking back here on purpose
  * has TableShortcut for a way back and no argument about it.
  */
-function useSpinGoWatch({ user }) {
+function useFastGameWatch({ user }) {
   const navigate = useNavigate();
-  const { myGame, fetchTiers } = useSpinGoStore();
-  const waiting = myGame?.status === "lobby";
-  const status = myGame?.status ?? null;
-  const gameId = myGame?.id ?? null;
-  const previous = useRef({ id: null, status: null });
+  const { myGames, fetchLobby } = useFastGameStore();
+  // All of them, because you can be queued at several tiers at once and any of
+  // them can be the one that fills.
+  const waiting = myGames.some((game) => game.status === "lobby");
+  // A stable key over id-and-status pairs: the effect below wants to run when a
+  // game changes state, not every time the poll hands back the same list.
+  const signature = myGames.map((game) => `${game.id}:${game.status}`).join(",");
+  const previous = useRef(new Map());
 
   useEffect(() => {
     if (!user) return;
-    fetchTiers();
-  }, [user, fetchTiers]);
+    fetchLobby();
+  }, [user, fetchLobby]);
 
   // Two paces, like the tournament list: a queue you are sitting in can fill up
   // at any second and is worth knowing about immediately, and everything else
@@ -55,35 +63,43 @@ function useSpinGoWatch({ user }) {
   useEffect(() => {
     if (!user) return undefined;
     const id = setInterval(() => {
-      fetchTiers({ silent: true }).catch(() => {});
+      fetchLobby({ silent: true }).catch(() => {});
     }, waiting ? 2000 : 8000);
     return () => clearInterval(id);
-  }, [user, fetchTiers, waiting]);
+  }, [user, fetchLobby, waiting]);
 
   useEffect(() => {
     const before = previous.current;
-    previous.current = { id: gameId, status };
-    // The third player just sat down while you were looking at this page. Any
-    // other combination — including finding yourself already in a running game —
-    // is not a moment, and must not move you.
-    const justFired = gameId != null && gameId === before.id
-      && before.status === "lobby" && status === "running";
+    const games = signature
+      ? signature.split(",").map((pair) => {
+        const [id, status] = pair.split(":");
+        return { id: Number(id), status };
+      })
+      : [];
+    // The last seat of one of them just filled while you were looking at this
+    // page. Any other combination — including finding yourself already in a
+    // running game — is not a moment, and must not move you.
+    const fired = games.find(
+      (game) => before.get(game.id) === "lobby" && game.status === "running",
+    );
+    previous.current = new Map(games.map((game) => [game.id, game.status]));
     // Replaced rather than pushed, so "back" from the table is the lobby you
     // were looking at and not a bounce straight back to the felt.
-    if (justFired) navigate(`/tournament/${gameId}/play`, { replace: true });
-  }, [gameId, status, navigate]);
+    if (fired) navigate(`/tournament/${fired.id}/play`, { replace: true });
+  }, [signature, navigate]);
 }
 
 export default function LobbyPage() {
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { upcoming, mineActive, past, fetchLobbyData, loading } = useLobbyStore();
   const navigate = useNavigate();
   // Opening a tournament now takes site staff or a club you help run, and the
   // button follows the same rule the server does.
   const [staffsAClub, setStaffsAClub] = useState(false);
   const [tab, setTab] = useState("tournaments");
+  const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
   const onClubsLoaded = useCallback((clubs) => {
-    setStaffsAClub(clubs.some((club) => club.my_role === "owner" || club.my_role === "staff"));
+    setStaffsAClub(organisesForAClub(clubs));
   }, []);
 
   // The three scopes overlap — a tournament you are seated at and that is open
@@ -94,14 +110,18 @@ export default function LobbyPage() {
     for (const tournament of [...mineActive, ...upcoming, ...past]) {
       byId.set(tournament.id, { ...byId.get(tournament.id), ...tournament });
     }
-    return [...byId.values()];
+    // The server keeps fast games out of the browsable list and out of the
+    // history; what it cannot keep them out of is your own active seats, which
+    // is how the shortcut back to a table finds one. So they are dropped here
+    // instead — this list is nights people arranged.
+    return [...byId.values()].filter((one) => (one.format || "standard") === "standard");
   }, [mineActive, upcoming, past]);
 
   // A seat of yours that has started, or was already running when you opened
   // the app, takes you to the table — there is a hand waiting on you and this
   // list is not where you can play it.
   useAutoOpenTable({ tournaments, user, loading });
-  useSpinGoWatch({ user });
+  useFastGameWatch({ user });
 
   // Waiting on a tournament of your own to begin is the one thing on this page
   // that is worth knowing about the second it happens, because it starts
@@ -159,13 +179,16 @@ export default function LobbyPage() {
     await useLobbyStore.getState().deleteTournament(tournament.id);
   };
   return (
-    // Bounded to the viewport so the tournament list can scroll inside itself
-    // rather than taking the whole page with it. dvh rather than vh: on a phone
-    // the browser chrome is part of the height and moves as you scroll.
-    <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6
-                    lg:h-[calc(100dvh-4rem)]">
+    // The tournament list is long and scrolls inside itself, so that tab is
+    // bounded to the viewport. The fast-game tabs are a fixed handful of cards
+    // and scroll with the page instead — a scrollbar inside a column that has
+    // room to spare only makes the page feel cramped.
+    <div className={`max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 ${
+      activeTab.formats ? "lg:min-h-[calc(100%-4rem)]" : "lg:h-[calc(100%-4rem)]"
+    }`}>
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
+        <RecoveryCodePanel />
         <StatsPanel />
         <CalotesPanel />
         <WatchPanel />
@@ -174,10 +197,16 @@ export default function LobbyPage() {
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
-        <div className="shrink-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* The two game modes, as the page's own heading. Same pill as the
-              league tabs on a club page and the filter chips below. */}
-          <div className="flex gap-2 items-center" role="tablist" aria-label="Game mode">
+        <div className="shrink-0 flex items-center gap-3">
+          {/* One segmented control rather than three headline-sized pills. These
+              are a way of switching what the page is showing, and they were
+              set in the size of a page title — which read as three competing
+              headings with no page underneath any of them. */}
+          <div
+            className="flex items-center gap-0.5 p-0.5 rounded-lg panel-raised overflow-x-auto"
+            role="tablist"
+            aria-label="Game mode"
+          >
             {LOBBY_TABS.map((one) => (
               <button
                 key={one.key}
@@ -185,39 +214,53 @@ export default function LobbyPage() {
                 role="tab"
                 aria-selected={tab === one.key}
                 onClick={() => setTab(one.key)}
-                className={`px-4 py-1.5 rounded-full text-lg font-bold tracking-wide border transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
+                            whitespace-nowrap transition-colors ${
                   tab === one.key
-                    ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
-                    : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+                    ? "bg-(--color-accent) text-(--color-accent-text)"
+                    : "text-(--color-text-muted) hover:text-(--color-silver)"
                 }`}
               >
+                <span aria-hidden="true">{one.icon}</span>
                 {one.label}
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-3 items-center">
+
+          {/* Only what this tab can act on. Creating a tournament belongs to
+              the Tournaments tab; nothing here opens a Spin n Go, which is what
+              the Sit button on the card is for. */}
+          <div className="ml-auto flex items-center gap-2">
             {tab === "tournaments" && (runsThePlace(user) || staffsAClub) && (
               <>
-                <button onClick={() => navigate("/dev/table")}
-                  title="Open the game table with mock players, for layout work"
-                  className="btn-secondary px-3 py-2 rounded font-semibold text-sm transition-colors">
-                  Table sandbox
-                </button>
                 <button onClick={() => navigate("/tournaments/new")}
-                  className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">
-                  Create Tournament
+                  className="btn-accent px-3 py-1.5 rounded font-semibold text-sm transition-colors
+                             whitespace-nowrap">
+                  New tournament
+                </button>
+                {/* A layout tool, not a way to play, so it is an icon beside
+                    the thing it is a tool for rather than a button the same
+                    size as one. */}
+                <button onClick={() => navigate("/dev/table")}
+                  title="Table sandbox — the felt with mock players, for layout work"
+                  aria-label="Table sandbox"
+                  className="btn-secondary w-8 h-8 rounded flex items-center justify-center
+                             text-sm transition-colors">
+                  🛠
                 </button>
               </>
             )}
-            <button onClick={logout}
-              className="px-3 py-2 panel-raised hover:border-(--color-border-strong) rounded text-sm text-(--color-silver) transition-colors">
-              Logout
-            </button>
           </div>
         </div>
 
-        {tab === "spingo" ? (
-          <SpinGoBrowser onOpenTable={onOpenTable} />
+        {activeTab.formats ? (
+          <FastGameBrowser
+            // Remounted per tab so the prize panels a player opened on one do
+            // not come back open on the other.
+            key={activeTab.key}
+            formatKeys={activeTab.formats}
+            onOpenTable={onOpenTable}
+          />
         ) : loading ? (
           <p className="text-(--color-text-muted)">Loading...</p>
         ) : (

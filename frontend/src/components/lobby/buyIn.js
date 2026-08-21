@@ -58,3 +58,8 @@ export function prizeLabel(tournament, entries) {
 export function isSpinGo(tournament) {
   return tournament?.format === "spingo";
 }
+
+/** Whether it is a game somebody sat down at rather than a night they arranged. */
+export function isFastGame(tournament) {
+  return tournament?.format === "spingo" || tournament?.format === "sitngo";
+}

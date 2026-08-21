@@ -18,13 +18,36 @@ from .watching import presence
 User = get_user_model()
 
 
-def player_summary(user):
+# Which Tournament.format rows each answer covers. A Spin n Go, a Sit n Go and
+# somebody's Friday night are three different games — three-handed for five
+# minutes, six-handed for fifteen, and nine-handed for an evening — and a single
+# average across all of them describes none of them.
+STAT_SCOPES = {
+    "all": None,
+    "tournaments": ("standard",),
+    "spingo": ("spingo",),
+    "sitngo": ("sitngo",),
+}
+DEFAULT_SCOPE = "all"
+
+
+def clean_scope(value) -> str:
+    """One of ours, or everything. Nothing else reaches a query."""
+    text = str(value or "").strip()
+    return text if text in STAT_SCOPES else DEFAULT_SCOPE
+
+
+def player_summary(user, scope=DEFAULT_SCOPE):
     """The record one player has, whoever is asking.
 
     Shared by "my stats" and by looking somebody up, so the two can never
     disagree about what a cash or a best finish is.
     """
+    formats = STAT_SCOPES[clean_scope(scope)]
+
     tps = TournamentPlayer.objects.filter(user=user).select_related("tournament")
+    if formats is not None:
+        tps = tps.filter(tournament__format__in=formats)
 
     tournaments_played = tps.count()
     best_finish = tps.exclude(finish_position__isnull=True).aggregate(Min("finish_position"))["finish_position__min"]
@@ -42,22 +65,24 @@ def player_summary(user):
     # What they have taken home, placings and bounties together. Not net —
     # what a buy-in cost is the settlement ledger's business, and it has a
     # panel of its own.
-    winnings_cents = (
-        LedgerEntry.objects.filter(user=user).aggregate(Sum("prize_cents"))["prize_cents__sum"] or 0
-    )
+    won = LedgerEntry.objects.filter(user=user)
+    if formats is not None:
+        won = won.filter(tournament__format__in=formats)
+    winnings_cents = won.aggregate(Sum("prize_cents"))["prize_cents__sum"] or 0
 
     # Preflop reads come from the shared miner, so the lobby and the table can
     # never disagree about what VPIP means.
-    preflop = compute_player_stats([user.id]).get(user.id, {})
+    preflop = compute_player_stats([user.id], formats=formats).get(user.id, {})
 
     return {
+        "scope": clean_scope(scope),
         "tournaments_played": tournaments_played,
         "best_finish": best_finish,
         "cashes": cashes,
         "tournaments_completed": completed,
         "itm_pct": round(cashes * 100 / completed) if completed else 0,
         "winnings_cents": winnings_cents,
-        "best_hand": best_showdown_hand(user),
+        "best_hand": best_showdown_hand(user, formats=formats),
         "total_rebuys": total_rebuys,
         "hands_played": preflop.get("hands", 0),
         # Everything the miner knows, so a player can read the same numbers
@@ -66,7 +91,7 @@ def player_summary(user):
     }
 
 
-def best_showdown_hand(user):
+def best_showdown_hand(user, formats=None):
     """The best hand this player has ever turned over.
 
     Only hands that reached a showdown, which is the only place a hand is
@@ -78,12 +103,14 @@ def best_showdown_hand(user):
     seat_at_table moves when tables rebalance, so the seat they showed down in
     is not the seat they are in now.
     """
+    shown = HandAction.objects.filter(
+        player__user=user, hand__status="complete", hand__result__has_key="showdown",
+    )
+    if formats is not None:
+        shown = shown.filter(hand__tournament__format__in=formats)
+
     seats = {}
-    for hand_id, seat in (
-        HandAction.objects
-        .filter(player__user=user, hand__status="complete", hand__result__has_key="showdown")
-        .values_list("hand_id", "seat")
-    ):
+    for hand_id, seat in shown.values_list("hand_id", "seat"):
         seats.setdefault(hand_id, seat)
 
     if not seats:
@@ -153,7 +180,9 @@ def recent_results(user, limit=5):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def my_stats(request):
-    return Response(player_summary(request.user))
+    # ?game=all|tournaments|spingo|sitngo. Anything else reads as all, because
+    # a stats panel is not worth a 400.
+    return Response(player_summary(request.user, request.query_params.get("game")))
 
 
 def shared_clubs(viewer, user):

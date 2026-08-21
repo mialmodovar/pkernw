@@ -9,6 +9,7 @@ from accounts.models import AvatarImage
 
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
+from .fastgames import FAST_TOURNAMENT_FORMATS
 from .models import Tournament, TournamentPlayer, BlindLevel
 from .permissions import StaffCreatesTournaments, can_manage_tournament
 from .serializers import (
@@ -103,11 +104,13 @@ class TournamentListCreateView(generics.ListCreateAPIView):
                 ).exclude(players__user=user)
                 if late_registration_open(tournament)
             ]
-            # Spin n Go queues are not browsable tournaments: they have no host,
-            # no start button and nothing to read on a card, and they are sat at
-            # from their own tab. They stay in `mine_active` and `past`, so a
-            # game of yours still opens itself and still shows up afterwards.
-            return Tournament.objects.exclude(format="spingo").filter(
+            # Fast games are not browsable tournaments: they have no host, no
+            # start button and nothing to read on a card, and they are sat at
+            # from their own tabs. They stay in `mine_active` — the shortcut back
+            # to your table and the redirect that opens it both read that scope —
+            # but they are kept out of the list and out of the history, which is
+            # where a night people arranged belongs.
+            return Tournament.objects.exclude(format__in=FAST_TOURNAMENT_FORMATS).filter(
                 Q(status="lobby") | Q(id__in=open_late_reg_ids)
             ).order_by(
                 F("scheduled_start_at").asc(nulls_last=True), "-created_at"
@@ -117,7 +120,10 @@ class TournamentListCreateView(generics.ListCreateAPIView):
                 players__user=user, status__in=["running", "paused"]
             ).order_by("-created_at")
         if scope == "past":
-            return Tournament.objects.filter(
+            # A Spin n Go you played three of before breakfast is not history in
+            # the sense this list means, and thirty of them would bury the night
+            # somebody actually arranged. They are listed in their own tabs.
+            return Tournament.objects.exclude(format__in=FAST_TOURNAMENT_FORMATS).filter(
                 players__user=user, status="finished"
             ).order_by("-created_at")
 
@@ -146,11 +152,11 @@ def join_tournament(request, pk):
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if tournament.format == "spingo":
+    if tournament.format in FAST_TOURNAMENT_FORMATS:
         # A seat here is bought at a tier, not joined at a tournament, and the
         # tier endpoint is the only thing that may open the queue or fire it.
         return Response(
-            {"error": "Sit at a Spin n Go from the Spin n Go tab"},
+            {"error": "Sit at this game from its own tab"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -403,11 +409,11 @@ def quit_tournament(request, pk):
     except Tournament.DoesNotExist:
         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if tournament.format == "spingo":
+    if tournament.format in FAST_TOURNAMENT_FORMATS:
         # Leaving a queue also decides what happens to the queue, so it has its
         # own endpoint rather than a special case in this one.
         return Response(
-            {"error": "Leave a Spin n Go from the Spin n Go tab"},
+            {"error": "Leave this game from its own tab"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

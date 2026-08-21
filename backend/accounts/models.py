@@ -19,6 +19,21 @@ class Profile(models.Model):
     # an empty dict means "whatever the frontend calls default".
     theme = models.JSONField(default=dict, blank=True)
 
+    # How this player wants a table to read: {"show_bb": true}. Kept on the
+    # account rather than in the browser, because "chips or blinds" is a way of
+    # thinking about a stack and not a property of the machine you happen to be
+    # sitting at — set it once and every table, on every device, reads that way.
+    # A blob for the same reason the theme is one: what a table can be asked to
+    # show is a frontend concern and will grow.
+    preferences = models.JSONField(default=dict, blank=True)
+
+    # How somebody gets back in when they have forgotten their password. Hashed
+    # like a password, because that is exactly what it is — see
+    # accounts/recovery.py for why this app has one at all rather than sending
+    # an email. Blank for accounts made before it existed; they can generate one
+    # from their settings whenever they like.
+    recovery_code_hash = models.CharField(max_length=128, blank=True, default="")
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 

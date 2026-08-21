@@ -6,6 +6,7 @@ import ThemeSettings from "./ThemeSettings";
 
 export default function ProfileCard() {
   const { user, updateAvatar } = useAuthStore();
+
   // One panel at a time: both drop out of the same card, and two of them open
   // at once would overlap.
   const [openPanel, setOpenPanel] = useState(null);
@@ -31,6 +32,8 @@ export default function ProfileCard() {
           <p className="font-semibold text-(--color-silver) truncate">
             {user?.profile?.display_name || user?.username}
           </p>
+          {/* The balance is in the header on every page now, which is where it
+              belongs — saying it again here would be saying it twice. */}
           <button
             onClick={() => toggle("avatar")}
             className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"

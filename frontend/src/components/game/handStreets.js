@@ -58,7 +58,11 @@ export function winningSeats(hand) {
 export function namesBySeat(hand) {
   const names = new Map();
   for (const action of hand?.actions || []) {
-    if (action.seat != null && !names.has(action.seat)) names.set(action.seat, action.username);
+    if (action.seat == null || names.has(action.seat)) continue;
+    // What they are called, falling back to what they are filed under. A hand
+    // history is people talking about a hand somebody played, and it should use
+    // the name they play under.
+    names.set(action.seat, action.display_name || action.username);
   }
   return names;
 }

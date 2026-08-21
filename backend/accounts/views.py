@@ -11,12 +11,15 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from .avatars import ACCEPTED_LABEL, AVATAR_MAX_BYTES, avatar_url, sniff_image_type
+from . import recovery
 from .models import AvatarImage, Profile
 from .naming import shown_name
 from .serializers import (
     AvatarUpdateSerializer,
     DisplayNameSerializer,
     RegisterSerializer,
+    PreferencesUpdateSerializer,
+    RecoverPasswordSerializer,
     ThemeUpdateSerializer,
     UserSerializer,
 )
@@ -26,6 +29,57 @@ class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def recover_password(request):
+    """Set a new password with a recovery code.
+
+    No email, no reset link, no waiting on a mail provider — see
+    accounts/recovery.py. The code is checked the way a password is checked, and
+    a wrong one is refused without saying which half was wrong: an attacker who
+    can tell "no such player" from "wrong code" has been handed the guest list.
+
+    A used code is replaced, and the new one comes back in this response. A code
+    that has already got somebody in once is a password lying in a chat history.
+    """
+    serializer = RecoverPasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    user = User.objects.filter(username__iexact=data["username"]).first()
+    profile = Profile.objects.filter(user=user).first() if user else None
+    if profile is None or not recovery.code_matches(data["recovery_code"], profile.recovery_code_hash):
+        return Response(
+            {"error": "That username and recovery code do not match."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user.set_password(data["new_password"])
+    user.save(update_fields=["password"])
+
+    code = recovery.new_code()
+    profile.recovery_code_hash = recovery.hash_code(code)
+    profile.save(update_fields=["recovery_code_hash"])
+
+    return Response({"username": user.username, "recovery_code": code})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def reset_recovery_code(request):
+    """A new recovery code, for somebody who has lost or shared theirs.
+
+    Being logged in is the whole of the authority here: whoever is holding the
+    session can already change the password, so they can already do everything
+    a code would let them do.
+    """
+    code = recovery.new_code()
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.recovery_code_hash = recovery.hash_code(code)
+    profile.save(update_fields=["recovery_code_hash"])
+    return Response({"recovery_code": code})
 
 
 class MeView(generics.RetrieveAPIView):
@@ -136,6 +190,25 @@ def avatar_image_for_user(request, user_id):
     response["X-Content-Type-Options"] = "nosniff"
     response["Content-Disposition"] = "inline"
     return response
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_preferences(request):
+    """How this player wants a table to read, saved to the account.
+
+    Merged rather than replaced: the client sends the flag it just changed, and
+    a preference it has not heard of — one added by a newer client on another
+    device — should survive being edited from an older one.
+    """
+    serializer = PreferencesUpdateSerializer(data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.preferences = {**(profile.preferences or {}), **serializer.validated_data}
+    profile.save(update_fields=["preferences"])
+
+    return Response(profile.preferences, status=status.HTTP_200_OK)
 
 
 @api_view(["PATCH"])

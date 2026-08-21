@@ -1,12 +1,17 @@
 """Knockout bounty arithmetic.
 
-Two modes, both funded out of the buy-in rather than charged on top of it:
+Three modes, all funded out of the buy-in rather than charged on top of it:
 
 * **fixed** — every head is worth the same amount all tournament. Knock someone
   out, collect it, and your own head stays worth what it always was.
 * **progressive** — knock someone out and you collect part of their bounty in
   cash; the rest is added to your own head, so the player who has been winning
   is the one worth chasing.
+* **mystery** — nobody's head is worth anything in particular. The same money
+  goes into a sealed pool, which is cut into envelopes at a moment the
+  tournament announces, and a knockout after that draws one. The arithmetic of
+  that lives next door in mystery.py; what this file knows is that the money
+  comes out of the buy-in the same way, and that no head carries it.
 
 Everything here is integer cents and every function conserves them: what leaves
 one player's head arrives somewhere, to the cent. A bounty pool that loses a
@@ -24,13 +29,34 @@ from typing import List
 class BountyConfig:
     """How one tournament pays knockouts."""
 
-    mode: str = "none"                  # "none" | "fixed" | "progressive"
-    amount_cents: int = 0               # what one buy-in puts on a head
+    mode: str = "none"                  # "none" | "fixed" | "progressive" | "mystery"
+    amount_cents: int = 0               # what one buy-in puts up
     progressive_split_pct: int = 50     # progressive: share paid out in cash
 
     @property
     def enabled(self) -> bool:
+        """Whether heads carry money that a knockout collects.
+
+        Mystery is deliberately not one of these: the money is in a pool rather
+        than on anybody's head, so every rule that reads a head — what a rebuy
+        puts back, what a knockout takes off it, what settlement hands back
+        uncollected — must leave a mystery tournament alone.
+        """
         return self.mode in ("fixed", "progressive") and self.amount_cents > 0
+
+    @property
+    def is_mystery(self) -> bool:
+        return self.mode == "mystery" and self.amount_cents > 0
+
+    @property
+    def funded(self) -> bool:
+        """Whether a slice of every buy-in is going to knockouts at all.
+
+        The question the prize pool asks, and the one place mystery counts with
+        the other two: the places play for what is left after the bounty, and
+        that is true however the bounty is eventually handed out.
+        """
+        return self.enabled or self.is_mystery
 
     @classmethod
     def from_tournament(cls, tournament) -> "BountyConfig":
@@ -107,9 +133,11 @@ def starting_bounty_cents(config: BountyConfig) -> int:
 def prize_pool_share_cents(config: BountyConfig, buy_in_cents: int) -> int:
     """The part of one buy-in that the payout structure pays out.
 
-    The rest is the bounty. A bounty at or above the buy-in would leave nothing
-    to place for, so it is capped here as well as validated on the way in.
+    The rest is the bounty, whichever way it is handed out — a mystery pool is
+    funded out of the buy-in exactly like the other two. A bounty at or above
+    the buy-in would leave nothing to place for, so it is capped here as well as
+    validated on the way in.
     """
-    if not config.enabled:
+    if not config.funded:
         return max(0, buy_in_cents)
     return max(0, buy_in_cents - config.amount_cents)

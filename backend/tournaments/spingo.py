@@ -45,9 +45,10 @@ TOTAL_WEIGHT = sum(weight for weight, _ in MULTIPLIERS)
 # boundary, so a level never cuts a hand in half.
 LEVEL_MINUTES = 2
 
-# (small blind, big blind, ante). Seven is more than a game of 4500 chips needs;
-# the last level is the one that never raises, and reaching it would mean three
-# players had somehow kept each other alive for a quarter of an hour.
+# (small blind, big blind, ante). Far more levels than a game of 4500 chips will
+# ever get through, on purpose: the engine never raises past the final level, so
+# the ladder has to end somewhere nobody can sit. By the last one the big blind
+# is most of the chips in play and the next hand decides it.
 BLINDS = (
     (50, 100, 0),
     (75, 150, 20),
@@ -56,6 +57,9 @@ BLINDS = (
     (200, 400, 50),
     (300, 600, 75),
     (400, 800, 100),
+    (600, 1200, 150),
+    (1000, 2000, 250),
+    (1500, 3000, 400),
 )
 
 

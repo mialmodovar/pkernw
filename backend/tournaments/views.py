@@ -7,6 +7,7 @@ from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 from accounts.models import AvatarImage
 
+from .absentees import drop_absent_registrations
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
@@ -27,6 +28,19 @@ from game.consumers import (
     rebuys_open,
     stop_tournament_engine,
 )
+
+
+def _sweep_lobby(here=None, now=None):
+    """The housekeeping a lobby request runs on its way past.
+
+    Two jobs that need doing regularly and have no scheduler to do them: start
+    the tournaments whose time has come, and give up the seats of people who
+    registered and then went away (see absentees.py). Both are cheap, both are
+    idempotent, and both only matter while somebody is around to look at a
+    lobby — which is exactly when this runs.
+    """
+    _start_due_scheduled_tournaments()
+    drop_absent_registrations(now or timezone.now(), here=here)
 
 
 def _start_due_scheduled_tournaments():
@@ -90,7 +104,7 @@ class TournamentListCreateView(generics.ListCreateAPIView):
         return self._scoped_queryset().prefetch_related(*self.ROSTER_PREFETCH)
 
     def _scoped_queryset(self):
-        _start_due_scheduled_tournaments()
+        _sweep_lobby(here=getattr(self.request.user, "id", None))
         scope = self.request.query_params.get("scope")
         user = self.request.user
 

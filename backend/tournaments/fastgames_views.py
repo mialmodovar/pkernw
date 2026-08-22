@@ -23,6 +23,7 @@ from accounts.notify import notify_user
 from sidegames.models import CoinLedger
 
 from . import fastgames, spingo
+from .absentees import drop_absent_registrations
 from .coinbank import balance_of, charge_entry, refund_entry, stake_memo
 from .models import BlindLevel, Tournament, TournamentPlayer
 
@@ -256,6 +257,12 @@ def fast_lobby(request):
     whichever tab is on screen, because a game you are queued for fires whether
     or not you are looking at it.
     """
+    # A queue with somebody in it who closed the app never fills, and the game
+    # never fires — so the lobby clears those seats on its way past. See
+    # absentees.py; five minutes away is enough here, because sitting in a queue
+    # is itself the statement that you are ready to play now.
+    drop_absent_registrations(timezone.now(), here=request.user.id)
+
     my_games = _my_live_games(request.user)
 
     mine_finished = list(_finished_games(

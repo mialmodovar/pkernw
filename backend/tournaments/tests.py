@@ -5583,3 +5583,252 @@ class WinnersOwnBountyTests(TestCase):
 		# first, plus 30.00 of bounties.
 		self.assertEqual(entries["w_ana"].prize_cents, 3000 + 3000)
 		self.assertEqual(entries["w_ana"].net_cents, 6000 - 2000)
+
+
+class AbsentRegistrationTests(APITestCase):
+	"""Seats held by people who closed the app.
+
+	A registration is a promise to turn up, and in the instant formats a ghost
+	in a queue holds a whole game: it fires when the last seat fills, and a seat
+	that is never going to act keeps everybody else waiting.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="ab_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="ab_player", password="secret123")
+
+	def tearDown(self):
+		from accounts import presence
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		_tournament_runners.clear()
+
+	def _away_for(self, user, seconds):
+		"""Pretend this player closed the app that long ago."""
+		import time
+
+		from accounts import presence
+
+		presence._socket_counts.pop(user.id, None)
+		presence._gone_since[user.id] = time.monotonic() - seconds
+
+	def _tournament(self, **overrides):
+		fields = {
+			"name": "Friday", "host": self.host, "status": "lobby",
+			"buy_in_cents": 0, "max_players": 9, "players_per_table": 9,
+		}
+		fields.update(overrides)
+		return Tournament.objects.create(**fields)
+
+	def _seat(self, tournament, user):
+		table = tournament.ensure_table(1)
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=user, table=table, seat=1,
+			seat_at_table=1, chips=tournament.starting_chips,
+		)
+
+	def test_a_seat_is_given_up_after_long_enough_away(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		self.assertFalse(tournament.players.filter(user=self.player).exists())
+
+	def test_somebody_who_has_the_app_open_keeps_their_seat(self):
+		from accounts import presence
+		from tournaments.absentees import drop_absent_registrations
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		presence.arrived(self.player.id)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertTrue(tournament.players.filter(user=self.player).exists())
+
+	def test_a_seat_survives_a_restart_that_never_saw_anybody_leave(self):
+		"""Nothing is assumed about a player this process never watched go."""
+		from tournaments.absentees import drop_absent_registrations
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+
+	def test_registering_days_ahead_and_closing_the_app_is_allowed(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament(
+			scheduled_start_at=timezone.now() + timedelta(days=2),
+		)
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 3600)
+
+		# This is the normal way to enter a Friday night on a Wednesday.
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertTrue(tournament.players.filter(user=self.player).exists())
+
+	def test_the_same_seat_goes_once_the_night_is_nearly_on(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament(
+			scheduled_start_at=timezone.now() + timedelta(minutes=5),
+		)
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+
+	def test_the_host_is_never_unregistered_from_their_own_tournament(self):
+		"""Taking their seat strands everybody else in a lobby nobody can start."""
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament()
+		self._seat(tournament, self.host)
+		self._away_for(self.host, TOURNAMENT_AFTER_SECONDS * 10)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+
+	def test_a_tournament_already_dealing_is_left_alone(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament(status="running")
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS * 10)
+
+		# Their chips belong to the prize pool now. Being away is the engine's
+		# business from here, and it sits them out rather than removing them.
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+
+	def test_a_queue_gives_up_a_seat_far_sooner_than_a_tournament(self):
+		from tournaments.absentees import (
+			QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS, drop_absent_registrations,
+		)
+		from tournaments import spingo
+
+		self.assertLess(QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS)
+
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self._seat(game, self.player)
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		# Nobody is left in it, so the queue row goes too: an empty one would be
+		# offered to the next player as a game with somebody in it.
+		self.assertFalse(Tournament.objects.filter(pk=game.pk).exists())
+
+	def test_the_coins_come_back_with_the_seat(self):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+		from tournaments import spingo
+		from tournaments.absentees import QUEUE_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.coinbank import charge_entry
+
+		wallet_for(self.player)
+		Wallet.objects.filter(user=self.player).update(balance=500)
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self.assertTrue(charge_entry(self.player, game))
+		self._seat(game, self.player)
+		self.assertEqual(Wallet.objects.get(user=self.player).balance, 475)
+
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+		drop_absent_registrations(timezone.now())
+
+		self.assertEqual(Wallet.objects.get(user=self.player).balance, 500)
+
+	def test_the_player_asking_never_loses_their_own_seat(self):
+		"""Whatever the presence socket believes, somebody making a request is
+		plainly here — and a socket that failed to open must not cost them a
+		seat while they sit in the lobby watching it."""
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS * 10)
+
+		self.assertEqual(drop_absent_registrations(timezone.now(), here=self.player.id), 0)
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+
+	def test_a_queue_that_still_has_somebody_in_it_is_kept(self):
+		from tournaments import spingo
+		from tournaments.absentees import QUEUE_AFTER_SECONDS, drop_absent_registrations
+
+		other = User.objects.create_user(username="ab_other", password="secret123")
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self._seat(game, self.player)
+		TournamentPlayer.objects.create(
+			tournament=game, user=other, table=game.ensure_table(1), seat=2,
+			seat_at_table=2, chips=game.starting_chips,
+		)
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+
+		drop_absent_registrations(timezone.now())
+
+		game.refresh_from_db()
+		self.assertEqual(game.players.count(), 1)
+		# The host column pointed at the player who left, so it is handed on.
+		self.assertEqual(game.host_id, other.id)
+
+
+class NobodyPausesAFastGameTests(APITestCase):
+	"""A Spin n Go or a Sit n Go cannot be paused, by anybody, ever.
+
+	Ten minutes of poker between strangers has nothing worth pausing: there is
+	no host — the column points at whoever sat first — and a game held open
+	while two people are disconnected is a game nobody can finish. The engine
+	deals on, folds the seats that do not answer, and the tournament ends.
+	"""
+
+	def setUp(self):
+		self.player = User.objects.create_user(username="np_player", password="secret123")
+		self.boss = User.objects.create_superuser(username="np_boss", password="secret123")
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _game(self):
+		from tournaments import spingo
+
+		return Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+
+	def test_the_pause_button_is_refused_to_the_seat_that_holds_the_host_column(self):
+		game = self._game()
+		self.client.force_authenticate(self.player)
+
+		response = self.client.post(reverse("tournament-pause", args=[game.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_not_even_the_superuser_can_pause_one(self):
+		game = self._game()
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.post(reverse("tournament-pause", args=[game.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_nothing_in_the_engine_pauses_a_table_on_its_own(self):
+		"""The only way into a pause is the endpoint above.
+
+		Checked by reading the engine rather than by playing one out: a
+		disconnection sits a player out and, past the timeout, removes them —
+		it never stops the clock. If a future change adds an automatic pause
+		this test is where it will be noticed.
+		"""
+		import inspect
+
+		from game import coordinator
+
+		source = inspect.getsource(coordinator)
+		# The two places is_paused is switched on are pause() itself and the
+		# snapshot that reports it. Nothing else may set it.
+		setters = [
+			line.strip() for line in source.splitlines()
+			if "self.is_paused = True" in line
+		]
+		self.assertEqual(len(setters), 1)
+		pause_source = inspect.getsource(coordinator.MultiTableTournamentCoordinator.pause)
+		self.assertIn("self.is_paused = True", pause_source)

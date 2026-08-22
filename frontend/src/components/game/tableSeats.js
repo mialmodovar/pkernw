@@ -42,6 +42,25 @@ export const SHORT_TABLES = {
   },
 };
 
+/**
+ * Where the felt puts a plaque: something that sits there for the whole game
+ * and belongs to the table rather than to a seat.
+ *
+ * The top-left corner, in percentages of the frame. Not the middle of the top
+ * edge, which is where it used to be and which is the one place it must not
+ * be: heads-up, the second seat is dead centre at the top, and everything that
+ * hangs off that seat towards the board — the action it just took, most of all
+ * — lands on exactly the same spot. There is a test that keeps every seat of
+ * every table shape away from this corner.
+ */
+export const FELT_PLAQUE = { left: 2, top: 2 };
+
+// How much room a seat takes around its centre, as percentages, for the test
+// that keeps the corner above clear. Approximate on purpose: a seat is a
+// column of a picture, a nameplate and whatever badges it is wearing, and the
+// exact height depends on which of those it has at the time.
+export const SEAT_FOOTPRINT = { width: 30, height: 30 };
+
 // The shape a 5:3 table has always had, and the point at which the ring starts
 // needing help.
 export const CLASSIC_ASPECT = 5 / 3;

@@ -20,6 +20,7 @@ import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
 import {
   CLASSIC_ASPECT,
+  FELT_PLAQUE,
   PORTRAIT,
   SHORT_TABLES,
   landscapeGeometry,
@@ -513,10 +514,16 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
 }
 
 
-/** The prize, printed on the felt above the board.
-
+/** The prize, printed on the felt.
+ *
  *  Deliberately quiet — it sits there for the whole game, so it is a plaque
  *  rather than a banner. The moment a draw lands is SpinReveal's job.
+ *
+ *  In the corner rather than above the board. Centred at the top is where it
+ *  was, and heads-up that is precisely where the other player sits: the prize
+ *  landed on their nameplate and, once seats started saying what they had just
+ *  done, on top of that too. FELT_PLAQUE is the corner, and a test keeps every
+ *  seat of every table shape away from it.
  */
 function FastPrizePlaque({ fast, compact }) {
   if (!fast?.prize_coins) return null;
@@ -525,11 +532,12 @@ function FastPrizePlaque({ fast, compact }) {
     : `${fast.label} · ${fast.stake_coins} coins a seat`;
   return (
     <div
-      className={`absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none
+      style={{ left: `${FELT_PLAQUE.left}%`, top: `${FELT_PLAQUE.top}%` }}
+      className={`absolute z-10 pointer-events-none
                   flex items-center gap-2 rounded-full border
                   border-[rgb(var(--highlight-rgb)/0.45)]
                   bg-[rgba(12,7,18,0.72)] px-3 py-1
-                  ${compact ? "top-[16%] text-[11px]" : "top-[24%] text-xs"}`}
+                  ${compact ? "text-[11px]" : "text-xs"}`}
       title={title}
     >
       <span className="font-semibold text-(--color-highlight-text) tabular-nums">

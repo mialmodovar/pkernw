@@ -106,7 +106,7 @@ def watching(request):
     profiles = {
         row[0]: row[1:]
         for row in Profile.objects.filter(user__in=watched_users)
-        .values_list("user_id", "avatar_emoji", "display_name")
+        .values_list("user_id", "avatar_emoji", "display_name", "avatar_border")
     }
     stamps = dict(
         AvatarImage.objects.filter(user_id__in=user_ids).values_list("user_id", "updated_at")
@@ -119,7 +119,8 @@ def watching(request):
         {
             "username": user.username,
             "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
-            "avatar_emoji": (profiles.get(user.id) or ("", ""))[0] or "\U0001F0CF",
+            "avatar_emoji": (profiles.get(user.id) or ("", "", ""))[0] or "\U0001F0CF",
+            "avatar_border": (profiles.get(user.id) or ("", "", ""))[2] or "",
             "avatar_url": avatar_url(user.id, stamps.get(user.id)),
             **here[user.id],
         }
@@ -175,7 +176,7 @@ def search_players(request):
     profiles = {
         row[0]: row[1:]
         for row in Profile.objects.filter(user__in=matches)
-        .values_list("user_id", "avatar_emoji", "display_name")
+        .values_list("user_id", "avatar_emoji", "display_name", "avatar_border")
     }
     stamps = dict(
         AvatarImage.objects.filter(user__in=matches).values_list("user_id", "updated_at")
@@ -190,7 +191,8 @@ def search_players(request):
         {
             "username": user.username,
             "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
-            "avatar_emoji": (profiles.get(user.id) or ("", ""))[0] or "\U0001F0CF",
+            "avatar_emoji": (profiles.get(user.id) or ("", "", ""))[0] or "\U0001F0CF",
+            "avatar_border": (profiles.get(user.id) or ("", "", ""))[2] or "",
             "avatar_url": avatar_url(user.id, stamps.get(user.id)),
         }
         for user in sorted(matches, key=rank)[:SEARCH_LIMIT]

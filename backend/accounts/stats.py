@@ -218,6 +218,7 @@ def player_profile(request, username):
         "username": user.username,
         "display_name": shown_name(user.username, profile.display_name),
         "avatar_emoji": profile.avatar_emoji,
+        "avatar_border": profile.avatar_border,
         "avatar_url": avatar_url(user.id, stamp),
         "is_watched": request.user.watching.filter(watched=user).exists(),
         # Where they are right now, so the card can offer to take you there

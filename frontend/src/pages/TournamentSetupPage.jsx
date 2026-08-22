@@ -117,6 +117,7 @@ function TableCard({ table, players, onWatch }) {
                 <Avatar
                   url={player.avatar_url}
                   emoji={player.avatar_emoji}
+                    border={player.avatar_border}
                   name={player.username}
                   className="w-full h-full rounded-full"
                   emojiClassName="text-[11px]"
@@ -613,6 +614,7 @@ export default function TournamentSetupPage() {
                         <Avatar
                           url={player.avatar_url}
                           emoji={player.avatar_emoji}
+                    border={player.avatar_border}
                           name={player.username}
                           // Dimmed with the rest of a busted row rather than
                           // left bright over a struck-through name.
@@ -670,6 +672,62 @@ export default function TournamentSetupPage() {
   );
 }
 
+/**
+ * Making this night weekly, or stopping it being weekly.
+ *
+ * The whole of the setting: a host who scheduled Friday at nine has already
+ * said when, so this asks nothing further. Stopping it leaves every game it has
+ * already opened exactly where it is — people have registered for those.
+ */
+function RepeatWeekly({ tournament, id }) {
+  const [repeats, setRepeats] = useState(tournament.repeats || null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  // The tournament reloads on its own timer; a series set from another tab
+  // should show here too.
+  useEffect(() => { setRepeats(tournament.repeats || null); }, [tournament.repeats]);
+
+  const scheduled = Boolean(tournament.scheduled_start_at);
+  if (!scheduled && !repeats) return null;
+
+  const toggle = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      if (repeats) {
+        await api.delete(`/tournaments/${id}/repeat/`);
+        setRepeats(null);
+      } else {
+        const { data } = await api.post(`/tournaments/${id}/repeat/`);
+        setRepeats(data.repeats);
+      }
+    } catch (problem) {
+      setError(problem.response?.data?.error || "Could not change the schedule.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        onClick={toggle}
+        disabled={busy}
+        title={repeats
+          ? `Opens again every week — ${repeats.label}. Stops it coming round; the games already open stay.`
+          : "Open this same night every week, a few days ahead each time"}
+        className={`px-4 py-2 rounded text-sm font-semibold transition-colors disabled:opacity-50 ${
+          repeats ? "btn-secondary" : "btn-secondary"
+        }`}
+      >
+        {repeats ? `Repeats ${repeats.label.toLowerCase()} — stop` : "Repeat weekly"}
+      </button>
+      {error && <span className="text-xs text-[#c76b7a]">{error}</span>}
+    </span>
+  );
+}
+
 function TournamentActions({
   tournament, joined, me, canManage, scheduledStartPending, id, navigate,
   handleJoin, handleStart, handleResume, handleRebuy,
@@ -718,6 +776,11 @@ function TournamentActions({
           Resume
         </button>
       )}
+      {/* "Every week from now on", which is how a club night actually runs and
+          was somebody remembering to remake it by hand every Thursday. Only
+          where there is an hour to come round at, and only for whoever runs it. */}
+      {canManage && <RepeatWeekly tournament={tournament} id={id} />}
+
       {/* Beside the way out, because both are things you do with the page
           rather than with the tournament. */}
       <ShareTournamentButton tournament={tournament} />

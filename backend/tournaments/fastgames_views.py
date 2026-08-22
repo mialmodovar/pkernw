@@ -46,6 +46,7 @@ def _seat_face(player):
         "username": user.username,
         "display_name": shown_name(user.username, profile.display_name if profile else ""),
         "avatar_emoji": (profile.avatar_emoji if profile else None) or "\U0001F0CF",
+        "avatar_border": (profile.avatar_border if profile else "") or "",
         "avatar_url": avatar_url(user.id, image.updated_at if image else None),
     }
 

@@ -85,6 +85,7 @@ export default function WatchStep({ onDone, onSkip }) {
             <Avatar
               url={player.avatar_url}
               emoji={player.avatar_emoji}
+            border={player.avatar_border}
               name={player.display_name}
               className="w-7 h-7 rounded-full shrink-0"
               emojiClassName="text-base"

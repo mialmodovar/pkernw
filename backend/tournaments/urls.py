@@ -17,6 +17,7 @@ from .views import (
     quit_tournament,
     delete_tournament,
     update_tournament,
+    repeat_tournament,
 )
 
 urlpatterns = [
@@ -30,6 +31,9 @@ urlpatterns = [
     path("<int:pk>/",              TournamentDetailView.as_view(),     name="tournament-detail"),
     path("<int:pk>/join/",         join_tournament,                    name="tournament-join"),
     path("<int:pk>/start/",        start_tournament,                   name="tournament-start"),
+    # Same weekday, same hour, every week — see fixtures.py. POST starts the
+    # series, DELETE stops it coming round again.
+    path("<int:pk>/repeat/",       repeat_tournament,                  name="tournament-repeat"),
     path("<int:pk>/pause/",        pause_tournament,                   name="tournament-pause"),
     path("<int:pk>/resume/",       resume_tournament,                  name="tournament-resume"),
     path("<int:pk>/skip-level/",   skip_blind_level,                   name="tournament-skip-level"),

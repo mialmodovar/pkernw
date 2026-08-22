@@ -431,7 +431,8 @@ export default function PlayerSeat({
                   ${isActive ? "ring-2 ring-(--color-highlight-edge)" : ""}`}
     >
       {!cameraInCircle && (
-        <Avatar url={p.avatar_url} emoji={p.avatar} name={p.name}
+        <Avatar url={p.avatar_url} emoji={p.avatar}
+            border={p.avatar_border} name={p.name}
           className="w-full h-full"
           emojiClassName="text-[calc(var(--seat-avatar)*0.5)]" />
       )}

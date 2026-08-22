@@ -82,7 +82,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "avatar_url", "display_name", "theme", "preferences",
+        fields = ("avatar_emoji", "avatar_border", "avatar_url", "display_name", "theme", "preferences",
                   "has_recovery_code")
 
     def get_has_recovery_code(self, profile):

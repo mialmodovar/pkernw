@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import Icon from "../icons/Icon";
+import Avatar from "../Avatar";
+import useAuthStore from "../../store/authStore";
 import useWalletStore from "../../store/walletStore";
-import { alreadyYours, describe, leftToBuy, shelf } from "./shopShelf";
+import { SHELVES, alreadyYours, describe, leftToBuy, shelf } from "./shopShelf";
 
 /**
  * What coins buy. Throwables, for now.
@@ -21,8 +23,11 @@ import { alreadyYours, describe, leftToBuy, shelf } from "./shopShelf";
  * the note in index.css.
  */
 export default function ShopModal({ onClose }) {
-  const { balance, items, loading, error, fetchShop, buy } = useWalletStore();
+  const { balance, items, loading, error, fetchShop, buy, wearBorder } = useWalletStore();
+  const user = useAuthStore((one) => one.user);
+  const [tab, setTab] = useState("throwable");
   const [picked, setPicked] = useState(null);
+  const worn = user?.profile?.avatar_border || "";
 
   useEffect(() => { fetchShop(); }, [fetchShop]);
 
@@ -32,10 +37,11 @@ export default function ShopModal({ onClose }) {
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
-  const forSale = shelf(items);
-  const free = alreadyYours(items);
+  const forSale = shelf(items, tab);
+  const free = tab === "throwable" ? alreadyYours(items) : [];
   const selected = forSale.find((row) => row.item === picked) || null;
   const detail = describe(selected, balance);
+  const borders = tab === "border";
 
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={onClose}>
@@ -60,6 +66,27 @@ export default function ShopModal({ onClose }) {
           >
             Close
           </button>
+        </div>
+
+        {/* Two shelves. Throwables first: they are what the shop was, and what
+            somebody opening it from a table is nearly always after. */}
+        <div className="flex items-center gap-1 px-3 pt-3">
+          {SHELVES.map((one) => (
+            <button
+              key={one.key}
+              type="button"
+              onClick={() => { setTab(one.key); setPicked(null); }}
+              aria-pressed={tab === one.key}
+              title={one.blurb}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                tab === one.key
+                  ? "bg-(--color-accent) text-(--color-accent-text)"
+                  : "text-(--color-text-muted) hover:text-(--color-silver)"
+              }`}
+            >
+              {one.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -88,7 +115,19 @@ export default function ShopModal({ onClose }) {
                       : "border-(--color-border) panel-raised hover:border-(--color-border-strong)"
                   } ${row.owned || affordable ? "" : "opacity-45"}`}
                 >
-                  <span className="text-xl leading-none">{row.look.glyph}</span>
+                  {borders ? (
+                    <Avatar
+                      url={user?.profile?.avatar_url}
+                      emoji={user?.profile?.avatar_emoji}
+                      border={row.item}
+                      name={row.look.label}
+                      className="w-8 h-8 rounded-full"
+                      emojiClassName="text-base"
+                      ringWidth={2}
+                    />
+                  ) : (
+                    <span className="text-xl leading-none">{row.look.glyph}</span>
+                  )}
                   {row.owned ? (
                     <Icon name="check" className="w-3 h-3 text-(--color-highlight-text)" />
                   ) : (
@@ -128,7 +167,19 @@ export default function ShopModal({ onClose }) {
         <div className="border-t border-(--color-border) px-4 py-3 min-h-[3.75rem] flex items-center gap-3">
           {detail ? (
             <>
-              <span className="text-2xl leading-none shrink-0">{selected.look.glyph}</span>
+              {borders ? (
+                <Avatar
+                  url={user?.profile?.avatar_url}
+                  emoji={user?.profile?.avatar_emoji}
+                  border={selected.item}
+                  name={detail.label}
+                  className="w-9 h-9 rounded-full shrink-0"
+                  emojiClassName="text-lg"
+                  ringWidth={2}
+                />
+              ) : (
+                <span className="text-2xl leading-none shrink-0">{selected.look.glyph}</span>
+              )}
               <span className="min-w-0 flex flex-col leading-tight">
                 <span className="text-sm font-semibold text-(--color-silver) truncate">
                   {detail.label}
@@ -137,13 +188,22 @@ export default function ShopModal({ onClose }) {
                   {detail.blurb}
                 </span>
               </span>
-              {detail.owned ? (
+              {detail.owned && borders ? (
+                <button
+                  onClick={() => wearBorder(worn === selected.item ? "" : selected.item)}
+                  className={`ml-auto shrink-0 px-3 py-1.5 rounded text-xs font-semibold ${
+                    worn === selected.item ? "btn-secondary" : "btn-accent"
+                  }`}
+                >
+                  {worn === selected.item ? "Take off" : "Wear"}
+                </button>
+              ) : detail.owned ? (
                 <span className="ml-auto text-xs font-semibold text-(--color-highlight-text)">
                   Yours
                 </span>
               ) : (
                 <button
-                  onClick={() => buy(selected.item)}
+                  onClick={() => buy(selected.item, tab)}
                   disabled={!detail.affordable}
                   title={detail.affordable
                     ? `Buy for ${detail.price} coins`
@@ -161,7 +221,9 @@ export default function ShopModal({ onClose }) {
             </>
           ) : (
             <p className="text-xs text-(--color-text-muted)">
-              Pick one to see what it does when it lands.
+              {borders
+                ? "Pick one to see it around your own face."
+                : "Pick one to see what it does when it lands."}
             </p>
           )}
         </div>

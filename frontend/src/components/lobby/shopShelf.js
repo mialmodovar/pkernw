@@ -17,6 +17,7 @@
 
 import { throwableFor } from "../game/throwables";
 import { hitFor } from "../game/hitEffects";
+import { borderFor } from "../borders";
 
 /** What each kind of landing does, in the few words a shop has room for. */
 export const HIT_BLURB = {
@@ -41,23 +42,40 @@ export const HIT_BLURB = {
  * grid is how somebody finds the thing they are looking for, and a thing that
  * moves once you own it is a thing you have to find twice.
  */
-export function shelf(items) {
+export function shelf(items, kind = "throwable") {
   return (items || [])
-    .filter((row) => row.price > 0)
-    .map((row) => ({ ...row, look: throwableFor(row.item) }))
+    .filter((row) => (row.shelf || "throwable") === kind && row.price > 0)
+    .map((row) => ({
+      ...row,
+      look: kind === "border"
+        ? { ...(borderFor(row.item) || { label: row.item }), glyph: null }
+        : throwableFor(row.item),
+    }))
     .sort((a, b) => a.price - b.price || a.look.label.localeCompare(b.look.label));
 }
 
 /** The ones nobody has to buy, for the line that says so. */
 export function alreadyYours(items) {
   return (items || [])
-    .filter((row) => row.price === 0)
+    .filter((row) => (row.shelf || "throwable") === "throwable" && row.price === 0)
     .map((row) => ({ ...row, look: throwableFor(row.item) }));
 }
 
 /** What one item is, in one sentence: name, price, and what it does on landing. */
 export function describe(row, balance) {
   if (!row) return null;
+  // A ring has nothing to do when it lands: it is worn, and what it says is
+  // said all evening rather than for a second and a half.
+  if ((row.shelf || "throwable") === "border") {
+    return {
+      label: row.look.label,
+      blurb: "Around your face, everywhere you play",
+      price: row.price,
+      owned: Boolean(row.owned),
+      affordable: (balance ?? 0) >= row.price,
+    };
+  }
+
   const effect = hitFor(row.item);
   return {
     label: row.look.label,
@@ -74,5 +92,17 @@ export function describe(row, balance) {
 
 /** How many of the paid ones this player still has to buy. */
 export function leftToBuy(items) {
-  return shelf(items).filter((row) => !row.owned).length;
+  return (items || []).filter((row) => row.price > 0 && !row.owned).length;
 }
+
+/**
+ * The shelves, in the order the shop draws them.
+ *
+ * Throwables first: they are what the shop was, and what somebody opening it
+ * from a table is nearly always after. A border is worn all evening and is
+ * chosen once, so it can afford to be the second thing.
+ */
+export const SHELVES = [
+  { key: "throwable", label: "Throw", blurb: "Land it on somebody." },
+  { key: "border", label: "Borders", blurb: "The ring around your face, everywhere you play." },
+];

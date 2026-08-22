@@ -535,6 +535,17 @@ button:disabled {
   animation: hit-shake 420ms ease-in-out both;
 }
 
+/* The one ring that moves. A slow turn rather than a flash: it is worn all
+   evening, at a table people are trying to read, and anything quicker would be
+   somebody else's animation running in the corner of your eye all night. */
+@keyframes ring-turn {
+  to { filter: hue-rotate(360deg); }
+}
+
+.animate-ring-turn {
+  animation: ring-turn 9s linear infinite;
+}
+
 /* A claim waiting to be taken. Slow enough to be noticed rather than nagged at:
    it is worth a glance, not an interruption. */
 @keyframes pulse-soft {

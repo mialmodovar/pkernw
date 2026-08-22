@@ -142,6 +142,7 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
           <Avatar
             url={player.avatar_url}
             emoji={player.avatar}
+        border={player.avatar_border}
             name={player.name}
             className="w-9 h-9 shrink-0 rounded-full border border-(--color-border)"
             emojiClassName="text-2xl"

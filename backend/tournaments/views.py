@@ -10,6 +10,8 @@ from accounts.models import AvatarImage
 from datetime import timedelta
 
 from .absentees import drop_absent_registrations, seconds_until
+from .fixtures import describe as describe_fixture
+from .fixturebank import open_due_fixtures, start_series, stop_series
 from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soon
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
@@ -43,9 +45,26 @@ def _sweep_lobby(here=None, now=None):
     lobby — which is exactly when this runs.
     """
     at = now or timezone.now()
+    # Next Friday's game, opened a few days early so people can register for
+    # it. Before the starts, because a night opened now may be due now.
+    open_due_fixtures(at)
     _start_due_scheduled_tournaments()
     _warn_about_tournaments_about_to_start(at)
     drop_absent_registrations(at, here=here)
+
+
+# How many have to be registered before a tournament starts itself.
+#
+# Three, not two. A night that fires on the stroke of nine with whoever happened
+# to be early is a heads-up match nobody signed up for — and those two are then
+# locked into it while the people who were a minute late find a game already
+# running. Waiting for a third costs a few minutes and is what everybody assumed
+# was happening anyway.
+#
+# A host pressing Start is a different matter and still needs only two: that is
+# somebody choosing to play heads-up, out loud, rather than a clock choosing it
+# for them.
+MIN_TO_START_ITSELF = 3
 
 
 def _start_due_scheduled_tournaments():
@@ -56,7 +75,7 @@ def _start_due_scheduled_tournaments():
         scheduled_start_at__lte=now,
     )
     for tournament in due_tournaments:
-        if tournament.players.count() >= 2:
+        if tournament.players.count() >= MIN_TO_START_ITSELF:
             tournament.status = "running"
             tournament.started_at = now
             tournament.save(update_fields=["status", "started_at"])
@@ -551,3 +570,39 @@ def delete_tournament(request, pk):
 
     tournament.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["POST", "DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def repeat_tournament(request, pk):
+    """Make this night a weekly series, or stop the series it belongs to.
+
+    POST turns the game into the first of a series: same weekday, same hour,
+    same everything, opened a few days ahead every week from now on. DELETE
+    stops it coming round — what it has already opened stays open, because
+    people have registered for those.
+
+    Whoever may run the tournament may do this: it is the same decision as
+    scheduling it, made once instead of every week.
+    """
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "DELETE":
+        if tournament.fixture is None:
+            return Response({"error": "This is not part of a series"}, status=status.HTTP_400_BAD_REQUEST)
+        stop_series(tournament.fixture)
+        return Response({"repeats": None})
+
+    made = start_series(tournament, request.data.get("days_ahead"))
+    if isinstance(made, str):
+        return Response({"error": made}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        "repeats": {
+            "id": made.id,
+            "label": describe_fixture(made.weekday, made.start_time),
+            "days_ahead": made.days_ahead,
+        },
+    }, status=status.HTTP_201_CREATED)

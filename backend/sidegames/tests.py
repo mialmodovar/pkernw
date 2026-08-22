@@ -489,3 +489,128 @@ class MissionClaimTests(APITestCase):
         self.assertEqual(len(response.data["missions"]), 6)
         self.assertTrue(all(one["progress"] == 0 for one in response.data["missions"]))
         self.assertFalse(any(one["claimable"] for one in response.data["missions"]))
+
+
+class BorderShopTests(APITestCase):
+    """Rings around a face: bought once, worn everywhere."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="bd_player", password="secret123")
+        wallet_for(self.user)
+        Wallet.objects.filter(user=self.user).update(balance=1000)
+        self.client.force_authenticate(self.user)
+
+    def test_the_shop_sells_eight_of_them(self):
+        from .borders import BORDERS
+
+        rows = [row for row in self.client.get(reverse("coin-shop")).data["items"]
+                if row["shelf"] == "border"]
+
+        self.assertEqual(len(rows), len(BORDERS))
+        self.assertEqual(len(rows), 8)
+        self.assertTrue(all(row["price"] > 0 for row in rows))
+        self.assertFalse(any(row["owned"] for row in rows))
+
+    def test_buying_one_takes_the_coins_and_hands_it_over(self):
+        from .borders import price_of
+
+        response = self.client.post(
+            reverse("coin-buy"), {"item": "gold", "shelf": "border"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["balance"], 1000 - price_of("gold"))
+        gold = [row for row in response.data["items"] if row["item"] == "gold"][0]
+        self.assertTrue(gold["owned"])
+
+    def test_a_ring_nobody_sells_is_refused(self):
+        response = self.client.post(
+            reverse("coin-buy"), {"item": "platinum", "shelf": "border"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 1000)
+
+    def test_you_cannot_wear_one_you_have_not_bought(self):
+        """This endpoint is the other way a border id reaches the server, and a
+        ring drawn on everybody else's screen is not a client's word to take."""
+        response = self.client.patch(
+            reverse("coin-wear-border"), {"border": "rainbow"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # Refused before a profile was even made for them, which is the state
+        # a brand new account is in.
+        from accounts.models import Profile
+
+        self.assertEqual(
+            Profile.objects.filter(user=self.user, avatar_border="rainbow").count(), 0,
+        )
+
+    def test_buying_it_then_wearing_it(self):
+        self.client.post(reverse("coin-buy"), {"item": "silver", "shelf": "border"}, format="json")
+
+        response = self.client.patch(
+            reverse("coin-wear-border"), {"border": "silver"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.avatar_border, "silver")
+
+    def test_taking_it_off_again_needs_no_purchase(self):
+        self.client.post(reverse("coin-buy"), {"item": "silver", "shelf": "border"}, format="json")
+        self.client.patch(reverse("coin-wear-border"), {"border": "silver"}, format="json")
+
+        response = self.client.patch(reverse("coin-wear-border"), {"border": ""}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.avatar_border, "")
+
+    def test_the_same_ring_is_not_sold_twice(self):
+        self.client.post(reverse("coin-buy"), {"item": "silver", "shelf": "border"}, format="json")
+        before = Wallet.objects.get(user=self.user).balance
+
+        again = self.client.post(
+            reverse("coin-buy"), {"item": "silver", "shelf": "border"}, format="json",
+        )
+
+        self.assertEqual(again.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, before)
+
+    def test_a_shelf_nobody_stocks_is_refused(self):
+        response = self.client.post(
+            reverse("coin-buy"), {"item": "gold", "shelf": "yachts"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_an_empty_wallet_buys_nothing(self):
+        Wallet.objects.filter(user=self.user).update(balance=10)
+
+        response = self.client.post(
+            reverse("coin-buy"), {"item": "rainbow", "shelf": "border"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 10)
+
+    def test_the_ring_travels_with_the_face(self):
+        """Bought once and drawn everywhere: the point of buying one is that
+        other people see it."""
+        from tournaments.models import Tournament, TournamentPlayer
+
+        self.client.post(reverse("coin-buy"), {"item": "gold", "shelf": "border"}, format="json")
+        self.client.patch(reverse("coin-wear-border"), {"border": "gold"}, format="json")
+
+        host = User.objects.create_user(username="bd_host", password="secret123", is_staff=True)
+        night = Tournament.objects.create(name="Night", host=host, status="lobby")
+        TournamentPlayer.objects.create(
+            tournament=night, user=self.user, table=night.ensure_table(1),
+            seat=0, seat_at_table=0, chips=1000,
+        )
+
+        seats = self.client.get(reverse("tournament-detail", args=[night.id])).data["players"]
+
+        self.assertEqual(seats[0]["avatar_border"], "gold")

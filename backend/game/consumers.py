@@ -449,6 +449,7 @@ def _db_get_player_records(tournament_id):
             "user__username",
             "user__profile__display_name",
             "user__profile__avatar_emoji",
+            "user__profile__avatar_border",
             "user__profile__theme",
             "table_id",
             "table__table_number",
@@ -1299,6 +1300,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                     record["user__username"], record["user__profile__display_name"],
                 ),
                 "avatar": record["user__profile__avatar_emoji"] or "\U0001F0CF",
+                # The ring they bought, drawn around that face at the table.
+                "avatar_border": record["user__profile__avatar_border"] or "",
                 # None unless they uploaded a picture, in which case it is what
                 # the table draws and the emoji is only the fallback.
                 "avatar_url": record["avatar_url"],

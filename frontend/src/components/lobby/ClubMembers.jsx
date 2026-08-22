@@ -60,6 +60,7 @@ export default function ClubMembers({ club, myUsername, onChanged }) {
                 <Avatar
                   url={member.avatar_url}
                   emoji={member.avatar_emoji}
+              border={member.avatar_border}
                   name={member.username}
                   className="w-7 h-7 rounded-full shrink-0"
                   emojiClassName="text-base"
@@ -116,6 +117,7 @@ export default function ClubMembers({ club, myUsername, onChanged }) {
               <Avatar
                 url={member.avatar_url}
                 emoji={member.avatar_emoji}
+              border={member.avatar_border}
                 name={member.username}
                 className="w-6 h-6 rounded-full shrink-0"
                 emojiClassName="text-sm"

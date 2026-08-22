@@ -1022,6 +1022,7 @@ class MultiTableTournamentCoordinator:
             runtime_player.name = record.get("display_name") or record["username"]
             runtime_player._username = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
+            runtime_player._avatar_border = record.get("avatar_border") or ""
             runtime_player._avatar_url = record.get("avatar_url")
             runtime_player._finisher_gif_id = record.get("finisher_gif_id")
             runtime_player._finishers = record.get("finishers") or []
@@ -1530,6 +1531,7 @@ class MultiTableTournamentCoordinator:
             "name": player.name,
             "username": getattr(player, "_username", player.name),
             "avatar": getattr(player, "_avatar", "\U0001F0CF"),
+            "avatar_border": getattr(player, "_avatar_border", ""),
             # The picture, when there is one. The emoji above stays the
             # fallback, so a client that cannot load it still has a seat marker.
             "avatar_url": getattr(player, "_avatar_url", None),

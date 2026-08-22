@@ -283,8 +283,13 @@ class TournamentCreationTests(APITestCase):
 		)
 		primary_table = tournament.ensure_table(1)
 		tournament.players.create(user=self.user, table=primary_table, seat=0, seat_at_table=0, chips=10000)
-		opponent = User.objects.create_user(username="due_opponent", password="secret123")
-		tournament.players.create(user=opponent, table=primary_table, seat=1, seat_at_table=1, chips=10000)
+		# Three, because a tournament no longer starts itself with two: that
+		# would be a heads-up match nobody signed up for. See MIN_TO_START_ITSELF.
+		for index, name in enumerate(("due_opponent", "due_third"), start=1):
+			other = User.objects.create_user(username=name, password="secret123")
+			tournament.players.create(
+				user=other, table=primary_table, seat=index, seat_at_table=index, chips=10000,
+			)
 
 		response = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
 
@@ -3074,6 +3079,10 @@ class PlayTimestampTests(APITestCase):
 		self.tournament = Tournament.objects.create(host=self.host, name="Timed", status="lobby")
 		TournamentPlayer.objects.create(tournament=self.tournament, user=self.host, seat=0, chips=1000)
 		TournamentPlayer.objects.create(tournament=self.tournament, user=self.other, seat=1, chips=1000)
+		# A third, because a scheduled tournament no longer starts itself with
+		# two — see MIN_TO_START_ITSELF. A host pressing Start still may.
+		self.third = User.objects.create_user(username="clock_third", password="secret123")
+		TournamentPlayer.objects.create(tournament=self.tournament, user=self.third, seat=2, chips=1000)
 
 	def tearDown(self):
 		_tournament_runners.clear()
@@ -5909,7 +5918,9 @@ class TournamentAnnouncementTests(APITestCase):
 			name="Nine o'clock", host=self.host, status="lobby",
 			buy_in_cents=2000, max_players=9, players_per_table=9,
 		)
-		for index, user in enumerate((self.host, self.player)):
+		self.third = User.objects.create_user(username="an_third", password="secret123")
+		# Three: a scheduled tournament does not start itself with two.
+		for index, user in enumerate((self.host, self.player, self.third)):
 			TournamentPlayer.objects.create(
 				tournament=self.tournament, user=user,
 				table=self.tournament.ensure_table(1), seat=index,
@@ -5929,7 +5940,7 @@ class TournamentAnnouncementTests(APITestCase):
 			response = self.client.post(reverse("tournament-start", args=[self.tournament.id]))
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual({uid for uid, _ in sent}, {self.host.id, self.player.id})
+		self.assertEqual({uid for uid, _ in sent}, {self.host.id, self.player.id, self.third.id})
 		self.assertEqual(sent[0][1]["type"], "tournament_started")
 		self.assertEqual(sent[0][1]["game"]["id"], self.tournament.id)
 		self.assertEqual(sent[0][1]["game"]["label"], "Nine o'clock")
@@ -5944,9 +5955,9 @@ class TournamentAnnouncementTests(APITestCase):
 			first = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 30)
 			second = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 60)
 
-		self.assertEqual(first, 2)
+		self.assertEqual(first, 3)
 		self.assertEqual(second, 0)
-		self.assertEqual(len(sent), 2)
+		self.assertEqual(len(sent), 3)
 
 	def test_nothing_is_said_about_a_start_that_is_still_hours_off(self):
 		from tournaments.announce import announce_starting_soon
@@ -5986,3 +5997,336 @@ class TournamentAnnouncementTests(APITestCase):
 		# here is that the tournament was already saved before anybody was told.
 		self.tournament.refresh_from_db()
 		self.assertEqual(self.tournament.status, "running")
+
+
+class RecurringNightTests(APITestCase):
+	"""Friday at nine, every week.
+
+	The thing a club with a league actually runs, and until now it was somebody
+	remembering to make the same tournament by hand every Thursday.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="rc_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="rc_player", password="secret123")
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _night(self, when=None, **overrides):
+		from tournaments.models import BlindLevel
+
+		fields = {
+			"name": "Friday night", "host": self.host, "status": "lobby",
+			"buy_in_cents": 2000, "max_players": 9, "players_per_table": 9,
+			"scheduled_start_at": when or (timezone.now() + timedelta(days=1)),
+		}
+		fields.update(overrides)
+		night = Tournament.objects.create(**fields)
+		BlindLevel.objects.create(
+			tournament=night, level_number=1, small_blind=25, big_blind=50,
+			ante=0, duration_minutes=10,
+		)
+		return night
+
+	def _repeat(self, night, **payload):
+		return self.client.post(reverse("tournament-repeat", args=[night.id]), payload, format="json")
+
+	def test_a_night_becomes_a_series_at_its_own_hour(self):
+		from tournaments.fixtures import from_moment
+		from tournaments.models import Fixture
+
+		when = timezone.now() + timedelta(days=2)
+		night = self._night(when)
+
+		response = self._repeat(night)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		fixture = Fixture.objects.get()
+		# Read off the game rather than asked for again: the host already said
+		# when by scheduling it.
+		self.assertEqual((fixture.weekday, fixture.start_time), from_moment(when))
+		self.assertEqual(fixture.name, "Friday night")
+		self.assertIn("at", response.data["repeats"]["label"])
+
+	def test_the_first_night_belongs_to_the_series_it_started(self):
+		"""Otherwise the series would immediately open a second game for a
+		night that already has one."""
+		night = self._night()
+
+		self._repeat(night)
+
+		night.refresh_from_db()
+		self.assertIsNotNone(night.fixture_id)
+		self.assertEqual(night.occurs_on, night.scheduled_start_at.date())
+
+	def test_a_night_with_no_hour_cannot_repeat(self):
+		night = self._night(scheduled_start_at=None)
+
+		response = self._repeat(night)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_only_somebody_who_runs_it_may_set_it_repeating(self):
+		night = self._night()
+		self.client.force_authenticate(self.player)
+
+		self.assertEqual(self._repeat(night).status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_the_next_night_opens_by_itself_with_the_same_terms(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		night = self._night(timezone.now() + timedelta(minutes=5), buy_in_cents=3000)
+		self._repeat(night)
+
+		# Five days later somebody opens the lobby, and next week's night is
+		# close enough to register for.
+		later = timezone.now() + timedelta(days=5)
+		self.assertEqual(open_due_fixtures(later), 1)
+
+		nights = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on")
+		self.assertEqual(nights.count(), 2)
+		nxt = nights.last()
+		self.assertEqual(nxt.buy_in_cents, 3000)
+		self.assertEqual(nxt.name, "Friday night")
+		self.assertEqual(nxt.levels.count(), 1)
+		self.assertEqual(nxt.status, "lobby")
+		# Seven days after the first, at the same hour and minute — the seconds
+		# of the original are dropped on purpose, since nobody schedules a night
+		# for 21:00:37.
+		first = timezone.localtime(night.scheduled_start_at)
+		again = timezone.localtime(nxt.scheduled_start_at)
+		self.assertEqual((again.date() - first.date()).days, 7)
+		self.assertEqual((again.hour, again.minute), (first.hour, first.minute))
+
+	def test_sweeping_twice_does_not_open_the_same_night_twice(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		self._repeat(self._night(timezone.now() + timedelta(minutes=5)))
+		later = timezone.now() + timedelta(days=5)
+
+		self.assertEqual(open_due_fixtures(later), 1)
+		self.assertEqual(open_due_fixtures(later), 0)
+		self.assertEqual(Tournament.objects.count(), 2)
+
+	def test_a_night_nobody_was_there_for_is_not_opened_after_the_fact(self):
+		"""A fixture swept a fortnight late opens the one coming, not the two
+		that have been and gone: a game scheduled in the past is a row nobody
+		can play and nobody can clear."""
+		from tournaments.fixturebank import open_due_fixtures
+
+		self._repeat(self._night(timezone.now() + timedelta(minutes=5)))
+
+		opened = open_due_fixtures(timezone.now() + timedelta(days=14))
+
+		self.assertLessEqual(opened, 1)
+		for night in Tournament.objects.filter(fixture__isnull=False):
+			if night.occurs_on != timezone.localtime(night.scheduled_start_at).date():
+				continue
+			self.assertGreaterEqual(
+				night.scheduled_start_at, timezone.now() - timedelta(days=1),
+				"a night was opened for a date that had already passed",
+			)
+
+	def test_stopping_it_leaves_the_games_it_already_opened(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		night = self._night(timezone.now() + timedelta(minutes=5))
+		self._repeat(night)
+		later = timezone.now() + timedelta(days=5)
+		open_due_fixtures(later)
+
+		response = self.client.delete(reverse("tournament-repeat", args=[night.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		# Two nights still there — people have registered for those.
+		self.assertEqual(Tournament.objects.count(), 2)
+		# And nothing new opens.
+		self.assertEqual(open_due_fixtures(timezone.now() + timedelta(days=30)), 0)
+
+	def test_the_detail_page_says_whether_it_comes_round_again(self):
+		night = self._night()
+
+		before = self.client.get(reverse("tournament-detail", args=[night.id]))
+		self.assertIsNone(before.data["repeats"])
+
+		self._repeat(night)
+		after = self.client.get(reverse("tournament-detail", args=[night.id]))
+		self.assertIsNotNone(after.data["repeats"])
+		self.assertIn("at", after.data["repeats"]["label"])
+
+	def test_a_club_night_keeps_its_club_and_its_league(self):
+		from clubs.models import Club, League, Membership, Season
+		from tournaments.fixturebank import open_due_fixtures
+
+		club = Club.objects.create(name="Quinta", created_by=self.host)
+		Membership.objects.create(club=club, user=self.host, role=Membership.OWNER)
+		season = Season.objects.create(league=League.objects.create(club=club, name="Sunday"), name="Autumn")
+		night = self._night(timezone.now() + timedelta(minutes=5), club=club, season=season)
+
+		self._repeat(night)
+		open_due_fixtures(timezone.now() + timedelta(days=5))
+
+		nxt = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on").last()
+		self.assertEqual(nxt.club_id, club.id)
+		self.assertEqual(nxt.season_id, season.id)
+
+	def test_a_closed_season_takes_no_new_nights_and_the_night_runs_anyway(self):
+		from clubs.models import Club, League, Membership, Season
+		from tournaments.fixturebank import open_due_fixtures
+
+		club = Club.objects.create(name="Quinta", created_by=self.host)
+		Membership.objects.create(club=club, user=self.host, role=Membership.OWNER)
+		season = Season.objects.create(league=League.objects.create(club=club, name="Sunday"), name="Autumn")
+		night = self._night(timezone.now() + timedelta(minutes=5), club=club, season=season)
+		self._repeat(night)
+
+		season.closed_at = timezone.now()
+		season.save(update_fields=["closed_at"])
+		open_due_fixtures(timezone.now() + timedelta(days=5))
+
+		nxt = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on").last()
+		# The night is not worth cancelling over a closed season: it runs, and
+		# counts for nothing.
+		self.assertEqual(nxt.club_id, club.id)
+		self.assertIsNone(nxt.season_id)
+
+
+class FixtureCalendarTests(TestCase):
+	"""Which Friday, and at what hour."""
+
+	def test_today_counts_if_the_hour_has_not_passed(self):
+		from datetime import time
+
+		from tournaments.fixtures import local_at, next_occurrence
+
+		# A Friday at noon, asking about Fridays at nine in the evening.
+		noon = local_at(timezone.localtime().date(), time(12, 0))
+		friday_noon = noon + timedelta(days=(4 - timezone.localtime(noon).weekday()) % 7)
+
+		self.assertEqual(
+			next_occurrence(4, time(21, 0), friday_noon).date(),
+			timezone.localtime(friday_noon).date(),
+		)
+
+	def test_an_hour_that_has_passed_means_next_week(self):
+		from datetime import time
+
+		from tournaments.fixtures import local_at, next_occurrence
+
+		late = local_at(timezone.localtime().date(), time(23, 0))
+		friday_late = late + timedelta(days=(4 - timezone.localtime(late).weekday()) % 7)
+
+		self.assertEqual(
+			(next_occurrence(4, time(21, 0), friday_late) - friday_late).days, 6,
+		)
+
+	def test_a_fortnight_opened_at_once_is_two_nights(self):
+		from datetime import time
+
+		from tournaments.fixtures import occurrences_within
+
+		found = occurrences_within(4, time(21, 0), 14)
+
+		self.assertEqual(len(found), 2)
+		self.assertEqual((found[1] - found[0]).days, 7)
+
+	def test_how_early_a_night_opens_is_held_between_a_day_and_three_weeks(self):
+		from tournaments.fixtures import DEFAULT_DAYS_AHEAD, MAX_DAYS_AHEAD, clean_days_ahead
+
+		self.assertEqual(clean_days_ahead(0), 1)
+		self.assertEqual(clean_days_ahead(400), MAX_DAYS_AHEAD)
+		self.assertEqual(clean_days_ahead("nonsense"), DEFAULT_DAYS_AHEAD)
+		self.assertEqual(clean_days_ahead(5), 5)
+
+	def test_it_says_the_arrangement_out_loud(self):
+		from datetime import time
+
+		from tournaments.fixtures import describe
+
+		self.assertEqual(describe(4, time(21, 0)), "Fridays at 21:00")
+		self.assertEqual(describe(0, time(9, 30)), "Mondays at 09:30")
+
+
+class ScheduledStartTests(APITestCase):
+	"""A night that starts itself, and what it waits for."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="ss_host", password="secret123", is_staff=True)
+		self.players = [
+			User.objects.create_user(username=f"ss_{index}", password="secret123")
+			for index in range(4)
+		]
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _due_night(self, seated):
+		night = Tournament.objects.create(
+			name="Nine o'clock", host=self.host, status="lobby",
+			buy_in_cents=0, max_players=9, players_per_table=9,
+			scheduled_start_at=timezone.now() - timedelta(seconds=30),
+		)
+		for index, user in enumerate(self.players[:seated]):
+			TournamentPlayer.objects.create(
+				tournament=night, user=user, table=night.ensure_table(1),
+				seat=index, seat_at_table=index, chips=night.starting_chips,
+			)
+		return night
+
+	def _sweep(self):
+		"""Whatever a lobby request does on its way past."""
+		self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+	def test_two_people_do_not_make_a_night(self):
+		"""It would be a heads-up match nobody signed up for, and those two are
+		locked into it while anybody a minute late finds it already running."""
+		night = self._due_night(seated=2)
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "lobby")
+
+	def test_three_do(self):
+		night = self._due_night(seated=3)
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_it_starts_as_soon_as_the_third_arrives(self):
+		night = self._due_night(seated=2)
+		self._sweep()
+
+		self.client.force_authenticate(self.players[2])
+		self.client.post(reverse("tournament-join", args=[night.id]))
+		self.client.force_authenticate(self.host)
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_a_host_may_still_start_a_heads_up_on_purpose(self):
+		"""Two people deciding to play heads-up is a decision. A clock deciding
+		it for them is not."""
+		night = self._due_night(seated=2)
+
+		response = self.client.post(reverse("tournament-start", args=[night.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_an_hour_that_has_not_come_starts_nothing(self):
+		night = self._due_night(seated=4)
+		night.scheduled_start_at = timezone.now() + timedelta(hours=2)
+		night.save(update_fields=["scheduled_start_at"])
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "lobby")

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { turnSlots, waitingSlots } from "./actionSlots";
+import { BUTTON_SIZE } from "./betBarSizing";
 import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
@@ -21,9 +22,13 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 // wider target than "Fold" and every button moved when the amount changed, and
 // flexing them to fill left two or three pixels of rounding between one face of
 // the panel and the other.
-const BTN = "w-full min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
-  "px-[clamp(0.4rem,1.1vw,1.5rem)] py-[clamp(0.55rem,1vw,1rem)] " +
-  "text-[clamp(0.8rem,1.05vw,1.15rem)]";
+//
+// What size they are, and why it is measured against the panel rather than the
+// window, is betBarSizing.js — where there is a test on it, because the failure
+// it guards against only appears on a screen bigger than the one anybody
+// develops on.
+const BTN = "w-full min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation "
+  + BUTTON_SIZE;
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";
 // Kept on every size now: in a column the slider is short, and a short
 // slider is a poor way to move one chip at a time.
@@ -143,7 +148,7 @@ function PreselectChips({ value, onChange, keys }) {
  */
 function PanelShell({ shell, timerBar, left, above, clock, slots }) {
   return (
-    <div className={`${shell} overflow-hidden w-full md:w-[34rem] lg:w-[46rem] max-w-full`}>
+    <div className={`${shell} bet-bar overflow-hidden w-full md:w-[34rem] lg:w-[46rem] max-w-full`}>
       {/* Timer bar — regular clock first, then the time bank. Left exactly
           where it was: a full-width line above the decision, and drawn empty
           while you wait so the rows below it do not shift up. */}

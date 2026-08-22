@@ -231,6 +231,19 @@ button:disabled {
   text-decoration: underline;
 }
 
+/* The betting bar measures itself, so its buttons can be sized against the
+   panel rather than against the window.
+
+   They used to be sized in vw. The panel has a definite width — see
+   ActionPanel — so on a large monitor the type and the padding grew to their
+   maximum while the buttons stayed exactly as wide as they were, and "Raise
+   148,600" was cut off by thirty pixels. Sized against the panel, a button and
+   the words on it grow and shrink together, which is the only relationship
+   between them that can hold. */
+.bet-bar {
+  container-type: inline-size;
+}
+
 /* The table area measures itself, so the felt can be told to fit inside it. */
 .table-area {
   container-type: size;

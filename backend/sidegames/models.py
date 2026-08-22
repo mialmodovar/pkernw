@@ -39,6 +39,7 @@ class CoinLedger(models.Model):
         ("payout", "Side game payout"),
         ("purchase", "Purchase"),
         ("refund", "Refund"),
+        ("mission", "Mission reward"),
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="coin_ledger")
@@ -72,3 +73,35 @@ class Unlock(models.Model):
 
     def __str__(self):
         return f"{self.user.username} owns {self.item}"
+
+
+class MissionClaim(models.Model):
+    """A mission already paid for.
+
+    The only thing missions store. Progress is read back out of the games
+    themselves (see missiontally.py), so this row is the whole of the
+    bookkeeping — and the unique constraint is the whole of the protection
+    against paying one twice, including against two taps arriving together.
+
+    `period` is a date: the day for a daily, the Monday for a weekly. Readable
+    in the table without knowing the rules that produced it.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mission_claims",
+    )
+    mission = models.CharField(max_length=32)
+    period = models.CharField(max_length=16)
+    coins = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "mission", "period"], name="one_claim_per_mission_period",
+            ),
+        ]
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.user.username} {self.mission} {self.period} (+{self.coins})"

@@ -10,6 +10,7 @@ from .economy import (
     wallet_for,
 )
 from .games import GAMES
+from .missionbank import claim_mission, mission_board
 from .shop import buy_throwable, catalogue
 
 
@@ -71,3 +72,29 @@ def buy(request):
     if isinstance(result, str):
         return Response({"error": result}, status=400)
     return Response({**wallet_payload(result), "items": catalogue(request.user)})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def missions(request):
+    """What is worth doing today and this week, and how far along you are."""
+    return Response({"missions": mission_board(request.user)})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def claim_mission_reward(request):
+    """Take the coins for one that is finished.
+
+    The check and the payment happen in one transaction behind a unique row, so
+    two taps on a slow connection pay once — see missionbank.py.
+    """
+    paid = claim_mission(request.user, request.data.get("key"))
+    if isinstance(paid, str):
+        return Response({"error": paid}, status=400)
+    wallet, coins = paid
+    return Response({
+        **wallet_payload(wallet),
+        "coins": coins,
+        "missions": mission_board(request.user),
+    })

@@ -15,6 +15,7 @@ import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
 import CoinPanel from "../components/lobby/CoinPanel";
+import MissionPanel from "../components/lobby/MissionPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
 // The three things you can be playing. Written as a list rather than three
@@ -211,6 +212,7 @@ export default function LobbyPage() {
         <WatchPanel />
         <ClubPanel onClubsLoaded={onClubsLoaded} />
         <CoinPanel />
+        <MissionPanel />
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">

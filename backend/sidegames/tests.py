@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -20,7 +20,7 @@ from .economy import (
     wallet_for,
 )
 from .games import PLAYER_BET, clean_stake, game_for
-from .models import CoinLedger, Unlock
+from .models import CoinLedger, MissionClaim, Unlock, Wallet
 from .shop import buy_throwable, catalogue, owns_throwable
 
 User = get_user_model()
@@ -183,3 +183,309 @@ class CoinApiTests(APITestCase):
     def test_a_stranger_gets_nothing(self):
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(reverse("coin-wallet")).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class MissionPeriodTests(TestCase):
+    """Which day, and which week, a claim belongs to."""
+
+    def test_a_day_is_a_calendar_day_in_the_server_s_own_timezone(self):
+        from .missions import DAILY, period_key, window
+
+        at = timezone.make_aware(datetime(2026, 8, 22, 23, 59, 59))
+        start, end = window(DAILY, at)
+
+        self.assertEqual(period_key(DAILY, at), "2026-08-22")
+        self.assertEqual(timezone.localtime(start).hour, 0)
+        # Ends at the start of the next one rather than at 23:59:59, so a game
+        # finishing in the last second of the day belongs to it and to nothing
+        # else.
+        self.assertEqual((end - start), timedelta(days=1))
+        self.assertTrue(start <= at < end)
+
+    def test_a_week_runs_from_monday(self):
+        from .missions import WEEKLY, period_key, window
+
+        # A Saturday.
+        at = timezone.make_aware(datetime(2026, 8, 22, 12, 0))
+        start, end = window(WEEKLY, at)
+
+        self.assertEqual(period_key(WEEKLY, at), "2026-08-17")
+        self.assertEqual(timezone.localtime(start).weekday(), 0)
+        self.assertEqual(end - start, timedelta(days=7))
+        self.assertTrue(start <= at < end)
+
+    def test_monday_and_sunday_are_the_same_week(self):
+        from .missions import WEEKLY, period_key
+
+        monday = timezone.make_aware(datetime(2026, 8, 17, 0, 1))
+        sunday = timezone.make_aware(datetime(2026, 8, 23, 23, 59))
+        next_monday = timezone.make_aware(datetime(2026, 8, 24, 0, 1))
+
+        self.assertEqual(period_key(WEEKLY, monday), period_key(WEEKLY, sunday))
+        self.assertNotEqual(period_key(WEEKLY, sunday), period_key(WEEKLY, next_monday))
+
+
+class MissionCatalogueTests(TestCase):
+    """The list itself, before anybody has played anything."""
+
+    def test_every_mission_can_be_finished_in_the_two_fast_formats(self):
+        from .missions import MISSIONS
+
+        tallies = {"games", "wins", "spins", "sitngos", "knockouts", "formats", "big_spin"}
+        for mission in MISSIONS:
+            with self.subTest(mission=mission["key"]):
+                self.assertIn(mission["counts"], tallies)
+                self.assertGreater(mission["target"], 0)
+                self.assertGreater(mission["coins"], 0)
+
+    def test_the_keys_are_unique_because_a_claim_is_filed_under_one(self):
+        from .missions import MISSIONS
+
+        keys = [mission["key"] for mission in MISSIONS]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_a_week_is_worth_more_than_a_day_but_not_more_than_a_week_of_days(self):
+        from .missions import DAILY, MISSIONS, WEEKLY
+
+        day = sum(m["coins"] for m in MISSIONS if m["period"] == DAILY)
+        week = sum(m["coins"] for m in MISSIONS if m["period"] == WEEKLY)
+
+        self.assertGreater(week, day)
+        self.assertLess(week, day * 7)
+
+    def test_progress_is_capped_at_the_target(self):
+        from .missions import BY_KEY, progress_of
+
+        # Six wins is not six of the one win the daily asked for.
+        self.assertEqual(progress_of(BY_KEY["daily_win"], {"wins": 6}), 1)
+        self.assertEqual(progress_of(BY_KEY["daily_play"], {"games": 2}), 2)
+        self.assertEqual(progress_of(BY_KEY["daily_play"], {}), 0)
+
+    def test_an_unknown_key_is_nobody_s_mission(self):
+        from .missions import clean_key
+
+        self.assertIsNone(clean_key("daily_free_money"))
+        self.assertIsNone(clean_key(None))
+        self.assertIsNotNone(clean_key("daily_win"))
+
+
+class MissionProgressTests(TestCase):
+    """Progress read back out of the games themselves."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="m_player", password="secret123")
+        wallet_for(self.user)
+
+    def _game(self, fmt, *, finished_at, multiplier=0, seats=3):
+        from tournaments.models import Tournament
+
+        return Tournament.objects.create(
+            name=f"{fmt} game", host=self.user, format=fmt, status="finished",
+            buy_in_coins=25, buy_in_cents=0, max_players=seats, players_per_table=seats,
+            spin_multiplier=multiplier, finished_at=finished_at,
+        )
+
+    def _played(self, game, *, finish=2, knockouts=0):
+        from tournaments.models import TournamentPlayer
+
+        return TournamentPlayer.objects.create(
+            tournament=game, user=self.user, table=game.ensure_table(1),
+            seat=0, seat_at_table=0, chips=0,
+            finish_position=finish, knockouts=knockouts,
+        )
+
+    def test_a_game_counts_in_the_window_it_finished_in(self):
+        from .missiontally import counts_for
+
+        now = timezone.now()
+        self._played(self._game("spingo", finished_at=now - timedelta(minutes=5)))
+        # Yesterday's, which is nobody's business today.
+        self._played(self._game("sitngo", finished_at=now - timedelta(days=2)))
+
+        counts = counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))
+
+        self.assertEqual(counts["games"], 1)
+        self.assertEqual(counts["spins"], 1)
+        self.assertEqual(counts["sitngos"], 0)
+
+    def test_a_tournament_is_not_one_of_these(self):
+        """A tournament is an evening, not a thing you do three of. A daily
+        that could be finished by sitting at one would be about waiting."""
+        from .missiontally import counts_for
+
+        now = timezone.now()
+        self._played(self._game("standard", finished_at=now, seats=9))
+
+        self.assertEqual(counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))["games"], 0)
+
+    def test_a_game_still_being_played_counts_for_nothing_yet(self):
+        from tournaments.models import Tournament, TournamentPlayer
+        from .missiontally import counts_for
+
+        now = timezone.now()
+        live = Tournament.objects.create(
+            name="live", host=self.user, format="spingo", status="running",
+            buy_in_coins=25, max_players=3, players_per_table=3,
+        )
+        TournamentPlayer.objects.create(
+            tournament=live, user=self.user, table=live.ensure_table(1),
+            seat=0, seat_at_table=0, chips=1500,
+        )
+
+        self.assertEqual(counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))["games"], 0)
+
+    def test_wins_formats_and_the_big_draw_are_all_read_off_the_same_games(self):
+        from .missiontally import counts_for
+
+        now = timezone.now()
+        self._played(self._game("spingo", finished_at=now, multiplier=10), finish=1)
+        self._played(self._game("sitngo", finished_at=now, seats=2), finish=2, knockouts=1)
+
+        counts = counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))
+
+        self.assertEqual(counts["games"], 2)
+        self.assertEqual(counts["wins"], 1)
+        self.assertEqual(counts["formats"], 2)
+        self.assertEqual(counts["best_spin"], 10)
+        self.assertEqual(counts["big_spin"], 1)
+        self.assertEqual(counts["knockouts"], 1)
+
+    def test_an_ordinary_spin_is_not_a_big_draw(self):
+        from .missiontally import counts_for
+
+        now = timezone.now()
+        self._played(self._game("spingo", finished_at=now, multiplier=2))
+
+        counts = counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))
+        self.assertEqual(counts["big_spin"], 0)
+
+    def test_somebody_else_s_games_are_somebody_else_s(self):
+        from .missiontally import counts_for
+        from tournaments.models import TournamentPlayer
+
+        now = timezone.now()
+        other = User.objects.create_user(username="m_other", password="secret123")
+        game = self._game("spingo", finished_at=now)
+        TournamentPlayer.objects.create(
+            tournament=game, user=other, table=game.ensure_table(1),
+            seat=1, seat_at_table=1, chips=0, finish_position=1,
+        )
+
+        self.assertEqual(counts_for(self.user, now - timedelta(hours=1), now + timedelta(hours=1))["games"], 0)
+
+
+class MissionClaimTests(APITestCase):
+    """Taking the coins, once."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="mc_player", password="secret123")
+        wallet_for(self.user)
+        Wallet.objects.filter(user=self.user).update(balance=0)
+        self.client.force_authenticate(self.user)
+
+    def _finish(self, count, fmt="spingo", finish=2, multiplier=0):
+        from tournaments.models import Tournament, TournamentPlayer
+
+        for index in range(count):
+            game = Tournament.objects.create(
+                name=f"g{index}", host=self.user, format=fmt, status="finished",
+                buy_in_coins=25, max_players=3, players_per_table=3,
+                spin_multiplier=multiplier, finished_at=timezone.now(),
+            )
+            TournamentPlayer.objects.create(
+                tournament=game, user=self.user, table=game.ensure_table(1),
+                seat=0, seat_at_table=0, chips=0, finish_position=finish,
+            )
+
+    def test_an_unfinished_mission_pays_nothing(self):
+        from .missionbank import claim_mission
+
+        self._finish(2)
+
+        self.assertEqual(claim_mission(self.user, "daily_play"), "Not finished yet.")
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 0)
+
+    def test_a_finished_one_pays_its_coins(self):
+        from .missionbank import claim_mission
+        from .missions import BY_KEY
+
+        self._finish(3)
+
+        wallet, coins = claim_mission(self.user, "daily_play")
+
+        self.assertEqual(coins, BY_KEY["daily_play"]["coins"])
+        self.assertEqual(wallet.balance, coins)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, coins)
+
+    def test_it_pays_once_however_many_times_it_is_asked(self):
+        from .missionbank import claim_mission
+
+        self._finish(3)
+        wallet, coins = claim_mission(self.user, "daily_play")
+
+        for _ in range(5):
+            self.assertEqual(claim_mission(self.user, "daily_play"), "Already claimed.")
+
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, coins)
+        self.assertEqual(MissionClaim.objects.filter(user=self.user).count(), 1)
+
+    def test_the_coins_are_written_down_where_every_other_coin_is(self):
+        from .missionbank import claim_mission
+
+        self._finish(3)
+        claim_mission(self.user, "daily_play")
+
+        row = CoinLedger.objects.filter(user=self.user, reason="mission").first()
+        self.assertIsNotNone(row)
+        self.assertIn("daily_play", row.memo)
+
+    def test_a_mission_nobody_wrote_is_refused(self):
+        from .missionbank import claim_mission
+
+        self.assertEqual(claim_mission(self.user, "free_coins"), "No such mission.")
+
+    def test_the_board_says_what_is_done_and_what_has_been_taken(self):
+        from .missionbank import claim_mission, mission_board
+
+        self._finish(3, finish=1)
+        board = {one["key"]: one for one in mission_board(self.user)}
+
+        self.assertTrue(board["daily_play"]["claimable"])
+        self.assertTrue(board["daily_win"]["claimable"])
+        # Three Spin n Gos and no Sit n Go: one of each is half done.
+        self.assertEqual(board["daily_both"]["progress"], 1)
+        self.assertFalse(board["daily_both"]["claimable"])
+
+        claim_mission(self.user, "daily_play")
+        after = {one["key"]: one for one in mission_board(self.user)}
+        self.assertTrue(after["daily_play"]["claimed"])
+        self.assertFalse(after["daily_play"]["claimable"])
+
+    def test_the_endpoint_pays_and_hands_back_the_board_and_the_wallet(self):
+        self._finish(3)
+
+        response = self.client.post(
+            reverse("coin-mission-claim"), {"key": "daily_play"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["coins"], 60)
+        self.assertEqual(response.data["balance"], 60)
+        claimed = [one for one in response.data["missions"] if one["key"] == "daily_play"]
+        self.assertTrue(claimed[0]["claimed"])
+
+    def test_the_endpoint_refuses_an_unfinished_one_rather_than_paying(self):
+        response = self.client.post(
+            reverse("coin-mission-claim"), {"key": "weekly_win"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 0)
+
+    def test_the_board_is_readable_before_anybody_has_played_anything(self):
+        response = self.client.get(reverse("coin-missions"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["missions"]), 6)
+        self.assertTrue(all(one["progress"] == 0 for one in response.data["missions"]))
+        self.assertFalse(any(one["claimable"] for one in response.data["missions"]))

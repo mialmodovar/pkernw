@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
+import { turnSlots, waitingSlots } from "./actionSlots";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
 import { timerToneClass, useActionCountdown } from "./useActionCountdown";
@@ -13,7 +14,13 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 // sized off the window rather than pinned to a pixel count. On a laptop that is
 // a comfortable target; on a large screen it grows with everything else instead
 // of staying a chip in the corner.
-const BTN = "flex-auto min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
+//
+// The row is a three-column grid rather than a flex row, so the slots are
+// exactly equal by construction: sized from their contents, "Call 12,400" was a
+// wider target than "Fold" and every button moved when the amount changed, and
+// flexing them to fill left two or three pixels of rounding between one face of
+// the panel and the other.
+const BTN = "w-full min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation " +
   "px-[clamp(0.4rem,1.1vw,1.5rem)] py-[clamp(0.55rem,1vw,1rem)] " +
   "text-[clamp(0.8rem,1.05vw,1.15rem)]";
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";
@@ -35,14 +42,48 @@ const PRESELECTS = [
  *
  * Only ever one of them, which is what was wrong with the tick boxes these
  * replace: a checkbox says "and also", and ticking a second one silently
- * cleared the first. These read as what they are — one choice out of four, the
- * chosen one lit — and the lit one can be pressed again to take it back, which
- * is the one thing a radio group cannot do and this needs.
+ * cleared the first. These read as what they are — one choice, the chosen one
+ * lit — and the lit one can be pressed again to take it back, which is the one
+ * thing a radio group cannot do and this needs.
+ *
+ * Two of them are drawn as full-size buttons standing exactly where the buttons
+ * they anticipate will stand; see actionSlots.js. The other two are conditional
+ * rather than positional and are drawn small, in the line above, which a turn
+ * fills with text and never with a button.
  */
-function PreselectChoice({ value, onChange }) {
+function PreselectButton({ option, chosen, onChange, className = "" }) {
   return (
-    <div role="radiogroup" aria-label="Decide before your turn" className="flex flex-wrap items-center gap-1">
-      {PRESELECTS.map((option) => {
+    <button
+      type="button"
+      role="radio"
+      aria-checked={chosen}
+      title={chosen ? `${option.hint} — press again to cancel` : option.hint}
+      onClick={() => onChange(chosen ? null : option.key)}
+      className={`${BTN} border ${className} ${
+        chosen
+          ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))]"
+            + " text-(--color-highlight-ink) border-(--color-highlight-deeper)"
+          : "bg-black/40 text-(--color-text-muted) border-(--color-border)"
+            + " hover:text-(--color-silver) hover:border-(--color-border-strong)"
+      }`}
+    >
+      <span className="flex items-center justify-center gap-1.5">
+        {/* The dot is what says "one of these", before the colour does. */}
+        <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${
+          chosen ? "border-(--color-highlight-ink) bg-(--color-highlight-ink)" : "border-(--color-text-muted)"
+        }`} />
+        {option.label}
+      </span>
+    </button>
+  );
+}
+
+/** The conditional pre-selections, in the line a turn gives to its hint text. */
+function PreselectChips({ value, onChange, keys }) {
+  return (
+    <>
+      {keys.map((key) => {
+        const option = PRESELECTS.find((one) => one.key === key);
         const chosen = value === option.key;
         return (
           <button
@@ -52,21 +93,67 @@ function PreselectChoice({ value, onChange }) {
             aria-checked={chosen}
             title={chosen ? `${option.hint} — press again to cancel` : option.hint}
             onClick={() => onChange(chosen ? null : option.key)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-semibold
-                        transition-colors select-none ${
-                          chosen
-                            ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] text-(--color-highlight-ink) border-(--color-highlight-deeper)"
-                            : "bg-black/40 text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver) hover:border-(--color-border-strong)"
-                        }`}
+            className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold leading-tight
+                        transition-colors select-none whitespace-nowrap ${
+              chosen
+                ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))]"
+                  + " text-(--color-highlight-ink) border-(--color-highlight-deeper)"
+                : "bg-black/40 text-(--color-text-muted) border-(--color-border)"
+                  + " hover:text-(--color-silver) hover:border-(--color-border-strong)"
+            }`}
           >
-            {/* The dot is what says "one of these", before the colour does. */}
-            <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${
-              chosen ? "border-(--color-highlight-ink) bg-(--color-highlight-ink)" : "border-(--color-text-muted)"
-            }`} />
             {option.label}
           </button>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * The panel's shape, which does not depend on whose turn it is.
+ *
+ * Both faces are drawn through this, so every part of one lands on the matching
+ * part of the other: the same timer strip, the same block on the left, the same
+ * line of text above, the same three slots. The width is fixed rather than
+ * taken from the contents for the same reason — the panel is pinned to the
+ * bottom-right corner of the felt and grows leftwards, so a wider Call button
+ * used to push Fold out from under the cursor.
+ */
+function PanelShell({ shell, timerBar, left, above, clock, slots }) {
+  return (
+    <div className={`${shell} overflow-hidden w-full md:w-[34rem] lg:w-[46rem] max-w-full`}>
+      {/* Timer bar — regular clock first, then the time bank. Left exactly
+          where it was: a full-width line above the decision, and drawn empty
+          while you wait so the rows below it do not shift up. */}
+      <div className="h-1.5 bg-black/50 w-full">{timerBar}</div>
+
+      <div className="p-2 flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-3">
+        {/* The sizing block's place. While you wait it holds what is happening
+            and the offer to show a card — anything but a button that commits,
+            because at a turn this is where the raise presets are. */}
+        <div className="flex flex-col justify-center gap-1.5 min-w-0 min-h-[4.75rem]
+                        lg:w-[14.5rem] lg:shrink-0">
+          {left}
+        </div>
+
+        {/* Anchored to the bottom rather than centred. The panel is pinned to
+            the bottom of the felt and grows upwards, so the last row is the one
+            with a fixed distance to the edge of the screen — centring this
+            column inside a taller sizing block moved the buttons a few pixels
+            up, which is a few pixels of somebody's cursor. */}
+        <div className="flex flex-1 flex-col justify-end gap-1 min-w-0">
+          {/* One line, always drawn, whether or not there is anything in it. */}
+          <div className="h-6 flex items-center justify-end gap-1 overflow-hidden">
+            {above}
+          </div>
+
+          <div className="flex items-stretch gap-2">
+            <div className="flex flex-col items-center justify-center w-10 shrink-0">{clock}</div>
+            <div className="grid flex-1 grid-cols-3 items-stretch gap-2">{slots}</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -192,23 +279,59 @@ export default function ActionPanel({
         </div>
       );
     }
-    const inHand = players.find((p) => p.seat === mySeat && !p.is_folded && !p.is_eliminated);
+    const inHand = Boolean(
+      players.find((p) => p.seat === mySeat && !p.is_folded && !p.is_eliminated),
+    );
+    // Deciding early only makes sense while you still hold cards and somebody
+    // is still to act.
+    const canDecideEarly = inHand && actionOnSeat !== null;
+    const cells = waitingSlots({ inHand: canDecideEarly });
+
     return (
-      <div className={`${shell} p-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs`}>
-        <span className="text-(--color-text-muted)">
-          {actionOnSeat !== null
-            ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
-            : "Waiting for next hand..."}
-        </span>
-        {/* Between hands, in the place your hands are already resting: showing
-            a card is a decision like any other, and every other one is made
-            from this panel rather than from the middle of the felt. */}
-        <ShowCardsBar myCards={holeCards} mySeat={mySeat} />
-        {/* Deciding early only makes sense while you still hold cards. */}
-        {inHand && actionOnSeat !== null && (
-          <PreselectChoice value={preselect} onChange={setPreselect} />
+      <PanelShell
+        shell={shell}
+        left={(
+          <>
+            <span className="text-xs text-center lg:text-left text-(--color-text-muted)">
+              {actionOnSeat !== null
+                ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
+                : "Waiting for next hand..."}
+            </span>
+            {/* Between hands, in the place your hands are already resting:
+                showing a card is a decision like any other, and every other one
+                is made from this panel rather than from the middle of the felt. */}
+            <ShowCardsBar myCards={holeCards} mySeat={mySeat} />
+          </>
         )}
-      </div>
+        above={canDecideEarly && (
+          <div role="radiogroup" aria-label="Decide before your turn"
+            className="flex items-center gap-1">
+            <PreselectChips
+              value={preselect}
+              onChange={setPreselect}
+              keys={["checkfold", "callany"]}
+            />
+          </div>
+        )}
+        clock={null}
+        slots={cells.map((cell) => {
+          if (cell.kind !== "preselect") {
+            // Drawn and empty. The slot has to hold its place — that is the
+            // whole point — and it must not be pressable, so a cursor waiting
+            // over the raise slot has nothing under it to hit.
+            return <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />;
+          }
+          const option = PRESELECTS.find((one) => one.key === cell.preselect);
+          return (
+            <PreselectButton
+              key={cell.slot}
+              option={option}
+              chosen={preselect === option.key}
+              onChange={setPreselect}
+            />
+          );
+        })}
+      />
     );
   }
 
@@ -252,30 +375,63 @@ export default function ActionPanel({
 
   const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 
+  const cells = turnSlots(can);
+  // Each slot's button, or an empty one holding its place. Written as a lookup
+  // rather than in the JSX below so that the row is unmistakably the same three
+  // slots in the same order as the one you were just looking at.
+  const buttons = {
+    fold: (
+      <button key="fold" onClick={() => commit("fold")} disabled={locked}
+        className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
+                    disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
+        Fold
+      </button>
+    ),
+    check: (
+      <button key="check" onClick={() => commit("check")} disabled={locked}
+        className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${
+          armed === "check" ? ARMED_RING : ""}`}>
+        Check
+      </button>
+    ),
+    call: (
+      <button key="call" onClick={() => commit("call")} disabled={locked}
+        className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${
+          armed === "call" ? ARMED_RING : ""}`}>
+        Call {fmt(ctx.to_call)}
+      </button>
+    ),
+    raise: (
+      <button key="raise" onClick={() => commit("raise")} disabled={locked}
+        className={`${BTN} grid place-items-center bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
+                    border border-(--color-highlight-text) text-[#1a1208]
+                    disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
+        {/* The widest this button will ever have to be this hand, drawn
+            invisibly under the real label in the same grid cell. Without it the
+            label wrapped as the slider moved; the slot itself no longer
+            resizes, since all three are one width by construction. */}
+        <span aria-hidden="true" className="col-start-1 row-start-1 invisible">
+          Raise {fmt(maxRaise)}
+        </span>
+        <span className="col-start-1 row-start-1">Raise {fmt(raiseAmount)}</span>
+      </button>
+    ),
+  };
+
   return (
-    // Two blocks side by side rather than stacked: how much, on the left, and
-    // what you are doing about it, on the right. Stacked, choosing an amount
-    // changed the height of the block above the buttons and moved them under
-    // your hand.
-    //
-    // Only where two columns fit, though. The sizing block, the clock and three
-    // buttons carrying amounts come to about 700px, so below a wide window they
-    // go back to being stacked — a narrower window than that has nowhere to put
-    // the overflow but under the panel's own clipped edge.
-    <div className={`${shell} overflow-hidden w-full`}>
-      {/* Timer bar — regular clock first, then the time bank. Left exactly
-          where it was: a full-width line above the decision. */}
-      <div className="h-1.5 bg-black/50 w-full">
+    // The same shell the waiting face uses, so that every part of one lands on
+    // the matching part of the other. How much, on the left; what you are doing
+    // about it, on the right, in three slots that never move.
+    <PanelShell
+      shell={shell}
+      timerBar={(
         <div
           className={`h-full transition-all duration-1000 ease-linear ${timerToneClass(countdown)}`}
           style={{ width: `${countdown.pct}%` }}
         />
-      </div>
-
-      <div className="p-2 flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-3">
-      {/* How much — on the left, and staying there */}
-      {can.raise && maxRaise > minRaise && (
-        <div className="flex flex-col justify-center gap-1.5 min-w-0 lg:w-[14.5rem] lg:shrink-0">
+      )}
+      left={can.raise && maxRaise > minRaise ? (
+        <>
           <span className="text-center lg:text-left text-xs text-(--color-text-muted) whitespace-nowrap">
             min {fmt(minRaise)} · max {fmt(maxRaise)}
           </span>
@@ -321,19 +477,15 @@ export default function ActionPanel({
             />
             <button type="button" onClick={() => nudge(1)} aria-label="Raise more" className={STEPPER}>+</button>
           </div>
-        </div>
+        </>
+      ) : null}
+      above={armed && (
+        <span className="truncate text-[11px] text-(--color-highlight-text)">
+          Press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
+        </span>
       )}
-
-      {/* What you are doing — on the right, taking whatever is left */}
-      <div className="flex flex-1 flex-col justify-center gap-1 min-w-0">
-        {armed && (
-          <span className="truncate text-[11px] text-(--color-highlight-text)">
-            Press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
-          </span>
-        )}
-        <div className="flex items-stretch gap-2">
-        {/* Clock */}
-        <div className="flex flex-col items-center justify-center w-10 shrink-0">
+      clock={(
+        <>
           <span className={`text-lg font-bold font-mono ${
             countdown.inTimeBank ? "text-[#c76b7a]" : "text-(--color-silver)"
           }`}>
@@ -342,52 +494,13 @@ export default function ActionPanel({
           {countdown.inTimeBank && (
             <span className="text-[9px] uppercase tracking-wide text-[#c76b7a]">Time bank</span>
           )}
-        </div>
-
-        {/* Commit cluster — the choices sit together, under the mouse or thumb,
-            always on one row: a decision that wraps onto a second line is one
-            where the button you meant to press moved while you were reaching
-            for it. */}
-        <div className="ml-auto flex flex-1 flex-nowrap items-stretch gap-2">
-          {can.fold && (
-            <button onClick={() => commit("fold")} disabled={locked}
-              className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
-                          disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
-              Fold
-            </button>
-          )}
-          {can.check && (
-            <button onClick={() => commit("check")} disabled={locked}
-              className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${armed === "check" ? ARMED_RING : ""}`}>
-              Check
-            </button>
-          )}
-          {can.call && (
-            <button onClick={() => commit("call")} disabled={locked}
-              className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${armed === "call" ? ARMED_RING : ""}`}>
-              Call {fmt(ctx.to_call)}
-            </button>
-          )}
-          {can.raise && (
-            <button onClick={() => commit("raise")} disabled={locked}
-              className={`${BTN} grid place-items-center bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
-                          border border-(--color-highlight-text) text-[#1a1208]
-                          disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
-              {/* The widest this button will ever have to be this hand, drawn
-                  invisibly under the real label in the same grid cell. Without
-                  it the panel resized on every step of the slider and the
-                  controls slid about under the hand dragging them; with it the
-                  room for the biggest raise available is taken up front. */}
-              <span aria-hidden="true" className="col-start-1 row-start-1 invisible">
-                Raise {fmt(maxRaise)}
-              </span>
-              <span className="col-start-1 row-start-1">Raise {fmt(raiseAmount)}</span>
-            </button>
-          )}
-        </div>
-        </div>
-      </div>
-      </div>
-    </div>
+        </>
+      )}
+      slots={cells.map((cell) => (
+        cell.kind === "empty"
+          ? <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />
+          : buttons[cell.kind]
+      ))}
+    />
   );
 }

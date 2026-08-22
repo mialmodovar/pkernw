@@ -547,8 +547,10 @@ export default function GamePage() {
               // amounts, and a deep-stacked table asks for more room than a
               // short-stacked one. The floor stops it shrinking to a nub
               // between hands, and the ceiling stops it hanging off the felt.
-              // It grows leftwards from a pinned corner, so the buttons keep
-              // the same right edge whatever the numbers do.
+              // A definite width, set by the panel itself, rather than one
+              // taken from the numbers printed on the buttons: a bigger pot
+              // used to make a wider panel, and a panel pinned to this corner
+              // grows leftwards — so every button moved when the amounts did.
               // Scaled down a little from the pinned corner it grows out of,
               // so it keeps its right and bottom edges and takes slightly less
               // of the felt back off the seat below it.

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { send } from "../../api/socket";
 import useGameStore from "../../store/gameStore";
@@ -14,6 +14,7 @@ import {
 } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
+import HitEffect from "./HitEffect";
 import ChipFlight from "./ChipFlight";
 import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
@@ -33,7 +34,7 @@ import FinisherOverlay from "./FinisherOverlay";
 import MysteryBoard from "./MysteryBoard";
 import MysteryOpening from "./MysteryOpening";
 import MysteryReveal from "./MysteryReveal";
-import ThrownItem from "./ThrownItem";
+import ThrownItem, { FLIGHT_MS } from "./ThrownItem";
 import AimOverlay from "./AimOverlay";
 
 
@@ -211,6 +212,33 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
     ? handStrength
     : null;
 
+  // Throws that were aimed at this player, held back until they land. The
+  // store knows a throw exists the moment it is broadcast; the mess belongs to
+  // the moment it arrives.
+  const myUserId = players.find((p) => p.seat === mySeat)?.user_id ?? null;
+  const [landedOnMe, setLandedOnMe] = useState([]);
+  // The highest throw id already scheduled. Without it, every re-render while
+  // one is in the air would queue the same landing again.
+  const seenThrow = useRef(0);
+  const clearHit = useCallback((id) => {
+    setLandedOnMe((hits) => hits.filter((one) => one.id !== id));
+  }, []);
+
+  useEffect(() => {
+    if (myUserId == null) return undefined;
+    const mine = throws.filter((one) => one.toUserId === myUserId);
+    if (!mine.length) return undefined;
+    const timers = mine
+      .filter((one) => one.id > seenThrow.current)
+      .map((one) => {
+        seenThrow.current = Math.max(seenThrow.current, one.id);
+        return setTimeout(() => {
+          setLandedOnMe((hits) => (hits.some((h) => h.id === one.id) ? hits : [...hits, one]));
+        }, FLIGHT_MS);
+      });
+    return () => timers.forEach(clearTimeout);
+  }, [throws, myUserId]);
+
   const winningBoardCards = resultRevealed
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
@@ -307,6 +335,14 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             to={seatPixel(one.toSeat)}
           />
         ) : null
+      ))}
+
+      {/* The ones aimed at you, on your own screen. The seat everybody else
+          watched it land on is not where it landed for you. Delayed until the
+          thing has actually crossed — see FLIGHT_MS — so the mess arrives with
+          the object rather than ahead of it. */}
+      {landedOnMe.map((one) => (
+        <HitEffect key={one.id} hit={one} onDone={clearHit} />
       ))}
 
       {aimingItem && seatPixel(mySeat) && (

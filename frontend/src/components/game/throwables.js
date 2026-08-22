@@ -6,27 +6,37 @@
  * snowball leaves a splash of white, and a chip just bounces.
  */
 export const THROWABLES = [
-  { id: "tomato", glyph: "🍅", label: "Tomato", splat: "💥", tint: "#c3565f" },
-  { id: "egg", glyph: "🥚", label: "Egg", splat: "💦", tint: "#e8e2d4" },
-  { id: "beer", glyph: "🍺", label: "Beer", splat: "💦", tint: "#e0c66b" },
-  { id: "chip", glyph: "🔴", label: "Chip", splat: "✨", tint: "#c3565f" },
-  { id: "shoe", glyph: "👟", label: "Shoe", splat: "💢", tint: "#b9b0a7" },
-  { id: "chicken", glyph: "🐔", label: "Chicken", splat: "🪶", tint: "#e0c66b" },
-  { id: "rose", glyph: "🌹", label: "Rose", splat: "🌸", tint: "#c3565f" },
-  { id: "snowball", glyph: "⚪", label: "Snowball", splat: "❄️", tint: "#dbe6f0" },
+  { id: "tomato", glyph: "🍅", label: "Tomato", splat: "💥", tint: "#c3565f", hit: "smear" },
+  { id: "egg", glyph: "🥚", label: "Egg", splat: "💦", tint: "#e8e2d4", hit: "splash" },
+  { id: "beer", glyph: "🍺", label: "Beer", splat: "💦", tint: "#e0c66b", hit: "splash" },
+  { id: "chip", glyph: "🔴", label: "Chip", splat: "✨", tint: "#c3565f", hit: "sparkle" },
+  { id: "shoe", glyph: "👟", label: "Shoe", splat: "💢", tint: "#b9b0a7", hit: "thud" },
+  { id: "chicken", glyph: "🐔", label: "Chicken", splat: "🪶", tint: "#e0c66b", hit: "feathers" },
+  { id: "rose", glyph: "🌹", label: "Rose", splat: "🌸", tint: "#c3565f", hit: "petals" },
+  { id: "snowball", glyph: "⚪", label: "Snowball", splat: "❄️", tint: "#dbe6f0", hit: "frost" },
   // Bought with coins. What they cost is the server's business (see the shop);
-  // this is only what they look like on the way over.
-  { id: "banana", glyph: "🍌", label: "Banana", splat: "💦", tint: "#e0c66b" },
-  { id: "ice", glyph: "🧊", label: "Ice cube", splat: "❄️", tint: "#dbe6f0" },
-  { id: "pie", glyph: "🥧", label: "Pie", splat: "💥", tint: "#e0c66b" },
-  { id: "fish", glyph: "🐟", label: "Fish", splat: "💦", tint: "#dbe6f0" },
-  { id: "brick", glyph: "🧱", label: "Brick", splat: "💢", tint: "#c3565f" },
+  // this is only what they look like on the way over, and what they leave on
+  // the screen of whoever caught them.
+  { id: "banana", glyph: "🍌", label: "Banana", splat: "💦", tint: "#e0c66b", hit: "smear" },
+  { id: "ice", glyph: "🧊", label: "Ice cube", splat: "❄️", tint: "#dbe6f0", hit: "frost" },
+  { id: "water", glyph: "🪣", label: "Bucket of water", splat: "💦", tint: "#7fb3d5", hit: "splash" },
+  { id: "coffee", glyph: "☕", label: "Coffee", splat: "💦", tint: "#8a6242", hit: "smear" },
+  { id: "pie", glyph: "🥧", label: "Pie", splat: "💥", tint: "#e0c66b", hit: "smear" },
+  { id: "fish", glyph: "🐟", label: "Fish", splat: "💦", tint: "#dbe6f0", hit: "splash" },
+  { id: "duck", glyph: "🦆", label: "Duck", splat: "🪶", tint: "#e0c66b", hit: "feathers" },
+  { id: "cake", glyph: "🎂", label: "Cake", splat: "💥", tint: "#e8c9d4", hit: "smear" },
+  { id: "brick", glyph: "🧱", label: "Brick", splat: "💢", tint: "#c3565f", hit: "crack" },
+  { id: "confetti", glyph: "🎉", label: "Confetti", splat: "✨", tint: "#e0c66b", hit: "petals" },
   // The one thing here that is not thrown. The cigar stays lit where you drew
   // it and the smoke crosses on its own, so it needs a trail rather than a
-  // splat: see ThrownItem.
+  // splat: see ThrownItem. Nothing lands, so nothing hits.
   { id: "cigar", glyph: "🚬", label: "Cigar", splat: "💨", tint: "#b9b0a7", smoke: "💨" },
-  { id: "bomb", glyph: "💣", label: "Bomb", splat: "💥", tint: "#c3565f" },
-  { id: "crown", glyph: "👑", label: "Crown", splat: "✨", tint: "#e0c66b" },
+  { id: "skull", glyph: "💀", label: "Skull", splat: "💀", tint: "#b9b0a7", hit: "drain" },
+  { id: "bomb", glyph: "💣", label: "Bomb", splat: "💥", tint: "#c3565f", hit: "blast" },
+  { id: "octopus", glyph: "🐙", label: "Octopus", splat: "⚫", tint: "#6b4a7a", hit: "ink" },
+  { id: "lightning", glyph: "⚡", label: "Lightning", splat: "⚡", tint: "#e8dc6b", hit: "blast" },
+  { id: "crown", glyph: "👑", label: "Crown", splat: "✨", tint: "#e0c66b", hit: "sparkle" },
+  { id: "anvil", glyph: "🪨", label: "Anvil", splat: "💢", tint: "#b9b0a7", hit: "crack" },
 ];
 
 const BY_ID = Object.fromEntries(THROWABLES.map((item) => [item.id, item]));

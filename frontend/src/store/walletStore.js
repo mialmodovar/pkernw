@@ -87,6 +87,19 @@ const useWalletStore = create((set, get) => ({
     return row ? row.owned : true;
   },
 
+  /**
+   * Whether the server sells this at all.
+   *
+   * True before the shop has been read once, which is how the picker keeps
+   * working on a table opened before the catalogue arrives. After that it is
+   * the server's list: a client that knows about an item the server does not
+   * would otherwise offer it and have every throw quietly refused.
+   */
+  onSale: (item) => {
+    const items = get().items;
+    return items.length === 0 || items.some((one) => one.item === item);
+  },
+
   /** What one costs, or 0 for the ones everybody has. The till is the
    *  server's; this is only so a price can be printed beside the thing. */
   priceOf: (item) => get().items.find((one) => one.item === item)?.price ?? 0,

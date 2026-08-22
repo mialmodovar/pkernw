@@ -30,6 +30,7 @@ from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_second
 from .finishers import finisher_list
 from .giphy import clean_gif_id as _clean_gif_id
 from .throwables import clean_item as _clean_item
+from .throwlimit import check as _throw_check
 from .throwables import is_free as _is_free_item
 
 
@@ -49,11 +50,9 @@ CHAT_MAX_CHARS = 240
 CHAT_WINDOW_SECONDS = 10.0
 CHAT_MESSAGE_BUDGET = 8
 
-# Throwing is cheap to do and easy to overdo, so it gets a budget of its own —
-# tighter than chat, because it lands on somebody else's screen rather than in
-# a panel they can close.
-THROW_WINDOW_SECONDS = 10.0
-THROW_BUDGET = 6
+# Throwing is cheap to do and easy to overdo, and it lands on somebody else's
+# screen rather than in a panel they can close — so it has a rule of its own,
+# in throwlimit.py: a burst of three, then ten seconds of tired arm.
 
 MEDIA_WINDOW_SECONDS = 10.0
 MEDIA_MESSAGE_BUDGET = 120
@@ -913,12 +912,20 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         if target_id == self.user.id:
             return   # nothing to animate, and nothing anybody wants to watch
 
-        now = time.monotonic()
-        window_start, count = getattr(self, "_throw_window", (0.0, 0))
-        if now - window_start > THROW_WINDOW_SECONDS:
-            window_start, count = now, 0
-        self._throw_window = (window_start, count + 1)
-        if count + 1 > THROW_BUDGET:
+        # Three in a row and the arm is tired for ten seconds. Deliberately a
+        # burst rather than a wait on every throw: answering a tomato with a
+        # tomato is the point of the feature. See throwlimit.py.
+        allowed, kept, cooling_for = _throw_check(
+            getattr(self, "_throw_times", []), time.monotonic(),
+        )
+        self._throw_times = kept
+        if not allowed:
+            # Told rather than silently dropped: a button that does nothing
+            # reads as a broken button, and the player then presses it more.
+            await self.send(text_data=json.dumps({
+                "type": "throw_cooldown",
+                "seconds": cooling_for,
+            }))
             return
 
         runner = _tournament_runners.get(self.tournament_id)

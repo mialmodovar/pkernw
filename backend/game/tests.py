@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import time
 from unittest.mock import patch
@@ -1474,11 +1475,21 @@ class ThrowRelayTests(TransactionTestCase):
 	"""Throwing across a live table."""
 
 	def _consumer(self, tournament_id=4321, user_id=1):
-		"""A consumer with just enough on it to reach _throw_item."""
+		"""A consumer with just enough on it to reach _throw_item.
+
+		`sent_to_self` collects what would go back down this player's own
+		socket, which is how a refused throw tells them to wait.
+		"""
 		consumer = TournamentConsumer()
 		consumer.tournament_id = tournament_id
 		consumer.user = type("U", (), {"id": user_id})()
 		consumer.shown_name = "thrower"
+		consumer.sent_to_self = []
+
+		async def send(text_data=None, **kwargs):
+			consumer.sent_to_self.append(json.loads(text_data))
+
+		consumer.send = send
 		return consumer
 
 	def _runner(self, seats):
@@ -1549,10 +1560,12 @@ class ThrowRelayTests(TransactionTestCase):
 			self._throw({1: (0, 1), 2: (3, 1)}, {"item": "egg", "at_user_id": "everyone"}), [],
 		)
 
-	def test_a_flood_is_cut_off(self):
-		"""Throwing lands on somebody else's screen rather than in a panel they
-		can close, so it gets a tighter budget than chat."""
+	def test_a_burst_gets_through_and_the_flood_behind_it_does_not(self):
+		"""Three in a row is a joke; twenty is a way of stopping somebody
+		playing. See throwlimit.py — it lands on another player's screen rather
+		than in a panel they can close."""
 		from game.consumers import _tournament_runners
+		from game.throwlimit import BURST
 
 		seats = {1: (0, 1), 2: (3, 1)}
 		sent = []
@@ -1567,8 +1580,30 @@ class ThrowRelayTests(TransactionTestCase):
 				async_to_sync(consumer._throw_item)({"item": "egg", "at_user_id": 2})
 		_tournament_runners.pop(4321, None)
 
-		self.assertGreater(len(sent), 0)
-		self.assertLessEqual(len(sent), 6)
+		self.assertEqual(len(sent), BURST)
+
+	def test_a_refused_throw_says_how_long_to_wait(self):
+		"""A button that does nothing reads as a broken button, and the player
+		then presses it more."""
+		from game.consumers import _tournament_runners
+		from game.throwlimit import BURST, COOLDOWN_SECONDS
+
+		_tournament_runners[4321] = self._runner({1: (0, 1), 2: (3, 1)})
+		consumer = self._consumer()
+
+		async def capture(tid, table, event_type, data):
+			return None
+
+		with patch("game.consumers._broadcast_table", capture):
+			for _ in range(BURST + 2):
+				async_to_sync(consumer._throw_item)({"item": "egg", "at_user_id": 2})
+		_tournament_runners.pop(4321, None)
+
+		refusals = [one for one in consumer.sent_to_self if one["type"] == "throw_cooldown"]
+		self.assertEqual(len(refusals), 2)
+		for refusal in refusals:
+			self.assertGreater(refusal["seconds"], 0)
+			self.assertLessEqual(refusal["seconds"], COOLDOWN_SECONDS)
 
 
 class LevelClockTests(TestCase):
@@ -2436,3 +2471,80 @@ class BountyLiveTests(TransactionTestCase):
             len(opened["envelopes"]) - len(tournament.mystery_envelopes),
             len({(m["victim_name"], m["mystery"]["envelopes_left"]) for m in drawn}),
         )
+
+
+class ThrowLimitTests(TestCase):
+    """Three in a row is a joke; ten in a row is a way of stopping somebody
+    playing. The difference is entirely a question of rate."""
+
+    def test_a_burst_of_three_is_allowed(self):
+        from game.throwlimit import BURST, check
+
+        kept, now = [], 100.0
+        for index in range(BURST):
+            allowed, kept, cooling = check(kept, now + index * 0.5)
+            self.assertTrue(allowed, index)
+            self.assertEqual(cooling, 0)
+
+    def test_the_fourth_in_a_row_is_refused_with_the_wait(self):
+        from game.throwlimit import COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(3):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        allowed, kept, cooling = check(kept, 101.5)
+        self.assertFalse(allowed)
+        # The clock runs from the throw that spent the burst, not from now.
+        self.assertAlmostEqual(cooling, COOLDOWN_SECONDS - 0.5, places=2)
+
+    def test_leaning_on_the_button_does_not_push_the_wait_further_out(self):
+        """A refused throw is not recorded. Otherwise impatience would be
+        punished harder than the spam the rule is for."""
+        from game.throwlimit import COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(3):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        for attempt in range(20):
+            allowed, kept, cooling = check(kept, 102.0 + attempt * 0.1)
+            self.assertFalse(allowed)
+
+        # Ten seconds after the third throw, and not a moment later.
+        allowed, _, _ = check(kept, 101.0 + COOLDOWN_SECONDS)
+        self.assertTrue(allowed)
+
+    def test_three_spread_over_a_minute_is_a_table_having_fun(self):
+        from game.throwlimit import check
+
+        kept = []
+        for index in range(6):
+            allowed, kept, _ = check(kept, 100.0 + index * 20)
+            self.assertTrue(allowed, index)
+
+    def test_the_wait_ends_and_the_next_burst_starts_clean(self):
+        from game.throwlimit import BURST, COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(BURST):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        after = 101.0 + COOLDOWN_SECONDS
+        allowed, kept, cooling = check(kept, after)
+        self.assertTrue(allowed)
+        self.assertEqual(cooling, 0)
+        # And a whole fresh burst behind it: what happened before the wait is
+        # history rather than credit against the next three.
+        for index in range(1, BURST):
+            allowed, kept, _ = check(kept, after + index * 0.3)
+            self.assertTrue(allowed, index)
+        self.assertFalse(check(kept, after + 1.5)[0])
+
+    def test_nothing_thrown_yet_is_always_allowed(self):
+        from game.throwlimit import check
+
+        allowed, kept, cooling = check([], 500.0)
+        self.assertTrue(allowed)
+        self.assertEqual(kept, [500.0])
+        self.assertEqual(cooling, 0)

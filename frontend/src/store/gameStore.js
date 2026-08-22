@@ -210,6 +210,9 @@ const useGameStore = create((set) => ({
   // aiming mode: seats become targets and a click throws instead of opening
   // somebody's stats.
   aimingItem: null,
+  // When this player may throw again, as a timestamp. Zero means now — which
+  // is nearly always, since the limit only bites on a burst.
+  throwReadyAt: 0,
   setAiming: (aimingItem) => set({ aimingItem }),
   // Whether one of the quick panels is hanging off your own seat. Every seat is
   // translated into its place on the ring, and a transform makes a stacking
@@ -933,9 +936,20 @@ const useGameStore = create((set) => ({
             toSeat: data.to_seat,
             fromName: data.from_name,
             toName: data.to_name,
+            // Who caught it. Everybody watches it cross and land on a seat;
+            // the player it was aimed at gets it on their own screen, and this
+            // is how they know it was them.
+            toUserId: data.to_user_id,
           }],
           throwSequence: s.throwSequence + 1,
         }));
+        break;
+
+      // Three in a row and the arm is tired. Told rather than silently
+      // dropped: a button that does nothing reads as a broken button, and the
+      // player then presses it more.
+      case "throw_cooldown":
+        set({ throwReadyAt: Date.now() + Math.max(0, (data.seconds || 0) * 1000) });
         break;
 
       case "player_disconnected":

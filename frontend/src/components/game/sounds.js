@@ -318,6 +318,39 @@ const LANDINGS = {
     noise(ctx, { start: now, duration: 0.5, peak: 0.3, frequency: 160, Q: 0.3 });
     tone(ctx, { freq: 90, start: now, duration: 0.55, peak: 0.22, type: "sine", endFreq: 30 });
   },
+  // A bucketful. Longer and lower than a splat, and it keeps running.
+  sploosh: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.34, peak: 0.26, frequency: 240, Q: 0.4 });
+    noise(ctx, { start: now + 0.1, duration: 0.3, peak: 0.12, frequency: 900, Q: 0.6 });
+    tone(ctx, { freq: 200, start: now, duration: 0.2, peak: 0.08, type: "sine", endFreq: 70 });
+  },
+  // A party popper: the bang, then the paper.
+  pop: (ctx, now) => {
+    tone(ctx, { freq: 1400, start: now, duration: 0.04, peak: 0.2, type: "square", endFreq: 300 });
+    noise(ctx, { start: now + 0.04, duration: 0.3, peak: 0.07, frequency: 3000, Q: 0.5 });
+  },
+  // Electricity, which is all crack and no weight.
+  zap: (ctx, now) => {
+    noise(ctx, { start: now, duration: 0.05, peak: 0.28, frequency: 5200, Q: 2.2 });
+    tone(ctx, { freq: 2400, start: now, duration: 0.12, peak: 0.1, type: "sawtooth", endFreq: 180 });
+    noise(ctx, { start: now + 0.06, duration: 0.12, peak: 0.08, frequency: 1400, Q: 1.2 });
+  },
+  // Iron on iron, with the ring left in it.
+  clang: (ctx, now) => {
+    tone(ctx, { freq: 320, start: now, duration: 0.6, peak: 0.18, type: "triangle", endFreq: 190 });
+    tone(ctx, { freq: 1240, start: now, duration: 0.45, peak: 0.09, type: "triangle", endFreq: 900 });
+    noise(ctx, { start: now, duration: 0.08, peak: 0.22, frequency: 900, Q: 0.9 });
+  },
+  // Bone. Dry, hollow, and over quickly.
+  rattle: (ctx, now) => {
+    [0, 0.05, 0.09].forEach((offset, index) => {
+      noise(ctx, {
+        start: now + offset, duration: 0.05, peak: 0.14 - index * 0.03,
+        frequency: 1800 - index * 260, Q: 2,
+      });
+    });
+    tone(ctx, { freq: 190, start: now, duration: 0.16, peak: 0.07, type: "square", endFreq: 90 });
+  },
   // Something better than it deserves to be.
   fanfare: (ctx, now) => {
     [880, 1108, 1318].forEach((freq, index) => {
@@ -332,6 +365,9 @@ const LANDING_BY_ITEM = {
   shoe: "thud", chicken: "squawk", rose: "soft", snowball: "poff",
   banana: "splat", ice: "chink", pie: "splat", fish: "splat",
   brick: "knock", bomb: "boom", crown: "fanfare",
+  water: "sploosh", coffee: "glass", duck: "squawk", cake: "splat",
+  confetti: "pop", skull: "rattle", octopus: "splat", lightning: "zap",
+  anvil: "clang",
 };
 
 /** Which landing an item makes, or null when nothing was written for it. */

@@ -56,7 +56,11 @@ export default function Avatar({
   // Every face this is drawn around is a circle, so it is one.
   return (
     <span
-      className={`box-border shrink-0 rounded-full ${className} ${
+      // `block`, because a span is inline and an inline box ignores every
+      // width and height you give it. Without it the ring took its own height
+      // from the line it sat on and the picture inside was pushed out of it —
+      // which is what "the image looks cut" was.
+      className={`box-border block shrink-0 rounded-full ${className} ${
         borderFor(border)?.spins ? "animate-ring-turn" : ""}`}
       style={ring}
       title={`${name || "This player"} — ${borderFor(border)?.label} border`}

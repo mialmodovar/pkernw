@@ -71,6 +71,14 @@ class PresenceConsumer(AsyncWebsocketConsumer):
         if user_id is not None:
             left(user_id)
             await _stamp_last_seen(user_id)
+            # And every table they are sitting at is told they have gone. The
+            # table socket closing no longer means that on its own: it also
+            # closes when somebody walks to the lobby, and this is the socket
+            # that knows the difference. Imported here rather than at the top,
+            # since game imports from this app in places.
+            from game.consumers import announce_gone
+
+            await announce_gone(user_id)
         group = getattr(self, "group", None)
         if group is not None:
             await self.channel_layer.group_discard(group, self.channel_name)

@@ -5,15 +5,11 @@ import useAuthStore from "../../store/authStore";
 import useGameStore from "../../store/gameStore";
 import useTablesStore from "../../store/tablesStore";
 import PlayingCard from "../game/PlayingCard";
-import { handToShow, resumeLabel, tableToResume } from "./resumeTable";
+import { handToShow, resumeLabel, shortcutHiddenOn, tableToResume } from "./resumeTable";
 
 // Slower than the lobby's own polling: this only has to notice that a seat of
 // yours exists, and a seat does not appear out of nowhere while you read a page.
 const REFRESH_MS = 10_000;
-
-// Where the pill has no business being. The table itself, obviously, and the
-// login pages, which nobody reaches with a seat live.
-const HIDDEN_ON = [/^\/tournament\/\d+\/(play|watch)\b/, /^\/(login|register|recover)\b/];
 
 /**
  * A way back to the table, from wherever you have wandered off to.
@@ -37,7 +33,7 @@ export default function TableShortcut() {
   const refreshSeats = useTablesStore((s) => s.refreshSeats);
   const lastTableId = useTablesStore((s) => s.lastTableId);
 
-  const hidden = !user || HIDDEN_ON.some((pattern) => pattern.test(location.pathname));
+  const hidden = !user || shortcutHiddenOn(location.pathname);
 
   useEffect(() => {
     if (hidden) return undefined;

@@ -524,6 +524,11 @@ const useGameStore = create((set) => ({
               chips: data.chips ?? p.chips,
               bet: data.bet ?? p.bet,
               is_all_in: data.is_all_in ?? p.is_all_in,
+              // Acting is proof of presence. Whatever the table believed about
+              // this seat a moment ago, somebody just bet from it — and a
+              // player who has plainly not left must not be wearing a badge
+              // that says they have.
+              is_disconnected: false,
               // Marking the fold here is what makes the mucked hand leave the
               // table: no game_state follows an action, so nothing else would.
               is_folded: data.action === "fold" ? true : p.is_folded,

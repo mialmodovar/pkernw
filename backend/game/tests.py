@@ -2548,3 +2548,135 @@ class ThrowLimitTests(TestCase):
         self.assertTrue(allowed)
         self.assertEqual(kept, [500.0])
         self.assertEqual(cooling, 0)
+
+
+class AwayTests(TestCase):
+    """Disconnected means gone, not "looking at something else"."""
+
+    def test_a_player_who_closed_the_app_is_gone(self):
+        from game.away import truly_gone
+
+        self.assertTrue(truly_gone(app_open=False, other_tables=False))
+
+    def test_walking_over_to_the_lobby_is_not_being_disconnected(self):
+        """The seat lit up DISCONNECTED for somebody who was in the app the
+        whole time, reading the lobby."""
+        from game.away import truly_gone
+
+        self.assertFalse(truly_gone(app_open=True, other_tables=False))
+
+    def test_playing_another_table_is_not_being_disconnected_at_this_one(self):
+        from game.away import truly_gone
+
+        # The app allows several at once, and switching between two of your own
+        # used to mark you gone at whichever you were not looking at.
+        self.assertFalse(truly_gone(app_open=False, other_tables=True))
+        self.assertFalse(truly_gone(app_open=True, other_tables=True))
+
+    def test_only_the_seat_of_somebody_actually_gone_says_anything(self):
+        from game.away import label_for
+
+        self.assertIsNone(label_for(app_open=True, at_this_table=True))
+        self.assertIsNone(label_for(app_open=False, at_this_table=True))
+        # In the app, elsewhere: their clock says it better than a badge would.
+        self.assertIsNone(label_for(app_open=True, at_this_table=False))
+        self.assertEqual(label_for(app_open=False, at_this_table=False), "disconnected")
+
+
+class GoneOrJustElsewhereTests(TransactionTestCase):
+    """What the table is told when a player's table socket closes.
+
+    The registries here are the real ones — one process, by design — so these
+    drive them directly rather than opening sockets: what is being checked is
+    the decision, not the plumbing under it.
+    """
+
+    def setUp(self):
+        from accounts import presence
+        from game.consumers import _player_channels, _tournament_runners
+
+        presence._socket_counts.clear()
+        _player_channels.clear()
+        _tournament_runners.clear()
+        self.told = []
+
+    def tearDown(self):
+        from accounts import presence
+        from game.consumers import _player_channels, _tournament_runners
+
+        presence._socket_counts.clear()
+        _player_channels.clear()
+        _tournament_runners.clear()
+
+    def _runner(self, user_id=7, seat=2, table=1):
+        class Player:
+            _seat = seat
+            _table_number = table
+            name = "ana"
+
+        class Runner:
+            def get_runtime_player(self, uid):
+                return Player() if uid == user_id else None
+
+        return Runner()
+
+    async def _capture(self, tournament_id, table_number, event_type, data):
+        self.told.append((tournament_id, event_type, data))
+
+    def test_closing_a_table_while_the_app_is_open_says_nothing(self):
+        """Walking to the lobby is not a disconnection, and the seat used to
+        light up DISCONNECTED for somebody who never left."""
+        from game.away import truly_gone
+
+        self.assertFalse(truly_gone(app_open=True, other_tables=False))
+
+    def test_the_app_closing_tells_every_table_they_are_sitting_at(self):
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        _tournament_runners[12] = self._runner()
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 2)
+        self.assertEqual({event for _tid, event, _data in self.told}, {"player_disconnected"})
+        self.assertEqual({tid for tid, _event, _data in self.told}, {11, 12})
+
+    def test_a_table_they_are_still_sitting_at_is_not_told(self):
+        """Their socket there is open: whatever the app is doing, they are at
+        that table."""
+        from game.consumers import _player_channels, _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        _tournament_runners[12] = self._runner()
+        _player_channels[(12, 7)] = "still-open"
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 1)
+        self.assertEqual(self.told[0][0], 11)
+
+    def test_nothing_is_announced_while_the_app_is_still_open(self):
+        from accounts import presence
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        presence.arrived(7)
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 0)
+        self.assertEqual(self.told, [])
+
+    def test_somebody_who_is_not_seated_anywhere_is_nobody_s_news(self):
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner(user_id=7)
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(999)
+
+        self.assertEqual(told, 0)

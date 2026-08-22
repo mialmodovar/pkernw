@@ -112,3 +112,27 @@ export function openTableTabs(seats = [], watching = []) {
 
   return [...seated, ...watched];
 }
+
+/**
+ * Where the way-back-to-the-table pill has no business being.
+ *
+ * At a table, obviously — a door drawn on the inside of the room it opens into
+ * is the thing this pill exists to stop, and it was the whole complaint that
+ * led to it. That includes the layout sandbox, which is a table by any measure
+ * a player would use: it renders the same felt, and a pill floating over it
+ * offering to take you to a table is nonsense.
+ *
+ * And the signed-out pages, which nobody reaches holding a live seat.
+ *
+ * Pure so the list can be read and added to: every route that draws a felt has
+ * to be in it, and the sandbox was not.
+ */
+const NO_SHORTCUT = [
+  /^\/tournament\/\d+\/(play|watch)\b/,
+  /^\/dev\/table\b/,
+  /^\/(login|register|recover)\b/,
+];
+
+export function shortcutHiddenOn(pathname) {
+  return NO_SHORTCUT.some((pattern) => pattern.test(String(pathname || "")));
+}

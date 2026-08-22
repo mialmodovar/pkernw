@@ -29,6 +29,7 @@ from .models import Hand, HandAction
 from .coordinator import MultiTableTournamentCoordinator, offline_sit_out_seconds
 from .finishers import finisher_list
 from .giphy import clean_gif_id as _clean_gif_id
+from .away import truly_gone as _truly_gone
 from .throwables import clean_item as _clean_item
 from .throwlimit import check as _throw_check
 from .throwables import is_free as _is_free_item
@@ -119,6 +120,48 @@ def current_level_index(tournament) -> int:
     if runner is None:
         return tournament.current_level_index
     return getattr(runner, "current_level_index", tournament.current_level_index)
+
+
+def _app_is_open(user_id) -> bool:
+    """Whether this player still has the app itself open.
+
+    Imported where it is used rather than at the top: accounts imports from this
+    module, and this is the edge that would close the loop.
+    """
+    from accounts.presence import is_online
+
+    return is_online(user_id)
+
+
+async def announce_gone(user_id) -> int:
+    """Tell every table this player is sitting at that they have left.
+
+    Awaited from the presence consumer, which is async — see
+    accounts/consumers.py. Until there
+    was a presence socket, the table socket closing was the only way anybody
+    learnt this; now it is the other way round, because the table socket also
+    closes when somebody walks to the lobby.
+
+    Returns how many tables were told, which is what the tests read.
+    """
+    if _app_is_open(user_id):
+        return 0
+
+    told = 0
+    for tournament_id, runner in list(_tournament_runners.items()):
+        if (tournament_id, user_id) in _player_channels:
+            continue   # still at that table, whatever the app is doing
+        player = runner.get_runtime_player(user_id)
+        if player is None:
+            continue
+        await _broadcast_table(
+            tournament_id,
+            player._table_number,
+            "player_disconnected",
+            {"seat": player._seat, "name": player.name},
+        )
+        told += 1
+    return told
 
 
 def connected_user_ids() -> set:
@@ -815,6 +858,13 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             return
 
         _player_channels.pop(key, None)
+        # Whether this player has actually left, or has simply gone to look at
+        # something else in the app. See away.py: a lobby and several tables at
+        # once both used to read as a disconnection.
+        gone = _truly_gone(
+            app_open=_app_is_open(self.user.id),
+            other_tables=any(user_id == self.user.id for _tid, user_id in _player_channels),
+        )
         # Only once we know this socket was not superseded — otherwise a
         # reconnect would tear down the presence the live socket just announced.
         await self._forget_media_presence(self.current_table_number)
@@ -822,13 +872,18 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         if coordinator is not None:
             runtime_player = coordinator.get_runtime_player(self.user.id)
             if runtime_player is not None:
+                # The engine is told either way: somebody in the lobby cannot
+                # act on a hand any more than somebody who left can, and the
+                # seat still has to be sat out eventually. What changes is only
+                # what the table is told to *show*.
                 await coordinator.mark_player_disconnected(self.user.id)
-                await _broadcast_table(
-                    self.tournament_id,
-                    runtime_player._table_number,
-                    "player_disconnected",
-                    {"seat": runtime_player._seat, "name": runtime_player.name},
-                )
+                if gone:
+                    await _broadcast_table(
+                        self.tournament_id,
+                        runtime_player._table_number,
+                        "player_disconnected",
+                        {"seat": runtime_player._seat, "name": runtime_player.name},
+                    )
 
     async def receive(self, text_data):
         # A spectator has no seat, no action queue and no voice at the table.

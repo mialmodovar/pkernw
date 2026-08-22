@@ -353,11 +353,18 @@ def fast_sit(request):
         _seat(fmt, game, request.user)
 
         if game.players.count() >= fmt.seats:
+            fields = ["spin_multiplier", "status", "started_at"]
             if fmt.draws_multiplier:
                 game.spin_multiplier = spingo.draw_multiplier()
+                # A big draw pays every seat, so the split is stamped on now,
+                # with the number that decided it. Working it out at settlement
+                # instead would leave the table and the lobby promising a
+                # winner-takes-all prize that the ledger then divides.
+                game.payout_structure = spingo.payout_for(game.spin_multiplier)
+                fields.append("payout_structure")
             game.status = "running"
             game.started_at = timezone.now()
-            game.save(update_fields=["spin_multiplier", "status", "started_at"])
+            game.save(update_fields=fields)
 
     game.refresh_from_db()
     payload = _game_payload(game)

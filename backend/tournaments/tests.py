@@ -3493,12 +3493,64 @@ class BadBeatTests(TestCase):
 class SpinGoRulesTests(TestCase):
 	"""The format's arithmetic, which has to add up before anything is staked."""
 
-	def test_the_draw_averages_exactly_three_buy_ins(self):
+	def test_the_draw_pays_back_more_than_it_takes(self):
+		from fractions import Fraction
+
 		from tournaments import spingo
 
-		# Three players pay in, three buy-ins come out. Coins are the app's own
-		# currency and raking one it prints would only empty wallets slower.
-		self.assertEqual(spingo.expected_multiplier(), 3)
+		# Three players pay in and 3.166 buy-ins come back out. Deliberate:
+		# coins are printed by the house anyway, and paying a little extra out
+		# through the games is a better faucet than a bigger daily handout.
+		# Pinned exactly rather than as "more than three", because the amount
+		# above three is coins created out of nothing and is worth knowing.
+		self.assertEqual(spingo.expected_multiplier(), Fraction(1583, 500))
+		self.assertGreater(spingo.expected_multiplier(), 3)
+
+	def test_the_weights_still_add_up_to_the_whole(self):
+		from tournaments import spingo
+
+		self.assertEqual(
+			sum(weight for weight, _ in spingo.MULTIPLIERS), spingo.TOTAL_WEIGHT,
+		)
+		# A tail worth sitting down for: one game in a thousand pays a hundred
+		# times the buy-in, and one in a hundred pays twenty-five or better.
+		big = sum(w for w, m in spingo.MULTIPLIERS if m >= spingo.SHARED_FROM)
+		self.assertGreaterEqual(big / spingo.TOTAL_WEIGHT, 0.014)
+
+	def test_a_big_draw_pays_every_seat_and_a_small_one_pays_the_winner(self):
+		from tournaments import spingo
+
+		self.assertEqual(
+			[row["percentage"] for row in spingo.payout_for(100)], [80, 12, 8],
+		)
+		self.assertEqual(
+			[row["percentage"] for row in spingo.payout_for(25)], [80, 12, 8],
+		)
+		# Just under the line, and every ordinary game, is winner takes all.
+		self.assertEqual(spingo.payout_for(10), [{"place": 1, "label": "1st", "percentage": 100}])
+		self.assertEqual(spingo.payout_for(0), [{"place": 1, "label": "1st", "percentage": 100}])
+
+	def test_a_shared_split_still_hands_out_the_whole_pool(self):
+		from tournaments import spingo
+
+		for multiplier in (25, 50, 100):
+			with self.subTest(multiplier=multiplier):
+				self.assertEqual(
+					sum(row["percentage"] for row in spingo.payout_for(multiplier)), 100,
+				)
+
+	def test_the_odds_table_says_what_first_place_actually_takes(self):
+		from tournaments import spingo
+
+		rows = {row["multiplier"]: row for row in spingo.odds_table(25)}
+		# An ordinary game: the pool and the winner's prize are the same number.
+		self.assertEqual(rows[2]["prize_coins"], 50)
+		self.assertEqual(rows[2]["winner_coins"], 50)
+		self.assertFalse(rows[2]["shared"])
+		# A hundred-times game: 2,500 in the pool, 2,000 of it to the winner.
+		self.assertEqual(rows[100]["prize_coins"], 2500)
+		self.assertEqual(rows[100]["winner_coins"], 2000)
+		self.assertTrue(rows[100]["shared"])
 
 	def test_every_weight_in_the_table_can_actually_be_drawn(self):
 		from tournaments import spingo
@@ -3539,6 +3591,8 @@ class SpinGoRulesTests(TestCase):
 		self.assertEqual(defaults["buy_in_cents"], 0)
 		self.assertFalse(defaults["allow_rebuys"])
 		self.assertEqual(defaults["late_reg_level"], 0)
+		# Winner takes all until a draw says otherwise; a game that never fires
+		# keeps this row.
 		self.assertEqual(defaults["payout_structure"], [{"place": 1, "label": "1st", "percentage": 100}])
 
 
@@ -3651,6 +3705,37 @@ class SpinGoLobbyTests(APITestCase):
 		self.assertEqual(response.data["error"], "Not enough coins")
 		self.assertEqual(self._balance(self.players["ana"]), 10)
 		self.assertFalse(Tournament.objects.filter(format="spingo").exists())
+
+	def test_the_split_is_stamped_on_the_game_when_the_draw_is_made(self):
+		"""What the three of them are playing for, decided once.
+
+		The lobby, the table and the coin ledger all read the tournament's own
+		payout rows, so the split has to be on the row before the first hand —
+		not worked out again at settlement, where nobody can see it coming.
+		"""
+		from unittest.mock import patch
+
+		from tournaments import spingo
+
+		with patch.object(spingo, "draw_multiplier", return_value=100):
+			for name in ("ana", "bea", "caio"):
+				self._sit(name)
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual(game.spin_multiplier, 100)
+		self.assertEqual([row["percentage"] for row in game.payout_structure], [80, 12, 8])
+
+	def test_an_ordinary_draw_leaves_the_winner_everything(self):
+		from unittest.mock import patch
+
+		from tournaments import spingo
+
+		with patch.object(spingo, "draw_multiplier", return_value=2):
+			for name in ("ana", "bea", "caio"):
+				self._sit(name)
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual([row["percentage"] for row in game.payout_structure], [100])
 
 	def test_a_player_can_wait_at_both_tiers_at_once(self):
 		self._sit("ana")

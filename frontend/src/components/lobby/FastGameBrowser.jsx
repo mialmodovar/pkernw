@@ -7,8 +7,8 @@ import useWalletStore from "../../store/walletStore";
 import PlayerFaces from "./PlayerFaces";
 import { drawLabel, historyNet, myResult, netLabel, winnerName } from "./fastHistory";
 import {
-  formatMeta, myGameAction, myQueueAt, myTablesAt, payoutRows, prizeRows, prizeSummary,
-  seatCounts, seatPips, tierAction,
+  formatMeta, hasSharedPrizes, myGameAction, myQueueAt, myTablesAt, payoutRows, prizeRows,
+  prizeSummary, seatCounts, seatPips, tierAction,
 } from "./fastTiers";
 
 // The server names the format; the drawing is ours. Both Sit n Go shapes are
@@ -253,10 +253,19 @@ function TierPrizes({ tier, drawn }) {
       <div className="pt-2 border-t border-(--color-border) space-y-1">
         {prizeRows(tier).map((row) => (
           <div key={row.multiplier} className="flex items-baseline justify-between text-xs">
-            <span className="text-(--color-silver) tabular-nums">{row.multiplier}×</span>
+            <span className="text-(--color-silver) tabular-nums">
+              {row.multiplier}×
+              {/* The rows where busting out is not the same as getting nothing. */}
+              {row.shared && (
+                <span title="Pays all three seats: 80 / 12 / 8"
+                  className="ml-1 text-[9px] uppercase tracking-wider text-(--color-highlight-text)">
+                  all 3
+                </span>
+              )}
+            </span>
             <span className="flex items-center gap-1 text-(--color-highlight-text) tabular-nums">
               <Icon name="coin" className="w-3 h-3" />
-              {row.prize_coins.toLocaleString()}
+              {row.prize.toLocaleString()}
             </span>
             <span className="text-(--color-text-muted) tabular-nums w-16 text-right">
               {row.chance}
@@ -264,7 +273,10 @@ function TierPrizes({ tier, drawn }) {
           </div>
         ))}
         <p className="text-[11px] text-(--color-text-muted) pt-1 leading-snug">
-          Averages three buy-ins — what the three of you paid in. Nothing is raked off.
+          Pays back more than it takes: three buy-ins in, 3.17 out on average.
+          {hasSharedPrizes(tier)
+            ? " The big ones pay every seat — the figure is the winner's share."
+            : ""}
         </p>
       </div>
     );

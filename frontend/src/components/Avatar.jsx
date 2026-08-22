@@ -29,7 +29,7 @@ export default function Avatar({
 
   const face = (
     <span className={`flex items-center justify-center overflow-hidden
-                      ${ring ? "w-full h-full rounded-[inherit]" : className}`}>
+                      ${ring ? "w-full h-full rounded-full" : className}`}>
       {showPicture ? (
         <img
           src={url}
@@ -46,11 +46,18 @@ export default function Avatar({
 
   if (!ring) return face;
 
-  // The caller owns the shape — a circle at the table, a rounded square in the
-  // lobby — so the ring inherits it rather than deciding it.
+  // The ring is round, and says so itself.
+  //
+  // It used to take its shape from the caller's className, which is right for
+  // the callers that put `rounded-full` there and wrong for the ones whose
+  // frame does the rounding from outside — a picture in the lobby's profile
+  // card, and every seat at the table. Those got a square ring inside a round
+  // frame, and the frame clipped its corners off: the picture looked cut.
+  // Every face this is drawn around is a circle, so it is one.
   return (
     <span
-      className={`box-border shrink-0 ${className} ${borderFor(border)?.spins ? "animate-ring-turn" : ""}`}
+      className={`box-border shrink-0 rounded-full ${className} ${
+        borderFor(border)?.spins ? "animate-ring-turn" : ""}`}
       style={ring}
       title={`${name || "This player"} — ${borderFor(border)?.label} border`}
     >

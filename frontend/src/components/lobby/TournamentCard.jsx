@@ -1,5 +1,6 @@
 import PlayerFaces from "./PlayerFaces";
 import Icon from "../icons/Icon";
+import { seatedEntries, totalPool } from "../game/prizePool";
 import { buyInLabel, isSpinGo, prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { countdownLabel } from "./tournamentVitals";
@@ -83,6 +84,10 @@ export default function TournamentCard({
   // by placing, which is why it is not in the pool above — but it is money, and
   // a card that leaves it out says a KO night was worth half what it was.
   const koPoolCents = bountyOn ? (t.bounty_cents || 0) * t.player_count : 0;
+  // Everything paid in, which is the number anybody scanning a list is actually
+  // after: how big is this. It was only ever available here in halves — "€150
+  // places" beside "KO €150" — and never as the one figure people ask for.
+  const pool = totalPool(t, seatedEntries(t));
 
   const running = t.status === "running" || t.status === "paused";
   // How long it has been going, or how long it took. Neither can be read off
@@ -103,11 +108,11 @@ export default function TournamentCard({
     t.players_per_table ? `${t.players_per_table}-max` : null,
     // Euros or coins, and never a bare number that could be either.
     buyInLabel(t),
-    // Never the percentages: a share is a rule for splitting a pot, and the pot
-    // is knowable here. Places paid is the count, the pool is the money.
-    poolCents > 0
-      ? `${euros(poolCents)} ${bountyOn ? "places" : "pool"}`
-      : prizeLabel(t, t.player_count),
+    // What the places divide, when that is not the whole pool. The total has a
+    // block of its own now, and on a knockout night the two are different
+    // numbers — so this says which of them it is or is left out entirely.
+    bountyOn && poolCents > 0 ? `${euros(poolCents)} to places` : null,
+    pool ? null : prizeLabel(t, t.player_count),
     // A Spin n Go says so, and says what it drew. Only ever seen on the
     // finished ones — a waiting queue is not listed here at all — so the
     // multiplier is history rather than news.
@@ -197,10 +202,7 @@ export default function TournamentCard({
                   of what anybody asks about a night that is over. */}
               {` · ${t.player_count} played`}
               {elapsed && ` · took ${elapsed}`}
-              {/* Everything that was on the table, bounties included: on a night
-                  that is over, "€30" beside the winner's name is read as what
-                  the night was worth, not as one of its two pools. */}
-              {poolCents + koPoolCents > 0 && ` · ${euros(poolCents + koPoolCents)}`}
+
             </>
           ) : (
             <>
@@ -213,6 +215,29 @@ export default function TournamentCard({
 
       {/* Who is in it, before the buttons that let you join them. */}
       <PlayerFaces players={t.registered} />
+
+      {/* What is at stake, as one figure. Big enough to scan a column of them
+          without reading the line of facts under each name — which is where
+          this used to live, in halves, between the buy-in and the club. */}
+      {pool && (
+        <div
+          className="shrink-0 text-right leading-tight"
+          title={pool.kind === "coins"
+            ? "Everything paid in, in coins"
+            : bountyOn
+              ? `Everything paid in: ${euros(poolCents)} to the places, ${euros(koPoolCents)} on heads`
+              : "Everything paid in, across every entry so far"}
+        >
+          <div className="text-[9px] uppercase tracking-wider text-(--color-text-muted)">
+            {isFinished ? "Pool" : "Prize pool"}
+          </div>
+          <div className="flex items-center justify-end gap-1 text-sm font-bold tabular-nums
+                          text-(--color-highlight-text)">
+            {pool.kind === "coins" && <Icon name="coin" className="w-3.5 h-3.5" />}
+            {pool.kind === "coins" ? pool.amount.toLocaleString() : euros(pool.amount)}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         {full && !t.is_joined && !isFinished && (

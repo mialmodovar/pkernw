@@ -19,6 +19,7 @@ from rest_framework.response import Response
 
 from accounts.avatars import avatar_url
 from accounts.naming import shown_name
+from accounts.notify import notify_user
 from sidegames.models import CoinLedger
 
 from . import fastgames, spingo
@@ -286,6 +287,26 @@ def fast_lobby(request):
     })
 
 
+def _announce_start(game, payload, *, filled_by):
+    """Tell everybody at a game that just fired, except whoever filled it.
+
+    The player who took the last seat is standing in front of the answer: their
+    own request returns the started game and takes them to the table. Everybody
+    else sat down some minutes ago and went somewhere else — another table, the
+    club page, a backgrounded tab — and the only thing that was telling them was
+    the lobby's poll, which is not running unless the lobby is on screen. Now
+    that a player can hold seats at several tiers at once, that is most of the
+    time.
+
+    The message goes to the presence socket, which is open wherever they are.
+    What it does not do is move them: somebody halfway through a hand at another
+    table is not to be dragged out of it. The client rings, and they decide.
+    """
+    message = {"type": "fast_game_started", "game": payload}
+    for user_id in game.players.exclude(user_id=filled_by).values_list("user_id", flat=True):
+        notify_user(user_id, message)
+
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def fast_sit(request):
@@ -339,8 +360,15 @@ def fast_sit(request):
             game.save(update_fields=["spin_multiplier", "status", "started_at"])
 
     game.refresh_from_db()
+    payload = _game_payload(game)
+    # After the block, so it is a committed game being announced: a rollback
+    # here would otherwise have rung three phones about a game nobody is in.
+    # The same payload the sitter is about to be handed, built once.
+    if game.status == "running":
+        _announce_start(game, payload, filled_by=request.user.id)
+
     return Response(
-        {"game": _game_payload(game), "balance": balance_of(request.user)},
+        {"game": payload, "balance": balance_of(request.user)},
         status=status.HTTP_201_CREATED,
     )
 

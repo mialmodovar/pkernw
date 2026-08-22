@@ -82,6 +82,33 @@ export function playTurnChime() {
   });
 }
 
+/** A game you queued for has started somewhere else.
+ *
+ * The one sound that plays when you are not looking at the thing it is about —
+ * from the lobby, from a club page, from the felt of a different table — so it
+ * has to carry further than the turn chime and must not be mistaken for it.
+ * Three notes up an arpeggio rather than two up a step, and then the table
+ * being dealt underneath, which is literally what has just happened.
+ */
+export function playGameStarting() {
+  play((ctx, now) => {
+    [523, 659, 880].forEach((freq, index) => {
+      tone(ctx, {
+        freq, start: now + index * 0.1, duration: 0.26, peak: 0.2, type: "triangle",
+      });
+    });
+    // Held over the top of the arpeggio: the note that makes it an announcement
+    // rather than three separate beeps.
+    tone(ctx, { freq: 1319, start: now + 0.3, duration: 0.5, peak: 0.15, type: "triangle" });
+    for (let card = 0; card < 4; card += 1) {
+      noise(ctx, {
+        start: now + 0.42 + card * 0.075, duration: 0.045, peak: 0.08,
+        frequency: 2600, Q: 0.9,
+      });
+    }
+  });
+}
+
 /** Your regular time is gone and the bank has started draining.
  *
  * The turn chime inverted — two notes falling where that one rises. Same shape,

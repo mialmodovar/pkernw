@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import useFastGameStore from "../../store/fastGameStore";
+import { askOnce } from "../../api/notifications";
 import useWalletStore from "../../store/walletStore";
 import PlayerFaces from "./PlayerFaces";
 import { drawLabel, historyNet, myResult, netLabel, winnerName } from "./fastHistory";
@@ -143,10 +144,15 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                       onClick={async () => {
                         // Your own seat: the same button gives it back.
                         if (action.kind === "unregister") return leave(action.game.id);
+                        // Asked here because here is the only moment it makes
+                        // sense: a click, and the one thing this app would ever
+                        // interrupt somebody for is the game they are sitting
+                        // down at now. askOnce means a refusal is respected.
+                        askOnce();
                         // Whoever fills the table is taken to it there and then.
-                        // The others learn from their next poll — see the watch
-                        // in LobbyPage, which fires on the change, never on the
-                        // state.
+                        // The others get GameStartAlert, on the presence socket,
+                        // wherever in the app they have got to — and the lobby's
+                        // own watch walks them in if they are still on this page.
                         const game = await sit(tier.key, tier.stake);
                         if (game?.status === "running") onOpenTable?.(game.id);
                         return game;

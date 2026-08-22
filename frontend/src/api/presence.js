@@ -1,9 +1,15 @@
 /**
  * The presence socket: open for as long as the app is.
  *
- * Silent in both directions. Its only job is to exist, so the server can tell
- * the difference between somebody who has the app open and somebody who does
- * not — a green dot on a watch list, nothing more.
+ * Silent upwards. Its first job is to exist, so the server can tell the
+ * difference between somebody who has the app open and somebody who does not —
+ * a green dot on a watch list, nothing more.
+ *
+ * Its second job is to be the one connection that is not about a particular
+ * page, which makes it the only way to be told something while you are looking
+ * at something else: that a game you queued for twenty minutes ago has started
+ * while you were at a different table. Nothing is ever broadcast down it — see
+ * accounts/notify.py — so what arrives here is always this player's own news.
  *
  * Its own singleton rather than a second use of socket.js: that one belongs to
  * a tournament and dies with it, and this one has to outlive every page.
@@ -20,6 +26,7 @@ let ws = null;
 let reconnectTimer = null;
 let attempts = 0;
 let wanted = false;
+let listeners = [];
 
 function delay() {
   const capped = Math.min(BASE_DELAY_MS * 2 ** attempts, MAX_DELAY_MS);
@@ -35,6 +42,19 @@ function open() {
   ws = socket;
 
   socket.onopen = () => { attempts = 0; };
+
+  socket.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      // Nothing readable is nothing to act on, and this socket must survive
+      // anything that arrives on it: it is what holds the player online.
+      return;
+    }
+    listeners.forEach((fn) => fn(data));
+  };
+
   socket.onclose = () => {
     // A stale socket whose replacement is already connecting must not schedule
     // a reconnect of its own.
@@ -50,6 +70,18 @@ export function connect() {
   wanted = true;
   if (ws || reconnectTimer) return;
   open();
+}
+
+/** Listen to what the server says while you are elsewhere in the app.
+ *
+ * Each subscriber removes its own listener and only its own, so one component
+ * unmounting cannot silence another.
+ */
+export function onMessage(fn) {
+  listeners.push(fn);
+  return () => {
+    listeners = listeners.filter((one) => one !== fn);
+  };
 }
 
 export function disconnect() {

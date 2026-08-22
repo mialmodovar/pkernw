@@ -1,7 +1,7 @@
 import base64
 from datetime import timedelta
 
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
@@ -20,6 +20,7 @@ from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
 from . import presence
 from .avatars import AVATAR_MAX_BYTES
 from .consumers import PresenceConsumer
+from .notify import notify_user
 from .models import AvatarImage, Profile
 
 User = get_user_model()
@@ -1162,6 +1163,97 @@ class PresenceSocketTests(TestCase):
 
 		async_to_sync(scenario)()
 		self.assertEqual(presence.online_user_ids(), set())
+
+
+class PlayerAlertTests(TestCase):
+	"""Reaching a player who is not looking at the thing being said.
+
+	The presence socket is the only one open from every page, so it is the only
+	way to tell somebody at one table that a game of theirs at another has
+	started. These pin the delivery itself; that a filled fast game sends one is
+	pinned in tournaments.tests.
+	"""
+
+	def setUp(self):
+		self.ana = User.objects.create_user(username="alert_ana", password="secret123")
+		self.bea = User.objects.create_user(username="alert_bea", password="secret123")
+
+	def tearDown(self):
+		presence._socket_counts.clear()
+
+	def _communicator(self, user):
+		communicator = WebsocketCommunicator(PresenceConsumer.as_asgi(), "/ws/presence/")
+		communicator.scope["user"] = user
+		return communicator
+
+	def test_a_message_reaches_the_player_it_is_for(self):
+		async def scenario():
+			socket = self._communicator(self.ana)
+			await socket.connect()
+			# notify_user is sync, and sync code called from inside a running loop
+			# has to go back out through a thread — which is how a view calls it.
+			sent = await sync_to_async(notify_user)(self.ana.id, {"type": "hello", "n": 1})
+			self.assertTrue(sent)
+
+			message = await socket.receive_json_from(timeout=1)
+			await socket.disconnect()
+			return message
+
+		self.assertEqual(async_to_sync(scenario)(), {"type": "hello", "n": 1})
+
+	def test_a_message_reaches_nobody_else(self):
+		"""One group per player. Everybody's own news, and only their own."""
+		async def scenario():
+			mine, theirs = self._communicator(self.ana), self._communicator(self.bea)
+			await mine.connect()
+			await theirs.connect()
+
+			await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+			await mine.receive_json_from(timeout=1)
+			quiet = await theirs.receive_nothing(timeout=0.3)
+
+			await mine.disconnect()
+			await theirs.disconnect()
+			return quiet
+
+		self.assertTrue(async_to_sync(scenario)())
+
+	def test_both_of_a_players_tabs_are_told(self):
+		"""The app open twice is one player, and the news is for the player."""
+		async def scenario():
+			first, second = self._communicator(self.ana), self._communicator(self.ana)
+			await first.connect()
+			await second.connect()
+
+			await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+			both = [
+				await first.receive_json_from(timeout=1),
+				await second.receive_json_from(timeout=1),
+			]
+
+			await first.disconnect()
+			await second.disconnect()
+			return both
+
+		self.assertEqual(async_to_sync(scenario)(), [{"type": "hello"}] * 2)
+
+	def test_telling_somebody_who_is_not_there_is_not_an_error(self):
+		"""A player with the app shut has no socket and no group. That is a
+		delivery to nowhere, and the thing that prompted it still happened."""
+		self.assertTrue(notify_user(self.bea.id, {"type": "hello"}))
+
+	def test_a_closed_socket_stops_being_told(self):
+		async def scenario():
+			socket = self._communicator(self.ana)
+			await socket.connect()
+			await socket.disconnect()
+
+			# Nothing to assert on the socket itself; what matters is that the
+			# group no longer holds a channel pointing at it, and that sending
+			# into it is still harmless.
+			return await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+
+		self.assertTrue(async_to_sync(scenario)())
 
 
 class PresenceRoutingTests(TransactionTestCase):

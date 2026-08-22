@@ -9,6 +9,28 @@ remembering.
 ## Unreleased
 
 ### Added
+- **Your game is starting, wherever you are.** A seat at an instant game is no
+  longer exclusive — you can be queued at three tiers while playing a fourth
+  game — and the only thing telling you one of them had filled was the lobby
+  polling for it, which stops the moment the lobby is not the page on screen.
+  So the ordinary way to use the app, sitting down and then going to play the
+  game you already had running, was also the way to be dealt into a table
+  nothing had told you about: blinds posted, a hand folded for you, and the
+  first you knew of it was the tab strip. It now rings — a sound, a flashing
+  tab title, a desktop notification when the window is behind something else,
+  and a banner naming the format and what it is playing for, with the way in.
+  It does not move you: somebody halfway through a hand at another table is not
+  to be dragged out of it, so the banner waits to be pressed. The lobby's own
+  walk-in is unchanged for anybody still standing in it.
+
+  It travels on the presence socket, which is the connection the app already
+  holds open from every page to say you are online — the only one that is not
+  about a particular tournament, and so the only one that can reach somebody
+  looking at something else. One group per player, never a broadcast: it shares
+  an event loop with the games, and news for one player must not cost every
+  other player a beat. The browser is asked for notification permission at the
+  moment you press Sit, which is the one moment it is obviously about, and
+  asked once — a refusal is a refusal.
 - **Mystery bounties.** A knockout tournament where nobody's head is worth
   anything in particular: the same half of every buy-in goes into a sealed pool
   instead, and knockouts pay nothing at all until the pool is cut into envelopes

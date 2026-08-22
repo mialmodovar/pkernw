@@ -1,5 +1,6 @@
 import random
 import time
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -4484,6 +4485,117 @@ class SitNGoTests(APITestCase):
 
 		self.assertFalse(can_manage_tournament(self.players["a"], game))
 		self.assertFalse(can_manage_tournament(boss, game))
+
+
+class FastGameStartAlertTests(APITestCase):
+	"""Telling the players who were not the one to fill the table.
+
+	Whoever takes the last seat is standing in front of the answer — their own
+	request returns a started game and the lobby takes them to it. Everybody else
+	sat down minutes ago and went somewhere else, and until now the only thing
+	telling them was the lobby's poll, which does not run unless the lobby is the
+	page on screen. With seats at several tiers held at once, that is most of the
+	time.
+	"""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=f"al_{name}", password="x")
+			for name in ("a", "b", "c")
+		}
+		for user in self.players.values():
+			from sidegames.economy import wallet_for
+			from sidegames.models import Wallet
+
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _sit(self, name, key, stake):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(reverse("fast-sit"), {"key": key, "stake": stake}, format="json")
+
+	def test_the_player_already_waiting_is_told_the_game_has_started(self):
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			self._sit("a", "hu", 10)
+			self.assertEqual(told.call_args_list, [], "nothing has started yet")
+
+			self._sit("b", "hu", 10)
+
+		game = Tournament.objects.get(format="sitngo")
+		# Ana, who has been waiting, and not Bea, who is being taken to the table
+		# by her own request.
+		self.assertEqual([call.args[0] for call in told.call_args_list], [self.players["a"].id])
+
+		payload = told.call_args_list[0].args[1]
+		self.assertEqual(payload["type"], "fast_game_started")
+		# Enough to say which game, and to say it in words: the table it opens and
+		# the name of the format are both in the message rather than fetched after.
+		self.assertEqual(payload["game"]["id"], game.id)
+		self.assertEqual(payload["game"]["status"], "running")
+		self.assertEqual(payload["game"]["label"], "Heads Up")
+		self.assertEqual(payload["game"]["stake"], 10)
+
+	def test_everybody_but_the_last_one_in_is_told(self):
+		"""Six-handed: five have been waiting, and all five are rung."""
+		for name in ("a", "b"):
+			self._sit(name, "sixmax", 25)
+
+		others = [
+			User.objects.create_user(username=f"al_x{index}", password="x")
+			for index in range(3)
+		]
+		for user in others:
+			from sidegames.economy import wallet_for
+			from sidegames.models import Wallet
+
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+			self.client.force_authenticate(user)
+			self.client.post(reverse("fast-sit"), {"key": "sixmax", "stake": 25}, format="json")
+
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			self._sit("c", "sixmax", 25)
+
+		self.assertEqual(
+			sorted(call.args[0] for call in told.call_args_list),
+			sorted([self.players["a"].id, self.players["b"].id] + [user.id for user in others]),
+		)
+
+	def test_a_seat_that_does_not_fill_the_table_rings_nobody(self):
+		"""Five of six is not a game starting, and four sitting down is not four
+		interruptions."""
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			for name in ("a", "b", "c"):
+				self._sit(name, "sixmax", 25)
+
+		self.assertEqual(told.call_args_list, [])
+
+	def test_a_refused_seat_rings_nobody(self):
+		"""Sitting twice at a tier you are already waiting at is refused, and a
+		refusal is not news for the people who are waiting properly."""
+		self._sit("a", "hu", 10)
+
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			response = self._sit("a", "hu", 10)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(told.call_args_list, [])
+
+	def test_a_game_that_cannot_be_announced_still_starts(self):
+		"""The notification is the last thing to happen and the least important.
+		A channel layer that is down must not cost somebody the seat they paid
+		for — notify_user swallows its own failures, and this pins that the view
+		does not undo the game if one gets out."""
+		self._sit("a", "hu", 50)
+
+		with patch("tournaments.fastgames_views.notify_user", return_value=False):
+			response = self._sit("b", "hu", 50)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(format="sitngo").status, "running")
 
 
 class FastGamesStayOutOfTheTournamentListTests(APITestCase):

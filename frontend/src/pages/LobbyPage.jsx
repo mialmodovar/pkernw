@@ -34,6 +34,12 @@ const LOBBY_TABS = [
  * and then go and read something else — and the game starts dealing whether or
  * not its tab is the one on screen.
  *
+ * This is the walk-in, not the alarm. It only runs while the lobby is the page
+ * on screen, which is why GameStartAlert exists — it rings on the presence
+ * socket from anywhere in the app, including from here, a moment before this
+ * poll notices. Arriving at the table dismisses its banner, so the two read as
+ * one event.
+ *
  * Strictly on the change from waiting to dealing. Sending you to the table
  * because you are *in* a running game is the mistake this used to make: it made
  * the lobby unreachable for as long as the game lasted, since every poll took

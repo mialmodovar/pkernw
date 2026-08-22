@@ -329,7 +329,9 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    // Nothing on a table is there to be copied — see .no-select in index.css,
+    // which lets the chat, the hand history and every input opt back in.
+    <div className="h-full flex flex-col overflow-hidden no-select">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
       {/* Every other table you have open. Draws nothing when this is the only
           one, which is most of the time. */}

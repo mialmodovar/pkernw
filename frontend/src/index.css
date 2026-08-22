@@ -417,6 +417,31 @@ button:disabled {
   animation: mystery-head 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* A table is a game, not a document.
+   Dragging across the felt used to select it — the pot, somebody's stack, the
+   blinds — and leave half the table highlighted in blue, which happens by
+   accident constantly: every mis-drag on a button, every double-click on a
+   seat. Nothing on the felt is there to be copied, so nothing on it is
+   selectable.
+
+   Where text really is text, it stays selectable and says so: the chat, the
+   hand history and every input. A rule rather than a utility class on each of
+   them, because the exceptions have to beat an ancestor that switched
+   selection off, and because a form field that cannot be selected is broken in
+   a way people notice immediately. */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.no-select input,
+.no-select textarea,
+.no-select [contenteditable],
+.no-select .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* An action landing on a seat. A short rise rather than a pop: it appears while
    the chips are still moving, and something that jumps at the same time reads as
    two separate events. */

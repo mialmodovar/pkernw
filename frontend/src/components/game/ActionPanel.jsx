@@ -432,9 +432,10 @@ export default function ActionPanel({
       )}
       left={can.raise && maxRaise > minRaise ? (
         <>
-          <span className="text-center lg:text-left text-xs text-(--color-text-muted) whitespace-nowrap">
-            min {fmt(minRaise)} · max {fmt(maxRaise)}
-          </span>
+          {/* No "min · max" line. The slider runs between them, the field
+              clamps to them and the presets never leave them, so it was a
+              caption describing the controls under it rather than telling
+              anybody anything they could not already see. */}
           <div className="grid grid-cols-4 gap-1.5">
             {presets.map((preset) => (
               <button key={preset.label}

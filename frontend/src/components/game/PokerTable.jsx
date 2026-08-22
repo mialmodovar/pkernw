@@ -198,6 +198,19 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Hold the result back until every hand has turned over — otherwise the
   // winner banner and the gold rings give it away mid-reveal.
   const resultRevealed = resultIsRevealed({ showdown, revealedSeats, faceUpSeats });
+  // Your own read on what you hold, for the line under the board. Only while
+  // the hand is still yours to play: at showdown every hand is named on its own
+  // seat, and a folded player holds nothing worth naming.
+  //
+  // Covering your cards covers this too. It is the same secret said twice, and
+  // a table that hides the cards while printing "Two pair, aces and kings" in
+  // the middle of the felt has hidden nothing from anybody standing behind you.
+  const hideHand = useGameStore((s) => s.hideHand);
+  const mine = players.find((p) => p.seat === mySeat) || null;
+  const myHandRead = handStrength && mine && !mine.is_folded && !showdown && !hideHand
+    ? handStrength
+    : null;
+
   const winningBoardCards = resultRevealed
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
@@ -332,6 +345,18 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
         <CommunityCards winningCards={winningBoardCards} shiningCards={shiningBoard} />
         <PotDisplay />
+        {/* What you have, under the board you have it with.
+            It used to sit on your own seat, a few pixels from your name, your
+            stack and the big blinds it is worth — which is the busiest corner
+            of the felt and the one place a quiet line of text cannot be read.
+            Here it is beside the cards it is talking about, and it belongs to
+            nobody else's seat, so it can stay quiet. */}
+        {myHandRead && (
+          <span className="max-w-[14rem] truncate text-[11px] font-semibold tracking-wide
+                           text-(--color-highlight-text)/85 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+            {myHandRead}
+          </span>
+        )}
         {allInEquity?.length > 0 && (
           <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-(--color-highlight-text) animate-pulse">
             All in
@@ -385,7 +410,6 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
-                handStrength={isMe ? handStrength : null}
                 backers={backersOf(sideBets, p.seat)}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just

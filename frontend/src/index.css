@@ -417,6 +417,18 @@ button:disabled {
   animation: mystery-head 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* An action landing on a seat. A short rise rather than a pop: it appears while
+   the chips are still moving, and something that jumps at the same time reads as
+   two separate events. */
+@keyframes seat-action {
+  from { transform: translateY(4px) scale(0.94); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.animate-seat-action {
+  animation: seat-action 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* A claim waiting to be taken. Slow enough to be noticed rather than nagged at:
    it is worth a glance, not an interruption. */
 @keyframes pulse-soft {

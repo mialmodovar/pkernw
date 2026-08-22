@@ -283,6 +283,9 @@ const useGameStore = create((set) => ({
   // Keep your own cards face down until you look at them. Off by default —
   // most people play alone in a room — and remembered per browser, because it
   // is a fact about where you are sitting rather than about your account.
+  // What each seat did last, keyed by seat. The felt draws it on the seat; see
+  // components/game/seatAction.js for how long each one is worth showing.
+  lastActions: {},
   hideHand: readStoredFlag(HIDE_HAND_KEY, false),
   toggleHideHand: () => set((s) => {
     const hideHand = !s.hideHand;
@@ -401,6 +404,7 @@ const useGameStore = create((set) => ({
       case "hand_started":
         set({
           handNumber: data.hand_number,
+          lastActions: {},
           dealerSeat: data.dealer_seat ?? null,
           sbSeat: null,
           bbSeat: null,
@@ -523,6 +527,20 @@ const useGameStore = create((set) => ({
             };
           }),
           pot: data.pot ?? s.pot,
+          // What this seat did, for the pill the felt draws on it. Replaces
+          // whatever that seat did before: a player who calls a raise has not
+          // also still checked.
+          lastActions: {
+            ...s.lastActions,
+            [data.seat]: {
+              action: data.action,
+              amount: data.amount || 0,
+              allIn: Boolean(data.is_all_in),
+              // Two identical actions in a row are the same object by value,
+              // and the second one still has to restart a fold's timer.
+              id: (s.lastActions[data.seat]?.id || 0) + 1,
+            },
+          },
           messages: appendLog(s, entry(s, "action",
             `${nameFor(s, data.seat)} ${verb}${data.amount ? ` ${data.amount.toLocaleString()}` : ""}`)),
         }));
@@ -550,6 +568,9 @@ const useGameStore = create((set) => ({
       case "street_dealt":
         set((s) => ({
           street: data.street,
+          // The street is closed, so what anybody did in it is no longer the
+          // state of the betting — the chips are on their way to the pot.
+          lastActions: {},
           communityCards: data.cards || [],
           pot: data.pot || 0,
           ...(data.street === "river" ? { riverShownAt: Date.now() } : {}),
@@ -628,6 +649,7 @@ const useGameStore = create((set) => ({
 
       case "hand_complete":
         set((s) => ({
+          lastActions: {},
           // The window in which cards can be shown. It closes when the next
           // hand starts, which is the server's rule too — this only decides
           // whether the button is on screen.
@@ -1036,6 +1058,7 @@ const useGameStore = create((set) => ({
       mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
+      lastActions: {},
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Avatar from "../Avatar";
 import HoleCards from "./HoleCards";
 import SeatBubble from "./SeatBubble";
+import SeatActionPill from "./SeatActionPill";
 import SeatQuickChat from "./SeatQuickChat";
 import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
@@ -86,7 +87,7 @@ function TimerRing({ pct, tone = "--color-highlight" }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity, outs,
   position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength, shine, raisedCards, compact = false,
+  stats, onInspect, shine, raisedCards, compact = false,
   backers = [],
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -136,6 +137,10 @@ export default function PlayerSeat({
   // the top half and the plate always ends up on the outer edge.
   const badges = (
     <div key="badges" className="flex flex-col items-center gap-1">
+      {/* What they just did. On the table-facing side of the seat — this column
+          flips to the inner edge for the seats above the centre — because a
+          hand is read across the felt, from the middle outwards. */}
+      {!p.is_eliminated && <SeatActionPill seat={p.seat} />}
       {/* Back from a rebuy, at the table but not in the hand being dealt. The
           alternative was being invisible until the next one, which reads as a
           rebuy that did not work. */}
@@ -242,17 +247,6 @@ export default function PlayerSeat({
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
-      {/* Your own read on what you hold, over your cards. */}
-      {isMe && handStrength && !p.is_folded && !showdownEntry && (
-        // Hidden by display rather than by opacity: a covered hand should not
-        // leave a strip of nothing over the cards for the seat to float on.
-        <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
-                        bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
-                          coverHand ? "hidden peer-hover/hand:block peer-active/hand:block" : ""
-                        }`}>
-          {handStrength}
-        </div>
-      )}
       {showdownEntry && !faceDownAtShowdown && (
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center ${
           isWinner ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"

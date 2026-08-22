@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import Icon from "../icons/Icon";
 import useMissionStore from "../../store/missionStore";
 import {
-  PERIODS, barPct, claimableCount, forPeriod, periodSummary, progressLabel, unclaimedCoins,
+  PERIODS, barPct, claimableCount, forPeriod, headline, periodSummary, progressLabel,
+  unclaimedCoins,
 } from "./missions";
 
 /**
@@ -77,19 +78,31 @@ export default function MissionPanel() {
           Missions
         </button>
 
-        {waiting > 0 ? (
+        {waiting > 0 && (
           <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold
                            bg-(--color-highlight-dim) border border-(--color-highlight-edge)
                            text-(--color-highlight-pale) animate-pulse-soft tabular-nums">
             <Icon name="coin" className="w-3 h-3" />
             {unclaimedCoins(missions).toLocaleString()}
           </span>
-        ) : (
-          <span className="text-[11px] text-(--color-text-muted)">
-            {periodSummary(missions, "daily")}
-          </span>
         )}
       </div>
+
+      {/* The one line most people will ever read of this. It says the thing
+          worth acting on — coins sitting there, or how much is still on offer
+          today — rather than a score. */}
+      <p className={`text-[11px] ${
+        waiting > 0 ? "text-(--color-highlight-text) font-semibold" : "text-(--color-text-muted)"
+      }`}>
+        {headline(missions)}
+      </p>
+
+      {open && (
+        <p className="text-[11px] text-(--color-text-muted) leading-snug">
+          Coins for playing rather than for turning up. Both instant formats
+          count.
+        </p>
+      )}
 
       {open && PERIODS.map((period) => (
         <section key={period.key} className="space-y-1.5">

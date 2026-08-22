@@ -9,8 +9,8 @@
 
 /** The two periods, in the order they are shown. Today first: it is today. */
 export const PERIODS = [
-  { key: "daily", label: "Today", note: "Resets at midnight" },
-  { key: "weekly", label: "This week", note: "Resets Monday" },
+  { key: "daily", label: "Today", note: "Starts over at midnight" },
+  { key: "weekly", label: "This week", note: "Starts over on Monday" },
 ];
 
 /** The missions of one period, in the order the server sent them. */
@@ -60,8 +60,27 @@ export function periodSummary(missions, period) {
   const rows = forPeriod(missions, period);
   if (!rows.length) return "";
   const waiting = unclaimedCoins(rows);
-  if (waiting > 0) return `${waiting.toLocaleString()} coins waiting`;
+  if (waiting > 0) return `${waiting.toLocaleString()} to collect`;
   const claimed = rows.filter((one) => one.claimed).length;
-  if (claimed === rows.length) return "all taken";
-  return `${claimed} of ${rows.length} taken`;
+  if (claimed === rows.length) return "all collected";
+  return `${claimed} of ${rows.length} collected`;
+}
+
+/**
+ * The line the panel leads with when it is shut.
+ *
+ * It is the only thing most people will ever read of this, so it says the one
+ * thing worth acting on rather than a score: coins sitting there, or how much
+ * is left to play for today.
+ */
+export function headline(missions) {
+  if (!missions?.length) return "";
+  const waiting = unclaimedCoins(missions);
+  if (waiting > 0) return `${waiting.toLocaleString()} coins to collect`;
+
+  const today = forPeriod(missions, "daily");
+  const open = today.filter((one) => !one.claimed);
+  if (!open.length) return "Today's are all done — the week's are still on";
+  const worth = open.reduce((sum, one) => sum + (one.coins || 0), 0);
+  return `${worth.toLocaleString()} coins to play for today`;
 }

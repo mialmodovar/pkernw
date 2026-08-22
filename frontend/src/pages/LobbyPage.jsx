@@ -206,13 +206,17 @@ export default function LobbyPage() {
     }`}>
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
+        {/* Second, under your own name. It was last of eight, which on a phone
+            is a long way below the fold — and what is worth playing today is
+            the thing that decides what you open, so it has to be read before
+            the lobby rather than after it. */}
+        <MissionPanel />
         <RecoveryCodePanel />
         <StatsPanel />
         <CalotesPanel />
         <WatchPanel />
         <ClubPanel onClubsLoaded={onClubsLoaded} />
         <CoinPanel />
-        <MissionPanel />
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">

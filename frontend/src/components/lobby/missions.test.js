@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  barPct, claimableCount, forPeriod, periodSummary, progressLabel, unclaimedCoins,
+  barPct, claimableCount, forPeriod, headline, periodSummary, progressLabel, unclaimedCoins,
 } from "./missions";
 
 const board = [
@@ -69,21 +69,45 @@ describe("what is waiting", () => {
 
 describe("periodSummary", () => {
   it("leads with coins waiting, because that is the part needing an action", () => {
-    expect(periodSummary(board, "daily")).toBe("120 coins waiting");
+    expect(periodSummary(board, "daily")).toBe("120 to collect");
   });
 
   it("says how many have been taken when none are waiting", () => {
-    expect(periodSummary(board, "weekly")).toBe("0 of 1 taken");
+    expect(periodSummary(board, "weekly")).toBe("0 of 1 collected");
   });
 
   it("says all taken rather than 3 of 3, which reads as unfinished", () => {
     const done = board
       .filter((one) => one.period === "daily")
       .map((one) => ({ ...one, claimed: true, claimable: false }));
-    expect(periodSummary(done, "daily")).toBe("all taken");
+    expect(periodSummary(done, "daily")).toBe("all collected");
   });
 
   it("has nothing to say about a period with no missions in it", () => {
     expect(periodSummary([], "daily")).toBe("");
+  });
+});
+
+describe("headline", () => {
+  it("leads with the coins sitting there, since that is the part needing a tap", () => {
+    expect(headline(board)).toBe("120 coins to collect");
+  });
+
+  it("otherwise says what is still on offer today", () => {
+    const nothingWaiting = board.map((one) => ({ ...one, claimable: false }));
+    // The two daily ones left, at 120 and 80.
+    expect(headline(nothingWaiting)).toBe("200 coins to play for today");
+  });
+
+  it("says so when the day is finished but the week is not", () => {
+    const dayDone = board.map((one) => (
+      one.period === "daily" ? { ...one, claimed: true, claimable: false } : one
+    ));
+    expect(headline(dayDone)).toBe("Today's are all done — the week's are still on");
+  });
+
+  it("has nothing to say before the board arrives", () => {
+    expect(headline([])).toBe("");
+    expect(headline(undefined)).toBe("");
   });
 });

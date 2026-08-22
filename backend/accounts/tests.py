@@ -1325,3 +1325,70 @@ class PresenceRoutingTests(TransactionTestCase):
 		async_to_sync(scenario)()
 		self.assertEqual(presence.online_user_ids(), set())
 
+
+
+class OnlineCountTests(APITestCase):
+	"""How many people are in the app, for the counter in the header."""
+
+	def setUp(self):
+		from accounts import presence
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		self.user = User.objects.create_user(username="on_me", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		from accounts import presence
+		from game.consumers import _player_channels
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		_player_channels.clear()
+
+	def test_somebody_with_the_app_open_is_online(self):
+		from accounts import presence
+
+		presence.arrived(self.user.id)
+
+		response = self.client.get(reverse("online-now"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["online"], 1)
+
+	def test_two_tabs_are_one_player(self):
+		from accounts import presence
+
+		presence.arrived(self.user.id)
+		presence.arrived(self.user.id)
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_somebody_at_a_table_counts_without_a_presence_socket(self):
+		"""Their app socket may be mid-reconnect; they are plainly here."""
+		from game.consumers import _player_channels
+
+		_player_channels[(77, 4242)] = "channel"
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_the_same_player_in_both_places_is_still_one_player(self):
+		from accounts import presence
+		from game.consumers import _player_channels
+
+		presence.arrived(self.user.id)
+		_player_channels[(77, self.user.id)] = "channel"
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_a_room_of_nobody_is_answered_rather_than_refused(self):
+		# Nothing in either registry — which happens on a fresh process, and
+		# reads as zero rather than as an error.
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 0)
+
+	def test_it_takes_being_signed_in(self):
+		self.client.force_authenticate(None)
+
+		self.assertEqual(
+			self.client.get(reverse("online-now")).status_code, status.HTTP_401_UNAUTHORIZED,
+		)

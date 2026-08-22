@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import UserChip from "./UserChip";
+import OnlineChip from "./OnlineChip";
 import useAuthStore from "../store/authStore";
 import useWalletStore from "../store/walletStore";
 import Icon from "./icons/Icon";
@@ -75,6 +76,11 @@ export default function AppHeader() {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Who else is about. On the header rather than in the lobby, because
+            the answer people want it for is "is it worth sitting down", and
+            they ask it from wherever they are. */}
+        <OnlineChip />
+
         {/* Coins, beside the name, on every page — the number you check before
             deciding whether you can afford to sit down. */}
         {balance != null && (

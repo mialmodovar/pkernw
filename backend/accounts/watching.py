@@ -47,6 +47,18 @@ def live_tournaments(user_ids):
     return tables
 
 
+def everybody_online():
+    """Every player with the app open, by either socket.
+
+    One definition, used by the watch list below and by the count in the
+    header, so the two can never disagree about what "online" means: the app
+    itself, or a table. Somebody at a table counts through a presence socket
+    that is mid-reconnect, and somebody reading the lobby counts without being
+    at a table at all.
+    """
+    return connected_user_ids() | online_user_ids()
+
+
 def presence(user_ids):
     """Who is online, and what they are playing — the two facts a watch list is
     for. Returned together because they are read together, and because one
@@ -58,7 +70,7 @@ def presence(user_ids):
     the lobby counts without being at a table at all — which for a long time
     they did not, and showed as offline with the app open in front of them."""
     tables = live_tournaments(user_ids)
-    online = connected_user_ids() | online_user_ids()
+    online = everybody_online()
     return {
         user_id: {
             "online": user_id in online,
@@ -183,3 +195,22 @@ def search_players(request):
         }
         for user in sorted(matches, key=rank)[:SEARCH_LIMIT]
     ])
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def online_now(request):
+    """How many people are in the app right now.
+
+    Two in-memory sets and a union — no database at all — which is why the
+    header can ask for it on a timer without anybody having to think about the
+    cost. What it deliberately is not is a broadcast: pushing a number to every
+    connected client every time somebody opens a tab would put that work on the
+    event loop the tournaments run on, in front of the next hand. A count that
+    is half a minute stale is a count that is fine.
+
+    Yourself included. A room of one is still a room you are in, and a counter
+    that said "0 players online" to somebody looking at it would be arguing
+    with them.
+    """
+    return Response({"online": len(everybody_online())})

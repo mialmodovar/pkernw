@@ -6,7 +6,7 @@ from .views import (
     recover_password, reset_recovery_code,
 )
 from .stats import my_stats, player_profile
-from .watching import search_players, unwatch, watching
+from .watching import online_now, search_players, unwatch, watching
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
@@ -25,6 +25,7 @@ urlpatterns = [
     path("recover/", recover_password, name="recover_password"),
     path("players/search/", search_players, name="search_players"),
     path("me/stats/", my_stats, name="my_stats"),
+    path("online/", online_now, name="online-now"),
     path("watching/", watching, name="watching"),
     path("watching/<str:username>/", unwatch, name="unwatch"),
     path("players/<str:username>/", player_profile, name="player-profile"),

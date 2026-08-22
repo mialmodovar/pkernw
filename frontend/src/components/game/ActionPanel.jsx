@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { turnSlots, waitingSlots } from "./actionSlots";
+import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
 import { timerToneClass, useActionCountdown } from "./useActionCountdown";
@@ -36,6 +37,26 @@ const PRESELECTS = [
   { key: "checkfold", label: "Check/Fold", hint: "Check if it is free, fold if it is not" },
   { key: "callany", label: "Call any", hint: "Call whatever it costs when it reaches you" },
 ];
+
+/**
+ * Whether this wheel event belongs to something that scrolls.
+ *
+ * The chat, the hand history and any open modal are lists people scroll; taking
+ * their wheel to size a raise would break the one gesture they exist for. The
+ * felt does not scroll, and neither does the panel, so everywhere else the
+ * wheel is free.
+ */
+function overSomethingScrollable(target) {
+  let node = target instanceof Element ? target : null;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+      return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
 
 /**
  * The one thing you have decided to do before your turn arrives.
@@ -256,6 +277,46 @@ export default function ActionPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isMyTurn, submitted, disabled, armed, can, commit, maxRaise]);
+
+  // The wheel sizes the raise, from wherever the pointer is.
+  //
+  // The slider is a four-pixel rail and the field is a small box, and both have
+  // to be found with the cursor while a clock runs — so the control that is
+  // already under your hand does the job, and hunting for the one on screen
+  // becomes optional. Only while the decision is yours and there is a raise to
+  // size: at every other moment the wheel is just the wheel.
+  useEffect(() => {
+    if (!isMyTurn || !can.raise || submitted || disabled || maxRaise <= minRaise) {
+      return undefined;
+    }
+    const step = notchChips(bb, minRaise, maxRaise);
+    // What a slow trackpad has pushed so far but not yet paid for in steps.
+    let carry = 0;
+
+    const onWheel = (event) => {
+      // A pinch-zoom is a wheel event with a modifier on it, and taking that
+      // would stop somebody zooming in on their own cards.
+      if (event.ctrlKey || event.metaKey) return;
+      if (overSomethingScrollable(event.target)) return;
+
+      carry += wheelTravel(event);
+      const { notches, rest } = takeNotches(carry);
+      carry = rest;
+      // Claimed whether or not a whole step came out of it: half a notch that
+      // scrolled the page instead would be a table that jumps while you size.
+      event.preventDefault();
+      if (!notches) return;
+      setRaiseText(null);
+      setRaiseAmount((current) => nextAmount(current, notches, {
+        step, min: minRaise, max: maxRaise,
+      }));
+    };
+
+    // Not passive, because preventing the page from scrolling under the table
+    // is the whole point.
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, [isMyTurn, can.raise, submitted, disabled, minRaise, maxRaise, bb]);
 
   if (!isMyTurn) {
     const waitingOn = players.find((p) => p.seat === actionOnSeat);

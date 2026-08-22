@@ -134,9 +134,22 @@ body {
   background-color: var(--panel-floating-bg);
 }
 
-.panel-raised {
-  background: linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65));
-  border: 1px solid var(--color-border-strong);
+/* In a layer, unlike everything else here, and for a reason worth the note: a
+   rule written outside every layer beats every utility, whatever the utility
+   says and however specific it is. So a `border-2 border-(--color-silver)` on a
+   .panel-raised button did nothing at all — the panel's own one-pixel border
+   won — and the selected option in a group of them looked exactly like the
+   unselected ones. That is what a player saw on the registration page, where
+   picking chips or big blinds left both buttons looking untouched.
+
+   Inside @layer components the panel still styles anything that does not argue
+   with it, and loses to anything that does, which is the relationship a
+   utility class is for. */
+@layer components {
+  .panel-raised {
+    background: linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65));
+    border: 1px solid var(--color-border-strong);
+  }
 }
 
 /* The dark end of this gradient used to be a fixed red, which meant a blue or
@@ -169,10 +182,12 @@ body {
 /* Raised panels are used as buttons all over the app — the lobby cards, the
    table header, the stats tiles. They had no hover of their own, so half the
    buttons on screen felt dead under the mouse. */
-button.panel-raised:hover:not(:disabled),
-button.panel:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
+@layer components {
+  button.panel-raised:hover:not(:disabled),
+  button.panel:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+    background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
+  }
 }
 
 /* A raised panel with nothing showing through it.

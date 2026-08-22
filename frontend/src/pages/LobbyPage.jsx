@@ -6,6 +6,7 @@ import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import Icon from "../components/icons/Icon";
+import { readStoredTab, tabToOpen, writeStoredTab } from "../components/lobby/lobbyTab";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -103,8 +104,17 @@ export default function LobbyPage() {
   // Opening a tournament now takes site staff or a club you help run, and the
   // button follows the same rule the server does.
   const [staffsAClub, setStaffsAClub] = useState(false);
-  const [tab, setTab] = useState("tournaments");
+  // Where you were last. Read once, when the page mounts: coming home from a
+  // table should land you back in the room you play in, and for anybody who
+  // plays one format that is every single time they leave a game.
+  const [tab, setTab] = useState(
+    () => tabToOpen(readStoredTab(), LOBBY_TABS.map((one) => one.key)),
+  );
   const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
+  const openTab = useCallback((key) => {
+    setTab(key);
+    writeStoredTab(key);
+  }, []);
   const onClubsLoaded = useCallback((clubs) => {
     setStaffsAClub(organisesForAClub(clubs));
   }, []);
@@ -220,7 +230,7 @@ export default function LobbyPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === one.key}
-                onClick={() => setTab(one.key)}
+                onClick={() => openTab(one.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
                             whitespace-nowrap transition-colors ${
                   tab === one.key

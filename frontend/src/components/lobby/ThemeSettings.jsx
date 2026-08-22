@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Icon from "../icons/Icon";
 import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
 import GifPicker from "../game/GifPicker";
@@ -123,7 +124,7 @@ export default function ThemeSettings({ onClose }) {
             title="Close"
             className="text-(--color-text-muted) hover:text-(--color-silver) text-sm leading-none px-1 transition-colors"
           >
-            ✕
+            <Icon name="close" className="w-3.5 h-3.5" />
           </button>
         }
       >
@@ -177,7 +178,7 @@ export default function ThemeSettings({ onClose }) {
                     <span className="text-sm text-(--color-silver) flex-1 truncate">
                       {PRESETS[name].label}
                     </span>
-                    {active && <span className="text-xs text-(--color-silver) pr-1">✓</span>}
+                    {active && <Icon name="check" className="w-3.5 h-3.5 text-(--color-silver) mr-1" />}
                   </button>
                 );
               })}
@@ -342,7 +343,7 @@ export default function ThemeSettings({ onClose }) {
                 className="px-1.5 py-1 rounded text-xs text-(--color-text-muted)
                            hover:text-(--color-accent-link) transition-colors"
               >
-                ✕
+                <Icon name="close" className="w-3.5 h-3.5" />
               </button>
             </div>
           ))}

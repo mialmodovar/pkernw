@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import Icon from "../icons/Icon";
 import { createPortal } from "react-dom";
 
 import useWalletStore from "../../store/walletStore";
@@ -34,7 +35,7 @@ export default function ShopModal({ onClose }) {
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-(--color-border)">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-(--color-silver)">Shop</h2>
-            <p className="text-xs text-(--color-text-muted)">🪙 {(balance ?? 0).toLocaleString()} coins</p>
+            <p className="text-xs text-(--color-text-muted)">{(balance ?? 0).toLocaleString()} coins</p>
           </div>
           <button
             onClick={onClose}
@@ -77,7 +78,10 @@ export default function ShopModal({ onClose }) {
                         affordable ? "btn-accent" : "btn-secondary opacity-50 cursor-not-allowed"
                       }`}
                     >
-                      🪙 {row.price}
+                      <span className="flex items-center gap-1">
+                        <Icon name="coin" className="w-3 h-3" />
+                        {row.price}
+                      </span>
                     </button>
                   )}
                 </div>

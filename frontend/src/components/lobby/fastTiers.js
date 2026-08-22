@@ -107,7 +107,10 @@ export function myGameAction(game) {
  * sentence back apart.
  */
 export function prizeSummary(tier, format) {
-  const coins = (amount) => `\u{1FA99} ${Number(amount || 0).toLocaleString()}`;
+  // Figures only. The chip is drawn beside them by the card — it is one icon
+  // for the whole line rather than one per number, which is what the emoji
+  // version turned into: "🪙 97 · 🪙 52".
+  const coins = (amount) => Number(amount || 0).toLocaleString();
 
   if (format?.draws_multiplier) {
     const prizes = (tier.odds || []).map((row) => row.prize_coins).filter(Boolean);

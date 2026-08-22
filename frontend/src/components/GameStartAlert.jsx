@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import Icon from "./icons/Icon";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { onMessage } from "../api/presence";
@@ -144,7 +145,7 @@ export default function GameStartAlert() {
               className="shrink-0 px-1 text-(--color-text-muted) transition-colors
                          hover:text-(--color-silver)"
             >
-              ✕
+              <Icon name="close" className="w-3.5 h-3.5" />
             </button>
           </div>
         );

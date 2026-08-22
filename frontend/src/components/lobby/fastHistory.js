@@ -8,9 +8,10 @@
  * record leads with who did it.
  */
 
-/** "10× · 🪙 250" for a drawn game, "🪙 100" for one that pays what it took. */
+/** "10× · 250" for a drawn game, "100" for one that pays what it took. The
+ *  chip is drawn beside the line rather than repeated inside it. */
 export function drawLabel(row) {
-  const prize = `\u{1FA99} ${Number(row.prize_coins || 0).toLocaleString()}`;
+  const prize = Number(row.prize_coins || 0).toLocaleString();
   return row.multiplier ? `${row.multiplier}× · ${prize}` : prize;
 }
 

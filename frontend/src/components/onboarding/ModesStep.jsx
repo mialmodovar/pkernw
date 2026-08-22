@@ -1,3 +1,4 @@
+import Icon from "../icons/Icon";
 import { MODES } from "./modes";
 
 /**
@@ -17,7 +18,7 @@ export default function ModesStep({ onDone }) {
       <div className="space-y-2">
         {MODES.map((mode) => (
           <div key={mode.key} className="panel-raised rounded-lg p-3 flex gap-3">
-            <span className="text-2xl leading-none shrink-0" aria-hidden="true">{mode.icon}</span>
+            <Icon name={mode.icon} className="w-7 h-7 mt-0.5" tone="gold" />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-(--color-silver)">
                 {mode.label}

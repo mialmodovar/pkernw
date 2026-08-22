@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Icon from "../icons/Icon";
 
 import useStatsStore from "../../store/statsStore";
 import { MiniCard } from "../game/HandReplay";
@@ -62,9 +63,9 @@ function MeterRow({ label, pct }) {
 // first because it is what most people want most of the time.
 const SCOPES = [
   { key: "all", label: "All" },
-  { key: "tournaments", label: "🏆" , title: "Tournaments" },
-  { key: "spingo", label: "🎡", title: "Spin n Go" },
-  { key: "sitngo", label: "⚔️", title: "Sit n Go" },
+  { key: "tournaments", icon: "trophy", title: "Tournaments" },
+  { key: "spingo", icon: "spin", title: "Spin n Go" },
+  { key: "sitngo", icon: "duel", title: "Sit n Go" },
 ];
 
 export default function StatsPanel() {
@@ -99,7 +100,9 @@ export default function StatsPanel() {
                   : "text-(--color-text-muted) hover:text-(--color-silver)"
               }`}
             >
-              {one.label}
+              {one.icon
+                ? <Icon name={one.icon} className="w-3.5 h-3.5" label={one.title} />
+                : one.label}
             </button>
           ))}
         </div>

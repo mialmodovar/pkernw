@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import UserChip from "./UserChip";
 import useAuthStore from "../store/authStore";
 import useWalletStore from "../store/walletStore";
-import { HomeIcon } from "./game/icons";
+import Icon from "./icons/Icon";
 
 // Nobody is signed in on these, so there is nothing to put in it.
 const HIDDEN_ON = [/^\/(login|register|recover)\b/];
@@ -54,7 +54,7 @@ export default function AppHeader() {
           className="btn-secondary shrink-0 flex items-center gap-1 rounded px-2 py-1
                      text-xs font-semibold transition-colors"
         >
-          <HomeIcon />
+          <Icon name="home" className="w-4 h-4" />
           <span className="hidden sm:inline">Lobby</span>
         </button>
       )}
@@ -68,7 +68,10 @@ export default function AppHeader() {
             : "text-(--color-text-muted) hover:text-(--color-silver)"
         }`}
       >
-        🎴 <span className="hidden sm:inline">Clubs</span>
+        <span className="flex items-center gap-1">
+          <Icon name="clubs" className="w-4 h-4" />
+          <span className="hidden sm:inline">Clubs</span>
+        </span>
       </button>
 
       <div className="ml-auto flex items-center gap-2">
@@ -80,7 +83,8 @@ export default function AppHeader() {
             className="flex items-center gap-1.5 text-sm font-semibold
                        text-(--color-highlight-text) tabular-nums"
           >
-            🪙 {balance.toLocaleString()}
+            <Icon name="coin" className="w-4 h-4" tone="gold" label="Coins" />
+            {balance.toLocaleString()}
             {canClaim && (
               <button
                 type="button"
@@ -102,10 +106,11 @@ export default function AppHeader() {
         <button
           onClick={logout}
           title="Log out"
-          className="shrink-0 px-2 py-1 rounded text-xs font-semibold text-(--color-text-muted)
-                     hover:text-(--color-silver) transition-colors"
+          className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold
+                     text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
         >
-          Logout
+          <Icon name="logout" className="w-4 h-4" />
+          <span className="hidden sm:inline">Logout</span>
         </button>
       </div>
     </header>

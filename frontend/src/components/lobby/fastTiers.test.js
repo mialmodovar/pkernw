@@ -31,14 +31,14 @@ describe("prizeSummary", () => {
       ],
     };
     expect(prizeSummary(drawn, { draws_multiplier: true })).toEqual({
-      label: "Prize", value: "🪙 50 – 🪙 2,500",
+      label: "Prize", value: "50 – 2,500",
     });
   });
 
   it("names the winner's share where one place is paid", () => {
     const hu = { payouts: [{ place: 1, label: "1st", percentage: 100, coins: 20 }] };
     expect(prizeSummary(hu, { draws_multiplier: false })).toEqual({
-      label: "Winner takes", value: "🪙 20",
+      label: "Winner takes", value: "20",
     });
   });
 
@@ -50,7 +50,7 @@ describe("prizeSummary", () => {
       ],
     };
     expect(prizeSummary(sixmax, { draws_multiplier: false })).toEqual({
-      label: "Top 2 paid", value: "🪙 97 · 🪙 52",
+      label: "Top 2 paid", value: "97 · 52",
     });
   });
 

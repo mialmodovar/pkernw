@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buyInLabel, formatCoins, isSpinGo, prizeLabel } from "./buyIn";
+import { buyInLabel, coinCount, formatCoins, isSpinGo, prizeLabel } from "./buyIn";
 
 describe("buyInLabel", () => {
   it("prints a euro buy-in as euros", () => {
@@ -50,5 +50,21 @@ describe("isSpinGo", () => {
     expect(isSpinGo({ format: "spingo" })).toBe(true);
     expect(isSpinGo({ format: "standard" })).toBe(false);
     expect(isSpinGo(undefined)).toBe(false);
+  });
+});
+
+describe("the coin figure", () => {
+  it("is the count alone where the chip is drawn beside it", () => {
+    expect(coinCount(1500)).toBe("1,500");
+  });
+
+  it("says the word in prose, because an icon mid-sentence is a rebus", () => {
+    expect(formatCoins(50)).toBe("50 coins");
+  });
+
+  it("hands back no emoji at all — the app draws its own chip", () => {
+    for (const text of [formatCoins(50), buyInLabel({ buy_in_coins: 50 }), prizeLabel({ buy_in_coins: 50 }, 4)]) {
+      expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    }
   });
 });

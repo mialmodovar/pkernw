@@ -1,4 +1,5 @@
 import PlayerFaces from "./PlayerFaces";
+import Icon from "../icons/Icon";
 import { buyInLabel, isSpinGo, prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { countdownLabel } from "./tournamentVitals";
@@ -180,7 +181,12 @@ export default function TournamentCard({
           {isFinished ? (
             <>
               {t.winner_name
-                ? <span className="text-(--color-highlight-text)">🏆 {t.winner_name}</span>
+                ? (
+                  <span className="inline-flex items-center gap-1 text-(--color-highlight-text)">
+                    <Icon name="trophy" className="w-3.5 h-3.5" />
+                    {t.winner_name}
+                  </span>
+                )
                 : "no winner recorded"}
               {t.my_finish_position && (
                 <span className={iWon ? "text-(--color-highlight-text)" : "text-(--color-silver)"}>

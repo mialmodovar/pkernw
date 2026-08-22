@@ -5,6 +5,7 @@ import useLobbyStore from "../store/lobbyStore";
 import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
+import Icon from "../components/icons/Icon";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -22,9 +23,9 @@ import WatchPanel from "../components/lobby/WatchPanel";
 // `formats` is which of the instant formats a tab shows; the tournament tab has
 // none, being the one place where games are arranged rather than sat down at.
 const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments", icon: "🏆", formats: null },
-  { key: "spingo", label: "Spin n Go", icon: "🎡", formats: ["spingo"] },
-  { key: "sitngo", label: "Sit n Go", icon: "⚔️", formats: ["hu", "sixmax"] },
+  { key: "tournaments", label: "Tournaments", icon: "trophy", formats: null },
+  { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
+  { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
 ];
 
 /**
@@ -227,7 +228,13 @@ export default function LobbyPage() {
                     : "text-(--color-text-muted) hover:text-(--color-silver)"
                 }`}
               >
-                <span aria-hidden="true">{one.icon}</span>
+                {/* Gold on the tab you are looking at, so the strip says which
+                    room you are in without relying on the fill alone. */}
+                <Icon
+                  name={one.icon}
+                  className="w-4 h-4"
+                  tone={tab === one.key ? "gold" : "mono"}
+                />
                 {one.label}
               </button>
             ))}
@@ -251,8 +258,8 @@ export default function LobbyPage() {
                   title="Table sandbox — the felt with mock players, for layout work"
                   aria-label="Table sandbox"
                   className="btn-secondary w-8 h-8 rounded flex items-center justify-center
-                             text-sm transition-colors">
-                  🛠
+                             transition-colors">
+                  <Icon name="tools" className="w-4 h-4" />
                 </button>
               </>
             )}

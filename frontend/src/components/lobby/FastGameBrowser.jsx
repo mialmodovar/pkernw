@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import Icon from "../icons/Icon";
 import useFastGameStore from "../../store/fastGameStore";
 import { askOnce } from "../../api/notifications";
 import useWalletStore from "../../store/walletStore";
@@ -9,6 +10,11 @@ import {
   formatMeta, myGameAction, myQueueAt, myTablesAt, payoutRows, prizeRows, prizeSummary,
   seatCounts, seatPips, tierAction,
 } from "./fastTiers";
+
+// The server names the format; the drawing is ours. Both Sit n Go shapes are
+// the same picture — two hands, front to front — because what tells them apart
+// is the seat count printed beside it.
+const FORMAT_ICONS = { spingo: "spin", hu: "duel", sixmax: "duel" };
 
 /**
  * The games you sit down at, for whichever tab is asking.
@@ -45,7 +51,7 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
               needs, and it used to be a small grey heading that the Spin n Go
               tab did not draw at all. */}
           <header className="flex items-start gap-3">
-            <span className="text-3xl leading-none shrink-0" aria-hidden="true">{format.icon}</span>
+            <Icon name={FORMAT_ICONS[format.key] || "trophy"} className="w-8 h-8 shrink-0" tone="gold" />
             <div className="min-w-0">
               <h2 className="text-lg font-bold text-(--color-silver) tracking-wide">
                 {format.label}
@@ -91,13 +97,17 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
                       {queued ? (
-                        <span className="text-(--color-highlight-text) font-semibold">
-                          ✓ You are in
+                        <span className="flex items-center gap-1 text-(--color-highlight-text)
+                                         font-semibold">
+                          <Icon name="check" className="w-3 h-3" />
+                          You are in
                         </span>
                       ) : "Buy-in"}
                     </span>
-                    <span className="text-xl font-bold text-(--color-silver) tabular-nums">
-                      🪙 {tier.stake}
+                    <span className="flex items-center gap-1.5 text-xl font-bold
+                                     text-(--color-silver) tabular-nums">
+                      <Icon name="coin" className="w-5 h-5" tone="gold" />
+                      {tier.stake}
                     </span>
                   </div>
 
@@ -108,7 +118,9 @@ export default function FastGameBrowser({ formatKeys, onOpenTable }) {
                     <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
                       {prize.label}
                     </span>
-                    <span className="text-sm font-semibold text-(--color-highlight-text) tabular-nums">
+                    <span className="flex items-center gap-1 text-sm font-semibold
+                                     text-(--color-highlight-text) tabular-nums">
+                      <Icon name="coin" className="w-3.5 h-3.5" />
                       {prize.value}
                     </span>
                   </div>
@@ -242,8 +254,9 @@ function TierPrizes({ tier, drawn }) {
         {prizeRows(tier).map((row) => (
           <div key={row.multiplier} className="flex items-baseline justify-between text-xs">
             <span className="text-(--color-silver) tabular-nums">{row.multiplier}×</span>
-            <span className="text-(--color-highlight-text) tabular-nums">
-              🪙 {row.prize_coins.toLocaleString()}
+            <span className="flex items-center gap-1 text-(--color-highlight-text) tabular-nums">
+              <Icon name="coin" className="w-3 h-3" />
+              {row.prize_coins.toLocaleString()}
             </span>
             <span className="text-(--color-text-muted) tabular-nums w-16 text-right">
               {row.chance}
@@ -262,8 +275,9 @@ function TierPrizes({ tier, drawn }) {
       {payoutRows(tier).map((row) => (
         <div key={row.place} className="flex items-baseline justify-between text-xs">
           <span className="text-(--color-silver)">{row.label}</span>
-          <span className="text-(--color-highlight-text) tabular-nums">
-            🪙 {Number(row.coins || 0).toLocaleString()}
+          <span className="flex items-center gap-1 text-(--color-highlight-text) tabular-nums">
+            <Icon name="coin" className="w-3 h-3" />
+            {Number(row.coins || 0).toLocaleString()}
           </span>
           <span className="text-(--color-text-muted) tabular-nums w-16 text-right">
             {row.percentage}%
@@ -311,8 +325,10 @@ function HistoryPanel({ rows = [] }) {
               }`}>
                 {myResult(row)}
               </span>
-              <span className="text-(--color-text-muted) tabular-nums shrink-0">
-                🪙 {row.stake}
+              <span className="flex items-center gap-1 text-(--color-text-muted)
+                               tabular-nums shrink-0">
+                <Icon name="coin" className="w-3 h-3" />
+                {row.stake}
               </span>
               <span className="flex-1 min-w-0 truncate text-(--color-silver) tabular-nums">
                 {drawLabel(row)}
@@ -333,7 +349,7 @@ function HistoryPanel({ rows = [] }) {
 
 /** The three biggest draws in the app, whoever had them. */
 function RecordPanel({ rows = [] }) {
-  const medals = ["🥇", "🥈", "🥉"];
+  const medals = ["medal-1", "medal-2", "medal-3"];
   return (
     <section className="panel-raised rounded-xl p-4">
       <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
@@ -343,7 +359,9 @@ function RecordPanel({ rows = [] }) {
       <ol className="mt-2 divide-y divide-[rgba(196,178,165,0.12)]">
         {rows.map((row, index) => (
           <li key={row.id} className="py-1.5 flex items-center gap-2 text-xs">
-            <span className="shrink-0" aria-hidden="true">{medals[index] || "·"}</span>
+            {medals[index]
+              ? <Icon name={medals[index]} className="w-5 h-5" tone="gold" />
+              : <span className="w-4 text-center shrink-0" aria-hidden="true">·</span>}
             <span className={`flex-1 min-w-0 truncate ${
               row.i_won ? "text-(--color-highlight-text) font-semibold" : "text-(--color-silver)"
             }`}>
@@ -352,8 +370,10 @@ function RecordPanel({ rows = [] }) {
             <span className="text-(--color-highlight-text) font-semibold tabular-nums shrink-0">
               {row.multiplier}×
             </span>
-            <span className="text-(--color-text-muted) tabular-nums shrink-0 w-20 text-right">
-              🪙 {Number(row.prize_coins || 0).toLocaleString()}
+            <span className="flex items-center justify-end gap-1 text-(--color-text-muted)
+                             tabular-nums shrink-0 w-20">
+              <Icon name="coin" className="w-3 h-3" />
+              {Number(row.prize_coins || 0).toLocaleString()}
             </span>
           </li>
         ))}

@@ -44,12 +44,65 @@ const coins = (amount) => `\u{1FA99} ${Number(amount || 0).toLocaleString()}`;
  * for a Spin n Go it is the number that was drawn seconds ago and that they
  * have not seen yet.
  */
-export function alertText(game) {
+export function alertText(game, kind = "started") {
   const label = game?.label || "Your game";
-  const title = `${label} is dealing`;
+  const soon = kind === "starting";
+  const title = soon ? `${label} starts soon` : `${label} is dealing`;
   const parts = [];
+  if (soon && game?.starts_in_seconds > 0) {
+    parts.push(`in about ${Math.round(game.starts_in_seconds / 60)} min`);
+  }
   if (game?.spin_multiplier > 0) parts.push(`${game.spin_multiplier}× drawn`);
   if (game?.prize_coins > 0) parts.push(`${coins(game.prize_coins)} up`);
-  parts.push("your seat is waiting");
+  parts.push(soon ? "take your seat" : "your seat is waiting");
   return { title, body: parts.join(" · ") };
+}
+
+/**
+ * What the app does with one of these messages.
+ *
+ * Three kinds now, and they differ in what they mean rather than in how they
+ * look: a queue that filled, a tournament that just started, and one that is
+ * about to. The first two put somebody at a table; the third tells them to get
+ * ready, and is the only one that is not answered by arriving.
+ *
+ * Returns null for anything else on the socket, which is how a client older
+ * than the server stays quiet rather than guessing.
+ */
+export function readAlert(message) {
+  const kinds = {
+    fast_game_started: { kind: "started", refresh: "fast" },
+    tournament_started: { kind: "started", refresh: "lobby" },
+    tournament_starting: { kind: "starting", refresh: "lobby" },
+  };
+  const known = kinds[message?.type];
+  if (!known || !message?.game?.id) return null;
+  return { ...known, game: message.game, tag: `${message.type}-${message.game.id}` };
+}
+
+/**
+ * Where the banner's button goes.
+ *
+ * A tournament that has started has a table to sit at. One that starts in five
+ * minutes does not yet — sending somebody to a felt with no hands on it is a
+ * dead end — so that one opens the tournament's own page, where the countdown
+ * and the seat list are.
+ */
+export function alertPath(game) {
+  return game?.kind === "starting" ? `/tournament/${game.id}` : tablePath(game?.id);
+}
+
+/**
+ * Whether being on this page answers the alert.
+ *
+ * Arriving is the answer, however you arrived — by pressing the button or by
+ * finding your own way there. For a game that has started that means the felt;
+ * for one that has not, anywhere in that tournament will do.
+ */
+export function alertAnswered(pathname, game) {
+  if (!game?.id) return false;
+  if (game.kind === "starting") {
+    return new RegExp(`^/tournament/${game.id}(?:/|$)`).test(String(pathname || ""));
+  }
+  return isAtTable(pathname, game.id);
 }

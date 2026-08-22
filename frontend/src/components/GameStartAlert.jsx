@@ -9,7 +9,10 @@ import useFastGameStore from "../store/fastGameStore";
 import useGameStore from "../store/gameStore";
 import useTablesStore from "../store/tablesStore";
 import { playGameStarting } from "./game/sounds";
-import { alertText, tablePath, worthTelling } from "./startingGame";
+import useLobbyStore from "../store/lobbyStore";
+import {
+  alertAnswered, alertPath, alertText, readAlert, worthTelling,
+} from "./startingGame";
 
 /**
  * "Your game is starting", from wherever you happen to be.
@@ -44,14 +47,19 @@ export default function GameStartAlert() {
   useEffect(() => {
     if (!user) return undefined;
     return onMessage((message) => {
-      if (message?.type !== "fast_game_started") return;
-      const game = message.game;
-      if (!game?.id) return;
+      const alert = readAlert(message);
+      if (!alert) return;
+      const { game, kind } = alert;
 
-      // The tab strip and the lobby both draw from the server's idea of your
-      // seats, and neither has any reason to have asked since this happened.
+      // The tab strip and whichever list this belongs to both draw from the
+      // server's idea of your seats, and neither has any reason to have asked
+      // since this happened.
       useTablesStore.getState().refreshSeats();
-      useFastGameStore.getState().fetchLobby({ silent: true }).catch(() => {});
+      if (alert.refresh === "fast") {
+        useFastGameStore.getState().fetchLobby({ silent: true }).catch(() => {});
+      } else {
+        useLobbyStore.getState().fetchLobbyData({ silent: true }).catch(() => {});
+      }
 
       // Read at delivery rather than from the closure: this listener outlives
       // several navigations, and where the player is *now* is what decides
@@ -60,18 +68,21 @@ export default function GameStartAlert() {
 
       if (soundEnabled) playGameStarting();
 
-      const { title, body } = alertText(game);
+      const { title, body } = alertText(game, kind);
       notify({
         title,
         body,
-        // The same game twice — a reconnect redelivering the message — is one
-        // piece of news and must not stack two toasts.
-        tag: `fast-game-${game.id}`,
-        onClick: () => navigate(tablePath(game.id)),
+        // The same news twice — a reconnect redelivering the message — is one
+        // piece of news and must not stack two toasts. Keyed on the kind as
+        // well as the game, so "starts soon" and "is dealing" are two.
+        tag: alert.tag,
+        onClick: () => navigate(alertPath({ ...game, kind })),
       });
 
       setPending((games) => (
-        games.some((one) => one.id === game.id) ? games : [...games, game]
+        games.some((one) => one.id === game.id && one.kind === kind)
+          ? games
+          : [...games.filter((one) => one.id !== game.id), { ...game, kind }]
       ));
     });
   }, [user, soundEnabled, navigate]);
@@ -80,10 +91,8 @@ export default function GameStartAlert() {
   // by pressing the button here or by finding your own way there.
   useEffect(() => {
     setPending((games) => {
-      const answered = games.filter(
-        (game) => worthTelling({ pathname: location.pathname, gameId: game.id }),
-      );
-      return answered.length === games.length ? games : answered;
+      const open = games.filter((game) => !alertAnswered(location.pathname, game));
+      return open.length === games.length ? games : open;
     });
   }, [location.pathname]);
 
@@ -115,7 +124,7 @@ export default function GameStartAlert() {
     // this one is the more urgent of the two.
     <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2">
       {pending.map((game) => {
-        const { title, body } = alertText(game);
+        const { title, body } = alertText(game, game.kind);
         return (
           <div
             key={game.id}
@@ -131,11 +140,11 @@ export default function GameStartAlert() {
               type="button"
               onClick={() => {
                 dismiss(game.id);
-                navigate(tablePath(game.id));
+                navigate(alertPath(game));
               }}
               className="btn-accent shrink-0 rounded px-3 py-1.5 text-xs font-semibold"
             >
-              Take your seat
+              {game.kind === "starting" ? "Open it" : "Take your seat"}
             </button>
             <button
               type="button"

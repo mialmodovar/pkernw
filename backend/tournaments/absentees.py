@@ -24,9 +24,11 @@ chips in it that belong to the prize pool, and leaving is the engine's business
 disconnected player out rather than removing them).
 """
 
+import time
+
 from django.db import transaction
 
-from accounts.presence import forget, offline_seconds
+from accounts.presence import forget, is_online, offline_seconds
 
 from .coinbank import refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
@@ -40,6 +42,17 @@ TOURNAMENT_AFTER_SECONDS = 30 * 60
 # worth clearing. Registering days ahead and closing the app is normal; the seat
 # only becomes a problem as the game approaches.
 NEAR_START_SECONDS = 15 * 60
+
+# The shortest gap between two sweeps. The lobby is polled every few seconds by
+# everybody who has it open, and this walks every seat in every waiting game —
+# cheap for a handful of tables and pointless a hundred times a minute, since
+# nothing it looks at changes on that timescale. Half a minute is far finer than
+# the five it measures.
+MIN_SWEEP_INTERVAL = 30.0
+
+# When the last sweep ran. Module state, like the presence registry it reads:
+# one process, by design (see entrypoint.sh).
+_last_sweep = None
 
 
 def should_unregister(*, is_fast, offline_for, starts_in=None):
@@ -64,6 +77,25 @@ def should_unregister(*, is_fast, offline_for, starts_in=None):
     return starts_in is None or starts_in <= NEAR_START_SECONDS
 
 
+def away_for(user, now):
+    """How long this player has been gone, or None if they are here.
+
+    Two records, and the memory one wins. This process knows the moment
+    somebody's last socket closed and can measure from it exactly; the profile
+    only knows the last time anybody wrote it down, which is what survives a
+    restart. Without the second, a restart would make every absent registration
+    safe until its holder came back and left again — the one case the sweep
+    exists for.
+    """
+    if is_online(user.id):
+        return None
+    seconds = offline_seconds(user.id)
+    if seconds is not None:
+        return seconds
+    last_seen = getattr(getattr(user, "profile", None), "last_seen", None)
+    return None if last_seen is None else (now - last_seen).total_seconds()
+
+
 def seconds_until(when, now):
     """Seconds from `now` to `when`, or None when there is no time set."""
     return None if when is None else (when - now).total_seconds()
@@ -77,16 +109,27 @@ def drop_absent_registrations(now, here=None):
     to be affected by it, and not at all when nobody is. There is no queue and
     no clock to keep running.
 
+    Rate-limited to MIN_SWEEP_INTERVAL: called on every lobby request, and there
+    is no point walking the table more often than the thing it measures moves.
+    Returns 0 for a call that was too soon, which is not the same as a sweep
+    that found nothing — no caller cares about the difference, and the tests
+    reset the clock rather than wait for it.
+
     `here` is whoever asked — they are plainly present, whatever the presence
     socket believes, and a player whose socket failed to open must not have
     their seat taken while they are sitting in the lobby watching it.
 
     Returns the number of seats given up, which is what the tests read.
     """
+    global _last_sweep
+    if _last_sweep is not None and time.monotonic() - _last_sweep < MIN_SWEEP_INTERVAL:
+        return 0
+    _last_sweep = time.monotonic()
+
     seats = (
         TournamentPlayer.objects
         .filter(tournament__status="lobby")
-        .select_related("tournament", "user")
+        .select_related("tournament", "user", "user__profile")
     )
 
     dropped = 0
@@ -103,7 +146,7 @@ def drop_absent_registrations(now, here=None):
             continue
         if not should_unregister(
             is_fast=is_fast,
-            offline_for=offline_seconds(seat.user_id),
+            offline_for=away_for(seat.user, now),
             starts_in=seconds_until(tournament.scheduled_start_at, now),
         ):
             continue
@@ -117,6 +160,12 @@ def drop_absent_registrations(now, here=None):
         dropped += 1
 
     return dropped
+
+
+def reset_sweep_clock():
+    """Forget when the last sweep ran. For tests, which do not want to wait."""
+    global _last_sweep
+    _last_sweep = None
 
 
 def _tidy_up(tournament, user_id):

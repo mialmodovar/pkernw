@@ -5597,11 +5597,22 @@ class AbsentRegistrationTests(APITestCase):
 		self.host = User.objects.create_user(username="ab_host", password="secret123", is_staff=True)
 		self.player = User.objects.create_user(username="ab_player", password="secret123")
 
+	def _sweep(self, **kwargs):
+		"""One sweep, now. The rate limit is about not walking the table a
+		hundred times a minute in production, and has nothing to say about a
+		test that wants two sweeps in a row."""
+		from tournaments.absentees import drop_absent_registrations, reset_sweep_clock
+
+		reset_sweep_clock()
+		return drop_absent_registrations(timezone.now(), **kwargs)
+
 	def tearDown(self):
 		from accounts import presence
+		from tournaments.absentees import reset_sweep_clock
 
 		presence._socket_counts.clear()
 		presence._gone_since.clear()
+		reset_sweep_clock()
 		_tournament_runners.clear()
 
 	def _away_for(self, user, seconds):
@@ -5629,37 +5640,35 @@ class AbsentRegistrationTests(APITestCase):
 		)
 
 	def test_a_seat_is_given_up_after_long_enough_away(self):
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament()
 		self._seat(tournament, self.player)
 		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		self.assertEqual(self._sweep(), 1)
 		self.assertFalse(tournament.players.filter(user=self.player).exists())
 
 	def test_somebody_who_has_the_app_open_keeps_their_seat(self):
 		from accounts import presence
-		from tournaments.absentees import drop_absent_registrations
-
+		
 		tournament = self._tournament()
 		self._seat(tournament, self.player)
 		presence.arrived(self.player.id)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertEqual(self._sweep(), 0)
 		self.assertTrue(tournament.players.filter(user=self.player).exists())
 
 	def test_a_seat_survives_a_restart_that_never_saw_anybody_leave(self):
 		"""Nothing is assumed about a player this process never watched go."""
-		from tournaments.absentees import drop_absent_registrations
-
+		
 		tournament = self._tournament()
 		self._seat(tournament, self.player)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertEqual(self._sweep(), 0)
 
 	def test_registering_days_ahead_and_closing_the_app_is_allowed(self):
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament(
 			scheduled_start_at=timezone.now() + timedelta(days=2),
@@ -5668,11 +5677,11 @@ class AbsentRegistrationTests(APITestCase):
 		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 3600)
 
 		# This is the normal way to enter a Friday night on a Wednesday.
-		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertEqual(self._sweep(), 0)
 		self.assertTrue(tournament.players.filter(user=self.player).exists())
 
 	def test_the_same_seat_goes_once_the_night_is_nearly_on(self):
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament(
 			scheduled_start_at=timezone.now() + timedelta(minutes=5),
@@ -5680,20 +5689,20 @@ class AbsentRegistrationTests(APITestCase):
 		self._seat(tournament, self.player)
 		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		self.assertEqual(self._sweep(), 1)
 
 	def test_the_host_is_never_unregistered_from_their_own_tournament(self):
 		"""Taking their seat strands everybody else in a lobby nobody can start."""
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament()
 		self._seat(tournament, self.host)
 		self._away_for(self.host, TOURNAMENT_AFTER_SECONDS * 10)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertEqual(self._sweep(), 0)
 
 	def test_a_tournament_already_dealing_is_left_alone(self):
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament(status="running")
 		self._seat(tournament, self.player)
@@ -5701,12 +5710,10 @@ class AbsentRegistrationTests(APITestCase):
 
 		# Their chips belong to the prize pool now. Being away is the engine's
 		# business from here, and it sits them out rather than removing them.
-		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertEqual(self._sweep(), 0)
 
 	def test_a_queue_gives_up_a_seat_far_sooner_than_a_tournament(self):
-		from tournaments.absentees import (
-			QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS, drop_absent_registrations,
-		)
+		from tournaments.absentees import QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS
 		from tournaments import spingo
 
 		self.assertLess(QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS)
@@ -5715,7 +5722,7 @@ class AbsentRegistrationTests(APITestCase):
 		self._seat(game, self.player)
 		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
 
-		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		self.assertEqual(self._sweep(), 1)
 		# Nobody is left in it, so the queue row goes too: an empty one would be
 		# offered to the next player as a game with somebody in it.
 		self.assertFalse(Tournament.objects.filter(pk=game.pk).exists())
@@ -5724,7 +5731,7 @@ class AbsentRegistrationTests(APITestCase):
 		from sidegames.economy import wallet_for
 		from sidegames.models import Wallet
 		from tournaments import spingo
-		from tournaments.absentees import QUEUE_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import QUEUE_AFTER_SECONDS
 		from tournaments.coinbank import charge_entry
 
 		wallet_for(self.player)
@@ -5735,26 +5742,81 @@ class AbsentRegistrationTests(APITestCase):
 		self.assertEqual(Wallet.objects.get(user=self.player).balance, 475)
 
 		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
-		drop_absent_registrations(timezone.now())
+		self._sweep()
 
 		self.assertEqual(Wallet.objects.get(user=self.player).balance, 500)
+
+	def test_two_sweeps_in_a_row_do_not_both_walk_the_table(self):
+		"""The lobby is polled every few seconds and this reads every waiting
+		seat. Nothing it measures moves on that timescale."""
+		from tournaments.absentees import (
+			TOURNAMENT_AFTER_SECONDS, drop_absent_registrations, reset_sweep_clock,
+		)
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+		reset_sweep_clock()
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		# A second call moments later does nothing at all — including nothing
+		# to a seat that has since become droppable.
+		other = User.objects.create_user(username="ab_second", password="secret123")
+		self._seat(tournament, other)
+		self._away_for(other, TOURNAMENT_AFTER_SECONDS + 60)
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertTrue(tournament.players.filter(user=other).exists())
+
+		# And the next one, once the gap has passed, catches up.
+		self.assertEqual(self._sweep(), 1)
+
+	def test_a_restart_does_not_make_an_absent_seat_safe(self):
+		"""The in-memory record is gone; the profile still says when they left."""
+		from accounts import presence
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		from accounts.models import Profile
+
+		Profile.objects.create(
+			user=self.player,
+			last_seen=timezone.now() - timedelta(seconds=TOURNAMENT_AFTER_SECONDS + 120),
+		)
+		# Nothing in memory: this process never watched them leave.
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+
+		self.assertEqual(self._sweep(), 1)
+
+	def test_a_profile_that_was_never_stamped_keeps_its_seat(self):
+		from accounts import presence
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+
+		# last_seen is null: nobody has ever seen this player leave, so nothing
+		# is assumed about them.
+		self.assertEqual(self._sweep(), 0)
 
 	def test_the_player_asking_never_loses_their_own_seat(self):
 		"""Whatever the presence socket believes, somebody making a request is
 		plainly here — and a socket that failed to open must not cost them a
 		seat while they sit in the lobby watching it."""
-		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
 
 		tournament = self._tournament()
 		self._seat(tournament, self.player)
 		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS * 10)
 
-		self.assertEqual(drop_absent_registrations(timezone.now(), here=self.player.id), 0)
-		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		self.assertEqual(self._sweep(here=self.player.id), 0)
+		self.assertEqual(self._sweep(), 1)
 
 	def test_a_queue_that_still_has_somebody_in_it_is_kept(self):
 		from tournaments import spingo
-		from tournaments.absentees import QUEUE_AFTER_SECONDS, drop_absent_registrations
+		from tournaments.absentees import QUEUE_AFTER_SECONDS
 
 		other = User.objects.create_user(username="ab_other", password="secret123")
 		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
@@ -5765,7 +5827,7 @@ class AbsentRegistrationTests(APITestCase):
 		)
 		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
 
-		drop_absent_registrations(timezone.now())
+		self._sweep()
 
 		game.refresh_from_db()
 		self.assertEqual(game.players.count(), 1)
@@ -5832,3 +5894,95 @@ class NobodyPausesAFastGameTests(APITestCase):
 		self.assertEqual(len(setters), 1)
 		pause_source = inspect.getsource(coordinator.MultiTableTournamentCoordinator.pause)
 		self.assertIn("self.is_paused = True", pause_source)
+
+
+class TournamentAnnouncementTests(APITestCase):
+	"""Being told your own game is about to deal, from wherever you are."""
+
+	def setUp(self):
+		from tournaments import announce
+
+		announce.forget()
+		self.host = User.objects.create_user(username="an_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="an_player", password="secret123")
+		self.tournament = Tournament.objects.create(
+			name="Nine o'clock", host=self.host, status="lobby",
+			buy_in_cents=2000, max_players=9, players_per_table=9,
+		)
+		for index, user in enumerate((self.host, self.player)):
+			TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user,
+				table=self.tournament.ensure_table(1), seat=index,
+				seat_at_table=index, chips=self.tournament.starting_chips,
+			)
+
+	def tearDown(self):
+		from tournaments import announce
+
+		announce.forget()
+		_tournament_runners.clear()
+
+	def test_starting_a_tournament_tells_everybody_holding_a_seat(self):
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append((uid, payload))):
+			self.client.force_authenticate(self.host)
+			response = self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual({uid for uid, _ in sent}, {self.host.id, self.player.id})
+		self.assertEqual(sent[0][1]["type"], "tournament_started")
+		self.assertEqual(sent[0][1]["game"]["id"], self.tournament.id)
+		self.assertEqual(sent[0][1]["game"]["label"], "Nine o'clock")
+
+	def test_the_warning_goes_out_once_and_not_again(self):
+		"""This is swept from the lobby, which is polled every few seconds. A
+		reminder that arrives on every poll is a nag, not a reminder."""
+		from tournaments.announce import WARN_BEFORE_SECONDS, announce_starting_soon
+
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append(uid)):
+			first = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 30)
+			second = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 60)
+
+		self.assertEqual(first, 2)
+		self.assertEqual(second, 0)
+		self.assertEqual(len(sent), 2)
+
+	def test_nothing_is_said_about_a_start_that_is_still_hours_off(self):
+		from tournaments.announce import announce_starting_soon
+
+		with patch("tournaments.announce.notify_user") as told:
+			self.assertEqual(announce_starting_soon(self.tournament, 3 * 3600), 0)
+			# Nor about one whose time has already passed: that is a start, and
+			# it has its own message.
+			self.assertEqual(announce_starting_soon(self.tournament, -30), 0)
+			self.assertEqual(announce_starting_soon(self.tournament, None), 0)
+
+		told.assert_not_called()
+
+	def test_a_scheduled_tournament_announces_itself_when_its_time_comes(self):
+		self.tournament.scheduled_start_at = timezone.now() - timedelta(seconds=5)
+		self.tournament.save(update_fields=["scheduled_start_at"])
+
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append(payload)):
+			self.client.force_authenticate(self.player)
+			self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+		self.assertTrue(sent)
+		self.assertTrue(all(one["type"] == "tournament_started" for one in sent))
+
+	def test_a_message_that_cannot_be_sent_does_not_fail_the_start(self):
+		"""A player who cannot be told still has a game that has started."""
+		with patch("tournaments.announce.notify_user", side_effect=RuntimeError("no redis")):
+			self.client.force_authenticate(self.host)
+			with self.assertRaises(RuntimeError):
+				self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		# The raise above is the channel layer failing *inside* notify_user,
+		# which the real one swallows — see accounts/notify.py. What matters
+		# here is that the tournament was already saved before anybody was told.
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")

@@ -20,11 +20,30 @@ sent to one player, does not.
 Nothing sent up it is read. It talks in one direction only.
 """
 
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.contrib.auth.models import AnonymousUser
+from django.utils import timezone
 
 from .notify import user_group
 from .presence import arrived, left
+
+
+@database_sync_to_async
+def _stamp_last_seen(user_id):
+    """Write down when this player last had the app open.
+
+    On the way out rather than on a timer: the only thing that reads it is the
+    sweep for seats held by people who left (tournaments/absentees.py), and it
+    only has a question to ask about somebody who is not here.
+
+    Best effort. A player whose closing socket could not be written down still
+    closed it, and their seat is then safe until the next time they leave —
+    which errs in the right direction.
+    """
+    from .models import Profile
+
+    Profile.objects.filter(user_id=user_id).update(last_seen=timezone.now())
 
 
 class PresenceConsumer(AsyncWebsocketConsumer):
@@ -51,6 +70,7 @@ class PresenceConsumer(AsyncWebsocketConsumer):
         user_id = getattr(self, "user_id", None)
         if user_id is not None:
             left(user_id)
+            await _stamp_last_seen(user_id)
         group = getattr(self, "group", None)
         if group is not None:
             await self.channel_layer.group_discard(group, self.channel_name)

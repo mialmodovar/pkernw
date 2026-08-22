@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { alertText, isAtTable, tablePath, worthTelling } from "./startingGame";
+import {
+  alertAnswered, alertPath, alertText, isAtTable, readAlert, tablePath, worthTelling,
+} from "./startingGame";
 
 describe("worthTelling", () => {
   it("tells somebody reading the lobby", () => {
@@ -62,5 +64,56 @@ describe("alertText", () => {
       title: "Your game is dealing",
       body: "your seat is waiting",
     });
+  });
+});
+
+describe("readAlert", () => {
+  it("reads a queue that filled, a tournament that started, and one about to", () => {
+    expect(readAlert({ type: "fast_game_started", game: { id: 7 } }))
+      .toMatchObject({ kind: "started", refresh: "fast", tag: "fast_game_started-7" });
+    expect(readAlert({ type: "tournament_started", game: { id: 9 } }))
+      .toMatchObject({ kind: "started", refresh: "lobby" });
+    expect(readAlert({ type: "tournament_starting", game: { id: 9 } }))
+      .toMatchObject({ kind: "starting", refresh: "lobby" });
+  });
+
+  it("gives the two tournament messages different tags, since they are two", () => {
+    const started = readAlert({ type: "tournament_started", game: { id: 9 } });
+    const starting = readAlert({ type: "tournament_starting", game: { id: 9 } });
+    expect(started.tag).not.toBe(starting.tag);
+  });
+
+  it("stays quiet about anything else on the socket", () => {
+    expect(readAlert({ type: "chat_message", game: { id: 1 } })).toBe(null);
+    expect(readAlert({ type: "tournament_started" })).toBe(null);
+    expect(readAlert(undefined)).toBe(null);
+  });
+});
+
+describe("alertText for a game that has not started yet", () => {
+  it("says when rather than that it is dealing", () => {
+    const { title, body } = alertText(
+      { label: "Nine o'clock", starts_in_seconds: 300 }, "starting",
+    );
+    expect(title).toBe("Nine o'clock starts soon");
+    expect(body).toContain("in about 5 min");
+    expect(body).toContain("take your seat");
+  });
+});
+
+describe("alertPath and alertAnswered", () => {
+  it("sends a started game to the felt and a pending one to its own page", () => {
+    expect(alertPath({ id: 4, kind: "started" })).toBe("/tournament/4/play");
+    expect(alertPath({ id: 4, kind: "starting" })).toBe("/tournament/4");
+  });
+
+  it("counts arriving as the answer, wherever arriving means", () => {
+    expect(alertAnswered("/tournament/4/play", { id: 4, kind: "started" })).toBe(true);
+    expect(alertAnswered("/tournament/4", { id: 4, kind: "started" })).toBe(false);
+    // Anywhere in the tournament answers a warning about it.
+    expect(alertAnswered("/tournament/4", { id: 4, kind: "starting" })).toBe(true);
+    expect(alertAnswered("/tournament/4/play", { id: 4, kind: "starting" })).toBe(true);
+    expect(alertAnswered("/tournament/40", { id: 4, kind: "starting" })).toBe(false);
+    expect(alertAnswered("/", { id: 4, kind: "starting" })).toBe(false);
   });
 });

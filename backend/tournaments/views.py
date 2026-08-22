@@ -7,7 +7,10 @@ from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 from accounts.models import AvatarImage
 
-from .absentees import drop_absent_registrations
+from datetime import timedelta
+
+from .absentees import drop_absent_registrations, seconds_until
+from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soon
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
@@ -39,21 +42,39 @@ def _sweep_lobby(here=None, now=None):
     idempotent, and both only matter while somebody is around to look at a
     lobby — which is exactly when this runs.
     """
+    at = now or timezone.now()
     _start_due_scheduled_tournaments()
-    drop_absent_registrations(now or timezone.now(), here=here)
+    _warn_about_tournaments_about_to_start(at)
+    drop_absent_registrations(at, here=here)
 
 
 def _start_due_scheduled_tournaments():
+    now = timezone.now()
     due_tournaments = Tournament.objects.filter(
         status="lobby",
         scheduled_start_at__isnull=False,
-        scheduled_start_at__lte=timezone.now(),
+        scheduled_start_at__lte=now,
     )
     for tournament in due_tournaments:
         if tournament.players.count() >= 2:
             tournament.status = "running"
-            tournament.started_at = timezone.now()
+            tournament.started_at = now
             tournament.save(update_fields=["status", "started_at"])
+            # Whoever registered is not necessarily watching the clock. See
+            # announce.py — this reaches them wherever they are in the app.
+            announce_start(tournament)
+
+
+def _warn_about_tournaments_about_to_start(now):
+    """The five minutes before a scheduled start, once per tournament."""
+    soon = Tournament.objects.filter(
+        status="lobby",
+        scheduled_start_at__isnull=False,
+        scheduled_start_at__gt=now,
+        scheduled_start_at__lte=now + timedelta(seconds=WARN_BEFORE_SECONDS),
+    )
+    for tournament in soon:
+        announce_starting_soon(tournament, seconds_until(tournament.scheduled_start_at, now))
 
 
 def manageable_tournament(user, pk):
@@ -249,6 +270,9 @@ def start_tournament(request, pk):
     # starting again, and would otherwise reset how long this has been running.
     tournament.started_at = timezone.now()
     tournament.save(update_fields=["status", "started_at"])
+    # The host pressed a button; everybody else has to be told. Whoever is
+    # already looking at the table drops the alert themselves.
+    announce_start(tournament)
     return Response({"status": "running"})
 
 

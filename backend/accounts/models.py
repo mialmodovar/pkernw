@@ -27,6 +27,14 @@ class Profile(models.Model):
     # show is a frontend concern and will grow.
     preferences = models.JSONField(default=dict, blank=True)
 
+    # When this player last had the app open, written when their last socket
+    # closes. Kept in the database and not only in memory (see presence.py)
+    # because it decides whether somebody's seat is given up on their behalf:
+    # a restart empties the in-memory record, and without this every absent
+    # registration would be safe until the player came back and left again —
+    # which is exactly the case the sweep exists for.
+    last_seen = models.DateTimeField(null=True, blank=True)
+
     # How somebody gets back in when they have forgotten their password. Hashed
     # like a password, because that is exactly what it is — see
     # accounts/recovery.py for why this app has one at all rather than sending

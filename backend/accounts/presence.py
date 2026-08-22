@@ -46,13 +46,17 @@ def online_user_ids() -> set:
     return set(_socket_counts)
 
 
-def offline_seconds(user_id: int) -> Optional[float]:
-    """How long this player has had the app closed, or None.
+def is_online(user_id: int) -> bool:
+    return user_id in _socket_counts
 
-    None means "not known to be away": either they are here, or they have not
-    been seen at all since this process started. The second case is why a
-    restart cannot cost anybody their seat — nothing is assumed about a player
-    the process never watched leave.
+
+def offline_seconds(user_id: int) -> Optional[float]:
+    """How long this player has had the app closed, according to this process.
+
+    None means "here, or never seen to leave". The second case is not the same
+    as "never away" — a restart empties this map while people are still gone —
+    which is why the profile carries a `last_seen` for the sweep to fall back
+    on. See tournaments/absentees.py.
     """
     if user_id in _socket_counts:
         return None

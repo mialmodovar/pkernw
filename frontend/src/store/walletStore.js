@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import api from "../api/http";
+import { COINS } from "../api/paths";
 
 /**
  * Coins: the side games' own currency.
@@ -35,7 +36,7 @@ const useWalletStore = create((set, get) => ({
 
   fetchWallet: async () => {
     try {
-      const { data } = await api.get("/coins/wallet/");
+      const { data } = await api.get(`${COINS}/wallet/`);
       get().apply(data);
     } catch {
       // A balance that will not load is not worth an error on the lobby.
@@ -45,7 +46,7 @@ const useWalletStore = create((set, get) => ({
   fetchShop: async () => {
     set({ loading: true, error: "" });
     try {
-      const { data } = await api.get("/coins/shop/");
+      const { data } = await api.get(`${COINS}/shop/`);
       get().apply(data);
     } catch {
       set({ error: "The shop could not be opened." });
@@ -57,7 +58,7 @@ const useWalletStore = create((set, get) => ({
   claim: async () => {
     set({ error: "" });
     try {
-      const { data } = await api.post("/coins/claim/");
+      const { data } = await api.post(`${COINS}/claim/`);
       get().apply(data);
     } catch (error) {
       set({ error: error.response?.data?.error || "Could not claim today's coins." });
@@ -67,7 +68,7 @@ const useWalletStore = create((set, get) => ({
   buy: async (item) => {
     set({ error: "" });
     try {
-      const { data } = await api.post("/coins/shop/buy/", { item });
+      const { data } = await api.post(`${COINS}/shop/buy/`, { item });
       get().apply(data);
       return true;
     } catch (error) {

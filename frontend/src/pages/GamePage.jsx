@@ -278,6 +278,18 @@ export default function GamePage() {
       bare={bare}
     />
   );
+  // The host's controls, and the one place their URLs are written. Built out of
+  // the button's own word before this, which read fine and meant the paths only
+  // existed at runtime — so nothing could check they were paths the server
+  // serves. Now they are literals, and a test on the other side of the app
+  // resolves every one of them.
+  const ADMIN_PATHS = {
+    start: `/tournaments/${id}/start/`,
+    pause: `/tournaments/${id}/pause/`,
+    resume: `/tournaments/${id}/resume/`,
+    "skip-level": `/tournaments/${id}/skip-level/`,
+  };
+
   const handleAdminControl = async (control) => {
     setAdminError("");
     if (sandbox) {
@@ -287,7 +299,9 @@ export default function GamePage() {
       return;
     }
     try {
-      await api.post(`/tournaments/${id}/${control}/`);
+      const path = ADMIN_PATHS[control];
+      if (!path) return;
+      await api.post(path);
       await loadTournament();
     } catch (error) {
       setAdminError(error.response?.data?.error || "Unable to update tournament.");

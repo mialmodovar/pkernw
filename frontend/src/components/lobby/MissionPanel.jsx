@@ -19,7 +19,9 @@ import {
  * sidebar somebody is scanning for a game is six bars in the way.
  */
 export default function MissionPanel() {
-  const { missions, fetchMissions, claim, claiming, error } = useMissionStore();
+  const {
+    missions, fetchMissions, claim, claiming, error, loaded, reachable,
+  } = useMissionStore();
   const [open, setOpen] = useState(false);
   const waiting = claimableCount(missions);
 
@@ -31,7 +33,32 @@ export default function MissionPanel() {
     if (waiting > 0) setOpen(true);
   }, [waiting > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!missions.length) return null;
+  // Nothing at all while the first answer is on its way — but if it never
+  // arrives, say so. Vanishing silently is what made a wrong URL look like a
+  // feature that had never been built.
+  if (!missions.length) {
+    if (loaded || reachable) return null;
+    return (
+      <div className="panel rounded-lg p-4 shadow-lg shadow-black/40">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-(--color-silver)">
+            Missions
+          </h2>
+          <button
+            type="button"
+            onClick={() => fetchMissions()}
+            className="text-[11px] font-semibold text-(--color-text-muted)
+                       hover:text-(--color-silver) transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-(--color-text-muted)">
+          Could not load them just now.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">

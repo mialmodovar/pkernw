@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Suit } from "../game/PlayingCard";
+import { deckFace, parseCard } from "../game/cardStyles";
 import Icon from "../icons/Icon";
 import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
@@ -31,6 +33,29 @@ const SOUND_LABELS = {
 /** A miniature of what the preset does to the table: the actual felt gradient
  *  with the actual card back lying on it. Cheaper to read than three colour
  *  chips, and it is the real values rather than an approximation of them. */
+// The two ways a card can be printed. The keys match DECKS in theme/themes.js
+// and AVAILABLE_CARD_DECKS on the server.
+const DECK_CHOICES = [
+  { key: "classic", label: "Classic", hint: "Ink on ivory, four colours" },
+  { key: "inverted", label: "Inverted", hint: "The suit's colour across the card, rank in white" },
+];
+
+/** One card at swatch size, printed in whichever deck is being offered. */
+function DeckSample({ card, deck }) {
+  const parsed = parseCard(card);
+  const printed = deckFace(deck, parsed.suit);
+  return (
+    <span
+      style={printed.style}
+      className={`inline-flex flex-col items-center justify-center w-6 h-8 rounded font-bold
+                  text-[10px] leading-none ${printed.face}`}
+    >
+      {parsed.rank}
+      <Suit suit={parsed.suit} className="w-2 h-2 mt-px" />
+    </span>
+  );
+}
+
 function PresetPreview({ preset, pattern }) {
   // Resolved rather than declared, so the dot shows the accent after the
   // readability correction — the colour that will actually be on screen.
@@ -67,7 +92,7 @@ function SectionLabel({ children, action }) {
 }
 
 export default function ThemeSettings({ onClose }) {
-  const { preset, accent, pattern, finishers, update } = useThemeStore();
+  const { preset, accent, pattern, deck, finishers, update } = useThemeStore();
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
@@ -280,6 +305,43 @@ export default function ThemeSettings({ onClose }) {
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
           The accent tints buttons and highlights; the pattern is the card back.
           Felt colour comes from the theme.
+        </p>
+      </div>
+
+      {/* The face, as against the back above. Drawn as real cards rather than
+          named in a dropdown: this is the one setting where the preview is the
+          whole decision. */}
+      <div className="mt-3 pt-3 border-t border-(--color-border)">
+        <SectionLabel>Card face</SectionLabel>
+
+        <div className="grid grid-cols-2 gap-2">
+          {DECK_CHOICES.map((choice) => (
+            <button
+              key={choice.key}
+              onClick={() => update({ deck: choice.key })}
+              aria-pressed={deck === choice.key}
+              title={choice.hint}
+              className={`rounded-lg px-2 py-2 border transition-colors ${
+                deck === choice.key
+                  ? "border-(--color-highlight-text) bg-black/40"
+                  : "border-(--color-border) hover:border-(--color-border-strong)"
+              }`}
+            >
+              <span className="flex items-center justify-center gap-1">
+                {["A♠", "K♥", "9♦"].map((card) => (
+                  <DeckSample key={card} card={card} deck={choice.key} />
+                ))}
+              </span>
+              <span className="mt-1.5 block text-[11px] font-semibold text-(--color-silver)">
+                {choice.label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
+          Inverted prints the suit's colour across the whole card. Easier to read
+          across a table, and easier again if red on cream is hard going.
         </p>
       </div>
 

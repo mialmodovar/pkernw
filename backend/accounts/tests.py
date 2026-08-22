@@ -45,6 +45,25 @@ class FinisherGifTests(APITestCase):
 		self.user.profile.refresh_from_db()
 		self.assertEqual(self.user.profile.theme["finisher_gif_id"], "3o7abKhOpu0NwenH3O")
 
+	def test_the_deck_a_player_reads_best_is_saved_with_the_theme(self):
+		response = self._patch(deck="inverted")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["deck"], "inverted")
+
+	def test_a_theme_that_names_no_deck_gets_the_printed_one(self):
+		"""Every profile saved before the setting existed, and every client that
+		has not been updated."""
+		response = self._patch()
+
+		self.assertEqual(response.data["deck"], "classic")
+
+	def test_a_deck_nobody_prints_is_refused(self):
+		response = self._patch(deck="holographic")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 	def test_a_url_is_refused(self):
 		response = self._patch(finisher_gif_id="https://evil.example/x.gif")
 

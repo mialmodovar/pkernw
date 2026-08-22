@@ -19,10 +19,24 @@
 export const DEFAULT_PRESET = "burgundy";
 export const DEFAULT_PATTERN = "weave";
 
+export const DEFAULT_DECK = "classic";
+
+/**
+ * How the front of a card is printed. `pattern` above is its back.
+ *
+ * "classic" is the four-colour deck this app has always dealt: ink on ivory.
+ * "inverted" fills the card with the suit's own colour and prints the rank in
+ * white — the suit is then readable from across the felt at seat size, where a
+ * small red pip on cream is the thing people squint at. Matches
+ * AVAILABLE_CARD_DECKS in accounts/serializers.py.
+ */
+export const DECKS = ["classic", "inverted"];
+
 export const DEFAULT_THEME = {
   preset: DEFAULT_PRESET,
   accent: null,
   pattern: DEFAULT_PATTERN,
+  deck: DEFAULT_DECK,
   // The GIF that plays in the middle of the table when you knock somebody out.
   // A Giphy id, never a URL — see api/giphy.js. Null is "no finisher", which is
   // what everyone starts with.
@@ -463,11 +477,12 @@ export function normalizeTheme(theme) {
   const preset = PRESETS[theme?.preset] ? theme.preset : DEFAULT_PRESET;
   const accent = isHexColour(theme?.accent) ? theme.accent.toLowerCase() : null;
   const pattern = PATTERNS[theme?.pattern] ? theme.pattern : DEFAULT_PATTERN;
+  const deck = DECKS.includes(theme?.deck) ? theme.deck : DEFAULT_DECK;
   // The server speaks snake_case and the client camelCase; this is the one
   // place the two names meet, so both spellings are accepted on the way in.
   const rawGif = theme?.finisherGifId ?? theme?.finisher_gif_id ?? null;
   const finisherGifId = GIF_ID.test(String(rawGif || "")) ? String(rawGif) : null;
-  return { preset, accent, pattern, finisherGifId, finishers: normalizeFinishers(theme) };
+  return { preset, accent, pattern, deck, finisherGifId, finishers: normalizeFinishers(theme) };
 }
 
 /**

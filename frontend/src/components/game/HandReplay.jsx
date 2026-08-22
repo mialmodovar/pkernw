@@ -1,4 +1,5 @@
-import { CARD_FACE, SUIT_COLOR, parseCard } from "./cardStyles";
+import useThemeStore from "../../store/themeStore";
+import { deckFace, parseCard } from "./cardStyles";
 import { Suit } from "./PlayingCard";
 import { isInBestFive, namesBySeat, showdownOf, streetsOf, winningSeats } from "./handStreets";
 
@@ -14,17 +15,21 @@ const VERB = {
  * between reading a board and seeing why it mattered.
  */
 export function MiniCard({ card, lit = false, size = "sm" }) {
+  // The same deck the felt is dealing: a hand history printed in a deck the
+  // player does not use is a hand history they have to translate.
+  const deck = useThemeStore((s) => s.deck);
   const parsed = parseCard(card);
   if (!parsed) return null;
   const box = size === "lg" ? "w-8 h-11 text-sm" : "w-6 h-8 text-[10px]";
+  const printed = deckFace(deck, parsed.suit);
   return (
     <span
-      className={`inline-flex flex-col items-center justify-center rounded font-bold ${box} ${CARD_FACE} ${
+      className={`inline-flex flex-col items-center justify-center rounded font-bold ${box} ${printed.face} ${
         lit
           ? "ring-2 ring-(--color-highlight) shadow-[0_0_10px_var(--color-highlight-edge)]"
           : "opacity-80"
       }`}
-      style={{ color: SUIT_COLOR[parsed.suit] || "#161616" }}
+      style={printed.style}
     >
       <span>{parsed.rank}</span>
       <Suit suit={parsed.suit} className={size === "lg" ? "w-3 h-3" : "w-2 h-2"} />

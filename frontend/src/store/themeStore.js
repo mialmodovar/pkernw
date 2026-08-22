@@ -61,6 +61,7 @@ const schedulePush = (theme) => {
       preset: theme.preset,
       accent: theme.accent,
       pattern: theme.pattern,
+      deck: theme.deck,
       // The first of the list, still sent on its own: a client older than this
       // one reads that field, and so does a profile that has never been saved
       // since the list existed.

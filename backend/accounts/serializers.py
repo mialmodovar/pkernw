@@ -173,6 +173,9 @@ class ThemeUpdateSerializer(serializers.Serializer):
     pattern = serializers.ChoiceField(choices=AVAILABLE_CARD_PATTERNS, default="weave")
     # The face of the card, as against `pattern`, which is its back.
     deck = serializers.ChoiceField(choices=AVAILABLE_CARD_DECKS, default="classic")
+    # What colour that back is printed in. Null means "whatever this preset
+    # prints", which is what every profile saved before this said.
+    card_back = serializers.RegexField(HEX_COLOUR, allow_null=True, default=None)
     # The GIF that plays in the middle of the table when this player knocks
     # somebody out. Stored as a Giphy id, never a URL — see game/giphy.py for
     # why that distinction is the whole security of the feature.

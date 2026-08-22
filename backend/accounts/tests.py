@@ -59,6 +59,21 @@ class FinisherGifTests(APITestCase):
 
 		self.assertEqual(response.data["deck"], "classic")
 
+	def test_a_chosen_card_back_colour_is_saved(self):
+		response = self._patch(card_back="#1f4fd8")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["card_back"], "#1f4fd8")
+
+	def test_no_colour_means_the_one_the_theme_prints(self):
+		self.assertIsNone(self._patch().data["card_back"])
+
+	def test_a_card_back_that_is_not_a_colour_is_refused(self):
+		self.assertEqual(
+			self._patch(card_back="rebeccapurple").status_code, status.HTTP_400_BAD_REQUEST,
+		)
+
 	def test_a_deck_nobody_prints_is_refused(self):
 		response = self._patch(deck="holographic")
 

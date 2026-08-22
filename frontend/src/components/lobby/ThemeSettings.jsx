@@ -15,6 +15,7 @@ import {
   PATTERN_NAMES,
   PRESETS,
   PRESET_NAMES,
+  cardBackColours,
   cardBackImage,
   effectiveAccent,
   resolveTokens,
@@ -56,10 +57,10 @@ function DeckSample({ card, deck }) {
   );
 }
 
-function PresetPreview({ preset, pattern }) {
+function PresetPreview({ preset, pattern, cardBack = null }) {
   // Resolved rather than declared, so the dot shows the accent after the
   // readability correction — the colour that will actually be on screen.
-  const tokens = resolveTokens({ preset, pattern });
+  const tokens = resolveTokens({ preset, pattern, cardBack });
   return (
     <span
       className="w-10 h-7 rounded relative overflow-hidden shrink-0 border border-black/40"
@@ -68,7 +69,7 @@ function PresetPreview({ preset, pattern }) {
       <span
         className="absolute right-[4px] bottom-[4px] w-[9px] h-[13px] rounded-[2px] border"
         style={{
-          backgroundImage: cardBackImage(preset, pattern),
+          backgroundImage: cardBackImage(preset, pattern, cardBack),
           borderColor: tokens["--card-back-edge"],
         }}
       />
@@ -92,7 +93,10 @@ function SectionLabel({ children, action }) {
 }
 
 export default function ThemeSettings({ onClose }) {
-  const { preset, accent, pattern, deck, finishers, update } = useThemeStore();
+  const { preset, accent, pattern, deck, cardBack, finishers, update } = useThemeStore();
+  // The input needs a colour even when the theme has none of its own, or it
+  // opens on black and the first drag jumps from somewhere unrelated.
+  const backColour = cardBack || cardBackColours(preset, null).base;
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
@@ -163,7 +167,7 @@ export default function ThemeSettings({ onClose }) {
           aria-expanded={listOpen}
           className="w-full flex items-center gap-2 p-1.5 rounded panel-raised panel-solid text-left"
         >
-          <PresetPreview preset={preset} pattern={pattern} />
+          <PresetPreview preset={preset} pattern={pattern} cardBack={cardBack} />
           <span className="text-sm text-(--color-silver) flex-1 truncate">
             {PRESETS[preset].label}
           </span>
@@ -292,7 +296,7 @@ export default function ThemeSettings({ onClose }) {
               title={PATTERNS[name].label}
               aria-label={`Card back ${PATTERNS[name].label}`}
               aria-pressed={pattern === name}
-              style={{ backgroundImage: cardBackImage(preset, name) }}
+              style={{ backgroundImage: cardBackImage(preset, name, cardBack) }}
               className={`aspect-square rounded transition-transform hover:scale-110 ${
                 pattern === name
                   ? "ring-2 ring-(--color-silver) ring-offset-1 ring-offset-black/60"
@@ -302,9 +306,36 @@ export default function ThemeSettings({ onClose }) {
           ))}
         </div>
 
+        {/* The colour the pattern is printed in. Its own control rather than
+            six more swatches: a pattern and a colour multiply, and a grid of
+            every combination would be a wall. */}
+        <div className="mt-2 flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-(--color-text-muted) cursor-pointer">
+            <input
+              type="color"
+              value={backColour}
+              // Repaints on every step of the drag; themeStore holds the save
+              // back until you stop moving.
+              onChange={(event) => update({ cardBack: event.target.value })}
+              className="w-7 h-7 rounded bg-transparent border border-(--color-border) cursor-pointer p-0"
+            />
+            Back colour
+          </label>
+          {cardBack && (
+            <button
+              type="button"
+              onClick={() => update({ cardBack: null })}
+              className="text-[11px] font-semibold text-(--color-text-muted)
+                         hover:text-(--color-silver) transition-colors"
+            >
+              Use the theme's
+            </button>
+          )}
+        </div>
+
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
-          The accent tints buttons and highlights; the pattern is the card back.
-          Felt colour comes from the theme.
+          The accent tints buttons and highlights; the pattern and its colour are
+          the card back. Felt colour comes from the theme.
         </p>
       </div>
 

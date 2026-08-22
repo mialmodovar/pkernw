@@ -15,7 +15,6 @@ import {
   PATTERN_NAMES,
   PRESETS,
   PRESET_NAMES,
-  cardBackColours,
   cardBackImage,
   effectiveAccent,
   resolveTokens,
@@ -34,6 +33,11 @@ const SOUND_LABELS = {
 /** A miniature of what the preset does to the table: the actual felt gradient
  *  with the actual card back lying on it. Cheaper to read than three colour
  *  chips, and it is the real values rather than an approximation of them. */
+// Card-back colours worth offering, with the theme's own first. Six, to match
+// the row of patterns above them — a colour picker would allow all sixteen
+// million and help with none of them.
+const CARD_BACK_COLOURS = [null, "#3f4a63", "#1d4b3a", "#5b2333", "#2f2a45", "#6b5636"];
+
 // The two ways a card can be printed. The keys match DECKS in theme/themes.js
 // and AVAILABLE_CARD_DECKS on the server.
 const DECK_CHOICES = [
@@ -94,9 +98,6 @@ function SectionLabel({ children, action }) {
 
 export default function ThemeSettings({ onClose }) {
   const { preset, accent, pattern, deck, cardBack, finishers, update } = useThemeStore();
-  // The input needs a colour even when the theme has none of its own, or it
-  // opens on black and the first drag jumps from somewhere unrelated.
-  const backColour = cardBack || cardBackColours(preset, null).base;
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
@@ -283,11 +284,16 @@ export default function ThemeSettings({ onClose }) {
         </p>
       </div>
 
+      {/* One section for the deck rather than two.
+          It was a grid of patterns, then a colour picker with a reset link
+          beside it, then two large card previews — three controls and a
+          paragraph for a decision nobody makes twice. Now: the back, in a row
+          of patterns and a row of colours that each show the other's choice,
+          and the face as two small samples. Everything visible, nothing to
+          drag, no free colour input whose value nobody can name. */}
       <div className="mt-3 pt-3 border-t border-(--color-border)">
-        <SectionLabel>Card back</SectionLabel>
+        <SectionLabel>Cards</SectionLabel>
 
-        {/* Swatches are drawn in the current preset's deck colours, so what you
-            see in the grid is what lands on the table. */}
         <div className="grid grid-cols-6 gap-1">
           {PATTERN_NAMES.map((name) => (
             <button
@@ -306,64 +312,49 @@ export default function ThemeSettings({ onClose }) {
           ))}
         </div>
 
-        {/* The colour the pattern is printed in. Its own control rather than
-            six more swatches: a pattern and a colour multiply, and a grid of
-            every combination would be a wall. */}
-        <div className="mt-2 flex items-center gap-2">
-          <label className="flex items-center gap-2 text-xs text-(--color-text-muted) cursor-pointer">
-            <input
-              type="color"
-              value={backColour}
-              // Repaints on every step of the drag; themeStore holds the save
-              // back until you stop moving.
-              onChange={(event) => update({ cardBack: event.target.value })}
-              className="w-7 h-7 rounded bg-transparent border border-(--color-border) cursor-pointer p-0"
-            />
-            Back colour
-          </label>
-          {cardBack && (
+        {/* The same six squares again, in colours instead of patterns — each
+            one drawn in the pattern you just chose, so the two rows are one
+            decision seen from both sides. The first follows the theme, which
+            is what everybody starts on. */}
+        <div className="grid grid-cols-6 gap-1 mt-1">
+          {CARD_BACK_COLOURS.map((colour) => (
             <button
-              type="button"
-              onClick={() => update({ cardBack: null })}
-              className="text-[11px] font-semibold text-(--color-text-muted)
-                         hover:text-(--color-silver) transition-colors"
-            >
-              Use the theme's
-            </button>
-          )}
+              key={colour ?? "theme"}
+              onClick={() => update({ cardBack: colour })}
+              title={colour ? `Card back in ${colour}` : "Card back in the theme's own colour"}
+              aria-label={colour ? `Card back colour ${colour}` : "Card back colour from the theme"}
+              aria-pressed={(cardBack || null) === colour}
+              style={{ backgroundImage: cardBackImage(preset, pattern, colour) }}
+              className={`aspect-square rounded transition-transform hover:scale-110 ${
+                (cardBack || null) === colour
+                  ? "ring-2 ring-(--color-silver) ring-offset-1 ring-offset-black/60"
+                  : "border border-black/40"
+              }`}
+            />
+          ))}
         </div>
 
-        <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
-          The accent tints buttons and highlights; the pattern and its colour are
-          the card back. Felt colour comes from the theme.
-        </p>
-      </div>
-
-      {/* The face, as against the back above. Drawn as real cards rather than
-          named in a dropdown: this is the one setting where the preview is the
-          whole decision. */}
-      <div className="mt-3 pt-3 border-t border-(--color-border)">
-        <SectionLabel>Card face</SectionLabel>
-
-        <div className="grid grid-cols-2 gap-2">
+        {/* The face. Two samples and their names, on one line. */}
+        <div className="grid grid-cols-2 gap-2 mt-2">
           {DECK_CHOICES.map((choice) => (
             <button
               key={choice.key}
               onClick={() => update({ deck: choice.key })}
               aria-pressed={deck === choice.key}
               title={choice.hint}
-              className={`rounded-lg px-2 py-2 border transition-colors ${
+              className={`flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 border
+                          transition-colors ${
                 deck === choice.key
                   ? "border-(--color-highlight-text) bg-black/40"
                   : "border-(--color-border) hover:border-(--color-border-strong)"
               }`}
             >
-              <span className="flex items-center justify-center gap-1">
-                {["A♠", "K♥", "9♦"].map((card) => (
+              <span className="flex items-center gap-0.5">
+                {["A♠", "K♥"].map((card) => (
                   <DeckSample key={card} card={card} deck={choice.key} />
                 ))}
               </span>
-              <span className="mt-1.5 block text-[11px] font-semibold text-(--color-silver)">
+              <span className="text-[11px] font-semibold text-(--color-silver)">
                 {choice.label}
               </span>
             </button>
@@ -371,8 +362,8 @@ export default function ThemeSettings({ onClose }) {
         </div>
 
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">
-          Inverted prints the suit's colour across the whole card. Easier to read
-          across a table, and easier again if red on cream is hard going.
+          The back is a pattern and a colour; the face is how the suits are
+          printed. Felt and accent come from the theme.
         </p>
       </div>
 

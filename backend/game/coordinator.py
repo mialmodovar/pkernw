@@ -843,6 +843,28 @@ class MultiTableTournamentCoordinator:
             # mid-game should still see what they are playing for, and the felt
             # should not change shape under them.
             "fast": self.fast,
+            # And the mystery board. Until now this only ever arrived on the
+            # broadcast that opened it, so a player who reloaded afterwards lost
+            # the envelope count entirely — and, worse, lost the mark on every
+            # head saying there is one to be drawn for it.
+            "mystery": self._mystery_payload(),
+        }
+
+    def _mystery_payload(self) -> Optional[dict]:
+        """What is left on the mystery board, for a client that just arrived.
+
+        None outside a mystery tournament, and before the pool is cut it says so
+        rather than being absent: "sealed" is a state the table shows, not the
+        absence of one.
+        """
+        if not self.bounty.is_mystery:
+            return None
+        return {
+            "opened": self._mystery_opened,
+            "envelopes_left": len(self._mystery_envelopes),
+            "pool_left_cents": sum(self._mystery_envelopes),
+            "top_left_cents": max(self._mystery_envelopes, default=0),
+            "release": self.mystery_release,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:

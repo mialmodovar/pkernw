@@ -347,6 +347,24 @@ const useGameStore = create((set) => ({
           // Carried on the snapshot too, so a reload mid-game gets the format
           // and the prize back rather than a table with no stakes on it.
           fast: data.fast ?? s.fast,
+          // The mystery board, for the same reason. Merged rather than
+          // replaced: the snapshot knows what is left on the board, and the
+          // opening broadcast knows the envelopes it was cut into — a reload
+          // must not lose the second by arriving with the first. `announcement`
+          // is deliberately not revived; the opening plays once, when it opens.
+          ...(data.mystery
+            ? {
+              mystery: {
+                ...(s.mystery || {}),
+                opened: Boolean(data.mystery.opened),
+                envelopesLeft: data.mystery.envelopes_left,
+                poolLeftCents: data.mystery.pool_left_cents,
+                topLeftCents: data.mystery.top_left_cents,
+                reason: s.mystery?.reason ?? data.mystery.release ?? null,
+                announcement: null,
+              },
+            }
+            : {}),
           sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;

@@ -115,6 +115,13 @@ export default function PlayerSeat({
   const showOffer = useShowCardsOffer(isMe ? player.seat : null, isMe ? myCards : null);
   const bountyFlash = useBountyFlash(p.seat);
   const bountyCents = p.bounty_cents || 0;
+  // A mystery head. Once the pool is cut, every player still in carries an
+  // envelope worth an unknown amount — which is the whole format, and the felt
+  // said nothing about it: a mystery bounty puts no figure on a head, so the
+  // badge beside this one is never drawn in one of these.
+  const mysteryOpen = useGameStore((s) => Boolean(s.mystery?.opened));
+  const mysteryTopCents = useGameStore((s) => s.mystery?.topLeftCents || 0);
+  const carriesEnvelope = mysteryOpen && !p.is_eliminated && bountyCents <= 0;
   const borderColor = p.is_disconnected
     ? "border-(--color-accent)"
     : isActive
@@ -304,6 +311,24 @@ export default function PlayerSeat({
                       ${bountyFlash ? "animate-bounty-bump" : ""}`}
         >
           {formatEuros(bountyCents)}
+        </span>
+      )}
+
+      {/* The envelope on their head. No number on it, because there is not one
+          to know — that is what makes it worth chasing. It lands with a pop the
+          moment the pool opens, and goes with them when they bust. */}
+      {carriesEnvelope && (
+        <span
+          title={`${p.name} is worth a mystery envelope`
+            + (mysteryTopCents > 0 ? ` — up to ${formatEuros(mysteryTopCents)}` : "")}
+          className="animate-mystery-head absolute -top-2 -right-1 z-10 flex items-center gap-0.5
+                     px-1.5 py-px rounded-full text-[10px] font-extrabold leading-none
+                     bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
+                     text-(--color-highlight-ink) border border-(--color-highlight-deeper)
+                     shadow shadow-black/60 whitespace-nowrap"
+        >
+          <span aria-hidden="true">✉️</span>
+          <span>?</span>
         </span>
       )}
 

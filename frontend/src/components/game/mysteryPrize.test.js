@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { relativeSize, revealHeadline, revealMs, revealTone } from "./mysteryPrize";
+import {
+  REVEAL_MAX_WAIT_MS, relativeSize, revealHeadline, revealHolds, revealMs, revealTone,
+} from "./mysteryPrize";
 
 describe("relativeSize", () => {
   it("is one for an envelope worth exactly an ordinary one", () => {
@@ -57,5 +59,21 @@ describe("revealHeadline", () => {
     expect(revealHeadline("jackpot")).toBe("The big one");
     expect(revealHeadline("plain")).toBe("Mystery bounty");
     expect(revealHeadline(undefined)).toBe("Mystery bounty");
+  });
+});
+
+describe("revealHolds", () => {
+  it("waits while the knockout GIF is still on screen", () => {
+    expect(revealHolds(true, 0)).toBe(true);
+    expect(revealHolds(true, 3000)).toBe(true);
+  });
+
+  it("shows the envelope straight away when nothing is covering it", () => {
+    expect(revealHolds(false, 0)).toBe(false);
+  });
+
+  it("gives up waiting rather than never showing the money", () => {
+    expect(revealHolds(true, REVEAL_MAX_WAIT_MS)).toBe(false);
+    expect(revealHolds(true, REVEAL_MAX_WAIT_MS + 1000)).toBe(false);
   });
 });

@@ -43,7 +43,9 @@ export default function MysteryOpening() {
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col items-center justify-center px-4
+      // Above the knockout GIF (z-40), which fires on the same bust that opens
+      // the pool and was landing on top of the announcement.
+      className="absolute inset-0 z-50 flex flex-col items-center justify-center px-4
                  bg-black/80 text-center"
       onClick={() => { setDismissed(true); clear(); }}
     >

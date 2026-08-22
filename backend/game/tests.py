@@ -1310,6 +1310,68 @@ class HandSnapshotTests(CoordinatorHarness, TestCase):
         )
 
 
+class MysterySnapshotTests(CoordinatorHarness, TestCase):
+    """A player who reloads still sees the mystery board.
+
+    It used to arrive only on the broadcast that opened the envelopes, so a
+    refresh after that point left the table with no envelope count — and, once
+    the felt started marking every head with one, no marks either.
+    """
+
+    def _mystery_coordinator(self, envelopes, opened):
+        from tournaments.bounties import BountyConfig
+
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)], players_per_table=3,
+        )
+        coordinator.bounty = BountyConfig(mode="mystery", amount_cents=1000)
+        coordinator._mystery_envelopes = list(envelopes)
+        coordinator._mystery_opened = opened
+        coordinator.mystery_release = "reg_closed"
+        self._sync_and_rebalance(coordinator)
+        return coordinator
+
+    def test_the_snapshot_carries_what_is_left_on_the_board(self):
+        coordinator = self._mystery_coordinator([5000, 2000, 1000], opened=True)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertEqual(snapshot["mystery"], {
+            "opened": True,
+            "envelopes_left": 3,
+            "pool_left_cents": 8000,
+            "top_left_cents": 5000,
+            "release": "reg_closed",
+        })
+
+    def test_a_sealed_pool_says_so_rather_than_saying_nothing(self):
+        coordinator = self._mystery_coordinator([], opened=False)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertFalse(snapshot["mystery"]["opened"])
+        self.assertEqual(snapshot["mystery"]["envelopes_left"], 0)
+
+    def test_a_tournament_with_no_mystery_pool_has_no_board(self):
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)], players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertIsNone(snapshot["mystery"])
+
+    def test_the_board_empties_as_the_envelopes_are_drawn(self):
+        coordinator = self._mystery_coordinator([5000, 2000], opened=True)
+        coordinator._mystery_envelopes = [2000]
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertEqual(snapshot["mystery"]["envelopes_left"], 1)
+        self.assertEqual(snapshot["mystery"]["top_left_cents"], 2000)
+
+
 class GifIdTests(TestCase):
 	"""A GIF is an id, never a URL. Everything else about the feature rests on
 	that, so the rule is checked rather than assumed."""

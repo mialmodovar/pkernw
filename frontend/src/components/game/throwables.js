@@ -68,3 +68,21 @@ export function throwPoint(dx, dy, t) {
   const control = dy / 2 - throwLift(dx) * 2;
   return { x: dx * t, y: 2 * (1 - t) * t * control + t * t * dy };
 }
+
+/**
+ * The order the picker at the table shows them in.
+ *
+ * What you own first, in the order above; what you do not, after. At the table
+ * the question is "what can I throw at them right now", and with twenty-five
+ * things on the shelf the answer was scattered through seven rows of mostly
+ * padlocked ones. The shop is where you go to browse — see lobby/shopShelf.js,
+ * which orders by price for exactly the opposite reason.
+ *
+ * `owns` is asked rather than read off the item, because ownership belongs to
+ * the wallet and this list belongs to the client.
+ */
+export function pickerOrder(owns) {
+  const mine = THROWABLES.filter((item) => owns(item.id));
+  const rest = THROWABLES.filter((item) => !owns(item.id));
+  return [...mine, ...rest];
+}

@@ -4,7 +4,7 @@ import { cooldownLabel, cooldownLeft, nextTickMs } from "./throwCooldown";
 import QuickMessageList from "./QuickMessageList";
 import useGameStore from "../../store/gameStore";
 import { sendQuickMessage } from "./quickMessages";
-import { THROWABLES } from "./throwables";
+import { THROWABLES, pickerOrder } from "./throwables";
 import useWalletStore from "../../store/walletStore";
 
 // The two buttons share a size and a shape; only what they open differs.
@@ -187,14 +187,14 @@ export default function SeatQuickChat() {
       </button>
 
       {panel === "throw" && (
-        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-44 p-1.5 flex flex-wrap gap-1
+        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-52 p-1.5 flex flex-wrap gap-1
                          rounded-lg panel-raised panel-solid shadow-xl shadow-black/60 animate-fade-in">
           {/* What the server actually sells, in the order this client draws
               them. A build that knows about an item the server has never heard
               of would otherwise offer it and have every throw silently
               refused; before the shop has been read once, everything shows,
               which is what it did before any of it could be bought. */}
-          {THROWABLES.filter((item) => onSale(item.id)).map((item) => {
+          {pickerOrder(owns).filter((item) => onSale(item.id)).map((item) => {
             const owned = owns(item.id);
             const price = priceOf(item.id);
             return (

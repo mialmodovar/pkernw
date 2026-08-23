@@ -14,7 +14,7 @@ halves of a wrong URL can meet before a player does.
 import re
 from pathlib import Path
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import Resolver404, resolve
 
 FRONTEND = Path(__file__).resolve().parent.parent.parent / "frontend" / "src"
@@ -87,3 +87,32 @@ class EveryClientPathResolvesTests(SimpleTestCase):
         self.assertGreater(len(paths), 20)
         self.assertIn("/coins/missions/", paths)
         self.assertIn("/coins/wallet/", paths)
+
+
+class PopupsCanTalkBackTests(TestCase):
+    """The header that decides whether a popup this site opened can reach it.
+
+    Django sends "same-origin" by default, which severs window.opener. Google's
+    sign-in is a popup that hands its token back through that handle, so the
+    default got somebody as far as choosing an account and then left them on a
+    blank page with nothing to post the result to — twenty minutes of looking
+    at the wrong end of the problem, because everything on both sides was
+    configured correctly.
+
+    Pinned rather than trusted to a comment: it is one word in a settings file
+    and losing it breaks signing in, silently, for everybody who uses Google.
+    """
+
+    def test_a_popup_of_ours_keeps_its_opener(self):
+        response = self.client.get("/api/auth/google/config/")
+
+        self.assertEqual(
+            response.headers.get("Cross-Origin-Opener-Policy"),
+            "same-origin-allow-popups",
+        )
+
+    def test_and_nothing_asks_the_browser_to_isolate_us(self):
+        """A Cross-Origin-Embedder-Policy would take the opener back with it."""
+        response = self.client.get("/api/auth/google/config/")
+
+        self.assertIsNone(response.headers.get("Cross-Origin-Embedder-Policy"))

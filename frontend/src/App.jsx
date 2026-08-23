@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import useAuthStore from "./store/authStore";
 import { connect as connectPresence, disconnect as disconnectPresence } from "./api/presence";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import PrivacyPage from "./pages/PrivacyPage";
+import TermsPage from "./pages/TermsPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import RecoverPage from "./pages/RecoverPage";
@@ -59,6 +61,12 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/recover" element={<RecoverPage />} />
+      {/* Public and linked from nowhere. They exist because Google's consent
+          screen asks for the two URLs, and whoever fetches one is either a
+          reviewer with no account or a player who went looking — so neither can
+          be behind a login. */}
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/" element={<ProtectedRoute><LobbyPage /></ProtectedRoute>} />
       <Route path="/tournaments/new" element={<ProtectedRoute><CreateTournamentPage /></ProtectedRoute>} />
       <Route path="/tournaments/:id/edit" element={<ProtectedRoute><EditTournamentPage /></ProtectedRoute>} />

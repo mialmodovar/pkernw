@@ -30,6 +30,18 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 # so there is no second copy to disagree with this one.
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
+# Django's SecurityMiddleware sends "same-origin" here by default, which severs
+# window.opener for any popup this site opens. Google's sign-in is a popup that
+# hands the token back through exactly that handle, so with the default it got
+# as far as choosing an account and then sat on a blank accounts.google.com
+# page forever, with nothing to post the result to.
+#
+# "same-origin-allow-popups" keeps the half that matters — another site still
+# cannot get a handle on a window of ours — and gives up only the half that
+# stops our own popups talking back to us. It is what Google documents as the
+# requirement, and the header exists to be set rather than removed.
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
+
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", ["*"])
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 

@@ -1,8 +1,14 @@
 import useGameStore from "../../store/gameStore";
 import PlayingCard from "./PlayingCard";
+import { useCompactLayout } from "./useCompactLayout";
 
 export default function CommunityCards({ winningCards, shiningCards }) {
   const communityCards = useGameStore((s) => s.communityCards);
+  // On a phone the board is five cards and a pot squeezed between two seats
+  // that are most of the width of the screen. The card keeps its shape and
+  // gives up the size it cannot have here.
+  const compact = useCompactLayout();
+  const boardSize = compact ? "boardCompact" : "board";
   // The cards that would have come if the hand had run out. The server has
   // been dealing these since rabbit hunting was added and nothing ever drew
   // them, so the setting appeared to do nothing at all.
@@ -37,7 +43,7 @@ export default function CommunityCards({ winningCards, shiningCards }) {
         <PlayingCard
           key={card}
           card={card}
-          size="board"
+          size={boardSize}
           winning={winners.has(card)}
           shine={shining.has(card)}
           className="animate-card-deal"
@@ -66,7 +72,7 @@ export default function CommunityCards({ winningCards, shiningCards }) {
         <span className="flex items-center gap-1 ml-1 pl-2 border-l border-dashed border-(--color-border)">
           {rabbitCards.map((card) => (
             <span key={`rabbit-${card}`} className="opacity-40 saturate-50">
-              <PlayingCard card={card} size="board" className="animate-card-deal" />
+              <PlayingCard card={card} size={boardSize} className="animate-card-deal" />
             </span>
           ))}
           {/* Set sideways so saying what these are costs no width on the felt. */}
@@ -91,7 +97,7 @@ export default function CommunityCards({ winningCards, shiningCards }) {
             <PlayingCard
               key={`b2-${card}`}
               card={card}
-              size="board"
+              size={boardSize}
               className="animate-card-deal"
               style={{ animationDelay: `${index < 3 ? index * 90 : 0}ms` }}
             />

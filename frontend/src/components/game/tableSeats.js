@@ -16,7 +16,7 @@
 // `power` bends the ellipse towards a stadium: below 1 it pushes slots off the
 // arc and onto the long sides, which is what makes a tall phone table read as a
 // poker table instead of a ring of nameplates.
-export const PORTRAIT = { radiusX: 35, radiusY: 36, power: 0.7 };
+export const PORTRAIT = { radiusX: 36, radiusY: 38, power: 0.7 };
 
 // A few players on a table built for eight are a few people at opposite ends of
 // an empty room, so the short-handed formats get felts of their own. The seat

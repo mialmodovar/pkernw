@@ -27,6 +27,7 @@ import {
   pointAt,
   slotPosition,
 } from "./tableSeats";
+import { betPosition } from "./betSpots";
 import { formatChips } from "./formatChips";
 import handShines, { shiningBoardCards } from "./handShine";
 import useEquityQuake from "./useEquityQuake";
@@ -58,85 +59,6 @@ function useFrameSize(ref) {
   }, [ref]);
 
   return size;
-}
-
-// How far in from a seat its chips sit, as a share of the table's height, so
-// it is the same distance whichever way the seat lies.
-const BET_INSET = 26;
-
-// The chip pill's own half-height, plus air between it and the seat. Generous
-// on purpose: this is the number that decides whether a stack sits in front of
-// a player or on their cards, and the felt between the seats and the pot is
-// empty anyway.
-const BET_MARGIN = 40;
-
-/**
- * Half the room a seat takes up, in pixels, along each axis.
- *
- * A seat is not its face: it is a box of cards, a nameplate and a picture, and
- * PlayerSeat centres all of that on the point the ring puts it at. Clearing
- * only the avatar left the chips of a seat on the side sitting on its cards —
- * the box is up to 240px wide and the face is 100px of that.
- *
- * These mirror the clamps in PlayerSeat and PlayingCard. They are estimates of
- * somebody else's CSS, so they are deliberately generous: the cost of being a
- * little too clear is a chip stack sitting slightly further in, and the cost of
- * being a little short is what this is fixing.
- */
-function seatHalfSpanPx(frameWidth) {
-  const width = frameWidth || 0;
-  // w-[clamp(8.75rem,27cqw,15rem)]
-  const box = Math.min(240, Math.max(140, 0.27 * width));
-  // The cards beside the face — h-[clamp(2.14rem,7.04cqw,4.69rem)] — over the
-  // nameplate under it.
-  const cards = Math.min(75, Math.max(34, 0.0704 * width));
-  return { x: box / 2, y: (cards + 46) / 2 };
-}
-
-/**
- * Where a player's bet goes: just in front of them, on the felt.
- *
- * Not a fraction of the way to the middle, which is what this used to be. The
- * table is an ellipse and it is wider than it is tall, so scaling the radius
- * put the chips of a seat on the side nearly twice as far from their owner as
- * the chips of a seat at the top — they ended up adrift between the player and
- * the pot, and whose bet they were stopped being obvious.
- *
- * The step is taken in a space where one unit is the same distance on screen
- * both ways, since a percentage of the width and a percentage of the height
- * are not the same thing on a table this shape.
- */
-function betPosition(index, capacity, geometry, frame) {
-  if (capacity <= 0) return { top: "50%", left: "50%" };
-
-  const seat = pointAt(index, capacity, 1, geometry);
-  const wide = Number.isFinite(frame?.aspect) && frame.aspect > 0 ? frame.aspect : 1;
-  const x = (parseFloat(seat.left) - 50) * wide;
-  const y = parseFloat(seat.top) - 50;
-
-  const reach = Math.hypot(x, y);
-  if (!reach) return { top: "50%", left: "50%" };
-
-  // Whichever is further: the share of the table, or enough pixels to clear
-  // the seat itself. Which of the two wins depends on the seat — a player on
-  // the side has a much wider box between them and the pot than one at the
-  // top, and the step has to be measured along the way it is travelling.
-  const half = seatHalfSpanPx(frame?.width);
-  const reachOut = (Math.abs(x / reach) * half.x + Math.abs(y / reach) * half.y) + BET_MARGIN;
-  const clearance = frame?.height ? (reachOut / frame.height) * 100 : 0;
-  // Never past the middle, however small the table gets.
-  const step = Math.min(Math.max(BET_INSET, clearance), reach * 0.55);
-
-  return {
-    left: `${50 + (x - (x / reach) * step) / wide}%`,
-    top: `${50 + (y - (y / reach) * step)}%`,
-    // Which way the pot lies, horizontally, so the chips can be hung off the
-    // point rather than centred on it. The row of markers and the amount is
-    // wide and short: centred, its far end reaches back over the face of the
-    // player it belongs to, which is what put "BB 1.0 BB" on somebody's
-    // avatar even once the point itself was clear.
-    towardsPot: x / reach,
-  };
 }
 
 function EmptySeat() {
@@ -379,7 +301,11 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       )}
 
       {/* Community cards + pot */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
+      {/* Tighter on a phone: the pot and the line naming your hand sit between
+          the board and the seats above and below it, and eight points of air
+          three times over is a row of cards' worth of felt. */}
+      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+                       flex flex-col items-center ${compact ? "gap-1" : "gap-2"}`}>
         <CommunityCards winningCards={winningBoardCards} shiningCards={shiningBoard} />
         <PotDisplay />
         {/* What you have, under the board you have it with.
@@ -474,7 +400,7 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const isSB = sbSeat === p.seat;
         const isBB = bbSeat === p.seat;
         if (!p.bet && !isDealer && !isSB && !isBB) return null;
-        const pos = betPosition(visualIdx, slots, geometry, frameSize);
+        const pos = betPosition(visualIdx, slots, geometry, frameSize, pointAt, compact);
         return (
           <div key={`bet-${seat}`}
             className="absolute z-10 flex items-center gap-0.5 whitespace-nowrap"

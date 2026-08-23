@@ -30,6 +30,17 @@ export function Suit({ suit, className = "" }) {
 // board there is room for a proper card — a corner index and a large pip. In a
 // seat there is room for a rank and a suit, and anything more turns to mush.
 const SIZE = {
+  // The same card on a phone, where five of them plus the pot have to fit
+  // between two seats that are 100px wide each. At the old floor the board was
+  // 55% of the width of the screen and the side seats were sitting on it.
+  boardCompact: {
+    box: "w-[clamp(1.75rem,6.35cqw,4.14rem)] h-[clamp(2.44rem,8.83cqw,5.8rem)]",
+    // The rank and the pip shrink with the card rather than staying the size
+    // they were, which is what would have burst it. No corner index: there is
+    // no room for one, and it is hidden below md anyway.
+    rank: "text-[clamp(1.15rem,3.2cqw,1.86rem)]",
+    pip: "w-[clamp(1rem,2.7cqw,1.58rem)] h-[clamp(1rem,2.7cqw,1.58rem)]",
+  },
   board: {
     box: "w-[clamp(2.48rem,6.35cqw,4.14rem)] h-[clamp(3.46rem,8.83cqw,5.8rem)]",
     rank: "text-[1.86rem]",

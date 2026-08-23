@@ -221,8 +221,10 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       setMysteryRelease(data.mystery_release || "itm");
 
       // Stripped of the database's own columns, so these are levels to create
-      // rather than levels that already exist.
-      setCustomLevels((data.levels || []).map((level) => ({
+      // rather than levels that already exist. Left null when there are none:
+      // an empty array is truthy, and it would be sent as "replace the ladder
+      // with nothing" rather than as "there is nothing to say about it".
+      setCustomLevels(!data.levels?.length ? null : data.levels.map((level) => ({
         is_break: level.is_break,
         small_blind: level.small_blind,
         big_blind: level.big_blind,

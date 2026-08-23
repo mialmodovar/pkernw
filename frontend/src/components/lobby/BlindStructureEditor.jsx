@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_HANDS, DEFAULT_TIMED } from "./blindStructureDefaults";
 import {
   SPEEDS,
@@ -112,6 +112,20 @@ export default function BlindStructureEditor({ levels, onChange, startingChips, 
   const [mode, setMode] = useState(
     levels && levels[0]?.duration_minutes ? "time" : "hands"
   );
+
+  // Both of those are decided on the first render, and on the edit page there
+  // is nothing to decide from yet: the tournament is fetched, so this mounts
+  // with no levels and then receives them. The editor stayed collapsed on its
+  // defaults and a timed ladder came up in hands — which reads as the
+  // structure having been reset, because what is on screen is not the
+  // tournament's own. Re-read once, the first time a real ladder arrives.
+  const seenLevels = useRef(Boolean(levels?.length));
+  useEffect(() => {
+    if (seenLevels.current || !levels?.length) return;
+    seenLevels.current = true;
+    setEditing(true);
+    setMode(levels[0]?.duration_minutes ? "time" : "hands");
+  }, [levels]);
 
   const defaults = mode === "time" ? DEFAULT_TIMED : DEFAULT_HANDS;
   const rows = levels || defaults;

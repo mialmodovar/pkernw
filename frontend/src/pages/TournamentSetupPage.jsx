@@ -285,7 +285,15 @@ export default function TournamentSetupPage() {
       <header className="panel rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-bold text-(--color-silver) truncate">{tournament.name}</h1>
+            {/* Wraps rather than truncates. A name is a name: cutting "Quinta
+                do Poker — Torneio de Aniversário" to "Quinta do Poker — Tor…"
+                loses the part that says which one it is, and it was happening
+                on a banner with half a line spare, because the vitals beside
+                it were taking the width first. Two lines is the right answer
+                to a long name; an ellipsis never was. */}
+            <h1 className="text-xl font-bold text-(--color-silver) min-w-0 break-words">
+              {tournament.name}
+            </h1>
             <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border ${STATUS_STYLE[tournament.status]}`}>
               {tournament.status}
             </span>
@@ -470,13 +478,14 @@ export default function TournamentSetupPage() {
                 {payouts.map((row) => (
                   <li key={row.place} className="flex justify-between px-3 py-1.5 text-sm">
                     <span className="text-(--color-silver)">{row.label || `${row.place}.`}</span>
+                    {/* What this place pays, and only that. The share was
+                        printed beside it — "50% €1.25" — which is the same
+                        fact said twice, once in a unit nobody is paid in.
+                        payoutLabel falls back to the percentage when there is
+                        no pool to divide yet, because then it is the only
+                        thing there is to say. */}
                     <span className="text-[#d9c07a] font-semibold">
-                      {row.percentage}%
-                      {(potCents > 0 || potCoins > 0) && (
-                        <span className="text-(--color-text-muted) font-normal ml-2">
-                          {payoutLabel(tournament, row, entries)}
-                        </span>
-                      )}
+                      {payoutLabel(tournament, row, entries)}
                     </span>
                   </li>
                 ))}
@@ -503,8 +512,10 @@ export default function TournamentSetupPage() {
                       + "Settle up in Calotes, payments happen outside this app."
                     : `Prize pool ${formatEuros(potCents)} so far · settle up in Calotes, payments happen outside this app.`)
                   : buyInCoins > 0
-                  ? `Percentages only until somebody sits down. ${formatCoins(buyInCoins)} a seat.`
-                  : "Percentages only — payments happen outside this app."}
+                  ? `Nothing in the pool until somebody sits down — the shares `
+                    + `above are what it will divide into. ${formatCoins(buyInCoins)} a seat.`
+                  : "No buy-in, so nothing to divide — the shares above are the "
+                    + "split if there ever is. Payments happen outside this app."}
               </p>
             </Panel>
           )}

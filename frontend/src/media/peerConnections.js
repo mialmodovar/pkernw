@@ -28,7 +28,11 @@ let iceAsked = null;
 // turned back on at the table it was on at. See rejoinMedia.js.
 let tableKey = "";
 let localStream = null;
-let pendingMedia = null;   // an in-flight getUserMedia, so a double mount asks once
+// In-flight getUserMedia calls, by device, so a double mount asks once. By
+// device and not one between them: keyed on nothing, turning the camera on
+// while the microphone request was still in the air handed back the
+// microphone's promise, added its track again and never asked for video at all.
+const pendingMedia = new Map();
 const peers = new Map();   // userId -> { pc, audioSender, videoSender, ... }
 
 export function setMyUserId(userId) {
@@ -138,9 +142,11 @@ async function acquire(kind) {
   // Ask only for the device being switched on: fewer prompts, and no claim on
   // a camera somebody only wanted to listen through.
   const request = { [kind]: MEDIA_CONSTRAINTS[kind] };
-  pendingMedia = pendingMedia || navigator.mediaDevices.getUserMedia(request);
+  if (!pendingMedia.has(kind)) {
+    pendingMedia.set(kind, navigator.mediaDevices.getUserMedia(request));
+  }
   try {
-    const stream = await pendingMedia;
+    const stream = await pendingMedia.get(kind);
     stream.getTracks().forEach((track) => {
       // The device can be taken back by the operating system or another app.
       // Without this we would sit there transmitting a black rectangle.
@@ -151,7 +157,7 @@ async function acquire(kind) {
     error.wantedKind = kind;
     throw error;
   } finally {
-    pendingMedia = null;
+    pendingMedia.delete(kind);
   }
 }
 

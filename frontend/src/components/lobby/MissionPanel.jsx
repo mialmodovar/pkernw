@@ -125,8 +125,13 @@ export default function MissionPanel() {
               }`}
             >
               <div className="flex items-center justify-between gap-2">
+                {/* The label is three words; what actually counts takes a
+                    sentence, and guessing at it was the complaint. On its own
+                    line under the name rather than in a `title` nobody hovers
+                    on a phone — and the tooltip carries the long form for
+                    anybody who does. */}
                 <span
-                  title={mission.blurb}
+                  title={mission.detail || mission.blurb}
                   className={`text-xs truncate ${
                     mission.claimed ? "text-(--color-text-muted) line-through" : "text-(--color-silver)"
                   }`}
@@ -153,6 +158,14 @@ export default function MissionPanel() {
                   </span>
                 )}
               </div>
+
+              {/* What counts, said plainly. Gone once the coins are in: a
+                  finished mission has nothing left to explain. */}
+              {!mission.claimed && (
+                <p className="mt-0.5 text-[10px] leading-snug text-(--color-text-muted)">
+                  {mission.blurb}
+                </p>
+              )}
 
               {/* The bar, and what it is a bar of. Gone once the coins are in:
                   a full bar on a finished mission is a row still asking to be

@@ -108,6 +108,26 @@ export const GLYPHS = {
     ],
   },
 
+  /* All In or Fold. Every chip in the middle, and nothing held back: a stack
+     pushed forward, drawn as three chips leaving a hand rather than as a pile
+     sitting on the felt. The bolt was the obvious drawing and says "fast",
+     which every format here is. */
+  shove: {
+    label: "All In or Fold",
+    paths: [
+      // A stack, and everything in it going forward. Three chips seen edge-on
+      // rather than one seen face-on: a single chip is the coin two rows up,
+      // and at sixteen pixels the two were the same picture.
+      { d: "M4.2 19.4c0-1 2-1.8 4.4-1.8s4.4.8 4.4 1.8-2 1.8-4.4 1.8-4.4-.8-4.4-1.8z", kind: "line" },
+      { d: "M4.2 16.3c0-1 2-1.8 4.4-1.8s4.4.8 4.4 1.8", kind: "accent" },
+      { d: "M4.2 19.4v-3.1", kind: "line" },
+      { d: "M13 19.4v-3.1", kind: "line" },
+      // The push: an arrow out of the stack and up the table.
+      { d: "M14.6 12.4L20.4 6.6", kind: "line" },
+      { d: "M15.6 6.2h4.8v4.8", kind: "line" },
+    ],
+  },
+
   /* Sit n Go: two hands facing each other across the table, which is what a
      heads-up game looks like from above. Crossed sabres were the obvious
      drawing and the wrong one — at sixteen pixels they are an X, and the app

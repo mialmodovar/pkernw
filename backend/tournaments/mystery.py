@@ -187,3 +187,22 @@ def pool_cents(bounty_cents: int, entries: int) -> int:
     is in there.
     """
     return max(0, bounty_cents) * max(0, entries)
+
+
+def envelope_count(remaining_players: int, winner_keeps_own: bool = False) -> int:
+    """How many envelopes to cut the pool into.
+
+    One per knockout still to come, which is everybody but the winner — the
+    ordinary reading, and the one where the whole pool is drawn by the people
+    who did the knocking out.
+
+    Or one per head, where the format says the winner keeps their own. Then the
+    last envelope is never drawn by anybody: it is the one that was on the
+    winner's own head all along, and it goes to them at settlement. That is the
+    whole difference between "the bounties are the prize pool" and "the bounties
+    are a prize pool the winner is not in".
+    """
+    remaining = max(0, remaining_players)
+    if winner_keeps_own:
+        return remaining
+    return max(0, remaining - 1)

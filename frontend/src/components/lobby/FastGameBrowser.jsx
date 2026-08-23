@@ -14,7 +14,7 @@ import {
 // The server names the format; the drawing is ours. Both Sit n Go shapes are
 // the same picture — two hands, front to front — because what tells them apart
 // is the seat count printed beside it.
-const FORMAT_ICONS = { spingo: "spin", hu: "duel", sixmax: "duel" };
+const FORMAT_ICONS = { spingo: "spin", hu: "duel", sixmax: "duel", allinfold: "shove" };
 
 /**
  * The games you sit down at, for whichever tab is asking.

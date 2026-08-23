@@ -17,7 +17,7 @@ import { GLYPHS, VIEWBOX } from "../src/components/icons/glyphs.js";
 // The groups the Design System pane shows, and what belongs in each. Written
 // out rather than derived: this is the order somebody reads them in.
 const GROUPS = [
-  { key: "modes", title: "Game modes", names: ["trophy", "spin", "duel"] },
+  { key: "modes", title: "Game modes", names: ["trophy", "spin", "duel", "shove"] },
   { key: "money", title: "Money & prizes", names: ["coin", "medal-1", "medal-2", "medal-3", "envelope"] },
   { key: "navigation", title: "Navigation", names: ["brand", "home", "clubs", "ledger", "stats", "eye", "logout"] },
   { key: "actions", title: "Actions", names: ["check", "close", "tools"] },

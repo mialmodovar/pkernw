@@ -10,6 +10,8 @@ so far, and the differences between them are entirely in this table:
   a coffee.
 * **6-Max** — six seats, the shortest thing here that still feels like a
   tournament.
+* **All In or Fold** — four seats, fifteen blinds, push or fold, and the buy-ins
+  are not a prize pool at all: they are the bounties on the four heads.
 
 Everything else about them is the same machinery, which is why they share a
 lobby, an endpoint and a settlement. Adding a fourth is a row in FORMATS.
@@ -54,6 +56,10 @@ class FastFormat:
     showdown_seconds: int
     # Spin n Go only: the prize is a draw rather than the buy-ins.
     draws_multiplier: bool = False
+    # All In or Fold only: a raise may only ever be the whole stack, and the
+    # buy-ins are the bounties rather than the places.
+    all_in_or_fold: bool = False
+    mystery_bounty: bool = False
 
     @property
     def big_blinds(self) -> int:
@@ -149,16 +155,57 @@ FORMATS = {
         time_bank_seconds=20,
         showdown_seconds=4,
     ),
+    "allinfold": FastFormat(
+        key="allinfold",
+        label="All In or Fold",
+        icon="\u26A1",
+        blurb="Four players, fifteen blinds, and two decisions: shove or fold. Every buy-in "
+              "goes on a head — knock somebody out and you open an envelope. The winner "
+              "keeps the one that was on their own.",
+        tournament_format="allinfold",
+        seats=4,
+        # Fifteen big blinds at the opening 50/100, like a Spin n Go: shallow
+        # enough that the first hand is already a decision.
+        starting_chips=1500,
+        stakes=(25, 100),
+        blinds=(
+            (50, 100, 0),
+            (75, 150, 0),
+            (100, 200, 25),
+            (150, 300, 50),
+            (250, 500, 75),
+            (400, 800, 100),
+            (600, 1200, 150),
+            (1000, 2000, 250),
+            # As everywhere else here: the ladder has to outlast the chips,
+            # because the last level never raises. Four stacks of 1,500 is
+            # 6,000, so the last big blind has to be able to swallow the table
+            # between two players — which is what the test on this checks.
+            (1500, 3000, 400),
+        ),
+        # A minute a level. Four shallow stacks and no decision after the flop
+        # means hands take seconds, and the promise is three or four minutes.
+        level_minutes=1,
+        # Nothing plays for a place. The structure is here because the coin
+        # settlement reads one, and it divides a pot of zero — see coin_pot,
+        # where the whole buy-in has gone to the heads instead.
+        payouts=((1, "1st", 100),),
+        duration="3-4 min",
+        time_bank_seconds=8,
+        showdown_seconds=3,
+        all_in_or_fold=True,
+        mystery_bounty=True,
+    ),
 }
 
 # The order the lobby draws them in, and the order a test walks them in.
-FORMAT_KEYS = ("spingo", "hu", "sixmax")
+FORMAT_KEYS = ("spingo", "hu", "sixmax", "allinfold")
 
 # Every Tournament.format that belongs to this file. The lobby's tournament
 # list, the management permissions and the join endpoint all ask this question:
 # these are games nobody hosts, nobody browses, and nobody registers for in the
 # ordinary way.
-FAST_TOURNAMENT_FORMATS = ("spingo", "sitngo")
+FAST_TOURNAMENT_FORMATS = ("spingo", "sitngo", "allinfold")
 
 
 def format_for(key):
@@ -180,8 +227,10 @@ def key_for_tournament(tournament):
     the table it describes.
     """
     fmt = getattr(tournament, "format", "standard")
-    if fmt == "spingo":
-        return "spingo"
+    # The formats that have a column to themselves need no working out. Only
+    # the Sit n Gos share one, and only they are told apart by seat count.
+    if fmt in ("spingo", "allinfold"):
+        return fmt
     if fmt != "sitngo":
         return None
     seats = tournament.players_per_table or 0
@@ -250,8 +299,22 @@ def tournament_defaults(fmt, stake: int) -> dict:
         "time_bank_refill_rule": "none",
         "showdown_seconds": fmt.showdown_seconds,
         "payout_structure": payout_structure(fmt),
-        "bounty_mode": "none",
-        "bounty_cents": 0,
+        # The whole buy-in goes onto a head, so the places divide nothing —
+        # coin_pot works that out from these two rather than being told. The
+        # amount is coins, in a field named for cents: every bounty amount in
+        # this app is an opaque integer, and in a coin game the unit is coins.
+        **({
+            "bounty_mode": "mystery",
+            "bounty_cents": stake,
+            # No late registration and no rebuys above, so the field is closed
+            # from the first hand and the envelopes open with it.
+            "mystery_release": "reg_closed",
+            # Four heads, four envelopes. The one nobody draws is the winner's.
+            "mystery_winner_keeps": True,
+        } if fmt.mystery_bounty else {
+            "bounty_mode": "none",
+            "bounty_cents": 0,
+        }),
     }
 
 
@@ -264,4 +327,6 @@ def pot_coins(fmt, stake: int, entries: int, multiplier: int = 0) -> int:
     """
     if fmt.draws_multiplier:
         return spingo.prize_coins(stake, multiplier)
+    # Bounties or places, it is the same coins: everything paid in is played
+    # for, and in All In or Fold it is played for a knockout at a time.
     return max(0, stake) * max(0, entries)

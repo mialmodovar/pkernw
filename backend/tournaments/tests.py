@@ -4455,7 +4455,7 @@ class SitNGoTests(APITestCase):
 		lobby = self.client.get(reverse("fast-lobby")).data
 
 		by_key = {one["key"]: one for one in lobby["formats"]}
-		self.assertEqual(sorted(by_key), ["hu", "sixmax", "spingo"])
+		self.assertEqual(sorted(by_key), ["allinfold", "hu", "sixmax", "spingo"])
 		for key, expected in (("hu", [10, 50]), ("sixmax", [25, 100]), ("spingo", [25, 50])):
 			with self.subTest(format=key):
 				self.assertEqual([tier["stake"] for tier in by_key[key]["tiers"]], expected)
@@ -6330,3 +6330,164 @@ class ScheduledStartTests(APITestCase):
 
 		night.refresh_from_db()
 		self.assertEqual(night.status, "lobby")
+
+
+class AllInOrFoldFormatTests(APITestCase):
+	"""Four players, fifteen blinds, and the buy-ins are the bounties."""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=name, password="secret123")
+			for name in ("aif_a", "aif_b", "aif_c", "aif_d")
+		}
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		for user in self.players.values():
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _sit(self, name, stake=25):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(
+			reverse("fast-sit"), {"key": "allinfold", "stake": stake}, format="json",
+		)
+
+	def _balance(self, name):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=self.players[name]).balance
+
+	def test_the_format_is_four_seats_and_fifteen_blinds(self):
+		from tournaments.fastgames import FORMATS
+
+		fmt = FORMATS["allinfold"]
+		self.assertEqual(fmt.seats, 4)
+		self.assertEqual(fmt.big_blinds, 15)
+		self.assertTrue(fmt.all_in_or_fold)
+		self.assertEqual(len(fmt.stakes), 2)
+
+	def test_four_players_fill_it_and_it_deals(self):
+		for name in ("aif_a", "aif_b", "aif_c"):
+			self.assertEqual(self._sit(name).status_code, status.HTTP_201_CREATED)
+
+		game = Tournament.objects.get(format="allinfold")
+		self.assertEqual(game.status, "lobby")
+
+		self._sit("aif_d")
+		game.refresh_from_db()
+		self.assertEqual(game.status, "running")
+		self.assertEqual(game.players.count(), 4)
+
+	def test_the_whole_buy_in_goes_on_the_heads(self):
+		from tournaments.bounties import BountyConfig, prize_pool_share_cents
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+
+		self.assertEqual(game.bounty_mode, "mystery")
+		self.assertEqual(game.bounty_cents, 25)
+		self.assertTrue(game.mystery_winner_keeps)
+		# Nothing at all is left for the places.
+		self.assertEqual(
+			prize_pool_share_cents(BountyConfig.from_tournament(game), game.buy_in_coins), 0,
+		)
+
+	def test_the_places_divide_nothing(self):
+		from tournaments.coinbank import coin_pot
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+
+		self.assertEqual(coin_pot(game, 4), 0)
+
+	def test_there_is_an_envelope_for_every_head(self):
+		from tournaments.mystery import envelope_count
+
+		# Three knockouts to come and four heads: the fourth envelope is the
+		# one nobody draws, and it is the winner's own.
+		self.assertEqual(envelope_count(4, winner_keeps_own=True), 4)
+		self.assertEqual(envelope_count(4, winner_keeps_own=False), 3)
+
+	def test_the_winner_takes_the_envelope_that_was_on_their_own_head(self):
+		from tournaments.coinbank import settle_tournament_coins
+
+		for name in ("aif_a", "aif_b", "aif_c", "aif_d"):
+			self._sit(name)
+		game = Tournament.objects.get(format="allinfold")
+		# Everybody paid 25, so the pool is 100. Three envelopes were drawn by
+		# the three knockouts; the fourth was never drawn.
+		drawn = {"aif_a": 40, "aif_b": 22, "aif_c": 0, "aif_d": 0}
+		for index, (name, won) in enumerate(drawn.items(), start=1):
+			seat = game.players.get(user=self.players[name])
+			seat.bounty_won_cents = won
+			seat.finish_position = index if name != "aif_a" else 1
+			seat.save(update_fields=["bounty_won_cents", "finish_position"])
+		# aif_a wins it.
+		game.players.filter(user=self.players["aif_a"]).update(finish_position=1)
+		game.status = "finished"
+		game.save(update_fields=["status"])
+
+		self.assertTrue(settle_tournament_coins(game))
+
+		# 475 left after the buy-in. The winner drew 40 and keeps the 38 that
+		# nobody drew; the runner-up keeps the 22 they drew.
+		self.assertEqual(self._balance("aif_a"), 475 + 40 + (100 - 62))
+		self.assertEqual(self._balance("aif_b"), 475 + 22)
+		self.assertEqual(self._balance("aif_c"), 475)
+
+	def test_every_coin_paid_in_is_paid_back_out(self):
+		"""The bounties are the whole prize pool, so nothing may stay behind."""
+		from sidegames.models import Wallet
+		from tournaments.coinbank import settle_tournament_coins
+
+		for name in ("aif_a", "aif_b", "aif_c", "aif_d"):
+			self._sit(name)
+		game = Tournament.objects.get(format="allinfold")
+		for index, (name, won) in enumerate(
+			(("aif_a", 55), ("aif_b", 10), ("aif_c", 5), ("aif_d", 0)), start=1,
+		):
+			game.players.filter(user=self.players[name]).update(
+				bounty_won_cents=won, finish_position=index,
+			)
+		game.status = "finished"
+		game.save(update_fields=["status"])
+
+		settle_tournament_coins(game)
+
+		total = sum(
+			Wallet.objects.get(user=user).balance for user in self.players.values()
+		)
+		# Four wallets of 500, four buy-ins of 25 taken, and the whole 100 back.
+		self.assertEqual(total, 4 * 500)
+
+	def test_it_is_not_listed_among_the_tournaments(self):
+		self._sit("aif_a")
+		self.client.force_authenticate(self.players["aif_b"])
+
+		listed = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertEqual(listed.data, [])
+
+	def test_nobody_runs_one(self):
+		from tournaments.permissions import can_manage_tournament
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+		boss = User.objects.create_superuser(username="aif_boss", password="x")
+
+		self.assertFalse(can_manage_tournament(self.players["aif_a"], game))
+		self.assertFalse(can_manage_tournament(boss, game))
+
+	def test_the_lobby_offers_two_tiers_of_it(self):
+		self.client.force_authenticate(self.players["aif_a"])
+
+		lobby = self.client.get(reverse("fast-lobby")).data
+		fmt = next(one for one in lobby["formats"] if one["key"] == "allinfold")
+
+		self.assertEqual(len(fmt["tiers"]), 2)
+		self.assertEqual(fmt["seats"], 4)
+		self.assertEqual(fmt["big_blinds"], 15)

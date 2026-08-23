@@ -40,6 +40,9 @@ MISSIONS = (
         "period": DAILY,
         "label": "Play three",
         "blurb": "Any three Spin n Gos or Sit n Gos, finished today.",
+        "detail": "Sit at any three instant games and play them to the end. Where you "
+                  "finish does not matter. A game counts on the day it finishes, so one "
+                  "that runs past midnight counts for tomorrow.",
         "counts": "games",
         "target": 3,
         "coins": 60,
@@ -49,6 +52,9 @@ MISSIONS = (
         "period": DAILY,
         "label": "Take one down",
         "blurb": "Finish first in any game today.",
+        "detail": "Win one Spin n Go or Sit n Go outright today. Second place in a "
+                  "six-max pays coins but does not count here — this one asks for "
+                  "first.",
         "counts": "wins",
         "target": 1,
         "coins": 120,
@@ -58,6 +64,9 @@ MISSIONS = (
         "period": DAILY,
         "label": "Try both rooms",
         "blurb": "One Spin n Go and one Sit n Go, today.",
+        "detail": "Play at least one of each: one Spin n Go and one Sit n Go, in the "
+                  "same day. Two Spin n Gos is half of it. Heads Up and 6-Max are both "
+                  "Sit n Gos.",
         "counts": "formats",
         "target": 2,
         "coins": 80,
@@ -67,6 +76,9 @@ MISSIONS = (
         "period": WEEKLY,
         "label": "Twenty this week",
         "blurb": "Any format. About three a day.",
+        "detail": "Twenty instant games finished between Monday and Sunday, in any "
+                  "mixture of formats. The three you play for today's mission count "
+                  "towards this one too.",
         "counts": "games",
         "target": 20,
         "coins": 400,
@@ -76,6 +88,8 @@ MISSIONS = (
         "period": WEEKLY,
         "label": "Five wins",
         "blurb": "Five firsts across the week.",
+        "detail": "Win five games between Monday and Sunday. Any format, and they do "
+                  "not have to be on different days.",
         "counts": "wins",
         "target": 5,
         "coins": 700,
@@ -85,6 +99,9 @@ MISSIONS = (
         "period": WEEKLY,
         "label": "Catch a big spin",
         "blurb": "Be in a Spin n Go that draws 5x or more.",
+        "detail": "Sit in a Spin n Go whose wheel lands on 5x or better — about one "
+                  "game in eight. You do not have to win it: being at the table when "
+                  "it is drawn is the whole of it.",
         "counts": "big_spin",
         "target": 1,
         "coins": 500,
@@ -157,6 +174,9 @@ def state_of(mission, counts, claimed_periods, when=None):
         "period_key": period,
         "label": mission["label"],
         "blurb": mission["blurb"],
+        # The long form, for the tooltip. What counts, what does not, and when
+        # the clock runs out — the three things people were guessing at.
+        "detail": mission["detail"],
         "target": mission["target"],
         "progress": progress_of(mission, counts),
         "coins": mission["coins"],

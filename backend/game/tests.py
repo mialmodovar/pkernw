@@ -2680,3 +2680,67 @@ class GoneOrJustElsewhereTests(TransactionTestCase):
             told = async_to_sync(announce_gone)(999)
 
         self.assertEqual(told, 0)
+
+
+class AllInOrFoldTests(TestCase):
+    """Push or fold: a raise may only ever be the whole stack."""
+
+    def _decisions(self, chips, *, all_in_or_fold, answer=("fold", 0)):
+        """Run one hand and collect what each player was offered."""
+        from game.engine.hand import HandEngine
+        from game.engine.player import Player
+
+        offers = []
+        players = [Player(name=f"p{index}", chips=amount) for index, amount in enumerate(chips)]
+        for index, player in enumerate(players):
+            player._seat = index
+
+        async def request_action(player, context):
+            offers.append(dict(context))
+            return answer
+
+        async def broadcast(event_type, payload):
+            return None
+
+        engine = HandEngine(
+            players=players, dealer_pos=0, small_blind=50, big_blind=100, ante=0,
+            hand_number=1, broadcast=broadcast, request_action=request_action,
+            all_in_or_fold=all_in_or_fold,
+        )
+        async_to_sync(engine.run)()
+        return offers
+
+    def test_the_only_raise_on_offer_is_the_whole_stack(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True)
+
+        self.assertTrue(offers)
+        for offer in offers:
+            if "raise" in offer["valid_actions"]:
+                self.assertEqual(
+                    offer["min_raise"], offer["max_raise"],
+                    "a raise smaller than the stack was on offer",
+                )
+
+    def test_an_ordinary_hand_still_offers_a_range(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=False)
+
+        raises = [one for one in offers if "raise" in one["valid_actions"]]
+        self.assertTrue(raises)
+        self.assertTrue(
+            any(one["min_raise"] < one["max_raise"] for one in raises),
+            "the ordinary game lost its raise range",
+        )
+
+    def test_folding_is_always_on_offer(self):
+        for offer in self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True):
+            self.assertIn("fold", offer["valid_actions"])
+
+    def test_a_shove_is_clamped_to_the_stack_whatever_the_client_asks_for(self):
+        """The number arrives over a socket, so it is not believed — a raise to
+        four hundred in a push-or-fold game is a shove or it is nothing."""
+        offers = self._decisions(
+            [1500, 1500, 1500, 1500], all_in_or_fold=True, answer=("raise", 400),
+        )
+
+        first = offers[0]
+        self.assertEqual(first["min_raise"], first["max_raise"])

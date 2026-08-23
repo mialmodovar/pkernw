@@ -116,6 +116,8 @@ class MultiTableTournamentCoordinator:
         mystery_release: str = "",
         mystery_envelopes: Optional[List[int]] = None,
         mystery_opened: bool = False,
+        mystery_winner_keeps: bool = False,
+        all_in_or_fold: bool = False,
         # Cuts the pool into envelopes and writes them down, returning the list.
         # The count of entries is a database question, so the answer comes from
         # there rather than from anything the engine has been carrying.
@@ -159,6 +161,13 @@ class MultiTableTournamentCoordinator:
         self.mystery_release = mystery.clean_release(mystery_release)
         self._mystery_envelopes: List[int] = list(mystery_envelopes or [])
         self._mystery_opened = bool(mystery_opened)
+        # One envelope per head rather than one per knockout — see
+        # mystery.envelope_count. The extra one is never drawn and goes to the
+        # winner, because it was on their own head.
+        self.mystery_winner_keeps = bool(mystery_winner_keeps)
+        # Push or fold. The rule itself is one line in the hand engine; this is
+        # only how it gets there.
+        self.all_in_or_fold = bool(all_in_or_fold)
         self.open_mystery = open_mystery
         self.persist_mystery = persist_mystery
         self.broadcast_tournament = broadcast_tournament
@@ -1183,6 +1192,7 @@ class MultiTableTournamentCoordinator:
             broadcast=lambda event_type, payload: self._hand_event(table.table_number, event_type, payload),
             request_action=lambda player, context: self._request_action_tracked(table, player, context),
             rabbit_hunting_enabled=self.rabbit_hunting_enabled,
+            all_in_or_fold=self.all_in_or_fold,
         )
         self._open_side_bets(table)
         result = await engine.run()
@@ -1641,9 +1651,10 @@ class MultiTableTournamentCoordinator:
         ):
             return
 
-        # One envelope per knockout still to come: everybody left but the
-        # winner is going to be busted by somebody.
-        draws = max(0, remaining - 1)
+        # One envelope per knockout still to come — everybody left but the
+        # winner is going to be busted by somebody — or one per head, where the
+        # winner keeps their own.
+        draws = mystery.envelope_count(remaining, self.mystery_winner_keeps)
         if draws <= 0:
             return
 

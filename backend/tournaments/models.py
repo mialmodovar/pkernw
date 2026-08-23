@@ -38,9 +38,11 @@ class Tournament(models.Model):
     # that only existed in the create form would not. Which Sit n Go a row is
     # follows from players_per_table; see tournaments/fastgames.py.
     FORMAT_CHOICES = [
-        ("standard", "Tournament"),
-        ("spingo",   "Spin n Go"),
-        ("sitngo",   "Sit n Go"),
+        ("standard",  "Tournament"),
+        ("spingo",    "Spin n Go"),
+        ("sitngo",    "Sit n Go"),
+        # Push or fold, four seats, and the bounties are the whole prize pool.
+        ("allinfold", "All In or Fold"),
     ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
@@ -117,6 +119,12 @@ class Tournament(models.Model):
     mystery_release = models.CharField(
         max_length=12, choices=MYSTERY_RELEASE_CHOICES, default=DEFAULT_MYSTERY_RELEASE,
     )
+    # Whether there is an envelope on every head, including the head nobody
+    # knocks out. False is the ordinary reading — the pool is cut into one
+    # envelope per knockout still to come, and every last cent of it is drawn by
+    # somebody. True cuts one more, which is never drawn and goes to the winner
+    # at settlement: it was on their own head all along. See mystery.envelope_count.
+    mystery_winner_keeps = models.BooleanField(default=False)
     # What is still in the pool, biggest first, in cents. Written when the
     # envelopes open and again after every draw, so a server restart cannot
     # hand out a pool twice — the list on the row is the pool, and there is no

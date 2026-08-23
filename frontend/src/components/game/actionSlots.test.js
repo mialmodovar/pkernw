@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SLOTS, slotsAgree, turnSlots, waitingSlots } from "./actionSlots";
+import { SLOTS, raiseLabel, slotsAgree, turnSlots, waitingSlots } from "./actionSlots";
 
 const FACING_A_BET = { fold: true, check: false, call: true, raise: true };
 const NOBODY_BET = { fold: false, check: true, call: false, raise: true };
@@ -70,5 +70,23 @@ describe("the property the whole layout exists for", () => {
   it("catches the slots being reordered", () => {
     const reordered = turnSlots(FACING_A_BET).slice().reverse();
     expect(slotsAgree(waitingSlots({ inHand: true }), reordered)).toBe(false);
+  });
+});
+
+describe("raiseLabel", () => {
+  const chips = (n) => n.toLocaleString();
+
+  it("says all in when the only raise is the whole stack", () => {
+    // Every decision in an All In or Fold game, and anybody too short to raise
+    // by less anywhere else.
+    expect(raiseLabel(1500, 1500, 1500, chips)).toBe("All in");
+  });
+
+  it("says the amount when there is an amount to choose", () => {
+    expect(raiseLabel(400, 12000, 900, chips)).toBe("Raise 900");
+  });
+
+  it("treats a min above the max as a shove rather than as nonsense", () => {
+    expect(raiseLabel(2000, 1500, 1500, chips)).toBe("All in");
   });
 });

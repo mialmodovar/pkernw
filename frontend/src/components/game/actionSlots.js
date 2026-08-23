@@ -79,3 +79,15 @@ export function slotsAgree(waiting, turn) {
     return agrees[cell.preselect].includes(other.kind);
   });
 }
+
+/**
+ * What the raise button says.
+ *
+ * "All in" whenever the only raise on offer is the whole stack — which is every
+ * decision in an All In or Fold game, and every decision anywhere by somebody
+ * too short to raise by less. Printing "Raise 1,500" for a shove is technically
+ * true and reads as a number to be chosen rather than the decision it is.
+ */
+export function raiseLabel(minRaise, maxRaise, amount, format = String) {
+  return minRaise >= maxRaise ? "All in" : `Raise ${format(amount)}`;
+}

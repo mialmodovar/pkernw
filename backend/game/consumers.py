@@ -1203,6 +1203,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             mystery_release=tournament.mystery_release,
             mystery_envelopes=list(tournament.mystery_envelopes or []),
             mystery_opened=tournament.mystery_opened_at is not None,
+            mystery_winner_keeps=tournament.mystery_winner_keeps,
+            all_in_or_fold=tournament.format == "allinfold",
             open_mystery=lambda draws: _db_open_mystery(self.tournament_id, draws),
             persist_mystery=lambda envelopes: _db_persist_mystery(self.tournament_id, envelopes),
             broadcast_tournament=lambda event_type, payload: _broadcast_tournament(self.tournament_id, event_type, payload),

@@ -238,6 +238,23 @@ class MissionCatalogueTests(TestCase):
                 self.assertGreater(mission["target"], 0)
                 self.assertGreater(mission["coins"], 0)
 
+    def test_every_mission_explains_itself_at_length(self):
+        """The label says what to do in three words; this is where "what counts"
+        is actually answered."""
+        from .missions import MISSIONS
+
+        for mission in MISSIONS:
+            with self.subTest(mission=mission["key"]):
+                self.assertGreater(len(mission["detail"]), 60)
+                self.assertNotEqual(mission["detail"], mission["blurb"])
+
+    def test_the_board_carries_the_long_form_too(self):
+        from .missionbank import mission_board
+
+        user = User.objects.create_user(username="ms_detail", password="secret123")
+        for row in mission_board(user):
+            self.assertTrue(row["detail"])
+
     def test_the_keys_are_unique_because_a_claim_is_filed_under_one(self):
         from .missions import MISSIONS
 

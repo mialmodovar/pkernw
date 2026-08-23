@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
-import { turnSlots, waitingSlots } from "./actionSlots";
+import { raiseLabel, turnSlots, waitingSlots } from "./actionSlots";
 import { BUTTON_SIZE } from "./betBarSizing";
 import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
@@ -477,9 +477,11 @@ export default function ActionPanel({
             label wrapped as the slider moved; the slot itself no longer
             resizes, since all three are one width by construction. */}
         <span aria-hidden="true" className="col-start-1 row-start-1 invisible">
-          Raise {fmt(maxRaise)}
+          {raiseLabel(minRaise, maxRaise, maxRaise, fmt)}
         </span>
-        <span className="col-start-1 row-start-1">Raise {fmt(raiseAmount)}</span>
+        <span className="col-start-1 row-start-1">
+          {raiseLabel(minRaise, maxRaise, raiseAmount, fmt)}
+        </span>
       </button>
     ),
   };

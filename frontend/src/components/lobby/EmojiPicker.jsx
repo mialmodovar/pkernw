@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import Avatar from "../Avatar";
 import AvatarCropper from "./AvatarCropper";
 import DisplayNameField from "./DisplayNameField";
+import BorderPicker from "./BorderPicker";
 import useAuthStore from "../../store/authStore";
 
 const AVATARS = [
@@ -157,6 +158,11 @@ export default function EmojiPicker({ onSelect, onClose }) {
           </button>
         ))}
       </div>
+
+      {/* The ring around all of it. Here rather than only in the shop, because
+          this is where somebody comes to change how they look and a purchase
+          you cannot find is a purchase nobody makes twice. */}
+      <BorderPicker />
     </div>
   );
 }

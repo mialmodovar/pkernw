@@ -28,6 +28,7 @@ const LOBBY_TABS = [
   { key: "tournaments", label: "Tournaments", icon: "trophy", formats: null },
   { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
   { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
+  { key: "allinfold", label: "All In or Fold", icon: "shove", formats: ["allinfold"] },
 ];
 
 /**

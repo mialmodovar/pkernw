@@ -116,6 +116,14 @@ class CashRoom:
         self.hand_number += 1
         self.button = next_button(self.seats, self.button)
 
+        # Who is here, before anything is dealt. A cash table's seats change
+        # between hands and nothing else on the wire carries them, so without
+        # this a player who sat down mid-session stayed invisible to everybody
+        # already at the table until they happened to reload. Safe only here,
+        # at the top of a hand: the snapshot is the seats, and sending it once
+        # cards are out would talk over the hand in progress.
+        await self.broadcast("cash_state", self.snapshot())
+
         playing = dealable(self.seats)
         players = [self._runtime(seat) for seat in playing]
         self._playing = {player._seat: player for player in players}

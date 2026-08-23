@@ -56,7 +56,7 @@ STAKES = (
     Stake("micro", 1, 2),
     Stake("low", 2, 5),
     Stake("mid", 5, 10),
-    Stake("high", 10, 25),
+    Stake("high", 10, 20),
     Stake("nose", 25, 50),
 )
 

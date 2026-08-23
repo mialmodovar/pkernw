@@ -16,6 +16,9 @@ import useWalletStore from "./walletStore";
 const useCashStore = create((set, get) => ({
   stakes: [],
   tables: [],
+  // A club's own tables, kept apart from the public lobby's: the club page and
+  // the lobby ask different questions and must not answer each other's.
+  clubTables: [],
   seatChoices: [],
   loading: false,
   error: "",
@@ -36,6 +39,23 @@ const useCashStore = create((set, get) => ({
       // next visit fetches it again and nothing was at stake in the meantime.
     } finally {
       if (!silent) set({ loading: false });
+    }
+  },
+
+  /** The tables one club has open, for the club's own page. */
+  fetchClubTables: async (slug) => {
+    if (!slug) return;
+    try {
+      const { data } = await api.get(`${CASH}/`, { params: { club: slug } });
+      set({
+        clubTables: data.tables || [],
+        stakes: data.stakes || [],
+        seatChoices: data.seat_choices || [],
+      });
+      if (data.balance != null) useWalletStore.getState().setBalance(data.balance);
+    } catch {
+      // Same as the lobby: a list that will not load is not worth an error
+      // over the page it is one section of.
     }
   },
 
@@ -95,7 +115,9 @@ const useCashStore = create((set, get) => ({
     set({ error: "" });
     try {
       const { data } = await api.post(`${CASH}/open/`, payload);
-      await get().fetchLobby({ silent: true });
+      // Whichever list this table belongs to is the one that has to change.
+      if (payload?.club) await get().fetchClubTables(payload.club);
+      else await get().fetchLobby({ silent: true });
       return data;
     } catch (error) {
       set({ error: error.response?.data?.error || "Could not open that table." });

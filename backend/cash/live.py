@@ -17,10 +17,10 @@ reason: entrypoint.sh runs one process on purpose.
 import asyncio
 from typing import Dict
 
-from asgiref.sync import sync_to_async
+from asgiref.sync import async_to_sync, sync_to_async
 from django.utils import timezone
 
-from game.consumers import _broadcast_table, _request_action
+from game.consumers import _broadcast_table, _notify_user, _request_action
 
 from .bank import stand_up
 from .models import CashHand, CashSeat, CashTable
@@ -114,6 +114,36 @@ def _record_hand(table_id, row):
     )
 
 
+# The two events that are not everybody's business. The engine broadcasts them
+# with every player's cards in one payload and leaves the delivery to whoever
+# is driving it — a tournament's coordinator splits them up and posts each
+# player their own. A cash table had nothing doing that, so every seat was
+# being sent the whole table's hole cards. Nothing drew them, which is exactly
+# what made it easy to miss: they were in the payload, and anybody with the
+# console open could read the table.
+PRIVATE_EVENTS = {
+    "hole_cards_dealt": lambda row: {"type": "hole_cards", "cards": row["cards"]},
+    "hand_strength_dealt": lambda row: {"type": "hand_strength", "text": row["text"]},
+}
+
+
+async def _deliver(table_id, event_type, payload):
+    """One event off the table, to everybody or to one person.
+
+    A spectator is a socket in the group with nobody's user id against it, so
+    the private ones simply never reach the rail — which is the whole of what
+    watching a cash table is allowed to be.
+    """
+    private = PRIVATE_EVENTS.get(event_type)
+    if private is None:
+        await _broadcast_table(room_id(table_id), 1, event_type, payload)
+        return
+    for row in (payload or {}).get("players", []):
+        user_id = row.get("user_id")
+        if user_id is not None:
+            await _notify_user(room_id(table_id), user_id, private(row))
+
+
 @sync_to_async
 def _table_row(table_id):
     return CashTable.objects.filter(id=table_id, is_open=True).first()
@@ -145,9 +175,7 @@ async def ensure_room(table_id):
         load_seats=lambda: _load_seats(table_id),
         persist_stacks=lambda stacks: _persist_stacks(table_id, stacks),
         settle_leavers=lambda: _settle_leavers(table_id),
-        broadcast=lambda event_type, payload: _broadcast_table(
-            room_id(table_id), 1, event_type, payload,
-        ),
+        broadcast=lambda event_type, payload: _deliver(table_id, event_type, payload),
         request_action=lambda player, context: _request_action(
             room_id(table_id), 1, player, context,
         ),
@@ -164,6 +192,47 @@ async def ensure_room(table_id):
     _rooms[table_id] = room
     _tasks[table_id] = asyncio.create_task(room.run())
     return room
+
+
+def announce_seats(table_id) -> bool:
+    """Tell everybody at the table who is sitting at it now.
+
+    Called from the REST views, which is where seats actually change. Only
+    between hands: a snapshot of the seats is a snapshot without bets, cards or
+    a pot in it, and sending one mid-hand would wipe the hand off everybody's
+    screen. During a hand there is nothing to do — the next one opens with the
+    same snapshot anyway.
+    """
+    room = _rooms.get(int(table_id))
+    if room is None or room._playing:
+        return False
+    rows = _seat_rows(table_id)
+    async_to_sync(_broadcast_table)(
+        room_id(table_id), 1, "cash_state", room.snapshot(rows),
+    )
+    return True
+
+
+def _seat_rows(table_id):
+    """The seats as the snapshot wants them, read synchronously."""
+    rows = (
+        CashSeat.objects
+        .filter(table_id=table_id)
+        .select_related("user", "user__profile")
+        .order_by("seat")
+    )
+    return [
+        {
+            "seat": row.seat,
+            "user_id": row.user_id,
+            "name": (getattr(getattr(row.user, "profile", None), "display_name", "")
+                     or row.user.username),
+            "stack": row.stack,
+            "sitting_out": row.sitting_out,
+            "leaving": row.leaving,
+        }
+        for row in rows
+    ]
 
 
 def stop_room(table_id):

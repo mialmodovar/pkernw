@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Icon from "../icons/Icon";
 import useCashStore from "../../store/cashStore";
 import useWalletStore from "../../store/walletStore";
-import { atStake, sitBlocker, tableSummary } from "./cashTables";
+import { atStake, rowActions, tableSummary } from "./cashTables";
 import PlayerFaces from "./PlayerFaces";
 import SitDownModal from "./SitDownModal";
 
@@ -62,8 +62,7 @@ export default function CashBrowser() {
             </header>
 
             {rows.map((table) => {
-              const blocked = sitBlocker(table, balance);
-              const seated = table.my_seat != null;
+              const { sit: sitLabel, blocked, watch, seated } = rowActions(table, balance);
               return (
                 <div key={table.id}
                   className={`panel rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2
@@ -125,21 +124,33 @@ export default function CashBrowser() {
                         Back to the table
                       </button>
                     ) : (
-                      <button
-                        onClick={() => {
-                          // Whatever went wrong last time went wrong at
-                          // another table; it must not greet this one.
-                          useCashStore.setState({ error: "" });
-                          setBuyingInto(table);
-                        }}
-                        disabled={Boolean(blocked)}
-                        title={blocked || `Sit down at ${table.name}`}
-                        className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
-                          blocked ? "btn-secondary opacity-50 cursor-not-allowed" : "btn-accent"
-                        }`}
-                      >
-                        {blocked || "Sit down"}
-                      </button>
+                      <>
+                        {/* The rail. Offered at a table with room as readily as
+                            at a full one: watching is how anybody decides
+                            whether they want a seat. */}
+                        {watch && (
+                          <button onClick={() => navigate(`/cash/${table.id}`)}
+                            title={`Watch the game at ${table.name}`}
+                            className="btn-secondary px-3 py-1 rounded text-xs font-semibold">
+                            Watch
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            // Whatever went wrong last time went wrong at
+                            // another table; it must not greet this one.
+                            useCashStore.setState({ error: "" });
+                            setBuyingInto(table);
+                          }}
+                          disabled={Boolean(blocked)}
+                          title={blocked || `Sit down at ${table.name}`}
+                          className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                            blocked ? "btn-secondary opacity-50 cursor-not-allowed" : "btn-accent"
+                          }`}
+                        >
+                          {blocked || sitLabel}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

@@ -17,7 +17,7 @@ from clubs.permissions import is_club_staff
 from sidegames.economy import wallet_for
 
 from .bank import cash_out_everybody, sit_down, stand_up, top_up
-from .live import running_room, stop_room
+from .live import announce_seats, running_room, stop_room
 from .models import CashSeat, CashTable
 from .seating import next_free_seat
 from .stakes import STAKES, SEAT_CHOICES, clean_seats, stake_for, top_up_room
@@ -192,6 +192,10 @@ def sit(request, pk):
     if isinstance(seated, str):
         return Response({"error": seated}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Everybody at the table, including whoever is watching from the rail, sees
+    # the chair fill. Between hands only; mid-hand the next one carries it.
+    announce_seats(table.id)
+
     return Response({
         "seat": seated.seat,
         "stack": seated.stack,
@@ -253,6 +257,7 @@ def leave(request, pk):
         return Response({"leaving": True, "balance": wallet_for(request.user).balance})
 
     paid = stand_up(seat)
+    announce_seats(pk)
     return Response({
         "leaving": False,
         "cashed_out": paid,

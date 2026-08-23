@@ -315,6 +315,23 @@ class CashRoomTests(TestCase):
     def _seat(self, seat, stack=500, **extra):
         return {"seat": seat, "user_id": 100 + seat, "name": f"p{seat}", "stack": stack, **extra}
 
+    def test_a_hand_opens_by_saying_who_is_sitting_at_the_table(self):
+        """A seat that filled between hands is invisible otherwise: nothing
+        else on the wire carries the seats, so somebody who sat down mid-session
+        was not there for anybody until they reloaded."""
+        room = self._room([self._seat(0), self._seat(1)])
+        room.seats = [dict(one) for one in self.seats]
+
+        async_to_sync(room.play_hand)()
+
+        first = self.events[0]
+        self.assertEqual(first[0], "cash_state")
+        self.assertEqual([one["seat"] for one in first[1]["players"]], [0, 1])
+        # Before a card is dealt, which is the only moment it is safe: a
+        # snapshot of the seats has no bets or cards in it.
+        kinds = [one[0] for one in self.events]
+        self.assertLess(kinds.index("cash_state"), kinds.index("hole_cards_dealt"))
+
     def test_a_hand_is_dealt_and_the_stacks_are_written_down(self):
         room = self._room([self._seat(0), self._seat(1), self._seat(2)])
         room.seats = [dict(one) for one in self.seats]
@@ -548,6 +565,21 @@ class CashLobbyApiTests(APITestCase):
         self.assertTrue(response.data["run_it_twice"])
         self.assertEqual(response.data["bomb_pot_every"], 10)
 
+    def test_staff_of_a_club_can_open_one_too(self):
+        """The club page offers the button off can_manage, which is this same
+        predicate. Owner and staff both organise; only the page had to be told.
+        """
+        from clubs.models import Club, Membership
+
+        club = Club.objects.create(name="Quinta", created_by=self.staff)
+        Membership.objects.create(club=club, user=self.player, role=Membership.STAFF)
+
+        response = self.client.post(
+            reverse("cash-open"), {"stake": "low", "club": club.slug}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
     def test_somebody_who_only_plays_at_a_club_cannot_open_its_tables(self):
         from clubs.models import Club, Membership
 
@@ -742,10 +774,33 @@ class PublicTablesTests(TestCase):
     open.
     """
 
-    def test_the_app_keeps_tables_of_its_own(self):
+    def test_the_app_keeps_a_table_at_each_of_the_first_four_rungs(self):
+        """A ladder with a rung nobody can stand on is not a ladder: somebody
+        who has won a few hundred at 1/2 has to have somewhere to take them.
+
+        The top rung is not one of them. 25/50 is a big game, and a big game
+        with nobody in it is worse than no table at all — a club can open one
+        when a club has the players for it.
+        """
         house = CashTable.objects.filter(club__isnull=True, is_open=True)
 
-        self.assertGreaterEqual(house.count(), 2)
+        self.assertGreaterEqual(house.count(), 4)
+        self.assertEqual(
+            {table.stake for table in house},
+            {"micro", "low", "mid", "high"},
+        )
+        self.assertEqual(
+            sorted(stake_for(table.stake).label for table in house),
+            ["1/2", "10/20", "2/5", "5/10"],
+        )
+
+    def test_they_are_named_by_their_blinds(self):
+        """Which is what a cash table is called everywhere outside this
+        codebase. "micro" is how the code groups them, not how anybody asks
+        for one."""
+        for table in CashTable.objects.filter(club__isnull=True):
+            with self.subTest(table=table.name):
+                self.assertIn(stake_for(table.stake).label, table.name)
 
     def test_they_are_eight_handed(self):
         for table in CashTable.objects.filter(club__isnull=True):
@@ -798,7 +853,7 @@ class CashSocketTests(TransactionTestCase):
         self.table = CashTable.objects.create(name="Socket", stake="micro", seat_count=6)
         sit_down(self.table, self.user, 200, seat_number=0)
 
-    def _socket(self):
+    def _socket(self, user=None):
         from channels.testing import WebsocketCommunicator
 
         from .consumers import CashTableConsumer
@@ -806,9 +861,48 @@ class CashSocketTests(TransactionTestCase):
         socket = WebsocketCommunicator(
             CashTableConsumer.as_asgi(), f"/ws/cash/{self.table.id}/",
         )
-        socket.scope["user"] = self.user
+        socket.scope["user"] = user or self.user
         socket.scope["url_route"] = {"kwargs": {"table_id": str(self.table.id)}}
         return socket
+
+    def test_a_seat_filling_reaches_everybody_already_at_the_table(self):
+        """Sitting down happens over REST, so nothing about it is on the wire
+        unless the table says so. Without this, a player who joined mid-session
+        was invisible to everybody there until the next hand — or, at a table
+        waiting for that second player, forever."""
+        from asgiref.sync import sync_to_async
+
+        from .live import announce_seats, stop_room
+
+        other = User.objects.create_user(username="socket_bea", password="secret123")
+        wallet_for(other)
+        Wallet.objects.filter(user=other).update(balance=1000)
+
+        async def scenario():
+            socket = self._socket()
+            await socket.connect()
+            await socket.receive_json_from(timeout=2)          # the snapshot
+
+            await sync_to_async(sit_down)(self.table, other, 200, seat_number=3)
+            told = await sync_to_async(announce_seats)(self.table.id)
+
+            seen = None
+            for _ in range(20):
+                message = await socket.receive_json_from(timeout=2)
+                if message.get("type") == "cash_state":
+                    seen = message
+                    break
+            await socket.disconnect()
+            return told, seen
+
+        try:
+            told, seen = async_to_sync(scenario)()
+        finally:
+            stop_room(self.table.id)
+
+        self.assertTrue(told)
+        self.assertIsNotNone(seen)
+        self.assertEqual(sorted(one["seat"] for one in seen["players"]), [0, 3])
 
     def test_a_broadcast_reaches_the_seat_and_leaves_the_socket_up(self):
         from game.consumers import _broadcast_table
@@ -897,3 +991,157 @@ class SeatChoiceTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("took that seat", response.data["error"])
         self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)
+
+
+class CashCardPrivacyTests(TransactionTestCase):
+    """Whose cards reach whom.
+
+    The engine deals every hand's hole cards in one payload and leaves the
+    delivery to whatever is driving it. A tournament's coordinator takes that
+    apart and posts each player their own; a cash table had nothing doing it,
+    so the whole table's cards were going to every seat at it. No client drew
+    them, which is what made it easy to miss and no less of a leak — they were
+    in the message, and reading somebody's hand needs no more than the console.
+
+    With a rail watching, the same events reach people who are not in the hand
+    at all, so this is the test the watching feature rests on.
+    """
+
+    def setUp(self):
+        self.ana = User.objects.create_user(username="priv_ana", password="secret123")
+        self.bea = User.objects.create_user(username="priv_bea", password="secret123")
+        self.rail = User.objects.create_user(username="priv_rail", password="secret123")
+        for user in (self.ana, self.bea, self.rail):
+            wallet_for(user)
+            Wallet.objects.filter(user=user).update(balance=1000)
+        self.table = CashTable.objects.create(name="Private", stake="micro", seat_count=6)
+        sit_down(self.table, self.ana, 200, seat_number=0)
+        sit_down(self.table, self.bea, 200, seat_number=1)
+        # Sat out, so the room these sockets boot has nobody to deal to and the
+        # only events on the wire are the ones this test puts there.
+        CashSeat.objects.filter(table=self.table).update(sitting_out=True)
+
+    def _socket(self, user):
+        from channels.testing import WebsocketCommunicator
+
+        from .consumers import CashTableConsumer
+
+        socket = WebsocketCommunicator(
+            CashTableConsumer.as_asgi(), f"/ws/cash/{self.table.id}/",
+        )
+        socket.scope["user"] = user
+        socket.scope["url_route"] = {"kwargs": {"table_id": str(self.table.id)}}
+        return socket
+
+    async def _next(self, socket, wanted, tries=20):
+        """The next message of this kind, past the table's own waiting chatter."""
+        for _ in range(tries):
+            message = await socket.receive_json_from(timeout=2)
+            if message.get("type") == wanted:
+                return message
+        raise AssertionError(f"no {wanted} arrived")
+
+    async def _never(self, socket, unwanted, tries=6):
+        """That none of these turn up, however much else does."""
+        for _ in range(tries):
+            if await socket.receive_nothing(timeout=0.2):
+                continue
+            message = await socket.receive_json_from(timeout=2)
+            if message.get("type") in unwanted:
+                return False
+        return True
+
+    def test_each_player_is_sent_their_own_cards_and_nobody_else_s(self):
+        from .live import running_room, stop_room
+
+        dealt = {
+            "players": [
+                {"seat": 0, "user_id": self.ana.id, "cards": ["As", "Ks"]},
+                {"seat": 1, "user_id": self.bea.id, "cards": ["2c", "7d"]},
+            ],
+        }
+
+        async def scenario():
+            ana, bea, rail = (
+                self._socket(self.ana), self._socket(self.bea), self._socket(self.rail),
+            )
+            for socket in (ana, bea, rail):
+                connected, _ = await socket.connect()
+                self.assertTrue(connected)
+                await socket.receive_json_from(timeout=2)      # the snapshot
+
+            # Through the room's own broadcast, which is the wiring under
+            # test: the split has to be what a hand actually goes through, not
+            # something a test reaches past it to call.
+            await running_room(self.table.id).broadcast("hole_cards_dealt", dealt)
+
+            hers = await self._next(ana, "hole_cards")
+            his = await self._next(bea, "hole_cards")
+            # The rail is in the same group and gets everything public. This is
+            # not public, so there is nothing here for it.
+            # Both names: the leak was the engine's own event reaching the
+            # group intact, so it is not enough to check for the private one.
+            watched = await self._never(rail, ("hole_cards", "hole_cards_dealt"))
+
+            for socket in (ana, bea, rail):
+                await socket.disconnect()
+            return hers, his, watched
+
+        try:
+            hers, his, watched = async_to_sync(scenario)()
+        finally:
+            stop_room(self.table.id)
+
+        self.assertEqual(hers, {"type": "hole_cards", "cards": ["As", "Ks"]})
+        self.assertEqual(his, {"type": "hole_cards", "cards": ["2c", "7d"]})
+        self.assertTrue(watched)
+
+    def test_the_public_events_do_reach_the_rail(self):
+        """Watching has to be worth doing: everything that is not a hole card
+        is the same table everybody else is looking at."""
+        from .live import running_room, stop_room
+
+        async def scenario():
+            rail = self._socket(self.rail)
+            await rail.connect()
+            await rail.receive_json_from(timeout=2)
+
+            await running_room(self.table.id).broadcast(
+                "street_dealt", {"street": "flop", "cards": ["As"]},
+            )
+            seen = await self._next(rail, "street_dealt")
+
+            await rail.disconnect()
+            return seen
+
+        try:
+            seen = async_to_sync(scenario)()
+        finally:
+            stop_room(self.table.id)
+
+        self.assertEqual(seen["type"], "street_dealt")
+        self.assertEqual(seen["street"], "flop")
+
+
+class SeatAnnouncementTests(TestCase):
+    """When the table may say who is sitting at it, and when it may not."""
+
+    def test_a_table_mid_hand_is_left_alone(self):
+        """A snapshot of the seats has no bets, no cards and no pot in it.
+        Sending one while a hand is being played would wipe the hand off
+        everybody's screen; the next hand opens with the same snapshot anyway.
+        """
+        from types import SimpleNamespace
+
+        from cash import live
+
+        live._rooms[9_999] = SimpleNamespace(_playing={0: object()}, snapshot=lambda rows: {})
+        try:
+            self.assertFalse(live.announce_seats(9_999))
+        finally:
+            live._rooms.pop(9_999, None)
+
+    def test_a_table_nobody_is_looking_at_has_nobody_to_tell(self):
+        from cash import live
+
+        self.assertFalse(live.announce_seats(9_998))

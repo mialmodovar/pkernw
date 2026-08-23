@@ -3,6 +3,7 @@ import Icon from "../components/icons/Icon";
 import { useNavigate, useParams } from "react-router-dom";
 
 import api from "../api/http";
+import ClubCashTables from "../components/lobby/ClubCashTables";
 import ClubMembers from "../components/lobby/ClubMembers";
 import ClubSettings from "../components/lobby/ClubSettings";
 import ScoringEditor from "../components/lobby/ScoringEditor";
@@ -454,6 +455,10 @@ export default function ClubPage() {
           </ol>
         )}
       </section>
+
+      {/* The other kind of game a club runs. A league night is an event; a
+          cash table is a room that is either open or not. */}
+      <ClubCashTables club={club} isStaff={isStaff} />
 
       <ClubMembers club={club} myUsername={user?.username} onChanged={loadClub} />
 

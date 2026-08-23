@@ -123,3 +123,24 @@ export function defaultSeat(table) {
   const free = seatOptions(table).find((one) => !one.taken);
   return free ? free.seat : null;
 }
+
+/**
+ * What a lobby row offers this player: to sit, to watch, or both.
+ *
+ * Watching is not a consolation for a table you cannot sit at, though it is
+ * that too — it is how anybody decides whether they want a seat at all, which
+ * is why it is offered at a table with room as readily as at a full one. There
+ * is nothing to watch at a table with no game in it, and a row with a button
+ * that leads to an empty felt is worse than a row with one button.
+ */
+export function rowActions(table, balance) {
+  if (!table) return { sit: null, watch: false, seated: false };
+  if (table.my_seat != null) return { sit: null, watch: false, seated: true };
+  const blocked = sitBlocker(table, balance);
+  return {
+    sit: blocked ? null : "Sit down",
+    blocked,
+    watch: isRunning(table),
+    seated: false,
+  };
+}

@@ -10,6 +10,7 @@ import ConnectionBanner from "../components/game/ConnectionBanner";
 import PokerTable from "../components/game/PokerTable";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 import useAuthStore from "../store/authStore";
+import SitDownModal from "../components/lobby/SitDownModal";
 import { waitingLine } from "../components/lobby/cashTables";
 import useCashStore from "../store/cashStore";
 import useGameStore from "../store/gameStore";
@@ -36,11 +37,15 @@ export default function CashTablePage() {
   const cash = useGameStore((s) => s.cash);
   const tableWaiting = useGameStore((s) => s.tableWaiting);
   const balance = useWalletStore((s) => s.balance);
-  const { leave, addChips, sitOut } = useCashStore();
+  const { leave, addChips, sitOut, sit, busy, error } = useCashStore();
 
   const [table, setTable] = useState(null);
   const [status, setStatus] = useState("connecting");
   const [notice, setNotice] = useState("");
+  // Open when somebody watching decides they want in. The rail is where most
+  // people arrive from, so sitting down has to be possible from here rather
+  // than only from the lobby they have already left.
+  const [sittingDown, setSittingDown] = useState(false);
 
   const mySeat = players.find((one) => one.user_id === user?.id)?.seat ?? null;
   const myStack = players.find((one) => one.user_id === user?.id)?.chips ?? 0;
@@ -70,6 +75,15 @@ export default function CashTablePage() {
   // Only while the socket is actually up: a table that cannot be heard from is
   // a connection problem, and the banner above already says so.
   const waiting = status === "open" ? waitingLine(tableWaiting) : "";
+
+  const takeASeat = async (amount, seat) => {
+    const seated = await sit(id, amount, seat);
+    if (!seated) return;      // the dialog stays up and says why
+    setSittingDown(false);
+    // The snapshot the socket sends on the next hand carries the new seat, but
+    // the header's own buttons come off this row, so it is refetched.
+    loadTable();
+  };
 
   const walkAway = async () => {
     const result = await leave(id);
@@ -122,11 +136,36 @@ export default function CashTablePage() {
           </span>
         )}
 
-        <span className="ml-auto flex items-center gap-1.5 shrink-0 tabular-nums
-                         text-(--color-highlight-text) font-semibold">
-          <Icon name="coin" className="w-3.5 h-3.5" />
-          {myStack.toLocaleString()}
-        </span>
+        {/* Watching, and able to stop. A rail that cannot sit down is a
+            television. */}
+        {mySeat == null && (
+          <span className="ml-auto flex items-center gap-1.5 shrink-0 text-[10px]
+                           font-semibold uppercase tracking-wider text-(--color-text-muted)">
+            <Icon name="eye" className="w-3.5 h-3.5" />
+            Watching
+          </span>
+        )}
+
+        {mySeat != null && (
+          <span className="ml-auto flex items-center gap-1.5 shrink-0 tabular-nums
+                           text-(--color-highlight-text) font-semibold">
+            <Icon name="coin" className="w-3.5 h-3.5" />
+            {myStack.toLocaleString()}
+          </span>
+        )}
+
+        {mySeat == null && table && (
+          <button
+            onClick={() => { useCashStore.setState({ error: "" }); setSittingDown(true); }}
+            disabled={(table.taken || 0) >= (table.seats || 0)}
+            title={(table.taken || 0) >= (table.seats || 0)
+              ? "Every seat is taken"
+              : "Take a seat at this table"}
+            className="btn-accent px-2 py-1 rounded text-[11px] font-semibold disabled:opacity-50"
+          >
+            {(table.taken || 0) >= (table.seats || 0) ? "Table full" : "Sit down"}
+          </button>
+        )}
 
         {mySeat != null && (
           <>
@@ -190,6 +229,17 @@ export default function CashTablePage() {
           </div>
         )}
       </div>
+
+      {sittingDown && table && (
+        <SitDownModal
+          table={table}
+          balance={balance}
+          busy={Boolean(busy)}
+          error={error}
+          onSit={takeASeat}
+          onClose={() => setSittingDown(false)}
+        />
+      )}
 
       {compact && mySeat != null && (
         <div className="shrink-0 px-1 pb-safe">

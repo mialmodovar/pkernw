@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   atStake, defaultSeat, freeSeats, isRunning, lobbyOrder, seatOptions, sitBlocker,
-  suggestedBuyIn, tableSummary, waitingLine,
+  rowActions, suggestedBuyIn, tableSummary, waitingLine,
 } from "./cashTables";
 
 const table = (over = {}) => ({
@@ -173,5 +173,29 @@ describe("defaultSeat", () => {
   it("offers nothing at a full table", () => {
     const full = { seats: 2, players: [{ seat: 0, username: "a" }, { seat: 1, username: "b" }] };
     expect(defaultSeat(full)).toBeNull();
+  });
+});
+
+describe("rowActions", () => {
+  it("offers a seat and the rail at a table with a game and room", () => {
+    expect(rowActions(table({ taken: 3 }), 1000)).toMatchObject({ sit: "Sit down", watch: true });
+  });
+
+  it("offers only the rail at a full table", () => {
+    const full = table({ seats: 6, taken: 6 });
+    expect(rowActions(full, 1000)).toMatchObject({ sit: null, watch: true, blocked: "Full" });
+  });
+
+  it("offers only the rail to somebody who cannot afford the table", () => {
+    expect(rowActions(table({ taken: 4 }), 10)).toMatchObject({ sit: null, watch: true });
+  });
+
+  it("has nothing to watch at a table nobody is playing at", () => {
+    expect(rowActions(table({ taken: 1 }), 1000)).toMatchObject({ sit: "Sit down", watch: false });
+  });
+
+  it("says nothing to somebody already sitting there", () => {
+    expect(rowActions(table({ my_seat: 3, taken: 4 }), 1000))
+      .toEqual({ sit: null, watch: false, seated: true });
   });
 });

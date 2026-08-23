@@ -1763,3 +1763,88 @@ class GoogleSettingShapeTests(TestCase):
 			ids = [warning.id for warning in run_checks()]
 
 		self.assertIn("accounts.W001", ids)
+
+
+class GoogleIdentityMovesTests(APITestCase):
+	"""Taking your Google identity back from an account it made by accident.
+
+	The mistake the feature invites: press the Google button on the login page
+	while you already have an account here, and you get a new empty one in your
+	Google account's name. Without this the identity is stuck on it — the empty
+	account cannot disconnect it, because it has no password to fall back on,
+	and the real account cannot claim it, because one identity is one account.
+	"""
+
+	CLAIMS = {"sub": "google-1", "email": "ana@example.com", "name": "Ana"}
+
+	def _as_google(self):
+		from unittest.mock import patch
+
+		with patch("accounts.googleauth.verify", return_value=self.CLAIMS):
+			return self.client.post(
+				reverse("google-sign-in"), {"credential": "a.b.c"}, format="json",
+			)
+
+	def _link_as(self, user):
+		from unittest.mock import patch
+
+		self.client.force_authenticate(user)
+		with patch("accounts.googleauth.verify", return_value=self.CLAIMS):
+			return self.client.post(
+				reverse("google-link"), {"credential": "a.b.c"}, format="json",
+			)
+
+	def test_the_real_account_can_claim_it_off_the_accidental_one(self):
+		self._as_google()                      # the mistake: a new empty account
+		accidental = User.objects.get(username="ana")
+		real = User.objects.create_user(username="legacy_ana", password="secret123")
+		Profile.objects.get_or_create(user=real)
+
+		response = self._link_as(real)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["moved_from"], "ana")
+		self.assertEqual(Profile.objects.get(user=real).google_sub, "google-1")
+		self.assertEqual(Profile.objects.get(user=accidental).google_sub, "")
+
+	def test_and_then_signing_in_with_google_lands_on_the_real_one(self):
+		self._as_google()
+		real = User.objects.create_user(username="legacy_ana", password="secret123")
+		Profile.objects.get_or_create(user=real)
+		self._link_as(real)
+		self.client.force_authenticate(None)
+
+		from unittest.mock import patch
+		with patch("accounts.googleauth.verify", return_value=self.CLAIMS):
+			signed_in = self.client.post(
+				reverse("google-sign-in"), {"credential": "a.b.c"}, format="json",
+			)
+
+		self.assertFalse(signed_in.data["created"])
+		self.assertEqual(Profile.objects.filter(google_sub="google-1").count(), 1)
+		self.assertEqual(
+			Profile.objects.get(google_sub="google-1").user.username, "legacy_ana",
+		)
+
+	def test_it_cannot_be_taken_from_an_account_somebody_can_still_get_into(self):
+		"""A password means somebody connected it on purpose from inside, and
+		moving that would be a way to walk off with their account."""
+		theirs = User.objects.create_user(username="bea", password="secret123")
+		Profile.objects.get_or_create(user=theirs)
+		self._link_as(theirs)
+		mine = User.objects.create_user(username="ana", password="secret123")
+		Profile.objects.get_or_create(user=mine)
+
+		response = self._link_as(mine)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(Profile.objects.get(user=theirs).google_sub, "google-1")
+		self.assertEqual(Profile.objects.get(user=mine).google_sub, "")
+
+	def test_an_ordinary_first_connection_says_it_moved_nothing(self):
+		real = User.objects.create_user(username="legacy_ana", password="secret123")
+		Profile.objects.get_or_create(user=real)
+
+		response = self._link_as(real)
+
+		self.assertEqual(response.data["moved_from"], "")

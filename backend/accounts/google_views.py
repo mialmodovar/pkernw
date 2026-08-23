@@ -127,16 +127,45 @@ def google_link(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    profile.google_sub = claims["sub"]
-    profile.google_email = claims["email"]
-    try:
-        with transaction.atomic():
-            profile.save(update_fields=["google_sub", "google_email"])
-    except IntegrityError:
-        # The unique constraint doing its job: that Google account is already
-        # somebody's way in here, and it cannot be two people's.
+    # Somebody else's already, possibly. There is one case where that is not a
+    # refusal, and it is the mistake this feature invites: press the Google
+    # button on the login page while you already have an account here, and you
+    # are handed a new empty one made in your Google account's name. Both of
+    # them are then yours, and the identity is stuck on the wrong one.
+    #
+    # So it can be taken back — but only from an account that has no other way
+    # in. Whoever holds the Google identity is the only person who can enter
+    # such an account at all, so moving it takes nothing from anybody. An
+    # account with a password was connected on purpose by somebody who could
+    # already get in, and moving that would be a way to walk off with it.
+    other = (
+        Profile.objects.filter(google_sub=claims["sub"])
+        .exclude(user_id=request.user.id).select_related("user").first()
+    )
+    if other is not None and other.user.has_usable_password():
         return Response(
             {"error": "That Google account is already connected to another player."},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    return Response({"connected": True, "google_email": profile.google_email})
+
+    profile.google_sub = claims["sub"]
+    profile.google_email = claims["email"]
+    try:
+        with transaction.atomic():
+            if other is not None:
+                Profile.objects.filter(pk=other.pk).update(google_sub="", google_email="")
+            profile.save(update_fields=["google_sub", "google_email"])
+    except IntegrityError:
+        # The unique constraint doing its job, for anything the check above did
+        # not see — two of these arriving at once, most likely.
+        return Response(
+            {"error": "That Google account is already connected to another player."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return Response({
+        "connected": True,
+        "google_email": profile.google_email,
+        # So the client can say what happened rather than just "done": the
+        # empty account it came from is still there, and unreachable.
+        "moved_from": other.user.username if other is not None else "",
+    })

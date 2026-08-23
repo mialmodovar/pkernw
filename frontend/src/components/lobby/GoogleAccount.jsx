@@ -30,11 +30,17 @@ export default function GoogleAccount() {
   // says so before they press anything.
   const onlyWayIn = connected && user?.profile?.has_password === false;
 
+  const [moved, setMoved] = useState("");
+
   const connect = async (credential) => {
     setError("");
     setBusy(true);
     try {
-      await linkGoogle(credential);
+      const result = await linkGoogle(credential);
+      // It was on an account that Google sign-in had made by accident — see
+      // google_views.py. Worth saying out loud: there is an empty account
+      // sitting there with a name they may recognise.
+      setMoved(result?.moved_from || "");
     } catch (failure) {
       setError(failure.response?.data?.error || "That Google account could not be connected.");
     } finally {
@@ -89,6 +95,13 @@ export default function GoogleAccount() {
           </p>
           <GoogleButton onCredential={connect} text="continue_with" onError={setError} />
         </>
+      )}
+
+      {moved && (
+        <p className="text-[11px] text-(--color-highlight-pale) leading-snug">
+          Taken back from “{moved}”, an empty account that Google sign-in had
+          made. Nothing was lost — that one had never been played.
+        </p>
       )}
 
       {error && <p className="text-xs text-[#c76b7a]">{error}</p>}

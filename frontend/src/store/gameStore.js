@@ -402,6 +402,11 @@ const useGameStore = create((set) => ({
             chips: one.chips,
             is_sitting_out: one.is_sitting_out,
             is_leaving: one.is_leaving,
+            // The felt reads these three off a player whichever room it is
+            // drawing, so a cash seat has to carry them like a tournament one.
+            avatar: one.avatar,
+            avatar_border: one.avatar_border,
+            avatar_url: one.avatar_url,
             bet: 0,
             is_folded: false,
             is_all_in: false,

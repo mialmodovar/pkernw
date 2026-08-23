@@ -24,7 +24,7 @@ from game.consumers import (
     _table_group_name,
 )
 
-from .live import ensure_room, room_id, running_room
+from .live import ensure_room, room_id, running_room, seat_rows
 from .models import CashSeat, CashTable
 
 
@@ -118,19 +118,7 @@ class CashTableConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def _seat_rows(self):
-        rows = (
-            CashSeat.objects.filter(table_id=self.table_id)
-            .select_related("user", "user__profile").order_by("seat")
-        )
-        return [
-            {
-                "seat": row.seat,
-                "user_id": row.user_id,
-                "name": (getattr(getattr(row.user, "profile", None), "display_name", "")
-                         or row.user.username),
-                "stack": row.stack,
-                "sitting_out": row.sitting_out,
-                "leaving": row.leaving,
-            }
-            for row in rows
-        ]
+        # The loop's own reading of the seats, faces and all: a snapshot that
+        # described the table differently from the hands that follow it would
+        # be a second definition of who is sitting where.
+        return seat_rows(self.table_id)

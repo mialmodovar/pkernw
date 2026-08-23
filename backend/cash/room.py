@@ -230,6 +230,12 @@ class CashRoom:
                     "chips": one["stack"],
                     "is_sitting_out": bool(one.get("sitting_out")),
                     "is_leaving": bool(one.get("leaving")),
+                    # Passed through rather than looked up: the seats arrive
+                    # with the faces on them, and the felt draws the same
+                    # picture and ring a tournament would.
+                    "avatar": one.get("avatar") or "\U0001F0CF",
+                    "avatar_border": one.get("avatar_border") or "",
+                    "avatar_url": one.get("avatar_url"),
                 }
                 for one in sorted(rows, key=lambda one: one["seat"])
             ],

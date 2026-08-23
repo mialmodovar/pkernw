@@ -315,6 +315,27 @@ class CashRoomTests(TestCase):
     def _seat(self, seat, stack=500, **extra):
         return {"seat": seat, "user_id": 100 + seat, "name": f"p{seat}", "stack": stack, **extra}
 
+    def test_the_snapshot_carries_the_faces_it_was_given(self):
+        """The felt draws the same seat a tournament does, off the same three
+        fields. Passed through rather than looked up: the seats arrive with the
+        faces already on them."""
+        room = self._room([
+            dict(self._seat(0), avatar="\U0001F984", avatar_border="gold",
+                 avatar_url="/api/auth/avatar/7/?v=1"),
+            self._seat(1),
+        ])
+        room.seats = [dict(one) for one in self.seats]
+
+        drawn = room.snapshot()["players"]
+
+        self.assertEqual(drawn[0]["avatar"], "\U0001F984")
+        self.assertEqual(drawn[0]["avatar_border"], "gold")
+        self.assertEqual(drawn[0]["avatar_url"], "/api/auth/avatar/7/?v=1")
+        # And a seat with nothing chosen still has something to draw.
+        self.assertEqual(drawn[1]["avatar"], "\U0001F0CF")
+        self.assertEqual(drawn[1]["avatar_border"], "")
+        self.assertIsNone(drawn[1]["avatar_url"])
+
     def test_a_hand_opens_by_saying_who_is_sitting_at_the_table(self):
         """A seat that filled between hands is invisible otherwise: nothing
         else on the wire carries the seats, so somebody who sat down mid-session
@@ -495,6 +516,28 @@ class CashLobbyApiTests(APITestCase):
         )
 
         self.assertEqual(response.data["seat"], 1)
+
+    def test_a_seated_player_is_listed_with_the_face_they_chose(self):
+        """A row of identical default cards tells you the seats are taken and
+        nothing else, which is what the lobby was drawing: the faces were never
+        in the payload, so every player looked like every other one."""
+        from accounts.models import Profile
+
+        Profile.objects.update_or_create(
+            user=self.player, defaults={"avatar_emoji": "\U0001F984", "avatar_border": "gold"},
+        )
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+
+        row = next(
+            one for one in self.client.get(reverse("cash-lobby")).data["tables"]
+            if one["id"] == self.table.id
+        )
+
+        self.assertEqual(row["players"][0]["avatar_emoji"], "\U0001F984")
+        self.assertEqual(row["players"][0]["avatar_border"], "gold")
+        # No picture uploaded, so there is nothing to point at — and the emoji
+        # above is what the seat falls back to.
+        self.assertIsNone(row["players"][0]["avatar_url"])
 
     def test_a_buy_in_under_the_minimum_is_refused(self):
         response = self.client.post(

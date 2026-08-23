@@ -12,6 +12,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
+from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 from clubs.permissions import is_club_staff
 from sidegames.economy import wallet_for
@@ -23,10 +24,35 @@ from .seating import next_free_seat
 from .stakes import STAKES, SEAT_CHOICES, clean_seats, stake_for, top_up_room
 
 
+def _face(row):
+    """One seated player, as a lobby row draws them.
+
+    The picture and the ring included. A list of faces is the whole point of
+    showing who is at a table — a row of identical default cards tells you the
+    seats are taken and nothing else, which is what this was doing.
+    """
+    profile = getattr(row.user, "profile", None)
+    image = getattr(row.user, "avatar_image", None)
+    return {
+        "seat": row.seat,
+        "username": row.user.username,
+        "display_name": shown_name(
+            row.user.username, getattr(profile, "display_name", ""),
+        ),
+        "avatar_emoji": (getattr(profile, "avatar_emoji", "") or "\U0001F0CF"),
+        "avatar_border": (getattr(profile, "avatar_border", "") or ""),
+        "avatar_url": avatar_url(row.user_id, image.updated_at if image else None),
+        "stack": row.stack,
+        "sitting_out": row.sitting_out,
+    }
+
+
 def table_payload(table, seats=None, me=None):
     """One table, as the lobby draws it."""
     stake = stake_for(table.stake)
-    rows = list(seats if seats is not None else table.taken.select_related("user", "user__profile"))
+    rows = list(seats if seats is not None else table.taken.select_related(
+        "user", "user__profile", "user__avatar_image",
+    ))
     return {
         "id": table.id,
         "name": table.name,
@@ -48,19 +74,7 @@ def table_payload(table, seats=None, me=None):
         # What a lobby row is actually scanned for: is there a game here, and
         # is one of these seats mine.
         "average_stack": (sum(row.stack for row in rows) // len(rows)) if rows else 0,
-        "players": [
-            {
-                "seat": row.seat,
-                "username": row.user.username,
-                "display_name": shown_name(
-                    row.user.username,
-                    getattr(getattr(row.user, "profile", None), "display_name", ""),
-                ),
-                "stack": row.stack,
-                "sitting_out": row.sitting_out,
-            }
-            for row in sorted(rows, key=lambda one: one.seat)
-        ],
+        "players": [_face(row) for row in sorted(rows, key=lambda one: one.seat)],
         "my_seat": next(
             (row.seat for row in rows if me is not None and row.user_id == me.id), None,
         ),
@@ -74,7 +88,7 @@ def lobby(request):
     tables = (
         CashTable.objects.filter(is_open=True)
         .select_related("club")
-        .prefetch_related("taken__user__profile")
+        .prefetch_related("taken__user__profile", "taken__user__avatar_image")
         .order_by("stake", "-hands_played", "id")
     )
     club = request.query_params.get("club")

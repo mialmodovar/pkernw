@@ -101,12 +101,10 @@ export default function CashBrowser() {
                     </p>
                   </div>
 
-                  <PlayerFaces players={table.players.map((one) => ({
-                    username: one.username,
-                    display_name: one.display_name,
-                    avatar_emoji: null,
-                    avatar_url: null,
-                  }))} />
+                  {/* The faces as their owners chose them. These were nulled
+                      out when the payload had nothing to put here, which made
+                      every table look like the same six strangers. */}
+                  <PlayerFaces players={table.players} />
 
                   <div className="shrink-0 text-right leading-tight">
                     <div className="text-[9px] uppercase tracking-wider text-(--color-text-muted)">

@@ -129,6 +129,7 @@ export function openTableTabs(seats = [], watching = []) {
  */
 const NO_SHORTCUT = [
   /^\/tournament\/\d+\/(play|watch)\b/,
+  /^\/cash\/\d+\b/,
   /^\/dev\/table\b/,
   /^\/(login|register|recover)\b/,
 ];

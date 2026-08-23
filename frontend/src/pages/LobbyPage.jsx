@@ -5,6 +5,7 @@ import useLobbyStore from "../store/lobbyStore";
 import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
+import CashBrowser from "../components/lobby/CashBrowser";
 import Icon from "../components/icons/Icon";
 import { readStoredTab, tabToOpen, writeStoredTab } from "../components/lobby/lobbyTab";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
@@ -29,6 +30,9 @@ const LOBBY_TABS = [
   { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
   { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
   { key: "allinfold", label: "All In or Fold", icon: "shove", formats: ["allinfold"] },
+  // Not a format like the others: a cash table is a room rather than a game
+  // that starts and ends, so this tab draws its own browser.
+  { key: "cash", label: "Cash", icon: "coin", formats: null, cash: true },
 ];
 
 /**
@@ -283,7 +287,9 @@ export default function LobbyPage() {
           </div>
         </div>
 
-        {activeTab.formats ? (
+        {activeTab.cash ? (
+          <CashBrowser />
+        ) : activeTab.formats ? (
           <FastGameBrowser
             // Remounted per tab so the prize panels a player opened on one do
             // not come back open on the other.

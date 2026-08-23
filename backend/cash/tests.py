@@ -1,6 +1,6 @@
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -9,7 +9,7 @@ from sidegames.economy import wallet_for
 from sidegames.models import CoinLedger, Wallet
 
 from .bank import cash_out_everybody, sit_down, stand_up, top_up
-from .models import CashSeat, CashTable
+from .models import CashHand, CashSeat, CashTable
 from .seating import can_deal, dealable, is_bomb_pot, next_button, next_free_seat, open_seats
 from .stakes import STAKES, clean_buy_in, stake_for, top_up_room
 
@@ -582,3 +582,142 @@ class CashLobbyApiTests(APITestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["club_name"], "Quinta")
+
+
+class CashRoomLiveTests(TransactionTestCase):
+    """A hand played at a real table, with the real rows underneath it.
+
+    The room's callbacks are the ones the app uses — seats read from the
+    database, stacks written back to it, leavers paid out of it — so what is
+    being checked here is the thing every other test takes on trust: that a
+    hand of cash poker moves coins between wallets and invents none.
+    """
+
+    def setUp(self):
+        self.players = []
+        for index in range(3):
+            user = User.objects.create_user(username=f"live_{index}", password="secret123")
+            wallet_for(user)
+            Wallet.objects.filter(user=user).update(balance=1000)
+            self.players.append(user)
+        self.table = CashTable.objects.create(name="Live", stake="low", seat_count=6)
+        for index, user in enumerate(self.players):
+            sit_down(self.table, user, 300, seat_number=index)
+
+    def _room(self, **options):
+        from cash.live import _load_seats, _persist_stacks, _record_hand, _settle_leavers
+        from cash.room import CashRoom
+        from cash.stakes import stake_for
+
+        async def request_action(player, context):
+            valid = context["valid_actions"]
+            return ("check", 0) if "check" in valid else ("call", 0)
+
+        async def broadcast(event_type, payload):
+            return None
+
+        table_id = self.table.id
+        return CashRoom(
+            table_id=table_id,
+            stake=stake_for(self.table.stake),
+            seat_count=self.table.seat_count,
+            load_seats=lambda: _load_seats(table_id),
+            persist_stacks=lambda stacks: _persist_stacks(table_id, stacks),
+            settle_leavers=lambda: _settle_leavers(table_id),
+            broadcast=broadcast,
+            request_action=request_action,
+            record_hand=lambda row: _record_hand(table_id, row),
+            pause_between_hands=0,
+            idle_poll=0,
+            **options,
+        )
+
+    def _total_coins(self):
+        wallets = sum(Wallet.objects.get(user=user).balance for user in self.players)
+        felt = sum(CashSeat.objects.filter(table=self.table).values_list("stack", flat=True))
+        return wallets + felt
+
+    def _play(self, room, hands=1):
+        async def go():
+            for _ in range(hands):
+                room.seats = await room.load_seats()
+                await room.play_hand()
+
+        async_to_sync(go)()
+
+    def test_a_hand_moves_coins_between_stacks_and_creates_none(self):
+        room = self._room()
+        before = self._total_coins()
+
+        self._play(room)
+
+        self.assertEqual(self._total_coins(), before)
+        self.assertEqual(self._total_coins(), 3 * 1000)
+
+    def test_the_stacks_are_written_to_the_rows_rather_than_held_in_memory(self):
+        """A stack that only exists in the process is a stack a restart turns
+        into somebody's loss."""
+        room = self._room()
+
+        self._play(room)
+
+        stacks = list(CashSeat.objects.filter(table=self.table).values_list("stack", flat=True))
+        self.assertEqual(sum(stacks), 900)
+        # Somebody won the blinds, so they are not all still 300.
+        self.assertNotEqual(set(stacks), {300})
+
+    def test_the_hand_is_written_to_the_history(self):
+        room = self._room()
+
+        self._play(room)
+
+        hand = CashHand.objects.get()
+        self.assertEqual(hand.table_id, self.table.id)
+        self.assertGreater(hand.pot, 0)
+        self.assertEqual(len(hand.boards), 1)
+        self.table.refresh_from_db()
+        self.assertEqual(self.table.hands_played, 1)
+
+    def test_a_bomb_pot_table_deals_two_boards_and_still_adds_up(self):
+        room = self._room(bomb_pot_every=1, bomb_pot_bb=2)
+
+        self._play(room)
+
+        hand = CashHand.objects.get()
+        self.assertTrue(hand.was_bomb_pot)
+        self.assertEqual(len(hand.boards), 2)
+        self.assertEqual(self._total_coins(), 3 * 1000)
+
+    def test_leaving_mid_hand_pays_out_once_the_hand_ends(self):
+        room = self._room()
+        seat = CashSeat.objects.get(table=self.table, user=self.players[2])
+        CashSeat.objects.filter(pk=seat.pk).update(leaving=True, sitting_out=True)
+
+        self._play(room)
+
+        self.assertFalse(CashSeat.objects.filter(pk=seat.pk).exists())
+        # They left with exactly what was in front of them, and the coins still
+        # add up across everybody.
+        self.assertEqual(Wallet.objects.get(user=self.players[2]).balance, 1000)
+        self.assertEqual(self._total_coins(), 3 * 1000)
+
+    def test_a_player_who_runs_out_is_sat_out_rather_than_removed(self):
+        """In a cash game nought chips is somebody reaching for their wallet."""
+        room = self._room()
+        seat = CashSeat.objects.get(table=self.table, user=self.players[1])
+        CashSeat.objects.filter(pk=seat.pk).update(stack=0)
+
+        self._play(room)
+
+        seat.refresh_from_db()
+        self.assertTrue(seat.sitting_out)
+        self.assertEqual(seat.stack, 0)
+
+    def test_several_hands_in_a_row_keep_the_table_whole(self):
+        room = self._room()
+
+        self._play(room, hands=5)
+
+        self.assertEqual(self._total_coins(), 3 * 1000)
+        self.assertEqual(CashHand.objects.count(), 5)
+        self.assertEqual(room.hand_number, 5)

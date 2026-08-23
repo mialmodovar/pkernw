@@ -7,7 +7,9 @@ import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import CashBrowser from "../components/lobby/CashBrowser";
 import Icon from "../components/icons/Icon";
-import { readStoredTab, tabToOpen, writeStoredTab } from "../components/lobby/lobbyTab";
+import {
+  LOBBY_TABS, openTabs, readStoredTab, storedKey, writeStoredTab,
+} from "../components/lobby/lobbyTab";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -19,21 +21,6 @@ import CoinPanel from "../components/lobby/CoinPanel";
 import MissionPanel from "../components/lobby/MissionPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
-// The three things you can be playing. Written as a list rather than three
-// buttons so the strip is one loop, the way the filter chips inside the
-// tournament browser are — and so a fourth has one place to be added.
-//
-// `formats` is which of the instant formats a tab shows; the tournament tab has
-// none, being the one place where games are arranged rather than sat down at.
-const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments", icon: "trophy", formats: null },
-  { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
-  { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
-  { key: "allinfold", label: "All In or Fold", icon: "shove", formats: ["allinfold"] },
-  // Not a format like the others: a cash table is a room rather than a game
-  // that starts and ends, so this tab draws its own browser.
-  { key: "cash", label: "Cash", icon: "coin", formats: null, cash: true },
-];
 
 /**
  * Watch your own instant game and leave for the table the moment it fires.
@@ -113,13 +100,22 @@ export default function LobbyPage() {
   // Where you were last. Read once, when the page mounts: coming home from a
   // table should land you back in the room you play in, and for anybody who
   // plays one format that is every single time they leave a game.
-  const [tab, setTab] = useState(
-    () => tabToOpen(readStoredTab(), LOBBY_TABS.map((one) => one.key)),
-  );
-  const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
-  const openTab = useCallback((key) => {
-    setTab(key);
-    writeStoredTab(key);
+  const [where, setWhere] = useState(() => {
+    const { tab: firstTab, room } = openTabs(readStoredTab());
+    return { tab: firstTab.key, room: room.key };
+  });
+  const activeTab = LOBBY_TABS.find((one) => one.key === where.tab) || LOBBY_TABS[0];
+  const activeRoom = activeTab.rooms.find((one) => one.key === where.room) || activeTab.rooms[0];
+  const tab = activeTab.key;
+
+  const go = useCallback((tabKey, roomKey) => {
+    const found = LOBBY_TABS.find((one) => one.key === tabKey) || LOBBY_TABS[0];
+    // Landing on a tab lands on its first room, which is the one anybody
+    // means by pressing "Tournaments" — except when a room is named, which is
+    // the row underneath.
+    const room = found.rooms.find((one) => one.key === roomKey) || found.rooms[0];
+    setWhere({ tab: found.key, room: room.key });
+    writeStoredTab(storedKey(found.key, room.key));
   }, []);
   const onClubsLoaded = useCallback((clubs) => {
     setStaffsAClub(organisesForAClub(clubs));
@@ -207,7 +203,7 @@ export default function LobbyPage() {
     // and scroll with the page instead — a scrollbar inside a column that has
     // room to spare only makes the page feel cramped.
     <div className={`max-w-6xl mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 ${
-      activeTab.formats ? "lg:min-h-[calc(100%-4rem)]" : "lg:h-[calc(100%-4rem)]"
+      activeRoom.formats || activeRoom.cash ? "lg:min-h-[calc(100%-4rem)]" : "lg:h-[calc(100%-4rem)]"
     }`}>
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
@@ -241,7 +237,7 @@ export default function LobbyPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === one.key}
-                onClick={() => openTab(one.key)}
+                onClick={() => go(one.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
                             whitespace-nowrap transition-colors ${
                   tab === one.key
@@ -265,7 +261,7 @@ export default function LobbyPage() {
               the Tournaments tab; nothing here opens a Spin n Go, which is what
               the Sit button on the card is for. */}
           <div className="ml-auto flex items-center gap-2">
-            {tab === "tournaments" && (runsThePlace(user) || staffsAClub) && (
+            {activeRoom.key === "scheduled" && (runsThePlace(user) || staffsAClub) && (
               <>
                 <button onClick={() => navigate("/tournaments/new")}
                   className="btn-accent px-3 py-1.5 rounded font-semibold text-sm transition-colors
@@ -287,14 +283,45 @@ export default function LobbyPage() {
           </div>
         </div>
 
-        {activeTab.cash ? (
+        {/* Which kind of tournament, under which of the two things this app is.
+            Only where there is a choice to make: the cash tab has one room and
+            a strip of one is a label pretending to be a control. */}
+        {activeTab.rooms.length > 1 && (
+          <div className="shrink-0 flex items-center gap-1 overflow-x-auto"
+            role="tablist" aria-label={activeTab.label}>
+            {activeTab.rooms.map((room) => (
+              <button
+                key={room.key}
+                type="button"
+                role="tab"
+                aria-selected={activeRoom.key === room.key}
+                onClick={() => go(activeTab.key, room.key)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+                            whitespace-nowrap transition-colors border ${
+                  activeRoom.key === room.key
+                    ? "border-(--color-highlight-edge) bg-(--color-highlight-dim) text-(--color-highlight-pale)"
+                    : "border-(--color-border) text-(--color-text-muted) hover:text-(--color-silver)"
+                }`}
+              >
+                <Icon
+                  name={room.icon}
+                  className="w-3.5 h-3.5"
+                  tone={activeRoom.key === room.key ? "gold" : "mono"}
+                />
+                {room.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeRoom.cash ? (
           <CashBrowser />
-        ) : activeTab.formats ? (
+        ) : activeRoom.formats ? (
           <FastGameBrowser
-            // Remounted per tab so the prize panels a player opened on one do
+            // Remounted per room so the prize panels a player opened on one do
             // not come back open on the other.
-            key={activeTab.key}
-            formatKeys={activeTab.formats}
+            key={activeRoom.key}
+            formatKeys={activeRoom.formats}
             onOpenTable={onOpenTable}
           />
         ) : loading ? (

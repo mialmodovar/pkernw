@@ -428,13 +428,18 @@ class CashLobbyApiTests(APITestCase):
         self.table = CashTable.objects.create(name="Low 6-max", stake="low", seat_count=6)
         self.client.force_authenticate(self.player)
 
+    def _mine(self, response):
+        """This test's own table, out of a lobby that also has the app's."""
+        return next(one for one in response.data["tables"] if one["id"] == self.table.id)
+
     def test_the_lobby_lists_the_ladder_and_the_open_tables(self):
         response = self.client.get(reverse("cash-lobby"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["stakes"]), 5)
-        self.assertEqual(len(response.data["tables"]), 1)
-        row = response.data["tables"][0]
+        # The app's own tables are in there too — see PublicTablesTests.
+        self.assertGreaterEqual(len(response.data["tables"]), 3)
+        row = self._mine(response)
         self.assertEqual(row["stake_label"], "2/5")
         self.assertEqual(row["min_buy_in"], 100)
         self.assertEqual(row["max_buy_in"], 500)
@@ -443,7 +448,9 @@ class CashLobbyApiTests(APITestCase):
     def test_a_closed_table_is_not_in_the_lobby(self):
         CashTable.objects.filter(pk=self.table.pk).update(is_open=False)
 
-        self.assertEqual(self.client.get(reverse("cash-lobby")).data["tables"], [])
+        listed = self.client.get(reverse("cash-lobby")).data["tables"]
+
+        self.assertNotIn(self.table.id, [one["id"] for one in listed])
 
     def test_sitting_down_takes_the_coins_and_gives_a_seat(self):
         response = self.client.post(
@@ -721,3 +728,49 @@ class CashRoomLiveTests(TransactionTestCase):
         self.assertEqual(self._total_coins(), 3 * 1000)
         self.assertEqual(CashHand.objects.count(), 5)
         self.assertEqual(room.hand_number, 5)
+
+
+class PublicTablesTests(TestCase):
+    """The tables the app runs itself.
+
+    A cash lobby with nothing in it is one nobody comes back to: somebody has to
+    be first, and nobody wants to be first at an empty room they also had to
+    open.
+    """
+
+    def test_the_app_keeps_tables_of_its_own(self):
+        house = CashTable.objects.filter(club__isnull=True, is_open=True)
+
+        self.assertGreaterEqual(house.count(), 2)
+
+    def test_they_are_eight_handed(self):
+        for table in CashTable.objects.filter(club__isnull=True):
+            with self.subTest(table=table.name):
+                self.assertEqual(table.seat_count, 8)
+
+    def test_they_are_at_stakes_the_daily_coins_reach(self):
+        """A table you can sit at with what you have is the only kind that
+        fills. Two hundred a day has to be a session at the cheapest of them."""
+        from sidegames.economy import DAILY_COINS
+
+        from .stakes import stake_for
+
+        cheapest = min(
+            stake_for(table.stake).min_buy_in
+            for table in CashTable.objects.filter(club__isnull=True)
+        )
+        self.assertLessEqual(cheapest, DAILY_COINS)
+
+    def test_the_house_tables_run_the_ordinary_game(self):
+        """A bomb pot every ten hands is a house rule, and a house rule belongs
+        in somebody's club rather than on the app's own felt."""
+        for table in CashTable.objects.filter(club__isnull=True):
+            with self.subTest(table=table.name):
+                self.assertEqual(table.bomb_pot_every, 0)
+                self.assertFalse(table.run_it_twice)
+
+    def test_eight_is_a_seat_count_a_club_can_ask_for(self):
+        from .stakes import SEAT_CHOICES, clean_seats
+
+        self.assertIn(8, SEAT_CHOICES)
+        self.assertEqual(clean_seats(8), 8)

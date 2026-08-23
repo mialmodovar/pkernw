@@ -16,10 +16,60 @@
 export const TAB_KEY = "poker.lobbyTab";
 
 /**
+ * The two things this app is: games that are arranged, and rooms you walk into.
+ *
+ * A flat strip of five was fine at three and stopped being a strip at five —
+ * and worse, it put "Spin n Go" and "Cash" on the same footing, when one is a
+ * kind of tournament and the other is the other half of the app. So: two tabs,
+ * and the kinds of tournament inside the tournament one.
+ *
+ * `formats` is which of the instant formats a room shows. Null on the scheduled
+ * tab, which is the one place games are arranged rather than sat down at, and
+ * on cash, which draws its own browser entirely.
+ */
+export const LOBBY_TABS = [
+  {
+    key: "tournaments",
+    label: "Tournaments",
+    icon: "trophy",
+    rooms: [
+      { key: "scheduled", label: "Scheduled", icon: "trophy", formats: null },
+      { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
+      { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
+      { key: "allinfold", label: "All In or Fold", icon: "shove", formats: ["allinfold"] },
+    ],
+  },
+  {
+    key: "cash",
+    label: "Cash games",
+    icon: "coin",
+    // A cash table is a room rather than a game that starts and ends, so there
+    // is nothing to divide it into: the stakes are the rooms, and the browser
+    // draws them.
+    rooms: [{ key: "cash", label: "Cash", icon: "coin", formats: null, cash: true }],
+  },
+];
+
+/** Both levels, as the pair the lobby opens on. */
+export function openTabs(stored) {
+  const [top, room] = String(stored || "").split(":");
+  const tab = LOBBY_TABS.find((one) => one.key === top) || LOBBY_TABS[0];
+  const inside = tab.rooms.find((one) => one.key === room) || tab.rooms[0];
+  return { tab, room: inside };
+}
+
+/** What to remember, given where somebody is. */
+export function storedKey(tabKey, roomKey) {
+  return `${tabKey}:${roomKey}`;
+}
+
+/**
  * The tab to open, given whatever was stored and whatever tabs exist now.
  *
  * Falls back to the first tab for a value that is missing, corrupt, or names a
- * room that has since been removed.
+ * room that has since been removed. Kept beside openTabs above, which is the
+ * two-level version of the same question — this one still answers for a single
+ * strip, which is what the stats panel and the filters use.
  */
 export function tabToOpen(stored, keys = []) {
   return keys.includes(stored) ? stored : (keys[0] ?? null);

@@ -62,9 +62,9 @@ STAKES = (
 BY_KEY = {one.key: one for one in STAKES}
 
 # How many can sit at one. Six is the shape most cash games are actually
-# played in; the other two are there because a heads-up table and a full ring
-# are different games rather than different sizes.
-SEAT_CHOICES = (2, 6, 9)
+# played in; the others are there because a heads-up table and a full ring are
+# different games rather than different sizes of the same one.
+SEAT_CHOICES = (2, 6, 8, 9)
 DEFAULT_SEATS = 6
 
 

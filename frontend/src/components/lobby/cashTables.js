@@ -114,6 +114,10 @@ export function seatOptions(table) {
       taken: Boolean(player),
       name: player ? player.display_name || player.username : "",
       mine: player != null && seat === table.my_seat,
+      // The face, so the chairs can be drawn as the people in them. Choosing
+      // where to sit is choosing who to sit next to, and a row of numbers does
+      // not tell anybody that.
+      avatar: player || null,
     };
   });
 }

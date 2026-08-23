@@ -1,6 +1,9 @@
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from sidegames.economy import wallet_for
 from sidegames.models import CoinLedger, Wallet
@@ -412,3 +415,170 @@ class CashRoomTests(TestCase):
 
         self.assertIsNotNone(found)
         self.assertEqual(found._seat, 1)
+
+
+class CashLobbyApiTests(APITestCase):
+    """The lobby, and the ways in and out of a table."""
+
+    def setUp(self):
+        self.player = User.objects.create_user(username="cl_player", password="secret123")
+        wallet_for(self.player)
+        Wallet.objects.filter(user=self.player).update(balance=2000)
+        self.staff = User.objects.create_user(username="cl_staff", password="secret123", is_staff=True)
+        self.table = CashTable.objects.create(name="Low 6-max", stake="low", seat_count=6)
+        self.client.force_authenticate(self.player)
+
+    def test_the_lobby_lists_the_ladder_and_the_open_tables(self):
+        response = self.client.get(reverse("cash-lobby"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["stakes"]), 5)
+        self.assertEqual(len(response.data["tables"]), 1)
+        row = response.data["tables"][0]
+        self.assertEqual(row["stake_label"], "2/5")
+        self.assertEqual(row["min_buy_in"], 100)
+        self.assertEqual(row["max_buy_in"], 500)
+        self.assertIsNone(row["my_seat"])
+
+    def test_a_closed_table_is_not_in_the_lobby(self):
+        CashTable.objects.filter(pk=self.table.pk).update(is_open=False)
+
+        self.assertEqual(self.client.get(reverse("cash-lobby")).data["tables"], [])
+
+    def test_sitting_down_takes_the_coins_and_gives_a_seat(self):
+        response = self.client.post(
+            reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["stack"], 300)
+        self.assertEqual(response.data["balance"], 1700)
+        self.assertEqual(response.data["table"]["my_seat"], 0)
+
+    def test_the_first_free_chair_is_the_default(self):
+        other = User.objects.create_user(username="cl_other", password="secret123")
+        wallet_for(other)
+        Wallet.objects.filter(user=other).update(balance=2000)
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+
+        self.client.force_authenticate(other)
+        response = self.client.post(
+            reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json",
+        )
+
+        self.assertEqual(response.data["seat"], 1)
+
+    def test_a_buy_in_under_the_minimum_is_refused(self):
+        response = self.client.post(
+            reverse("cash-sit", args=[self.table.id]), {"buy_in": 20}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)
+
+    def test_leaving_between_hands_hands_the_stack_back(self):
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+
+        response = self.client.post(reverse("cash-leave", args=[self.table.id]), {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["cashed_out"], 300)
+        self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)
+
+    def test_topping_up_is_capped_at_the_table_maximum(self):
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+
+        ok = self.client.post(
+            reverse("cash-add-chips", args=[self.table.id]), {"amount": 200}, format="json",
+        )
+        too_much = self.client.post(
+            reverse("cash-add-chips", args=[self.table.id]), {"amount": 100}, format="json",
+        )
+
+        self.assertEqual(ok.data["stack"], 500)
+        self.assertEqual(too_much.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_sitting_out_and_back_in(self):
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+
+        out = self.client.post(
+            reverse("cash-sit-out", args=[self.table.id]), {"value": True}, format="json",
+        )
+        back = self.client.post(
+            reverse("cash-sit-out", args=[self.table.id]), {"value": False}, format="json",
+        )
+
+        self.assertTrue(out.data["sitting_out"])
+        self.assertFalse(back.data["sitting_out"])
+
+    def test_a_player_cannot_open_a_public_table(self):
+        response = self.client.post(
+            reverse("cash-open"), {"stake": "low", "seats": 6}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_a_club_organiser_can_open_one_in_their_club(self):
+        from clubs.models import Club, Membership
+
+        club = Club.objects.create(name="Quinta", created_by=self.player)
+        Membership.objects.create(club=club, user=self.player, role=Membership.OWNER)
+
+        response = self.client.post(
+            reverse("cash-open"),
+            {"stake": "mid", "seats": 9, "club": club.slug, "run_it_twice": True,
+             "bomb_pot_every": 10, "name": "Friday cash"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["club_name"], "Quinta")
+        self.assertEqual(response.data["seats"], 9)
+        self.assertTrue(response.data["run_it_twice"])
+        self.assertEqual(response.data["bomb_pot_every"], 10)
+
+    def test_somebody_who_only_plays_at_a_club_cannot_open_its_tables(self):
+        from clubs.models import Club, Membership
+
+        club = Club.objects.create(name="Quinta", created_by=self.staff)
+        Membership.objects.create(club=club, user=self.player, role=Membership.MEMBER)
+
+        response = self.client.post(
+            reverse("cash-open"), {"stake": "low", "club": club.slug}, format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_closing_a_table_pays_everybody_and_shuts_it(self):
+        self.client.post(reverse("cash-sit", args=[self.table.id]), {"buy_in": 300}, format="json")
+        table = CashTable.objects.get(pk=self.table.pk)
+        table.created_by = self.player
+        table.save(update_fields=["created_by"])
+
+        response = self.client.post(reverse("cash-close", args=[table.id]), {}, format="json")
+
+        self.assertEqual(response.data["paid_out"], 300)
+        self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)
+        table.refresh_from_db()
+        self.assertFalse(table.is_open)
+
+    def test_a_table_nobody_owns_is_not_closed_by_a_passer_by(self):
+        response = self.client.post(reverse("cash-close", args=[self.table.id]), {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.table.refresh_from_db()
+        self.assertTrue(self.table.is_open)
+
+    def test_the_lobby_can_be_asked_for_one_club_s_tables(self):
+        from clubs.models import Club, Membership
+
+        club = Club.objects.create(name="Quinta", created_by=self.player)
+        Membership.objects.create(club=club, user=self.player, role=Membership.OWNER)
+        self.client.post(
+            reverse("cash-open"), {"stake": "mid", "club": club.slug}, format="json",
+        )
+
+        rows = self.client.get(reverse("cash-lobby"), {"club": club.slug}).data["tables"]
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["club_name"], "Quinta")

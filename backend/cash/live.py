@@ -1,0 +1,178 @@
+"""The cash tables that are actually running, and the socket they run on.
+
+This is the join between the loop in room.py and everything outside it: the
+database rows it reads its seats from, the channel groups it broadcasts to, and
+the players' sockets it asks for decisions.
+
+It borrows the tournament's machinery rather than building a second one. The
+action request, the timer, the pending-action registry that survives a reload,
+the per-table channel group — all of it is keyed on a room id and a table
+number, and nothing in it cares whether the id belongs to a tournament. So a
+cash table is the room `cash-7`, and the rest works unchanged.
+
+Module state, like the tournament runners beside it, and for the same stated
+reason: entrypoint.sh runs one process on purpose.
+"""
+
+import asyncio
+from typing import Dict
+
+from asgiref.sync import sync_to_async
+from django.utils import timezone
+
+from game.consumers import _broadcast_table, _request_action
+
+from .bank import stand_up
+from .models import CashHand, CashSeat, CashTable
+from .room import CashRoom
+from .stakes import stake_for
+
+# table id -> the loop dealing it
+_rooms: Dict[int, CashRoom] = {}
+_tasks: Dict[int, asyncio.Task] = {}
+
+
+def room_id(table_id) -> str:
+    """The namespace a cash table lives in.
+
+    A string, so it can never collide with a tournament id in the registries
+    the two share — and readable in a log, which the group names end up in.
+    """
+    return f"cash-{table_id}"
+
+
+def running_room(table_id):
+    return _rooms.get(int(table_id))
+
+
+@sync_to_async
+def _load_seats(table_id):
+    """Every seat at the table, as the loop wants them.
+
+    Read fresh between hands rather than held: this is the moment joins,
+    leaves, top-ups and sit-outs all take effect, and reading them from the
+    rows is what makes that one moment rather than four.
+    """
+    rows = (
+        CashSeat.objects
+        .filter(table_id=table_id)
+        .select_related("user", "user__profile")
+        .order_by("seat")
+    )
+    seats = []
+    for row in rows:
+        profile = getattr(row.user, "profile", None)
+        seats.append({
+            "seat": row.seat,
+            "user_id": row.user_id,
+            "name": (getattr(profile, "display_name", "") or row.user.username),
+            "stack": row.stack,
+            "sitting_out": row.sitting_out,
+            "leaving": row.leaving,
+        })
+    return seats
+
+
+@sync_to_async
+def _persist_stacks(table_id, stacks):
+    """What everybody is left with, written down before anything else happens.
+
+    These are coins. A stack that only exists in memory is a stack that a
+    restart turns into somebody's loss.
+    """
+    for seat, chips in stacks.items():
+        CashSeat.objects.filter(table_id=table_id, seat=seat).update(
+            stack=max(0, int(chips)),
+        )
+
+
+@sync_to_async
+def _settle_leavers(table_id):
+    """Pay out anybody who asked to go, and sit out anybody with nothing left.
+
+    Both between hands, which is the only safe moment: a seat cashed out in the
+    middle of a hand is a pot with a hole in it.
+    """
+    for seat in CashSeat.objects.filter(table_id=table_id, leaving=True).select_related("user"):
+        stand_up(seat)
+    CashSeat.objects.filter(table_id=table_id, stack__lte=0).update(sitting_out=True)
+
+
+@sync_to_async
+def _record_hand(table_id, row):
+    CashHand.objects.create(
+        table_id=table_id,
+        hand_number=row["hand_number"],
+        pot=row["pot"],
+        awards=row["awards"],
+        boards=row["boards"],
+        was_bomb_pot=row["was_bomb_pot"],
+        ran_twice=row["ran_twice"],
+    )
+    CashTable.objects.filter(id=table_id).update(
+        hands_played=row["hand_number"], last_hand_at=timezone.now(),
+    )
+
+
+@sync_to_async
+def _table_row(table_id):
+    return CashTable.objects.filter(id=table_id, is_open=True).first()
+
+
+async def ensure_room(table_id):
+    """The loop for this table, started if it is not already running.
+
+    Booted by the first socket to arrive rather than by anything on a schedule,
+    exactly like a tournament's engine: a table nobody is looking at has nothing
+    to deal.
+    """
+    table_id = int(table_id)
+    existing = _rooms.get(table_id)
+    if existing is not None and existing.running:
+        return existing
+
+    table = await _table_row(table_id)
+    if table is None:
+        return None
+    stake = stake_for(table.stake)
+    if stake is None:
+        return None
+
+    room = CashRoom(
+        table_id=table_id,
+        stake=stake,
+        seat_count=table.seat_count,
+        load_seats=lambda: _load_seats(table_id),
+        persist_stacks=lambda stacks: _persist_stacks(table_id, stacks),
+        settle_leavers=lambda: _settle_leavers(table_id),
+        broadcast=lambda event_type, payload: _broadcast_table(
+            room_id(table_id), 1, event_type, payload,
+        ),
+        request_action=lambda player, context: _request_action(
+            room_id(table_id), 1, player, context,
+        ),
+        record_hand=lambda row: _record_hand(table_id, row),
+        run_it_twice=table.run_it_twice,
+        bomb_pot_every=table.bomb_pot_every,
+        bomb_pot_bb=table.bomb_pot_bb,
+        rabbit_hunting=table.rabbit_hunting,
+    )
+    # Where the hand count picks up, so a table restarted mid-session does not
+    # deal hand one again — and does not deal a bomb pot the moment it comes
+    # back, which is when nobody has their bearings.
+    room.hand_number = table.hands_played
+    _rooms[table_id] = room
+    _tasks[table_id] = asyncio.create_task(room.run())
+    return room
+
+
+def stop_room(table_id):
+    """Stop dealing. The hand in progress finishes; nothing follows it."""
+    table_id = int(table_id)
+    room = _rooms.pop(table_id, None)
+    if room is not None:
+        room.stop()
+    task = _tasks.pop(table_id, None)
+    if task is not None:
+        task.cancel()
+    return room is not None

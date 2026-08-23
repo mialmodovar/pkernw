@@ -221,13 +221,18 @@ export default function LobbyPage() {
       </aside>
 
       <main className="flex-1 min-h-0 flex flex-col gap-4">
-        <div className="shrink-0 flex items-center gap-3">
+        <div className="shrink-0 flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* One segmented control rather than three headline-sized pills. These
               are a way of switching what the page is showing, and they were
               set in the size of a page title — which read as three competing
               headings with no page underneath any of them. */}
+          {/* Full width on a phone, where two tabs fit side by side with room
+              to spare — it was only ever scrolling because the New tournament
+              button was on the same line pushing it off the screen. A control
+              you have to drag to see the other half of is not a control. */}
           <div
-            className="flex items-center gap-0.5 p-0.5 rounded-lg panel-raised overflow-x-auto"
+            className="flex items-center gap-0.5 p-0.5 rounded-lg panel-raised
+                       w-full sm:w-auto"
             role="tablist"
             aria-label="Game mode"
           >
@@ -238,7 +243,8 @@ export default function LobbyPage() {
                 role="tab"
                 aria-selected={tab === one.key}
                 onClick={() => go(one.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
+                className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5
+                            px-3 py-1.5 rounded-md text-sm font-semibold
                             whitespace-nowrap transition-colors ${
                   tab === one.key
                     ? "bg-(--color-accent) text-(--color-accent-text)"
@@ -264,9 +270,12 @@ export default function LobbyPage() {
             {activeRoom.key === "scheduled" && (runsThePlace(user) || staffsAClub) && (
               <>
                 <button onClick={() => navigate("/tournaments/new")}
-                  className="btn-accent px-3 py-1.5 rounded font-semibold text-sm transition-colors
-                             whitespace-nowrap">
-                  New tournament
+                  className="btn-accent px-2.5 sm:px-3 py-1 sm:py-1.5 rounded font-semibold
+                             text-xs sm:text-sm transition-colors whitespace-nowrap">
+                  {/* On a phone the noun is the button: there is one kind of
+                      thing this page makes, and spelling it out cost a third
+                      of the width of the screen. */}
+                  New<span className="hidden sm:inline"> tournament</span>
                 </button>
                 {/* A layout tool, not a way to play, so it is an icon beside
                     the thing it is a tool for rather than a button the same
@@ -286,8 +295,11 @@ export default function LobbyPage() {
         {/* Which kind of tournament, under which of the two things this app is.
             Only where there is a choice to make: the cash tab has one room and
             a strip of one is a label pretending to be a control. */}
+        {/* Wrapped rather than scrolled: four rooms do not fit across a phone,
+            and a second line of pills is readable where a strip that hides two
+            of them is not. */}
         {activeTab.rooms.length > 1 && (
-          <div className="shrink-0 flex items-center gap-1 overflow-x-auto"
+          <div className="shrink-0 flex flex-wrap items-center gap-1"
             role="tablist" aria-label={activeTab.label}>
             {activeTab.rooms.map((room) => (
               <button

@@ -1,5 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .google_views import google_config, google_link, google_sign_in
 from .views import (
     RegisterView, MeView, avatar_image, avatar_image_for_user, update_avatar,
     update_display_name, update_preferences, update_theme,
@@ -23,6 +24,11 @@ urlpatterns = [
     path("me/recovery-code/", reset_recovery_code, name="reset_recovery_code"),
     # Public, obviously: somebody who could log in would not be here.
     path("recover/", recover_password, name="recover_password"),
+    # Signing in with Google, and connecting one to an account that already
+    # exists. See accounts/googleauth.py.
+    path("google/", google_sign_in, name="google-sign-in"),
+    path("google/config/", google_config, name="google-config"),
+    path("google/link/", google_link, name="google-link"),
     path("players/search/", search_players, name="search_players"),
     path("me/stats/", my_stats, name="my_stats"),
     path("online/", online_now, name="online-now"),

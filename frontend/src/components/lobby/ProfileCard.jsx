@@ -2,6 +2,7 @@ import { useState } from "react";
 import Avatar from "../Avatar";
 import useAuthStore from "../../store/authStore";
 import EmojiPicker from "./EmojiPicker";
+import GoogleAccount from "./GoogleAccount";
 import ThemeSettings from "./ThemeSettings";
 
 export default function ProfileCard() {
@@ -62,7 +63,15 @@ export default function ProfileCard() {
       {openPanel === "avatar" && (
         <EmojiPicker onSelect={updateAvatar} onClose={() => setOpenPanel(null)} />
       )}
-      {openPanel === "settings" && <ThemeSettings onClose={() => setOpenPanel(null)} />}
+      {openPanel === "settings" && (
+        <>
+          <ThemeSettings onClose={() => setOpenPanel(null)} />
+          {/* Account plumbing rather than appearance, and this is where the
+              account already is: the card with your own name on it. Draws
+              nothing where no Google project is configured. */}
+          <GoogleAccount />
+        </>
+      )}
     </div>
   );
 }

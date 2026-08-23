@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import GoogleButton from "../components/auth/GoogleButton";
 import ClubsStep from "../components/onboarding/ClubsStep";
 import ModesStep from "../components/onboarding/ModesStep";
 import RecoveryCodeStep from "../components/onboarding/RecoveryCodeStep";
@@ -88,6 +89,7 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false);
 
   const register = useAuthStore((s) => s.register);
+  const googleSignIn = useAuthStore((s) => s.googleSignIn);
   const login = useAuthStore((s) => s.login);
   const updateTheme = useThemeStore((s) => s.update);
   const saveShowBB = useGameStore((s) => s.setShowBB);
@@ -109,6 +111,25 @@ export default function RegisterPage() {
     const next = nextStep(step);
     if (next) setStep(next);
     else navigate(wanted, { replace: true });
+  };
+
+  // Signing up through Google instead. The account comes back made, with its
+  // recovery code in the same reply, so this joins the same path as the form
+  // one step further along.
+  const handleGoogle = async (credential) => {
+    setError("");
+    setBusy(true);
+    try {
+      const account = await googleSignIn(credential);
+      updateTheme({ preset });
+      saveShowBB(showBB);
+      setRecoveryCode(account?.recovery_code || "");
+      setStep(account?.recovery_code ? "recovery" : "clubs");
+    } catch (failure) {
+      setError(failure.response?.data?.error || "That Google sign-in did not go through.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -191,6 +212,17 @@ export default function RegisterPage() {
                 className="link-accent">Log in</Link>
             </p>
           </form>
+        )}
+
+        {/* The other way to arrive, where this installation has a Google
+            project. Outside the form on purpose: it is not a field, and
+            pressing it must not submit the half-filled one above it. The steps
+            after this — a table, chips or blinds, clubs to join — are the same
+            either way, so it lands on the code and carries on through them. */}
+        {step === "account" && (
+          <div className="mt-4 pt-4 border-t border-(--color-border) space-y-2">
+            <GoogleButton onCredential={handleGoogle} text="signup_with" onError={setError} />
+          </div>
         )}
 
         {step === "recovery" && <RecoveryCodeStep code={recoveryCode} onDone={advance} />}

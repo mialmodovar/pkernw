@@ -80,13 +80,30 @@ class ProfileSerializer(serializers.ModelSerializer):
     # itself — that is readable exactly once, at the moment it is made.
     has_recovery_code = serializers.SerializerMethodField()
 
+    # The other way back in, and whose it is. The `sub` never leaves the server:
+    # what anybody needs to see is which Google account is connected, and the
+    # address is the only readable part of that.
+    google_email = serializers.SerializerMethodField()
+    has_password = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
         fields = ("avatar_emoji", "avatar_border", "avatar_url", "display_name", "theme", "preferences",
-                  "has_recovery_code")
+                  "has_recovery_code", "google_email", "has_password")
 
     def get_has_recovery_code(self, profile):
         return bool(profile.recovery_code_hash)
+
+    def get_google_email(self, profile):
+        return profile.google_email if profile.google_sub else ""
+
+    def get_has_password(self, profile):
+        """Whether there is a password on this account at all.
+
+        An account made through Google has none, and that decides one thing:
+        whether disconnecting Google would be the same as locking yourself out.
+        """
+        return bool(profile.user_id and profile.user.has_usable_password())
 
     def get_display_name(self, profile):
         return shown_name(profile.user.username, profile.display_name)

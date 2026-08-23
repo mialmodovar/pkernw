@@ -6598,3 +6598,98 @@ class AllInOrFoldFormatTests(APITestCase):
 		self.assertEqual(len(fmt["tiers"]), 2)
 		self.assertEqual(fmt["seats"], 4)
 		self.assertEqual(fmt["big_blinds"], 15)
+
+
+class EditingAScheduledNightTests(APITestCase):
+	"""Changing one thing about a tournament without changing the rest.
+
+	The edit form sends everything it holds and leaves out what the host is not
+	allowed to change — the buy-in, the payouts, the bounties. Anything the
+	validator read straight out of the payload rather than off the tournament
+	was therefore read as absent, and then written back as absent.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="edit_host", password="secret123")
+		self.client.force_authenticate(self.host)
+		self.tournament = Tournament.objects.create(
+			host=self.host, name="Friday", status="lobby",
+			buy_in_cents=500, bounty_mode="mystery", bounty_cents=250,
+			mystery_release="itm",
+			payout_structure=[
+				{"place": 1, "label": "1st", "percentage": 50},
+				{"place": 2, "label": "2nd", "percentage": 30},
+				{"place": 3, "label": "3rd", "percentage": 20},
+			],
+			scheduled_start_at=timezone.now() + timedelta(days=2),
+		)
+		from .models import BlindLevel
+
+		for number, (sb, bb) in enumerate([(25, 50), (50, 100), (100, 200)], 1):
+			BlindLevel.objects.create(
+				tournament=self.tournament, level_number=number, is_break=False,
+				small_blind=sb, big_blind=bb, ante=0, duration_hands=8,
+			)
+
+	def _edit(self, **payload):
+		return self.client.patch(
+			reverse("tournament-edit", kwargs={"pk": self.tournament.id}),
+			payload, format="json",
+		)
+
+	def test_moving_the_start_time_does_not_need_the_payouts_sent_again(self):
+		"""The error this was reported as: "Opening at the money needs a payout
+		structure to have a money", on a tournament that has one."""
+		later = timezone.now() + timedelta(days=3)
+
+		response = self._edit(scheduled_start_at=later.isoformat())
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+	def test_and_does_not_quietly_empty_them(self):
+		"""The worse half of the same bug: on a night with no mystery pool to
+		refuse the save, the structure was replaced with an empty one and the
+		night would have paid nobody."""
+		Tournament.objects.filter(pk=self.tournament.pk).update(bounty_mode="none")
+		later = timezone.now() + timedelta(days=3)
+
+		self._edit(scheduled_start_at=later.isoformat())
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(len(self.tournament.payout_structure), 3)
+		self.assertEqual(self.tournament.payout_structure[0]["percentage"], 50)
+
+	def test_the_blind_ladder_is_left_alone_when_it_is_not_mentioned(self):
+		later = timezone.now() + timedelta(days=3)
+
+		self._edit(scheduled_start_at=later.isoformat())
+
+		self.assertEqual(self.tournament.levels.count(), 3)
+		self.assertEqual(
+			list(self.tournament.levels.order_by("level_number")
+			     .values_list("big_blind", flat=True)),
+			[50, 100, 200],
+		)
+
+	def test_a_time_bank_refill_rule_survives_an_edit_that_says_nothing_about_it(self):
+		Tournament.objects.filter(pk=self.tournament.pk).update(
+			time_bank_seconds=30, time_bank_refill_rule="hands",
+			time_bank_refill_every_hands=20,
+		)
+
+		response = self._edit(name="Friday night")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.time_bank_refill_every_hands, 20)
+
+	def test_the_payouts_cannot_be_changed_by_sending_them_either(self):
+		"""Which is why the form leaves them out in the first place: the money
+		is the deal people registered on, and it is locked after creation. The
+		fallback added above must read the tournament's own rather than let an
+		empty payload through the side door."""
+		response = self._edit(payout_structure=[])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		self.tournament.refresh_from_db()
+		self.assertEqual(len(self.tournament.payout_structure), 3)

@@ -514,9 +514,25 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         scheduled_start_at = attrs.get("scheduled_start_at")
         time_bank_seconds = attrs.get("time_bank_seconds", getattr(self.instance, "time_bank_seconds", 0))
         time_bank_refill_rule = attrs.get("time_bank_refill_rule", getattr(self.instance, "time_bank_refill_rule", "none"))
-        time_bank_refill_every_hands = attrs.get("time_bank_refill_every_hands")
-        time_bank_refill_level = attrs.get("time_bank_refill_level")
-        payout_structure = attrs.get("payout_structure", [])
+        # These three fall back to the instance like everything else here, and
+        # did not. On a partial edit — changing the start time of a scheduled
+        # night, which sends no payouts because the payouts are locked — this
+        # read them as absent and then wrote the absence back: the structure was
+        # replaced with an empty one, and a mystery tournament was refused
+        # outright with "opening at the money needs a payout structure", which
+        # is true of the tournament it had just emptied rather than of the one
+        # being saved.
+        time_bank_refill_every_hands = attrs.get(
+            "time_bank_refill_every_hands",
+            getattr(self.instance, "time_bank_refill_every_hands", None),
+        )
+        time_bank_refill_level = attrs.get(
+            "time_bank_refill_level",
+            getattr(self.instance, "time_bank_refill_level", None),
+        )
+        payout_structure = attrs.get(
+            "payout_structure", getattr(self.instance, "payout_structure", None) or [],
+        )
         showdown_seconds = attrs.get("showdown_seconds", getattr(self.instance, "showdown_seconds", 5))
         bounty_mode = attrs.get("bounty_mode", getattr(self.instance, "bounty_mode", "none"))
         bounty_cents = attrs.get("bounty_cents", getattr(self.instance, "bounty_cents", 0))

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import UserChip from "./UserChip";
@@ -6,6 +6,7 @@ import OnlineChip from "./OnlineChip";
 import useAuthStore from "../store/authStore";
 import useWalletStore from "../store/walletStore";
 import Icon from "./icons/Icon";
+import CoinPanel from "./lobby/CoinPanel";
 
 // Nobody is signed in on these, so there is nothing to put in it.
 const HIDDEN_ON = [/^\/(login|register|recover)\b/];
@@ -31,11 +32,23 @@ export default function AppHeader() {
   const claim = useWalletStore((s) => s.claim);
   const fetchWallet = useWalletStore((s) => s.fetchWallet);
 
+  // What coins are, and how to get today's — asked from the figure itself,
+  // since that is what somebody is looking at when they wonder.
+  const [coinsOpen, setCoinsOpen] = useState(false);
+
   const hidden = !user || HIDDEN_ON.some((pattern) => pattern.test(location.pathname));
 
   useEffect(() => {
     if (!hidden) fetchWallet();
   }, [hidden, fetchWallet]);
+
+  // Escape closes it, like every other thing that opens over the page here.
+  useEffect(() => {
+    if (!coinsOpen) return undefined;
+    const key = (event) => { if (event.key === "Escape") setCoinsOpen(false); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [coinsOpen]);
 
   if (hidden) return null;
   const atHome = location.pathname === "/";
@@ -82,15 +95,29 @@ export default function AppHeader() {
         <OnlineChip />
 
         {/* Coins, beside the name, on every page — the number you check before
-            deciding whether you can afford to sit down. */}
+            deciding whether you can afford to sit down. And now the only place
+            they are: the lobby had a panel of its own repeating this figure two
+            inches below it, which on a phone was a block of the screen spent
+            saying the same thing twice.
+
+            So the figure opens what the panel said. The claim button stays
+            where it is rather than moving inside: taking today's coins is one
+            press from anywhere, and it is the one thing here nobody should have
+            to go looking for. */}
         {balance != null && (
-          <span
-            title={`${balance.toLocaleString()} coins`}
-            className="flex items-center gap-1.5 text-sm font-semibold
-                       text-(--color-highlight-text) tabular-nums"
-          >
-            <Icon name="coin" className="w-4 h-4" tone="gold" label="Coins" />
-            {balance.toLocaleString()}
+          <div className="relative flex items-center gap-1.5 text-sm font-semibold
+                          text-(--color-highlight-text) tabular-nums">
+            <button
+              type="button"
+              onClick={() => setCoinsOpen((was) => !was)}
+              aria-expanded={coinsOpen}
+              title={`${balance.toLocaleString()} coins — what they are and what they buy`}
+              className="flex items-center gap-1.5 rounded px-1 -mx-1
+                         hover:text-(--color-highlight-pale) transition-colors"
+            >
+              <Icon name="coin" className="w-4 h-4" tone="gold" label="Coins" />
+              {balance.toLocaleString()}
+            </button>
             {canClaim && (
               <button
                 type="button"
@@ -104,7 +131,23 @@ export default function AppHeader() {
                 +{dailyAmount}
               </button>
             )}
-          </span>
+
+            {coinsOpen && (
+              <>
+                {/* A click anywhere else closes it, which is what people do
+                    instead of finding the button again. */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setCoinsOpen(false)}
+                  aria-hidden="true"
+                />
+                <div className="absolute right-0 top-full mt-2 z-50 w-64
+                                font-normal normal-nums">
+                  <CoinPanel />
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         <UserChip />

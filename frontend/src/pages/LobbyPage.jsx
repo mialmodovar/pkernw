@@ -6,12 +6,13 @@ import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import CashBrowser from "../components/lobby/CashBrowser";
+import NewCashTableModal from "../components/lobby/NewCashTableModal";
 import Icon from "../components/icons/Icon";
 import {
   LOBBY_TABS, openTabs, readStoredTab, storedKey, writeStoredTab,
 } from "../components/lobby/lobbyTab";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
-import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
+import { clubsYouOrganise, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
 import RecoveryCodePanel from "../components/lobby/RecoveryCodePanel";
 import StatsPanel from "../components/lobby/StatsPanel";
@@ -96,7 +97,11 @@ export default function LobbyPage() {
   const navigate = useNavigate();
   // Opening a tournament now takes site staff or a club you help run, and the
   // button follows the same rule the server does.
-  const [staffsAClub, setStaffsAClub] = useState(false);
+  // The clubs you could open a game for, rather than only whether there is
+  // one: the cash dialog has to ask which, and a picker built from clubs you
+  // merely play at would offer rooms the server will refuse.
+  const [myClubs, setMyClubs] = useState([]);
+  const [openingCash, setOpeningCash] = useState(false);
   // Where you were last. Read once, when the page mounts: coming home from a
   // table should land you back in the room you play in, and for anybody who
   // plays one format that is every single time they leave a game.
@@ -118,7 +123,7 @@ export default function LobbyPage() {
     writeStoredTab(storedKey(found.key, room.key));
   }, []);
   const onClubsLoaded = useCallback((clubs) => {
-    setStaffsAClub(organisesForAClub(clubs));
+    setMyClubs(clubsYouOrganise(clubs));
   }, []);
 
   // The three scopes overlap — a tournament you are seated at and that is open
@@ -267,7 +272,17 @@ export default function LobbyPage() {
               the Tournaments tab; nothing here opens a Spin n Go, which is what
               the Sit button on the card is for. */}
           <div className="ml-auto flex items-center gap-2">
-            {activeRoom.key === "scheduled" && (runsThePlace(user) || staffsAClub) && (
+            {/* A cash table belongs to a club, so this is the same permission
+                the tournament button asks for and the same one the server
+                checks. */}
+            {activeRoom.cash && (runsThePlace(user) || myClubs.length > 0) && (
+              <button onClick={() => setOpeningCash(true)}
+                className="btn-accent px-2.5 sm:px-3 py-1 sm:py-1.5 rounded font-semibold
+                           text-xs sm:text-sm transition-colors whitespace-nowrap">
+                New<span className="hidden sm:inline"> cash table</span>
+              </button>
+            )}
+            {activeRoom.key === "scheduled" && (runsThePlace(user) || myClubs.length > 0) && (
               <>
                 <button onClick={() => navigate("/tournaments/new")}
                   className="btn-accent px-2.5 sm:px-3 py-1 sm:py-1.5 rounded font-semibold
@@ -324,6 +339,14 @@ export default function LobbyPage() {
               </button>
             ))}
           </div>
+        )}
+
+        {openingCash && (
+          <NewCashTableModal
+            clubs={myClubs}
+            allowPublic={runsThePlace(user)}
+            onClose={() => setOpeningCash(false)}
+          />
         )}
 
         {activeRoom.cash ? (

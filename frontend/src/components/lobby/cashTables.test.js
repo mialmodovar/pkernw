@@ -120,6 +120,17 @@ describe("waitingLine", () => {
     expect(satOut).toMatch(/sitting out/);
   });
 
+  it("says when a chair is taken by somebody who is not there", () => {
+    // Two seated and no hand being dealt reads as broken. What is actually
+    // happening is that one of them has left the page.
+    const line = waitingLine({ seated: 2, dealable: 1, away: 1, seats: 6 });
+    expect(line).toMatch(/away from the table/);
+  });
+
+  it("says nothing once two people are actually there", () => {
+    expect(waitingLine({ seated: 3, dealable: 2, away: 1, seats: 6 })).toBe("");
+  });
+
   it("has nothing to say about a table that never spoke", () => {
     expect(waitingLine(null)).toBe("");
   });

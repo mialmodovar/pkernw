@@ -26,6 +26,19 @@ export function organisesForAClub(clubs) {
 }
 
 /**
+ * The clubs you could open a game for, out of the ones you are in.
+ *
+ * The same two roles as above, kept beside them so "organises" is one answer
+ * rather than two that drift. A picker built from every club you are a member
+ * of would offer people rooms the server will refuse them.
+ */
+export function clubsYouOrganise(clubs) {
+  return (clubs || []).filter(
+    (club) => club?.my_role === "owner" || club?.my_role === "staff",
+  );
+}
+
+/**
  * Whether this person may open a tournament.
  *
  * Two ways in, matching StaffCreatesTournaments on the server: site staff, who

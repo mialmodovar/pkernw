@@ -17,11 +17,15 @@ while somebody was betting into it is a pot that cannot be settled.
 """
 
 import asyncio
+import time
 
 from game.engine.hand import HandEngine
 from game.engine.player import Player
 
-from .seating import can_deal, dealable, is_bomb_pot, next_button
+from .seating import (
+    MISSES_BEFORE_SITTING_OUT, absent, can_deal, dealable, is_bomb_pot,
+    missed_the_clock, next_button,
+)
 
 # How long the table waits before looking again, when there is nobody to deal
 # to. Long enough not to spin, short enough that somebody sitting down does not
@@ -51,12 +55,15 @@ class CashRoom:
         broadcast,
         request_action,
         record_hand=None,
+        mind_absent=None,
+        sit_out=None,
         run_it_twice=False,
         bomb_pot_every=0,
         bomb_pot_bb=2,
         rabbit_hunting=True,
         pause_between_hands=BETWEEN_HANDS_SECONDS,
         idle_poll=IDLE_POLL_SECONDS,
+        action_seconds=ACTION_SECONDS,
     ):
         self.table_id = table_id
         self.stake = stake
@@ -67,12 +74,15 @@ class CashRoom:
         self.broadcast = broadcast
         self.request_action = request_action
         self.record_hand = record_hand
+        self.mind_absent = mind_absent
+        self.sit_out = sit_out
         self.run_it_twice = run_it_twice
         self.bomb_pot_every = bomb_pot_every
         self.bomb_pot_bb = bomb_pot_bb
         self.rabbit_hunting = rabbit_hunting
         self.pause_between_hands = pause_between_hands
         self.idle_poll = idle_poll
+        self.action_seconds = action_seconds
 
         self.hand_number = 0
         self.button = None
@@ -81,6 +91,15 @@ class CashRoom:
         # The runtime players of the hand being dealt, by seat, so a socket can
         # find whoever it belongs to while a hand is in progress.
         self._playing = {}
+        # Hands in a row somebody has let the clock run out on, by seat. Held
+        # here rather than written down: it is about the last few minutes, and
+        # a seat that goes and comes back starts again either way.
+        self._missed = {}
+        # Who has actually done something in the hand being dealt. A hand
+        # counts as missed only if they never acted in it at all — timing out
+        # on the river after betting the flop is a decision, and a slow one is
+        # still a player.
+        self._acted = set()
 
     # ── the loop ─────────────────────────────────────────────────────────
 
@@ -90,6 +109,11 @@ class CashRoom:
         try:
             while self.running:
                 self.seats = await self.load_seats()
+                # Before anything else, and between hands only: whoever has
+                # stopped being at the table gets their coins back and their
+                # chair given up. A stack nobody is behind is not a player.
+                if await self._mind_the_absent():
+                    self.seats = await self.load_seats()
                 if not can_deal(self.seats):
                     await self._announce_waiting()
                     await asyncio.sleep(self.idle_poll)
@@ -99,13 +123,29 @@ class CashRoom:
         finally:
             self.running = False
 
+    async def _mind_the_absent(self):
+        """Give up on the seats nobody is at. True if any of them went."""
+        if self.mind_absent is None:
+            return False
+        gone = await self.mind_absent() or []
+        for seat in gone:
+            await self.broadcast("player_stood_up", {
+                "seat": seat["seat"], "coins": seat.get("coins", 0), "reason": "away",
+            })
+        return bool(gone)
+
     def stop(self):
         self.running = False
 
     async def _announce_waiting(self):
+        ready = dealable(self.seats)
         await self.broadcast("table_waiting", {
             "seated": len(self.seats),
-            "dealable": len(dealable(self.seats)),
+            # Not "seated minus sitting out": a chair with nobody behind it is
+            # not somebody to deal to either, and the felt should say so rather
+            # than count two players and then not start.
+            "dealable": len(ready),
+            "away": sum(1 for one in self.seats if absent(one)),
             "seats": self.seat_count,
         })
 
@@ -132,6 +172,7 @@ class CashRoom:
         # cash poker, and it cannot be worked out afterwards from the pot: a
         # player can win one and still be down on the hand.
         started_with = {player._seat: player.chips for player in players}
+        self._acted = set()
 
         dealer_index = next(
             (index for index, one in enumerate(playing) if one["seat"] == self.button), 0,
@@ -192,8 +233,34 @@ class CashRoom:
         # walking out with their coins and the other is a player who has to
         # reach for their wallet.
         await self.settle_leavers()
+        await self._sit_out_the_absent([player._seat for player in players])
         self._playing = {}
         return result
+
+    async def _sit_out_the_absent(self, dealt_in):
+        """Stop dealing to anybody who has not acted in two hands running.
+
+        Counted by the hand rather than by the turn: a hand asks a player up to
+        four times, and three of those going by is one absence, not three.
+        """
+        for seat in dealt_in:
+            if seat in self._acted:
+                self._missed.pop(seat, None)
+            else:
+                self._missed[seat] = self._missed.get(seat, 0) + 1
+
+        gone = [
+            seat for seat, misses in self._missed.items()
+            if misses >= MISSES_BEFORE_SITTING_OUT
+        ]
+        if not gone:
+            return
+        for seat in gone:
+            self._missed.pop(seat, None)
+        if self.sit_out is not None:
+            await self.sit_out(gone)
+        for seat in gone:
+            await self.broadcast("player_sitting_out", {"seat": seat, "value": True})
 
     def _runtime(self, seat):
         """One seated row, as the engine's idea of a player."""
@@ -208,8 +275,21 @@ class CashRoom:
         return player
 
     async def _ask(self, player, context):
-        """One decision, with the clock the table runs on."""
-        return await self.request_action(player, {**context, "action_timer_seconds": ACTION_SECONDS})
+        """One decision, with the clock the table runs on.
+
+        Timed, because the answer does not say whether anybody gave it: a fold
+        arrives as a fold whether it was pressed or the clock ran out. Somebody
+        who lets it run out twice in a row is not at the table, whatever their
+        socket says, and the table stops dealing them in before it costs them
+        another blind.
+        """
+        started = time.monotonic()
+        answer = await self.request_action(
+            player, {**context, "action_timer_seconds": self.action_seconds},
+        )
+        if not missed_the_clock(time.monotonic() - started, self.action_seconds):
+            self._acted.add(player._seat)
+        return answer
 
     # ── what a socket needs ──────────────────────────────────────────────
 

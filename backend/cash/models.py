@@ -92,6 +92,12 @@ class CashSeat(models.Model):
     leaving = models.BooleanField(default=False)
 
     joined_at = models.DateTimeField(auto_now_add=True)
+    # When this seat stopped being one anybody was playing — sat out, or with
+    # nobody connected behind it. Cleared the moment they are back. A seat that
+    # stays this way is given up on: the chips go home rather than sitting on a
+    # table the player has left, which is the difference between a cash game
+    # and an unattended stack.
+    away_since = models.DateTimeField(null=True, blank=True)
     # What they have brought to this seat in total, so a session's result is
     # readable without walking the ledger.
     bought_in = models.IntegerField(default=0)

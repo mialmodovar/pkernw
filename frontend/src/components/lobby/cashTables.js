@@ -89,8 +89,15 @@ export function waitingLine(waiting) {
   if (!waiting) return "";
   const seated = waiting.seated || 0;
   const ready = waiting.dealable || 0;
+  const away = waiting.away || 0;
   if (ready >= 2) return "";
   if (seated <= 1) return "Waiting for another player to sit down.";
+  // Taken chairs with nobody behind them. Worth saying out loud rather than
+  // counting as players: a table that says "2 seated" and then does not deal
+  // reads as broken, and what is actually happening is that somebody has left
+  // the page. They are not dealt in, so nobody pays blinds for their absence,
+  // and the table gives their seat up if they stay gone.
+  if (away > 0) return "Waiting — somebody here is away from the table.";
   if (ready <= 0) return "Waiting — nobody at the table is being dealt in.";
   return "Waiting — somebody here is sitting out or out of chips.";
 }

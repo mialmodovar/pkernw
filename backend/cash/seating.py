@@ -38,13 +38,54 @@ def can_deal(seats):
 
 
 def dealable(seats):
-    """The seats that take cards in the next hand, in seat order."""
+    """The seats that take cards in the next hand, in seat order.
+
+    Being there is one of the conditions. A seat whose player has no socket at
+    the table is a chair with a stack in front of it and nobody behind it, and
+    dealing to one means taking that player's blinds every orbit until they
+    come back to find them gone. `is_here` is missing from a seat that nobody
+    has asked the question about, and a missing answer is not a reason to stop
+    dealing — the live layer is where it gets filled in.
+    """
     return [
         seat for seat in sorted(seats, key=lambda one: one["seat"])
         if not seat.get("sitting_out")
         and not seat.get("leaving")
+        and seat.get("is_here", True)
         and (seat.get("stack") or 0) > 0
     ]
+
+
+def absent(seat):
+    """Whether this seat is one nobody is playing right now.
+
+    Away or sitting out. The two are different choices and the table treats
+    them differently — a sit-out is a decision and a disconnection is not — but
+    for the purposes of "is anybody there", they are the same answer.
+    """
+    return bool(seat.get("sitting_out")) or not seat.get("is_here", True)
+
+
+# How many hands in a row somebody can let the clock run out before the table
+# stops dealing them in. Two, because one is a phone call and two is a player
+# who is not there — and the second one has already cost them a blind.
+MISSES_BEFORE_SITTING_OUT = 2
+
+
+def missed_the_clock(elapsed, action_seconds, slack=0.5):
+    """Whether nobody actually acted on that turn.
+
+    Inferred from how long it took, because that is the one thing the answer
+    itself does not say: a fold arrives as a fold whether it was pressed or
+    timed out. Taking the whole clock is the only way a decision gets made
+    without anybody making it.
+    """
+    if not action_seconds or action_seconds <= 0:
+        return False
+    # The slack is half a second off a twenty-second clock, and a quarter of
+    # anything shorter — a fixed half second is longer than some clocks, and
+    # subtracting it from those would make every answer look like a timeout.
+    return elapsed >= action_seconds - min(slack, action_seconds * 0.25)
 
 
 def next_button(seats, previous_button):

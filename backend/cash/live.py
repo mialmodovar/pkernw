@@ -21,7 +21,7 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.utils import timezone
 
 from accounts.avatars import avatar_url
-from game.consumers import _broadcast_table, _notify_user, _request_action
+from game.consumers import _broadcast_table, _notify_user, _player_channels, _request_action
 
 from .bank import stand_up
 from .models import CashHand, CashHandSeat, CashSeat, CashTable
@@ -70,6 +70,10 @@ def seat_rows(table_id):
         seats.append({
             "seat": row.seat,
             "user_id": row.user_id,
+            # Whether anybody is behind this chair. The same registry the
+            # engine delivers a turn through, so "here" means the one thing it
+            # can mean: there is a socket at this table for this player.
+            "is_here": (room_id(table_id), row.user_id) in _player_channels,
             "name": (getattr(profile, "display_name", "") or row.user.username),
             "stack": row.stack,
             "sitting_out": row.sitting_out,
@@ -110,6 +114,59 @@ def _settle_leavers(table_id):
     for seat in CashSeat.objects.filter(table_id=table_id, leaving=True).select_related("user"):
         stand_up(seat)
     CashSeat.objects.filter(table_id=table_id, stack__lte=0).update(sitting_out=True)
+
+
+# How long a seat is held for somebody who is not there. Two different
+# numbers on purpose: sitting out is a decision, and being disconnected is
+# something that happened to you — but the longer of the two is still short,
+# because the seat is somebody else's chance to play.
+AWAY_GRACE_SECONDS = 120
+SIT_OUT_GRACE_SECONDS = 300
+
+
+@sync_to_async
+def _mind_the_absent(table_id):
+    """Stand up anybody who has stopped being at the table.
+
+    Between hands, like everything else that changes a seat. Two things happen
+    here: the clock starts on a seat nobody is behind, and a seat whose clock
+    has run out is cashed out — the coins go back to the wallet they came from
+    rather than sitting on a table their owner has left.
+
+    This is what stops a player who closed the tab from paying blinds until
+    their stack is gone. They are not dealt in from the moment they go (see
+    `dealable`), so nothing is lost in the meantime either.
+    """
+    now = timezone.now()
+    stood_up = []
+    for row in CashSeat.objects.filter(table_id=table_id).select_related("user"):
+        here = (room_id(table_id), row.user_id) in _player_channels
+        away = row.sitting_out or not here
+        if not away:
+            if row.away_since is not None:
+                CashSeat.objects.filter(pk=row.pk).update(away_since=None)
+            continue
+        if row.away_since is None:
+            CashSeat.objects.filter(pk=row.pk).update(away_since=now)
+            continue
+        grace = SIT_OUT_GRACE_SECONDS if here else AWAY_GRACE_SECONDS
+        if (now - row.away_since).total_seconds() >= grace:
+            coins = stand_up(row)
+            stood_up.append({"seat": row.seat, "user_id": row.user_id, "coins": coins})
+    return stood_up
+
+
+@sync_to_async
+def _sit_out(table_id, seats):
+    """Stop dealing to these seats until their player says otherwise.
+
+    Not a stand-up: their coins stay in front of them and the chair stays
+    theirs. This is the table noticing that nobody is answering, and the clock
+    in `_mind_the_absent` is what eventually gives the chair up.
+    """
+    CashSeat.objects.filter(table_id=table_id, seat__in=list(seats)).update(
+        sitting_out=True, away_since=timezone.now(),
+    )
 
 
 @sync_to_async
@@ -204,6 +261,8 @@ async def ensure_room(table_id):
             room_id(table_id), 1, player, context,
         ),
         record_hand=lambda row: _record_hand(table_id, row),
+        mind_absent=lambda: _mind_the_absent(table_id),
+        sit_out=lambda seats: _sit_out(table_id, seats),
         run_it_twice=table.run_it_twice,
         bomb_pot_every=table.bomb_pot_every,
         bomb_pot_bb=table.bomb_pot_bb,

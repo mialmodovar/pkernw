@@ -1,7 +1,11 @@
+import asyncio
+from datetime import timedelta
+
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -125,6 +129,84 @@ class SeatingTests(TestCase):
         # Switched off is switched off.
         self.assertFalse(is_bomb_pot(10, 0))
         self.assertFalse(is_bomb_pot(0, 10))
+
+
+class PresenceAtTheTableTests(TestCase):
+    """Being there, as one of the conditions for being dealt in.
+
+    A chair with a stack in front of it and nobody behind it is not a player.
+    Dealing to one takes their blinds every orbit until they come back to find
+    them gone, which is the one way a cash table can quietly cost somebody
+    money while they are not looking at it.
+    """
+
+    def _seat(self, seat, **extra):
+        return {"seat": seat, "user_id": 10 + seat, "stack": 300, **extra}
+
+    def test_a_seat_with_nobody_behind_it_is_not_dealt_in(self):
+        seats = [self._seat(0, is_here=True), self._seat(1, is_here=False)]
+
+        self.assertEqual([one["seat"] for one in dealable(seats)], [0])
+        self.assertFalse(can_deal(seats))
+
+    def test_two_people_who_are_both_here_are_a_game(self):
+        seats = [self._seat(0, is_here=True), self._seat(1, is_here=True)]
+
+        self.assertTrue(can_deal(seats))
+
+    def test_a_seat_nobody_asked_about_is_dealt_in(self):
+        """`is_here` is filled in by the live layer. A missing answer is not a
+        reason to stop dealing — every test above this one relies on it."""
+        seats = [self._seat(0), self._seat(1)]
+
+        self.assertTrue(can_deal(seats))
+
+    def test_away_and_sitting_out_are_the_same_answer_to_is_anybody_there(self):
+        from .seating import absent
+
+        self.assertTrue(absent(self._seat(0, is_here=False)))
+        self.assertTrue(absent(self._seat(0, sitting_out=True)))
+        self.assertFalse(absent(self._seat(0, is_here=True)))
+
+
+class MissingTheClockTests(TestCase):
+    """Noticing that nobody is answering.
+
+    A seat can have a live socket and nobody in front of it — a tab left open
+    on a table somebody wandered away from. Presence cannot see that; the clock
+    can, because the answer that arrives when it runs out is the only one
+    nobody gave.
+    """
+
+    def test_taking_the_whole_clock_is_nobody_acting(self):
+        from .seating import missed_the_clock
+
+        self.assertTrue(missed_the_clock(20.0, 20))
+        self.assertTrue(missed_the_clock(19.8, 20))
+
+    def test_answering_in_time_is_not(self):
+        from .seating import missed_the_clock
+
+        self.assertFalse(missed_the_clock(0.4, 20))
+        self.assertFalse(missed_the_clock(18.0, 20))
+
+    def test_a_short_clock_is_not_all_slack(self):
+        """Half a second off a twenty-second clock is nothing; off a one-second
+        clock it is half of it, and every answer would look like a timeout."""
+        from .seating import missed_the_clock
+
+        self.assertFalse(missed_the_clock(0.1, 1))
+        self.assertTrue(missed_the_clock(0.9, 1))
+
+    def test_a_table_with_no_clock_never_accuses_anybody(self):
+        from .seating import missed_the_clock
+
+        self.assertFalse(missed_the_clock(99, 0))
+
+    def test_one_missed_hand_is_a_phone_call_and_two_is_not(self):
+        from .seating import MISSES_BEFORE_SITTING_OUT
+
+        self.assertEqual(MISSES_BEFORE_SITTING_OUT, 2)
 
 
 class CashBankTests(TestCase):
@@ -253,6 +335,11 @@ class CashBankTests(TestCase):
         self.assertEqual(self._balance(), 1000 + 260)
 
 
+async def _noted(into, seats):
+    """A sit-out callback that only writes down what it was asked to do."""
+    into.append(list(seats))
+
+
 class CashRoomTests(TestCase):
     """A table dealing, with the world stubbed out around it.
 
@@ -266,6 +353,11 @@ class CashRoomTests(TestCase):
         self.hands = []
         self.events = []
         self.settled = 0
+        # Whether the fake players are dawdling past the clock.
+        self.slow = False
+
+    def _answer_slowly(self, slow=True):
+        self.slow = slow
 
     def _room(self, seats, **options):
         from asgiref.sync import async_to_sync   # noqa: F401  (used by callers)
@@ -291,6 +383,10 @@ class CashRoomTests(TestCase):
             self.events.append((event_type, payload))
 
         async def request_action(player, context):
+            if self.slow:
+                # Longer than the clock this room is running, which is the one
+                # way a decision gets made without anybody making it.
+                await asyncio.sleep(0.03)
             valid = context["valid_actions"]
             return ("check", 0) if "check" in valid else ("call", 0)
 
@@ -335,6 +431,71 @@ class CashRoomTests(TestCase):
         self.assertEqual(drawn[1]["avatar"], "\U0001F0CF")
         self.assertEqual(drawn[1]["avatar_border"], "")
         self.assertIsNone(drawn[1]["avatar_url"])
+
+    def test_two_hands_of_never_answering_and_the_table_stops_dealing_you_in(self):
+        """The seat keeps its chips and its chair. What stops is the blinds
+        coming out of it every orbit while nobody is there.
+
+        Through the real rule: the clock is set to a hundredth of a second and
+        the answers take longer than that, which is exactly what the table sees
+        when nobody is pressing anything.
+        """
+        sat_out = []
+        room = self._room(
+            [self._seat(0), self._seat(1), self._seat(2)],
+            sit_out=lambda seats: _noted(sat_out, seats),
+            action_seconds=0.01,
+        )
+        self._answer_slowly()
+
+        room.seats = [dict(one) for one in self.seats]
+        async_to_sync(room.play_hand)()
+        # One missed hand is a phone call.
+        self.assertEqual(sat_out, [])
+
+        room.seats = [dict(one) for one in self.seats]
+        async_to_sync(room.play_hand)()
+
+        self.assertEqual(len(sat_out), 1)
+        self.assertGreater(len(sat_out[0]), 0)
+
+    def test_answering_in_time_clears_it(self):
+        sat_out = []
+        room = self._room(
+            [self._seat(0), self._seat(1), self._seat(2)],
+            sit_out=lambda seats: _noted(sat_out, seats),
+            action_seconds=0.01,
+        )
+
+        self._answer_slowly()
+        room.seats = [dict(one) for one in self.seats]
+        async_to_sync(room.play_hand)()
+
+        # They come back and play a hand at the pace of somebody who is there.
+        self._answer_slowly(False)
+        room.seats = [dict(one) for one in self.seats]
+        async_to_sync(room.play_hand)()
+
+        self._answer_slowly()
+        room.seats = [dict(one) for one in self.seats]
+        async_to_sync(room.play_hand)()
+
+        self.assertEqual(sat_out, [])
+
+    def test_a_table_with_no_clock_never_sits_anybody_out(self):
+        sat_out = []
+        room = self._room(
+            [self._seat(0), self._seat(1)],
+            sit_out=lambda seats: _noted(sat_out, seats),
+            action_seconds=0,
+        )
+        self._answer_slowly()
+
+        for _ in range(3):
+            room.seats = [dict(one) for one in self.seats]
+            async_to_sync(room.play_hand)()
+
+        self.assertEqual(sat_out, [])
 
     def test_a_hand_opens_by_saying_who_is_sitting_at_the_table(self):
         """A seat that filled between hands is invisible otherwise: nothing
@@ -689,6 +850,28 @@ class CashRoomLiveTests(TransactionTestCase):
         self.table = CashTable.objects.create(name="Live", stake="low", seat_count=6)
         for index, user in enumerate(self.players):
             sit_down(self.table, user, 300, seat_number=index)
+        self._arrive(self.players)
+
+    def _arrive(self, users):
+        """Put a socket at the table for each of them.
+
+        A seat with nobody behind it is not dealt in any more — see
+        `dealable` — so a test that plays hands has to say who is there. This
+        is the same registry the consumer writes to when a socket connects.
+        """
+        from cash.live import room_id
+        from game.consumers import _player_channels
+
+        for user in users:
+            _player_channels[(room_id(self.table.id), user.id)] = f"test-{user.id}"
+        self.addCleanup(self._leave, users)
+
+    def _leave(self, users):
+        from cash.live import room_id
+        from game.consumers import _player_channels
+
+        for user in users:
+            _player_channels.pop((room_id(self.table.id), user.id), None)
 
     def _room(self, **options):
         from cash.live import _load_seats, _persist_stacks, _record_hand, _settle_leavers
@@ -1209,6 +1392,28 @@ class CashRecordTests(TransactionTestCase):
         self.table = CashTable.objects.create(name="Record", stake="low", seat_count=6)
         for index, user in enumerate(self.players):
             sit_down(self.table, user, 300, seat_number=index)
+        self._arrive(self.players)
+
+    def _arrive(self, users):
+        """Put a socket at the table for each of them.
+
+        A seat with nobody behind it is not dealt in any more — see
+        `dealable` — so a test that plays hands has to say who is there. This
+        is the same registry the consumer writes to when a socket connects.
+        """
+        from cash.live import room_id
+        from game.consumers import _player_channels
+
+        for user in users:
+            _player_channels[(room_id(self.table.id), user.id)] = f"test-{user.id}"
+        self.addCleanup(self._leave, users)
+
+    def _leave(self, users):
+        from cash.live import room_id
+        from game.consumers import _player_channels
+
+        for user in users:
+            _player_channels.pop((room_id(self.table.id), user.id), None)
 
     def _play(self, hands=1):
         from asgiref.sync import async_to_sync
@@ -1367,3 +1572,104 @@ class CashStatsTests(TransactionTestCase):
 
         self.assertEqual(record["kind"], "tournament")
         self.assertIn("itm_pct", record)
+
+
+class GivingUpOnASeatTests(TransactionTestCase):
+    """Standing somebody up who has stopped being at the table.
+
+    The coins go home rather than sitting on a table their owner has left. Two
+    clocks, because sitting out is a decision and being disconnected is
+    something that happened to you — but both of them are short, since the
+    chair is somebody else's chance to play.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="away_ana", password="secret123")
+        wallet_for(self.user)
+        Wallet.objects.filter(user=self.user).update(balance=1000)
+        self.table = CashTable.objects.create(name="Away", stake="low", seat_count=6)
+        self.seat = sit_down(self.table, self.user, 300, seat_number=0)
+
+    def _mind(self):
+        from asgiref.sync import async_to_sync
+
+        from cash.live import _mind_the_absent
+
+        return async_to_sync(_mind_the_absent)(self.table.id)
+
+    def _here(self, yes=True):
+        from cash.live import room_id
+        from game.consumers import _player_channels
+
+        key = (room_id(self.table.id), self.user.id)
+        if yes:
+            _player_channels[key] = "test-socket"
+            self.addCleanup(_player_channels.pop, key, None)
+        else:
+            _player_channels.pop(key, None)
+
+    def _went_away_at(self, when):
+        CashSeat.objects.filter(pk=self.seat.pk).update(away_since=when)
+
+    def test_the_clock_starts_when_nobody_is_behind_the_chair(self):
+        self._here(False)
+
+        self.assertEqual(self._mind(), [])
+        self.seat.refresh_from_db()
+        self.assertIsNotNone(self.seat.away_since)
+
+    def test_coming_back_stops_it(self):
+        self._here(False)
+        self._mind()
+        self._here(True)
+
+        self._mind()
+
+        self.seat.refresh_from_db()
+        self.assertIsNone(self.seat.away_since)
+
+    def test_a_seat_left_empty_long_enough_is_cashed_out(self):
+        from cash.live import AWAY_GRACE_SECONDS
+
+        self._here(False)
+        self._went_away_at(timezone.now() - timedelta(seconds=AWAY_GRACE_SECONDS + 1))
+
+        stood_up = self._mind()
+
+        self.assertEqual([one["coins"] for one in stood_up], [300])
+        self.assertFalse(CashSeat.objects.filter(pk=self.seat.pk).exists())
+        # And every coin is back where it came from.
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 1000)
+
+    def test_sitting_out_is_given_longer_than_being_cut_off(self):
+        """One is a decision and the other is not, so the table waits longer
+        for somebody who said they were coming back."""
+        from cash.live import AWAY_GRACE_SECONDS, SIT_OUT_GRACE_SECONDS
+
+        self.assertGreater(SIT_OUT_GRACE_SECONDS, AWAY_GRACE_SECONDS)
+
+        self._here(True)
+        CashSeat.objects.filter(pk=self.seat.pk).update(sitting_out=True)
+        self._went_away_at(timezone.now() - timedelta(seconds=AWAY_GRACE_SECONDS + 1))
+
+        self.assertEqual(self._mind(), [])
+        self.assertTrue(CashSeat.objects.filter(pk=self.seat.pk).exists())
+
+    def test_a_long_sit_out_gives_the_chair_up_too(self):
+        from cash.live import SIT_OUT_GRACE_SECONDS
+
+        self._here(True)
+        CashSeat.objects.filter(pk=self.seat.pk).update(sitting_out=True)
+        self._went_away_at(timezone.now() - timedelta(seconds=SIT_OUT_GRACE_SECONDS + 1))
+
+        stood_up = self._mind()
+
+        self.assertEqual(len(stood_up), 1)
+        self.assertEqual(Wallet.objects.get(user=self.user).balance, 1000)
+
+    def test_somebody_playing_is_left_alone(self):
+        self._here(True)
+
+        self.assertEqual(self._mind(), [])
+        self.seat.refresh_from_db()
+        self.assertIsNone(self.seat.away_since)

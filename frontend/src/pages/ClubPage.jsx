@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import api from "../api/http";
 import ClubCashTables from "../components/lobby/ClubCashTables";
 import ClubMembers from "../components/lobby/ClubMembers";
+import NewCashTableModal from "../components/lobby/NewCashTableModal";
 import ClubSettings from "../components/lobby/ClubSettings";
 import ScoringEditor from "../components/lobby/ScoringEditor";
 import { leaveState } from "../components/lobby/clubRoles";
@@ -87,6 +88,9 @@ export default function ClubPage() {
   const [history, setHistory] = useState([]);
   const [joining, setJoining] = useState(false);
   const [managing, setManaging] = useState(false);
+  // The two-way choice behind "New game", and the cash half of it.
+  const [openingGame, setOpeningGame] = useState(false);
+  const [openingCash, setOpeningCash] = useState(false);
   const [editingLeague, setEditingLeague] = useState(false);
 
   const loadClub = useCallback(async () => {
@@ -244,13 +248,50 @@ export default function ClubPage() {
             {joining ? "Joining…" : "Join club"}
           </button>
         )}
+        {/* One button for both kinds of game this club can run. They used to
+            be a "New tournament" button here and an "Open one" link three
+            sections further down, which is two answers to the same question in
+            two places. A night and a table are both games; which one is the
+            choice, and it belongs where the choice is made. */}
         {isStaff && (
-          <button
-            onClick={() => navigate("/tournaments/new")}
-            className="btn-accent px-3 py-1.5 rounded text-sm font-semibold transition-colors shrink-0"
-          >
-            New tournament
-          </button>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setOpeningGame((open) => !open)}
+              aria-expanded={openingGame}
+              className="btn-accent px-3 py-1.5 rounded text-sm font-semibold transition-colors"
+            >
+              New game
+            </button>
+            {openingGame && (
+              <div className="absolute right-0 top-full mt-1 z-30 w-52 rounded-lg
+                              panel-solid border border-(--color-border-strong)
+                              shadow-xl shadow-black/60 overflow-hidden">
+                <button
+                  onClick={() => { setOpeningGame(false); navigate("/tournaments/new"); }}
+                  className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                >
+                  <span className="block text-sm font-semibold text-(--color-silver)">
+                    Tournament
+                  </span>
+                  <span className="block text-[11px] text-(--color-text-muted)">
+                    A night, with a winner at the end
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setOpeningGame(false); setOpeningCash(true); }}
+                  className="w-full px-3 py-2 text-left border-t border-(--color-border)
+                             hover:bg-white/5 transition-colors"
+                >
+                  <span className="block text-sm font-semibold text-(--color-silver)">
+                    Cash table
+                  </span>
+                  <span className="block text-[11px] text-(--color-text-muted)">
+                    A room, open until somebody shuts it
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
         {isStaff && (
           <button
@@ -459,6 +500,10 @@ export default function ClubPage() {
       {/* The other kind of game a club runs. A league night is an event; a
           cash table is a room that is either open or not. */}
       <ClubCashTables club={club} isStaff={isStaff} />
+
+      {openingCash && (
+        <NewCashTableModal club={club.slug} onClose={() => setOpeningCash(false)} />
+      )}
 
       <ClubMembers club={club} myUsername={user?.username} onChanged={loadClub} />
 

@@ -442,6 +442,22 @@ const useGameStore = create((set) => ({
         });
         break;
 
+      // A cash seat given up on: away long enough that the table stopped
+      // holding the chair. The coins went back to their wallet, so the seat
+      // goes off the felt the same way a leaver's does.
+      case "player_stood_up":
+        set((s) => {
+          const gone = s.players.find((one) => one.seat === data.seat);
+          return {
+            players: s.players.filter((one) => one.seat !== data.seat),
+            messages: appendLog(s, entry(s, "info",
+              gone
+                ? `${gone.name} left the table`
+                : "A seat was given up")),
+          };
+        });
+        break;
+
       // Two boards, when a table runs it twice or deals a bomb pot. Held
       // beside the first, which stays exactly what it was: a client that
       // ignores this draws one board and is right about it.

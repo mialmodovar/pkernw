@@ -169,11 +169,24 @@ def sit(request, pk):
             CashSeat.objects.select_for_update().filter(table=table).values_list("seat", flat=True)
         )
         asked = request.data.get("seat")
-        seat_number = int(asked) if asked is not None else next_free_seat(taken, table.seat_count)
+        if asked is None or asked == "":
+            seat_number = next_free_seat(taken, table.seat_count)
+        else:
+            try:
+                seat_number = int(asked)
+            except (TypeError, ValueError):
+                return Response({"error": "That is not a seat"},
+                                status=status.HTTP_400_BAD_REQUEST)
         if seat_number is None:
             return Response({"error": "That table is full"}, status=status.HTTP_400_BAD_REQUEST)
-        if seat_number in taken or not 0 <= seat_number < table.seat_count:
-            return Response({"error": "That seat is taken"}, status=status.HTTP_400_BAD_REQUEST)
+        if not 0 <= seat_number < table.seat_count:
+            return Response({"error": "There is no such seat here"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        # Somebody sat there while this player was choosing, which is the whole
+        # reason the row lock above is held across the check.
+        if seat_number in taken:
+            return Response({"error": "Somebody just took that seat"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         seated = sit_down(table, request.user, request.data.get("buy_in"), seat_number)
     if isinstance(seated, str):

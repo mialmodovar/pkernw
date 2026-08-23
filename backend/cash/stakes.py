@@ -34,8 +34,9 @@ class Stake:
 
     @property
     def min_buy_in(self) -> int:
-        """Twenty big blinds. Short enough to be a real choice, deep enough
-        that one hand is not the whole visit."""
+        """Fifty big blinds. Deep enough that the table is playable: a stack
+        that can be lost in one raise makes everybody around it play a
+        different game, and short-stacking is a strategy the room pays for."""
         return self.big_blind * MIN_BUY_IN_BB
 
     @property
@@ -45,7 +46,7 @@ class Stake:
         return self.big_blind * MAX_BUY_IN_BB
 
 
-MIN_BUY_IN_BB = 20
+MIN_BUY_IN_BB = 50
 MAX_BUY_IN_BB = 100
 
 # The ladder. Doubling each rung, so the gap between two of them is always the

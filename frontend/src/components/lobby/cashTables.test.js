@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  atStake, freeSeats, isRunning, lobbyOrder, sitBlocker, suggestedBuyIn, tableSummary,
+  atStake, defaultSeat, freeSeats, isRunning, lobbyOrder, seatOptions, sitBlocker,
+  suggestedBuyIn, tableSummary, waitingLine,
 } from "./cashTables";
 
 const table = (over = {}) => ({
   id: 1, stake: "low", seats: 6, taken: 0, big_blind: 5,
-  min_buy_in: 100, max_buy_in: 500, my_seat: null, ...over,
+  min_buy_in: 250, max_buy_in: 500, my_seat: null, ...over,
 });
 
 describe("freeSeats", () => {
@@ -69,17 +70,17 @@ describe("tableSummary", () => {
 });
 
 describe("suggestedBuyIn", () => {
-  it("is fifty big blinds, which is what most people would have typed", () => {
-    expect(suggestedBuyIn(table(), 1000)).toBe(250);
+  it("is the middle of the range, which is what most people would have typed", () => {
+    expect(suggestedBuyIn(table(), 1000)).toBe(375);
   });
 
   it("comes down to what somebody can actually afford", () => {
-    expect(suggestedBuyIn(table(), 180)).toBe(180);
+    expect(suggestedBuyIn(table(), 300)).toBe(300);
   });
 
   it("never suggests less than the table takes", () => {
     // An amount that cannot be paid is not a suggestion.
-    expect(suggestedBuyIn(table(), 20)).toBe(100);
+    expect(suggestedBuyIn(table(), 20)).toBe(250);
   });
 
   it("never suggests more than the table allows", () => {
@@ -94,10 +95,83 @@ describe("sitBlocker", () => {
 
   it("says what is in the way", () => {
     expect(sitBlocker(table({ taken: 6 }), 500)).toBe("Full");
-    expect(sitBlocker(table(), 50)).toBe("Needs 100 to sit down");
+    expect(sitBlocker(table(), 50)).toBe("Needs 250 to sit down");
   });
 
   it("never blocks the seat you are already in", () => {
     expect(sitBlocker(table({ taken: 6, my_seat: 2 }), 0)).toBe(null);
+  });
+});
+
+describe("waitingLine", () => {
+  it("says nothing once there are two to deal to", () => {
+    expect(waitingLine({ seated: 2, dealable: 2, seats: 6 })).toBe("");
+  });
+
+  it("asks for one more when you are the only one here", () => {
+    expect(waitingLine({ seated: 1, dealable: 1, seats: 6 }))
+      .toMatch(/another player to sit down/);
+  });
+
+  it("distinguishes an empty table from one that is sitting out", () => {
+    const alone = waitingLine({ seated: 1, dealable: 1, seats: 6 });
+    const satOut = waitingLine({ seated: 3, dealable: 1, seats: 6 });
+    expect(satOut).not.toBe(alone);
+    expect(satOut).toMatch(/sitting out/);
+  });
+
+  it("has nothing to say about a table that never spoke", () => {
+    expect(waitingLine(null)).toBe("");
+  });
+});
+
+describe("seatOptions", () => {
+  const table = {
+    seats: 4,
+    my_seat: 2,
+    players: [
+      { seat: 0, username: "ana", display_name: "Ana" },
+      { seat: 2, username: "bea", display_name: "" },
+    ],
+  };
+
+  it("lists every chair, in order", () => {
+    expect(seatOptions(table).map((one) => one.seat)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("numbers them from one for the person reading them", () => {
+    expect(seatOptions(table)[0].label).toBe("Seat 1");
+    expect(seatOptions(table)[3].label).toBe("Seat 4");
+  });
+
+  it("says who is sitting where", () => {
+    const [first, second] = seatOptions(table);
+    expect(first.taken).toBe(true);
+    expect(first.name).toBe("Ana");
+    expect(second.taken).toBe(false);
+    expect(second.name).toBe("");
+  });
+
+  it("falls back to the username when somebody has no display name", () => {
+    expect(seatOptions(table)[2].name).toBe("bea");
+  });
+
+  it("knows which chair is yours", () => {
+    expect(seatOptions(table).filter((one) => one.mine).map((one) => one.seat)).toEqual([2]);
+  });
+
+  it("has no chairs at all for no table", () => {
+    expect(seatOptions(null)).toEqual([]);
+  });
+});
+
+describe("defaultSeat", () => {
+  it("offers the first chair nobody is in", () => {
+    expect(defaultSeat({ seats: 4, players: [{ seat: 0, username: "ana" }] })).toBe(1);
+  });
+
+  it("offers nothing at a full table", () => {
+    const full = { seats: 2, players: [{ seat: 0, username: "a" }, { seat: 1, username: "b" }] };
+    expect(defaultSeat(full)).toBeNull();
   });
 });

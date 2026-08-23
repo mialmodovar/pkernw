@@ -10,6 +10,7 @@ import ConnectionBanner from "../components/game/ConnectionBanner";
 import PokerTable from "../components/game/PokerTable";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 import useAuthStore from "../store/authStore";
+import { waitingLine } from "../components/lobby/cashTables";
 import useCashStore from "../store/cashStore";
 import useGameStore from "../store/gameStore";
 import useWalletStore from "../store/walletStore";
@@ -33,6 +34,7 @@ export default function CashTablePage() {
   const reset = useGameStore((s) => s.reset);
   const players = useGameStore((s) => s.players);
   const cash = useGameStore((s) => s.cash);
+  const tableWaiting = useGameStore((s) => s.tableWaiting);
   const balance = useWalletStore((s) => s.balance);
   const { leave, addChips, sitOut } = useCashStore();
 
@@ -64,6 +66,10 @@ export default function CashTablePage() {
   }, [id, handleEvent, reset, loadTable]);
 
   const act = (action, amount) => send({ type: "player_action", action, amount });
+
+  // Only while the socket is actually up: a table that cannot be heard from is
+  // a connection problem, and the banner above already says so.
+  const waiting = status === "open" ? waitingLine(tableWaiting) : "";
 
   const walkAway = async () => {
     const result = await leave(id);
@@ -156,6 +162,26 @@ export default function CashTablePage() {
 
       <div className="flex-1 min-h-0 relative table-area">
         <PokerTable mySeat={mySeat} capacity={cash?.seats || table?.seats || 6} />
+
+        {/* A table with nobody to deal to, saying so. It is not a hand that has
+            stalled and it is not a connection that has dropped — it is a room
+            waiting for somebody to walk into it, and the difference is the
+            whole message. */}
+        {waiting && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none
+                          flex items-center gap-2 px-3 py-1.5 rounded-full
+                          bg-[rgba(12,7,18,0.9)] border border-(--color-border-strong)
+                          text-xs font-semibold text-(--color-highlight-pale)
+                          shadow-lg shadow-black/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-(--color-highlight-text) animate-pulse" />
+            <span>{waiting}</span>
+            {tableWaiting?.seats > 0 && (
+              <span className="text-(--color-text-muted) tabular-nums font-normal">
+                {tableWaiting.seated}/{tableWaiting.seats} seated
+              </span>
+            )}
+          </div>
+        )}
 
         {!compact && mySeat != null && (
           <div className="absolute bottom-2 right-2 z-20 w-[min(46rem,calc(100%-1rem))]

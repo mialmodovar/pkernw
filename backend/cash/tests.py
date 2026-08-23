@@ -19,10 +19,13 @@ User = get_user_model()
 class StakeLadderTests(TestCase):
     """The rungs, and what it costs to stand on one."""
 
-    def test_every_stake_asks_for_twenty_blinds_and_allows_a_hundred(self):
+    def test_every_stake_asks_for_fifty_blinds_and_allows_a_hundred(self):
+        """The floor is half a full stack, not a fifth of one: a table where
+        somebody can sit down with ten blinds is a table everybody else has to
+        play differently."""
         for stake in STAKES:
             with self.subTest(stake=stake.key):
-                self.assertEqual(stake.min_buy_in, stake.big_blind * 20)
+                self.assertEqual(stake.min_buy_in, stake.big_blind * 50)
                 self.assertEqual(stake.max_buy_in, stake.big_blind * 100)
                 self.assertLess(stake.small_blind, stake.big_blind)
 
@@ -34,7 +37,8 @@ class StakeLadderTests(TestCase):
     def test_a_buy_in_has_to_be_between_the_two(self):
         stake = stake_for("low")
 
-        self.assertEqual(clean_buy_in(stake, 200), 200)
+        self.assertEqual(clean_buy_in(stake, 300), 300)
+        self.assertIsInstance(clean_buy_in(stake, 200), str)
         self.assertIsInstance(clean_buy_in(stake, 10), str)
         self.assertIsInstance(clean_buy_in(stake, 10_000), str)
         self.assertIsInstance(clean_buy_in(stake, "lots"), str)
@@ -49,7 +53,7 @@ class StakeLadderTests(TestCase):
     def test_topping_up_stops_at_the_table_maximum(self):
         stake = stake_for("low")   # 2/5, so a hundred blinds is 500
 
-        self.assertEqual(top_up_room(stake, 100), 400)
+        self.assertEqual(top_up_room(stake, 250), 250)
         self.assertEqual(top_up_room(stake, 500), 0)
         # A stack that grew past the cap by winning is theirs; it just cannot
         # be added to.
@@ -136,57 +140,57 @@ class CashBankTests(TestCase):
         return Wallet.objects.get(user=self.user).balance
 
     def test_sitting_down_moves_coins_from_the_wallet_to_the_felt(self):
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
 
         self.assertIsInstance(seat, CashSeat)
-        self.assertEqual(seat.stack, 200)
-        self.assertEqual(self._balance(), 800)
+        self.assertEqual(seat.stack, 300)
+        self.assertEqual(self._balance(), 700)
         # And the two still add up to what they had.
         self.assertEqual(self._balance() + seat.stack, 1000)
 
     def test_standing_up_brings_the_whole_stack_back(self):
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
         CashSeat.objects.filter(pk=seat.pk).update(stack=340)   # they won some
         seat.refresh_from_db()
 
         paid = stand_up(seat)
 
         self.assertEqual(paid, 340)
-        self.assertEqual(self._balance(), 1140)
+        self.assertEqual(self._balance(), 1040)
         self.assertFalse(CashSeat.objects.filter(pk=seat.pk).exists())
 
     def test_a_stack_lost_at_the_table_is_a_stack_lost(self):
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
         CashSeat.objects.filter(pk=seat.pk).update(stack=0)
         seat.refresh_from_db()
 
         stand_up(seat)
 
-        self.assertEqual(self._balance(), 800)
+        self.assertEqual(self._balance(), 700)
 
     def test_every_move_is_written_down(self):
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
         stand_up(seat)
 
         rows = CoinLedger.objects.filter(user=self.user, memo=f"cash:{self.table.id}")
-        self.assertEqual(sorted(row.amount for row in rows), [-200, 200])
+        self.assertEqual(sorted(row.amount for row in rows), [-300, 300])
 
     def test_you_cannot_sit_at_the_same_table_twice(self):
-        sit_down(self.table, self.user, 200, seat_number=0)
+        sit_down(self.table, self.user, 300, seat_number=0)
 
-        again = sit_down(self.table, self.user, 200, seat_number=1)
+        again = sit_down(self.table, self.user, 300, seat_number=1)
 
         self.assertIsInstance(again, str)
         self.assertEqual(CashSeat.objects.filter(table=self.table).count(), 1)
-        self.assertEqual(self._balance(), 800)
+        self.assertEqual(self._balance(), 700)
 
     def test_two_people_cannot_have_one_chair(self):
         other = User.objects.create_user(username="cash_two", password="secret123")
         wallet_for(other)
         Wallet.objects.filter(user=other).update(balance=1000)
-        sit_down(self.table, self.user, 200, seat_number=0)
+        sit_down(self.table, self.user, 300, seat_number=0)
 
-        clash = sit_down(self.table, other, 200, seat_number=0)
+        clash = sit_down(self.table, other, 300, seat_number=0)
 
         self.assertIsInstance(clash, str)
         self.assertEqual(Wallet.objects.get(user=other).balance, 1000)
@@ -194,7 +198,7 @@ class CashBankTests(TestCase):
     def test_an_empty_wallet_sits_at_nothing(self):
         Wallet.objects.filter(user=self.user).update(balance=10)
 
-        refused = sit_down(self.table, self.user, 200, seat_number=0)
+        refused = sit_down(self.table, self.user, 300, seat_number=0)
 
         self.assertIsInstance(refused, str)
         self.assertFalse(CashSeat.objects.exists())
@@ -203,16 +207,16 @@ class CashBankTests(TestCase):
         self.table.is_open = False
         self.table.save(update_fields=["is_open"])
 
-        self.assertIsInstance(sit_down(self.table, self.user, 200, seat_number=0), str)
+        self.assertIsInstance(sit_down(self.table, self.user, 300, seat_number=0), str)
 
     def test_topping_up_adds_to_the_stack_and_takes_from_the_wallet(self):
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
 
         topped = top_up(seat, 100)
 
-        self.assertEqual(topped.stack, 300)
-        self.assertEqual(topped.bought_in, 300)
-        self.assertEqual(self._balance(), 700)
+        self.assertEqual(topped.stack, 400)
+        self.assertEqual(topped.bought_in, 400)
+        self.assertEqual(self._balance(), 600)
 
     def test_topping_up_past_the_table_maximum_is_refused(self):
         seat = sit_down(self.table, self.user, 500, seat_number=0)   # already the cap
@@ -224,19 +228,19 @@ class CashBankTests(TestCase):
         other = User.objects.create_user(username="cash_three", password="secret123")
         wallet_for(other)
         Wallet.objects.filter(user=other).update(balance=1000)
-        sit_down(self.table, self.user, 200, seat_number=0)
+        sit_down(self.table, self.user, 300, seat_number=0)
         sit_down(self.table, other, 300, seat_number=1)
 
         paid = cash_out_everybody(self.table)
 
-        self.assertEqual(paid, 500)
+        self.assertEqual(paid, 600)
         self.assertEqual(self._balance(), 1000)
         self.assertEqual(Wallet.objects.get(user=other).balance, 1000)
         self.assertFalse(CashSeat.objects.filter(table=self.table).exists())
 
     def test_the_coins_are_never_anywhere_but_the_wallet_or_the_felt(self):
         """The whole invariant, walked: sit, top up, win some, leave."""
-        seat = sit_down(self.table, self.user, 200, seat_number=0)
+        seat = sit_down(self.table, self.user, 300, seat_number=0)
         top_up(seat, 100)
         seat.refresh_from_db()
         # A pot lands.
@@ -441,7 +445,7 @@ class CashLobbyApiTests(APITestCase):
         self.assertGreaterEqual(len(response.data["tables"]), 3)
         row = self._mine(response)
         self.assertEqual(row["stake_label"], "2/5")
-        self.assertEqual(row["min_buy_in"], 100)
+        self.assertEqual(row["min_buy_in"], 250)
         self.assertEqual(row["max_buy_in"], 500)
         self.assertIsNone(row["my_seat"])
 
@@ -774,3 +778,122 @@ class PublicTablesTests(TestCase):
 
         self.assertIn(8, SEAT_CHOICES)
         self.assertEqual(clean_seats(8), 8)
+
+
+class CashSocketTests(TransactionTestCase):
+    """The socket a seat listens on, and the thing that was closing it.
+
+    Every broadcast in the app is group_send'd under the name `game.message`,
+    and Channels dispatches that by looking for a method of that name on the
+    consumer. A consumer without one does not ignore the message — it raises,
+    and the socket dies. A table with nobody to deal to announces itself every
+    two seconds, so an empty cash table was killing every socket at it on a
+    loop, and the player saw a connection that would not stay up.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="socket_ana", password="secret123")
+        wallet_for(self.user)
+        Wallet.objects.filter(user=self.user).update(balance=1000)
+        self.table = CashTable.objects.create(name="Socket", stake="micro", seat_count=6)
+        sit_down(self.table, self.user, 200, seat_number=0)
+
+    def _socket(self):
+        from channels.testing import WebsocketCommunicator
+
+        from .consumers import CashTableConsumer
+
+        socket = WebsocketCommunicator(
+            CashTableConsumer.as_asgi(), f"/ws/cash/{self.table.id}/",
+        )
+        socket.scope["user"] = self.user
+        socket.scope["url_route"] = {"kwargs": {"table_id": str(self.table.id)}}
+        return socket
+
+    def test_a_broadcast_reaches_the_seat_and_leaves_the_socket_up(self):
+        from game.consumers import _broadcast_table
+
+        from .live import room_id, stop_room
+
+        async def scenario():
+            socket = self._socket()
+            connected, _ = await socket.connect()
+            self.assertTrue(connected)
+            # The snapshot the consumer sends on arrival.
+            await socket.receive_json_from(timeout=2)
+
+            await _broadcast_table(room_id(self.table.id), 1, "table_waiting", {"seated": 1})
+            first = await socket.receive_json_from(timeout=2)
+
+            # And again: the point is not that one arrives, it is that the
+            # socket is still there for the next one.
+            await _broadcast_table(room_id(self.table.id), 1, "table_waiting", {"seated": 1})
+            second = await socket.receive_json_from(timeout=2)
+
+            await socket.disconnect()
+            return first, second
+
+        try:
+            first, second = async_to_sync(scenario)()
+        finally:
+            stop_room(self.table.id)
+
+        self.assertEqual(first["type"], "table_waiting")
+        self.assertEqual(second["type"], "table_waiting")
+        self.assertEqual(first["seated"], 1)
+
+
+class SeatChoiceTests(APITestCase):
+    """Picking the chair rather than being given one.
+
+    Where you sit is not decoration: it is who acts before you, and at a
+    six-handed table it is most of what the seat is worth. The server already
+    took a seat number; what it did not do was answer sensibly when the number
+    was nonsense or when somebody else got there first.
+    """
+
+    def setUp(self):
+        self.player = User.objects.create_user(username="chair_ana", password="secret123")
+        wallet_for(self.player)
+        Wallet.objects.filter(user=self.player).update(balance=2000)
+        self.table = CashTable.objects.create(name="Chairs", stake="low", seat_count=6)
+        self.client.force_authenticate(self.player)
+
+    def _sit(self, **payload):
+        return self.client.post(reverse("cash-sit", args=[self.table.id]), payload, format="json")
+
+    def test_the_seat_asked_for_is_the_seat_given(self):
+        response = self._sit(buy_in=300, seat=4)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["seat"], 4)
+
+    def test_no_seat_asked_for_still_takes_the_first_free_one(self):
+        response = self._sit(buy_in=300)
+
+        self.assertEqual(response.data["seat"], 0)
+
+    def test_a_seat_that_is_not_at_this_table_is_refused(self):
+        for asked in (9, -1):
+            with self.subTest(seat=asked):
+                response = self._sit(buy_in=300, seat=asked)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(CashSeat.objects.exists())
+
+    def test_a_seat_that_is_not_a_number_is_refused_rather_than_crashing(self):
+        response = self._sit(buy_in=300, seat="middle")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)
+
+    def test_a_seat_somebody_just_took_says_so(self):
+        other = User.objects.create_user(username="chair_bea", password="secret123")
+        wallet_for(other)
+        Wallet.objects.filter(user=other).update(balance=2000)
+        sit_down(self.table, other, 300, seat_number=2)
+
+        response = self._sit(buy_in=300, seat=2)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("took that seat", response.data["error"])
+        self.assertEqual(Wallet.objects.get(user=self.player).balance, 2000)

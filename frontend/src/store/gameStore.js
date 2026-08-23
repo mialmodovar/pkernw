@@ -213,6 +213,8 @@ const useGameStore = create((set) => ({
   boards: null,
   // What kind of room this is, when it is a cash table. Null at a tournament.
   cash: null,
+  // A cash table with nobody to deal to, saying so. Null once cards are out.
+  tableWaiting: null,
   aimingItem: null,
   // When this player may throw again, as a timestamp. Zero means now — which
   // is nearly always, since the limit only bites on a burst.
@@ -422,6 +424,19 @@ const useGameStore = create((set) => ({
         }));
         break;
 
+      // A cash table with nobody to deal to. It says so every couple of
+      // seconds while it waits, which is how an empty room stays a room rather
+      // than a page that appears to have stopped working.
+      case "table_waiting":
+        set({
+          tableWaiting: {
+            seated: data.seated || 0,
+            dealable: data.dealable || 0,
+            seats: data.seats || 0,
+          },
+        });
+        break;
+
       // Two boards, when a table runs it twice or deals a bomb pot. Held
       // beside the first, which stays exactly what it was: a client that
       // ignores this draws one board and is right about it.
@@ -489,6 +504,7 @@ const useGameStore = create((set) => ({
           chipFlightKind: null,
           // The wait is over either way: the next hand is being dealt.
           rebuyWindow: null,
+          tableWaiting: null,
           holeCards: [],
           handStrength: null,
           actionOnSeat: null,
@@ -1137,7 +1153,7 @@ const useGameStore = create((set) => ({
       mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
-      lastActions: {}, boards: null, cash: null,
+      lastActions: {}, boards: null, cash: null, tableWaiting: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,

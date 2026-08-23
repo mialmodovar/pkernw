@@ -4,8 +4,9 @@ import { useNavigate } from "react-router-dom";
 import Icon from "../icons/Icon";
 import useCashStore from "../../store/cashStore";
 import useWalletStore from "../../store/walletStore";
-import { atStake, sitBlocker, suggestedBuyIn, tableSummary } from "./cashTables";
+import { atStake, sitBlocker, tableSummary } from "./cashTables";
 import PlayerFaces from "./PlayerFaces";
+import SitDownModal from "./SitDownModal";
 
 /**
  * The cash lobby: rooms rather than events.
@@ -20,9 +21,9 @@ export default function CashBrowser() {
   const navigate = useNavigate();
   const { stakes, tables, loading, error, fetchLobby, sit, busy } = useCashStore();
   const balance = useWalletStore((s) => s.balance);
-  // Which table is mid-buy-in. One at a time: the amount belongs to a table.
+  // Which table is being sat down at. One at a time: the seat and the amount
+  // both belong to a table.
   const [buyingInto, setBuyingInto] = useState(null);
-  const [amount, setAmount] = useState(0);
 
   useEffect(() => { fetchLobby(); }, [fetchLobby]);
 
@@ -33,15 +34,11 @@ export default function CashBrowser() {
     return () => clearInterval(timer);
   }, [fetchLobby]);
 
-  const openBuyIn = (table) => {
-    setBuyingInto(table.id);
-    setAmount(suggestedBuyIn(table, balance));
-  };
-
-  const confirm = async (table) => {
-    const seated = await sit(table.id, amount);
+  const confirm = async (amount, seat) => {
+    const seated = await sit(buyingInto.id, amount, seat);
+    if (!seated) return;      // the dialog stays up and says why
     setBuyingInto(null);
-    if (seated) navigate(`/cash/${seated}`);
+    navigate(`/cash/${seated}`);
   };
 
   if (loading && tables.length === 0) {
@@ -127,28 +124,14 @@ export default function CashBrowser() {
                         className="btn-accent px-3 py-1 rounded text-xs font-semibold">
                         Back to the table
                       </button>
-                    ) : buyingInto === table.id ? (
-                      <>
-                        <input
-                          type="number"
-                          value={amount}
-                          min={table.min_buy_in}
-                          max={table.max_buy_in}
-                          onChange={(event) => setAmount(Number(event.target.value))}
-                          className="input-field w-24 text-right text-sm rounded py-1 px-1.5 font-mono"
-                        />
-                        <button onClick={() => confirm(table)} disabled={busy === table.id}
-                          className="btn-accent px-3 py-1 rounded text-xs font-semibold disabled:opacity-50">
-                          {busy === table.id ? "…" : "Sit"}
-                        </button>
-                        <button onClick={() => setBuyingInto(null)}
-                          className="px-2 py-1 text-xs text-(--color-text-muted)">
-                          Cancel
-                        </button>
-                      </>
                     ) : (
                       <button
-                        onClick={() => openBuyIn(table)}
+                        onClick={() => {
+                          // Whatever went wrong last time went wrong at
+                          // another table; it must not greet this one.
+                          useCashStore.setState({ error: "" });
+                          setBuyingInto(table);
+                        }}
                         disabled={Boolean(blocked)}
                         title={blocked || `Sit down at ${table.name}`}
                         className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
@@ -172,7 +155,20 @@ export default function CashBrowser() {
         </p>
       )}
 
-      {error && <p className="text-xs text-[#c76b7a]">{error}</p>}
+      {buyingInto && (
+        <SitDownModal
+          // The live row rather than the one that was clicked: seats fill while
+          // somebody is choosing, and a chair that is gone has to look gone.
+          table={tables.find((one) => one.id === buyingInto.id) || buyingInto}
+          balance={balance}
+          busy={busy === buyingInto.id}
+          error={error}
+          onSit={confirm}
+          onClose={() => setBuyingInto(null)}
+        />
+      )}
+
+      {error && !buyingInto && <p className="text-xs text-[#c76b7a]">{error}</p>}
 
       <p className="text-[11px] text-(--color-text-muted) leading-snug flex items-start gap-1.5">
         <Icon name="coin" className="w-3.5 h-3.5 mt-px" />

@@ -73,6 +73,18 @@ class CashTableConsumer(AsyncWebsocketConsumer):
         if queue is not None:
             await queue.put((data.get("action", "fold"), data.get("amount", 0)))
 
+    async def game_message(self, event):
+        """One event off the table, handed to this socket.
+
+        Every broadcast in the app is group_send'd as `game.message`, and
+        Channels dispatches that by looking for a method of this name. Without
+        one it raises instead, which kills the socket — so a table with nobody
+        to deal to, quietly announcing itself every two seconds, was closing
+        every socket at it on a loop and the client was reading that as a
+        connection that would not stay up.
+        """
+        await self.send(text_data=event["data"])
+
     async def disconnect(self, code):
         group = getattr(self, "group", None)
         if group is not None:

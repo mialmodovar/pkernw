@@ -53,14 +53,15 @@ export function tableSummary(table) {
 /**
  * What to offer as a buy-in before anybody types anything.
  *
- * Fifty big blinds, or whatever they can afford under that — the middle of the
- * range, which is what most people would have typed and nobody has to think
- * about. Never below the table minimum: an amount that cannot be paid is not a
- * suggestion, and the field says so rather than the server.
+ * Seventy-five big blinds, or whatever they can afford under that — the middle
+ * of a fifty-to-a-hundred range, which is what most people would have typed and
+ * nobody has to think about. Never below the table minimum: an amount that
+ * cannot be paid is not a suggestion, and the field says so rather than the
+ * server.
  */
 export function suggestedBuyIn(table, balance) {
   if (!table) return 0;
-  const middle = (table.big_blind || 0) * 50;
+  const middle = (table.big_blind || 0) * 75;
   const affordable = Math.min(middle, balance ?? middle, table.max_buy_in || middle);
   return Math.max(table.min_buy_in || 0, affordable);
 }
@@ -74,4 +75,51 @@ export function sitBlocker(table, balance) {
     return `Needs ${table.min_buy_in} to sit down`;
   }
   return null;
+}
+
+/**
+ * What a table with nobody to deal to should say for itself.
+ *
+ * An empty cash table is not broken and not between hands — it is waiting, and
+ * a room that says nothing while it waits reads as one that has stopped
+ * working. Which of the three waits it is matters: a seat that is sitting out
+ * is a different problem from a table nobody else has found yet.
+ */
+export function waitingLine(waiting) {
+  if (!waiting) return "";
+  const seated = waiting.seated || 0;
+  const ready = waiting.dealable || 0;
+  if (ready >= 2) return "";
+  if (seated <= 1) return "Waiting for another player to sit down.";
+  if (ready <= 0) return "Waiting — nobody at the table is being dealt in.";
+  return "Waiting — somebody here is sitting out or out of chips.";
+}
+
+/**
+ * The chairs at a table, in order, with whoever is in them.
+ *
+ * Where you sit is who acts after you, which is most of what a seat is worth,
+ * so it is a choice rather than something handed out. Seats are numbered from
+ * zero everywhere the server counts them and from one everywhere a person
+ * reads them — that translation belongs here, once.
+ */
+export function seatOptions(table) {
+  if (!table) return [];
+  const byNumber = new Map((table.players || []).map((one) => [one.seat, one]));
+  return Array.from({ length: table.seats || 0 }, (_unused, seat) => {
+    const player = byNumber.get(seat);
+    return {
+      seat,
+      label: `Seat ${seat + 1}`,
+      taken: Boolean(player),
+      name: player ? player.display_name || player.username : "",
+      mine: player != null && seat === table.my_seat,
+    };
+  });
+}
+
+/** The chair to offer before anybody picks one: the first one free. */
+export function defaultSeat(table) {
+  const free = seatOptions(table).find((one) => !one.taken);
+  return free ? free.seat : null;
 }

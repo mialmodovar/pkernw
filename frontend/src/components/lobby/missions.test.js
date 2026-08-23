@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  barPct, claimableCount, forPeriod, headline, periodSummary, progressLabel, unclaimedCoins,
-} from "./missions";
+  barPct, claimableCount, forPeriod, headline, periodSummary, progressLabel, unclaimedCoins, resetNote, nextReset } from "./missions";
 
 const board = [
   { key: "daily_play", period: "daily", target: 3, progress: 3, coins: 60, done: true, claimed: true, claimable: false },
@@ -109,5 +108,53 @@ describe("headline", () => {
   it("has nothing to say before the board arrives", () => {
     expect(headline([])).toBe("");
     expect(headline(undefined)).toBe("");
+  });
+});
+
+describe("nextReset", () => {
+  // The server counts days and weeks in UTC, and these are the moments it
+  // counts to. Asserted as instants rather than as text: how an hour is
+  // written is the reader's locale's business, and a test that pinned "01:00"
+  // would be pinning the machine it ran on.
+  it("is the next UTC midnight for a day", () => {
+    expect(nextReset("daily", new Date("2026-07-15T23:30:00Z")).toISOString())
+      .toBe("2026-07-16T00:00:00.000Z");
+  });
+
+  it("is the next UTC Monday for a week", () => {
+    expect(nextReset("weekly", new Date("2026-07-15T12:00:00Z")).toISOString())
+      .toBe("2026-07-20T00:00:00.000Z");
+  });
+
+  it("does not call a Monday's reset this morning", () => {
+    expect(nextReset("weekly", new Date("2026-07-20T12:00:00Z")).toISOString())
+      .toBe("2026-07-27T00:00:00.000Z");
+  });
+
+  it("counts a Sunday as six days from Monday rather than one", () => {
+    expect(nextReset("weekly", new Date("2026-07-19T12:00:00Z")).toISOString())
+      .toBe("2026-07-20T00:00:00.000Z");
+  });
+});
+
+describe("resetNote", () => {
+  // Lisbon is an hour ahead of UTC in summer, so these turn over at one in the
+  // morning there — and a player finishing a mission at half past midnight had
+  // missed it by a day without being told.
+  const summerNight = new Date("2026-07-15T23:30:00Z");
+
+  it("says the hour on the reader's clock rather than the server's", () => {
+    const lisbon = resetNote("daily", summerNight, "Europe/Lisbon");
+    const utc = resetNote("daily", summerNight, "UTC");
+    expect(lisbon).not.toBe(utc);
+    expect(lisbon).toMatch(/^Starts over at .*1/);
+  });
+
+  it("names the day a week turns over, which is not always the server's", () => {
+    // A UTC Monday at 00:00 is still Sunday evening in New York.
+    expect(resetNote("weekly", new Date("2026-07-15T12:00:00Z"), "America/New_York"))
+      .toMatch(/^Starts over Sunday at /);
+    expect(resetNote("weekly", new Date("2026-07-15T12:00:00Z"), "UTC"))
+      .toMatch(/^Starts over Monday at /);
   });
 });

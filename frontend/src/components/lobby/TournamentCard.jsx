@@ -1,9 +1,9 @@
 import PlayerFaces from "./PlayerFaces";
 import Icon from "../icons/Icon";
 import { seatedEntries, totalPool } from "../game/prizePool";
-import { isSpinGo, prizeLabel } from "./buyIn";
+import { prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
-import { countdownLabel } from "./tournamentVitals";
+import { tournamentFacts } from "./tournamentFacts";
 import { useCountdown } from "./useCountdown";
 
 const formatTime = (value) => (value
@@ -93,7 +93,6 @@ export default function TournamentCard({
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
   const buyInCoins = t.buy_in_coins || 0;
-  const spinGo = isSpinGo(t);
   const startTime = formatTime(t.scheduled_start_at);
   const full = t.player_count >= t.max_players;
   const bountyOn = (t.bounty_mode || "none") !== "none" && (t.bounty_cents || 0) > 0;
@@ -120,42 +119,17 @@ export default function TournamentCard({
     : running ? spanBetween(t.started_at) : null;
 
   // Read left to right, most-particular first. Joined as one line so it wraps
-  // as prose on a narrow screen instead of becoming a column of chips.
-  const facts = [
-    startTime && !isFinished && !running ? startTime : null,
-    elapsed ? (isFinished ? `took ${elapsed}` : `${elapsed} in`) : null,
-    `${t.player_count}/${t.max_players}`,
-    // 8-max and 9-max play differently enough that it belongs next to the
-    // turnout rather than buried in the setup screen.
-    t.players_per_table ? `${t.players_per_table}-max` : null,
-    // What the places divide, when that is not the whole pool. The total has a
-    // block of its own now, and on a knockout night the two are different
-    // numbers — so this says which of them it is or is left out entirely.
-    bountyOn && poolCents > 0 ? `${euros(poolCents)} to places` : null,
-    pool ? null : prizeLabel(t, t.player_count),
-    // A Spin n Go says so, and says what it drew. Only ever seen on the
-    // finished ones — a waiting queue is not listed here at all — so the
-    // multiplier is history rather than news.
-    spinGo ? "Spin n Go" : null,
-    spinGo && t.spin_multiplier ? `${t.spin_multiplier}×` : null,
-    spinGo ? null : GAME_LABELS[t.game_type] || null,
-    t.club_name ? (t.league_name || "club night") : null,
-    // The format and what it is worth, in one fact — "PKO" on its own said the
-    // rules and left the money out.
-    bountyOn
-      ? `${{ progressive: "PKO", mystery: "Mystery", fixed: "KO" }[t.bounty_mode] || "KO"} `
-        + `${euros(koPoolCents)}`
-      : null,
-    t.payout_structure?.length > 0 ? `${t.payout_structure.length} paid` : null,
-    // Only worth saying while you can still act on it, and in minutes once the
-    // clock is running — "until level 4" is a fact about the schedule, and how
-    // long you have is the thing you were actually asking.
-    !isFinished && t.late_reg_level > 0 && (t.status === "lobby" || t.late_registration_open)
-      ? (countdownLabel(lateRegLeft)
-        ? `late reg closes in ${countdownLabel(lateRegLeft)}`
-        : `registration until level ${t.late_reg_level}`)
-      : null,
-  ].filter(Boolean);
+  // as prose on a narrow screen instead of becoming a column of chips. Which
+  // facts survive is tournamentFacts.js's judgement, and it is tested there.
+  const facts = tournamentFacts(t, {
+    startTime,
+    elapsed,
+    lateRegSeconds: lateRegLeft,
+    // When the pool has a column of its own, saying it again in words is
+    // repetition; when it has not, this line is the only place it can be said.
+    hasPoolFigure: Boolean(pool),
+    prizeLabel: prizeLabel(t, t.player_count),
+  });
 
   const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;
   // Busted, but the tournament is still taking rebuys. Without this the only
@@ -227,7 +201,13 @@ export default function TournamentCard({
           ) : (
             <>
               {facts.join(" · ")}
-              <span className="hidden sm:inline"> · {t.host_display_name || t.host_name}</span>
+              {/* Who is running it, when that is not already answered. A
+                  club's night is the club's, and its name is on a chip
+                  directly above this line — printing the host after it was
+                  saying "Paga Porco" twice in two inches. */}
+              {!t.club_name && (
+                <span className="hidden sm:inline"> · {t.host_display_name || t.host_name}</span>
+              )}
             </>
           )}
         </p>
@@ -277,7 +257,12 @@ export default function TournamentCard({
         {full && !t.is_joined && !isFinished && (
           <span className="text-[11px] text-(--color-text-muted)">full</span>
         )}
-        {t.is_joined && !t.is_host && t.status === "lobby" && onQuit && (
+        {/* The host too. Opening a tournament seats you automatically, so the
+            person most likely to want out of one is the person who arranged
+            it and then could not make it — and they were the one player this
+            button was hidden from. Giving up the seat does not give up the
+            night: they still host it. */}
+        {t.is_joined && t.status === "lobby" && onQuit && (
           <button onClick={() => onQuit(t.id)}
             title="Give up your seat and free it for someone else"
             className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs

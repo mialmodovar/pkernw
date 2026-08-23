@@ -9,9 +9,56 @@
 
 /** The two periods, in the order they are shown. Today first: it is today. */
 export const PERIODS = [
-  { key: "daily", label: "Today", note: "Starts over at midnight" },
-  { key: "weekly", label: "This week", note: "Starts over on Monday" },
+  { key: "daily", label: "Today" },
+  { key: "weekly", label: "This week" },
 ];
+
+/**
+ * When a period starts over, said on the reader's clock.
+ *
+ * The server counts days and weeks in UTC — deliberately, since a day that
+ * ended at 03:47 because that is when somebody first logged in is a punishment
+ * rather than a reset. But "starts over at midnight" is then a lie to everybody
+ * who is not on UTC: in Lisbon in summer these turn over at one in the morning,
+ * and a player finishing a mission at half past midnight had already missed it
+ * by a day without being told so.
+ *
+ * So the hour is converted rather than the rule changed. `zone` is only for the
+ * tests; left out, it is wherever the browser is.
+ */
+export function nextReset(period, now = new Date()) {
+  const next = new Date(now);
+  next.setUTCHours(0, 0, 0, 0);
+  if (period === "weekly") {
+    // Monday, as the server has it. getUTCDay is Sunday-first, so Sunday is
+    // six days from Monday rather than one — and a Monday's next reset is a
+    // week away rather than this morning.
+    const days = (8 - (next.getUTCDay() || 7)) % 7 || 7;
+    next.setUTCDate(next.getUTCDate() + days);
+  } else {
+    next.setUTCDate(next.getUTCDate() + 1);
+  }
+  return next;
+}
+
+/**
+ * The same moment, written the way the reader's own clock writes it.
+ *
+ * Locale and zone both left to the browser, which is the whole point: the hour
+ * is theirs, and whether it is said as 01:00 or 1:00 AM is theirs too.
+ */
+export function resetNote(period, now = new Date(), zone = undefined) {
+  const next = nextReset(period, now);
+
+  const at = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit", minute: "2-digit", timeZone: zone,
+  }).format(next);
+  if (period !== "weekly") return `Starts over at ${at}`;
+  const day = new Intl.DateTimeFormat(undefined, {
+    weekday: "long", timeZone: zone,
+  }).format(next);
+  return `Starts over ${day} at ${at}`;
+}
 
 /** The missions of one period, in the order the server sent them. */
 export function forPeriod(missions, period) {

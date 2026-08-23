@@ -762,14 +762,39 @@ class QuitTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 		self.assertEqual(response.data["seat"], 1)
 
-	def test_host_cannot_leave_their_own_tournament(self):
+	def test_the_host_can_give_up_their_seat_without_giving_up_the_night(self):
+		"""Hosting and playing are two different things. Opening a tournament
+		seats you automatically, so somebody who arranges a night they cannot
+		play was stuck in it — with no way out but deleting it for everybody."""
 		tournament, _seat = self._seated()
 		self.client.force_authenticate(self.host)
 
 		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
 
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertFalse(tournament.players.filter(user=self.host).exists())
+
+	def test_leaving_their_own_tournament_leaves_them_running_it(self):
+		"""What starts a tournament is the host on the row, not a seat in the
+		field: they run it from a chair by the wall."""
+		tournament, _seat = self._seated()
+		self.client.force_authenticate(self.host)
+
+		self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.host_id, self.host.id)
+
+	def test_the_host_still_cannot_leave_one_that_has_started(self):
+		"""Once cards are in the air a seat carries chips that belong to the
+		prize pool, and that is true of the host's seat too."""
+		tournament, _seat = self._seated()
+		Tournament.objects.filter(pk=tournament.pk).update(status="running")
+		self.client.force_authenticate(self.host)
+
+		response = self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-		self.assertEqual(response.data["error"], "The host cannot leave their own tournament")
 		self.assertTrue(tournament.players.filter(user=self.host).exists())
 
 	def test_is_host_flag_is_in_the_lobby_payload(self):
@@ -6231,6 +6256,88 @@ class FixtureCalendarTests(TestCase):
 
 		self.assertEqual(len(found), 2)
 		self.assertEqual((found[1] - found[0]).days, 7)
+
+	def test_the_hour_is_the_club_s_rather_than_the_server_s(self):
+		"""The whole reason a fixture carries a timezone. The server keeps its
+		clocks on UTC on purpose, and a club that meets at nine in Lisbon was
+		having its night opened at ten all summer."""
+		from datetime import datetime, time
+		from zoneinfo import ZoneInfo
+
+		from tournaments.fixtures import next_occurrence
+
+		lisbon = ZoneInfo("Europe/Lisbon")
+		# A Wednesday in July, when Lisbon is an hour ahead of UTC.
+		july = datetime(2026, 7, 1, 12, 0, tzinfo=ZoneInfo("UTC"))
+
+		when = next_occurrence(4, time(21, 0), july, "Europe/Lisbon")
+
+		self.assertEqual(when.astimezone(lisbon).hour, 21)
+		# Which is not nine o'clock where the server is standing.
+		self.assertEqual(when.astimezone(ZoneInfo("UTC")).hour, 20)
+
+	def test_a_series_does_not_drift_the_weekend_the_clocks_change(self):
+		"""Seven days on the wall rather than a hundred and sixty-eight hours.
+		A series that moved an hour every spring is a series people stop
+		trusting."""
+		from datetime import datetime, time
+		from zoneinfo import ZoneInfo
+
+		from tournaments.fixtures import occurrences_within
+
+		lisbon = ZoneInfo("Europe/Lisbon")
+		# The last Sunday of October 2026 is the 25th; this is the Friday before.
+		before = datetime(2026, 10, 22, 12, 0, tzinfo=lisbon)
+
+		found = occurrences_within(4, time(21, 0), 10, before, "Europe/Lisbon")
+
+		self.assertGreaterEqual(len(found), 2)
+		for when in found:
+			self.assertEqual(when.astimezone(lisbon).hour, 21)
+		# One of them is on each side of the change, so the two are seven days
+		# and an hour apart in real time — which is what keeping the wall hour
+		# costs, and the whole point. Measured in UTC: subtracting two aware
+		# datetimes that share a timezone object ignores their offsets, and
+		# this is precisely the case where that is the wrong answer.
+		utc = [when.astimezone(ZoneInfo("UTC")) for when in found]
+		self.assertEqual(utc[1] - utc[0], timedelta(days=7, hours=1))
+
+	def test_a_fixture_with_no_clock_of_its_own_uses_the_server_s(self):
+		"""Every row made before fixtures carried one, and it is what they
+		meant at the time."""
+		from datetime import time
+
+		from tournaments.fixtures import next_occurrence
+
+		self.assertEqual(
+			next_occurrence(4, time(21, 0), None, ""),
+			next_occurrence(4, time(21, 0), None, None),
+		)
+
+	def test_an_unknown_timezone_is_not_a_reason_to_stop_a_club_s_friday(self):
+		from datetime import time
+
+		from tournaments.fixtures import next_occurrence
+
+		when = next_occurrence(4, time(21, 0), None, "Mars/Olympus_Mons")
+
+		self.assertEqual(when.weekday(), 4)
+
+	def test_the_series_reads_its_hour_off_the_host_s_clock(self):
+		"""A host who scheduled nine in Lisbon and pressed repeat was getting a
+		series at eight, while the lobby went on saying nine — two answers to
+		the same question, both on screen."""
+		from datetime import datetime
+		from zoneinfo import ZoneInfo
+
+		from tournaments.fixtures import from_moment
+
+		nine_in_lisbon = datetime(2026, 7, 3, 21, 0, tzinfo=ZoneInfo("Europe/Lisbon"))
+
+		weekday, at_time = from_moment(nine_in_lisbon, "Europe/Lisbon")
+
+		self.assertEqual(at_time.hour, 21)
+		self.assertEqual(weekday, 4)
 
 	def test_how_early_a_night_opens_is_held_between_a_day_and_three_weeks(self):
 		from tournaments.fixtures import DEFAULT_DAYS_AHEAD, MAX_DAYS_AHEAD, clean_days_ahead

@@ -147,10 +147,31 @@ class HandResult:
     busted_players: List[Player]
     community_cards: List[Card]
     hand_number:    int
+    # Every board that was played, which is one for an ordinary hand and two
+    # for a bomb pot or a hand run twice. `community_cards` above is the first
+    # of them and stays what it always was.
+    boards:         List[List[Card]] = field(default_factory=list)
     # Who knocked whom out: (victim, eliminators). Bounty tournaments need this
     # and nothing else in the hand knows it — by the time the coordinator sees a
     # stack on zero, the pot that took it has already been paid out.
     knockouts:      List[Tuple[Player, List[Player]]] = field(default_factory=list)
+
+
+def _share_pot(amount: int, board_count: int, boards):
+    """One pot, divided between the boards it is being played for.
+
+    Returns (board, amount) pairs. The odd chips go with the first board, which
+    is the same rule a split pot has always used and the same reason: somebody
+    has to have them and any other answer needs a second rule.
+    """
+    if board_count <= 1:
+        return [(boards[0], amount)]
+    share = amount // board_count
+    odd = amount - share * board_count
+    return [
+        (board, share + (odd if index == 0 else 0))
+        for index, board in enumerate(boards)
+    ]
 
 
 def _attribute_knockouts(
@@ -214,6 +235,8 @@ class HandEngine:
         request_action: RequestActionFn,
         rabbit_hunting_enabled: bool = False,
         all_in_or_fold: bool = False,
+        run_it_twice: bool = False,
+        bomb_pot_ante: int = 0,
     ):
         self.players        = players
         self.dealer_pos     = dealer_pos % len(players)
@@ -229,13 +252,56 @@ class HandEngine:
         # about the format — four seats, fifteen blinds, a bounty on every head
         # — is the tournament's business rather than the hand's.
         self.all_in_or_fold = all_in_or_fold
+        # A cash table's rule rather than a per-hand negotiation: a table that
+        # has to ask four people, with a clock running, is a table nobody plays
+        # at. It only ever applies where it means anything — everybody all in,
+        # two or more still holding cards.
+        self.run_it_twice = run_it_twice
+        # A bomb pot: everybody puts this in before a card is dealt, there is no
+        # preflop betting at all, and two boards come out at once. Zero is the
+        # ordinary hand, which is nearly all of them.
+        self.bomb_pot_ante = max(0, bomb_pot_ante)
 
         self.deck              = Deck()
-        self.community_cards:  List[Card] = []
+        # Every board in play. Nearly always one — the ordinary hand — and two
+        # when the table deals a bomb pot or the players run it twice. The pot
+        # is split evenly between them at showdown, which is what makes both
+        # features the same feature: `community_cards` is board one, kept as a
+        # name because everything downstream of a hand reads it.
+        self.boards: List[List[Card]] = [[]]
         self._street_bet       = 0
         self._min_raise        = big_blind
         self._street_name      = "preflop"
         self._dead_money       = 0  # antes (dead money, added to main pot)
+
+    @property
+    def community_cards(self) -> List[Card]:
+        """The first board. What a one-board hand has always meant."""
+        return self.boards[0]
+
+    @property
+    def runs_twice(self) -> bool:
+        return len(self.boards) > 1
+
+    def _deal_to_boards(self, count: int) -> None:
+        """One street, to every board in play.
+
+        Off the same deck, so two boards never share a card — which is the
+        whole of what makes a second board fair rather than a second chance at
+        the same one.
+        """
+        for board in self.boards:
+            board += self.deck.deal(count)
+
+    def _split_boards(self) -> None:
+        """Run the rest of it twice, from where it stands.
+
+        The cards already out are on both boards: they were dealt once and both
+        run-outs start from them. Only what is left to come is dealt twice.
+        """
+        if self.runs_twice:
+            return
+        self.boards.append(list(self.boards[0]))
 
     # ── public entry ─────────────────────────────────────────────────────
 
@@ -243,19 +309,32 @@ class HandEngine:
         for p in self.players:
             p.reset_for_hand()
 
+        bomb = self.bomb_pot_ante > 0
         await self.broadcast("hand_started", {
             "hand_number": self.hand_number,
             "dealer_seat": _seat_of(self.players[self.dealer_pos]),
+            # So the table can say what kind of hand this is before the first
+            # card lands, which for a bomb pot is the only warning anybody gets.
+            "bomb_pot": bomb,
         })
 
-        await self._post_antes()
-        bb_pos = await self._post_blinds()
-        await self._deal_hole_cards()
+        if bomb:
+            # Everybody in, nobody folding, and no preflop betting at all: the
+            # ante *is* the action. Two boards from the start, so a bomb pot is
+            # two hands' worth of river in one.
+            await self._post_bomb_ante()
+            await self._deal_hole_cards()
+            self._split_boards()
+            self._street_name = "preflop"
+        else:
+            await self._post_antes()
+            bb_pos = await self._post_blinds()
+            await self._deal_hole_cards()
 
-        n = len(self.players)
-        preflop_start = (bb_pos + 1) % n
-        self._street_name = "preflop"
-        await self._betting_round(preflop_start, preflop=True)
+            n = len(self.players)
+            preflop_start = (bb_pos + 1) % n
+            self._street_name = "preflop"
+            await self._betting_round(preflop_start, preflop=True)
 
         for street, count in [("flop", 3), ("turn", 1), ("river", 1)]:
             if self._active_count() <= 1:
@@ -282,11 +361,21 @@ class HandEngine:
                 ])
                 await asyncio.sleep(3)
 
-            self.community_cards += self.deck.deal(count)
+            # Run it twice, if the table does and this is the moment: the
+            # money is already in, nobody can act again, and the only question
+            # left is which cards come. Two boards is the answer to "how much
+            # of my evening does one river decide".
+            if all_in_runout and self.run_it_twice and self._active_count() >= 2:
+                self._split_boards()
+
+            self._deal_to_boards(count)
             self._street_name = street
             await self.broadcast("street_dealt", {
                 "street": street,
                 "cards": cards_to_list(self.community_cards),
+                # Both of them, when there are two. A client that has never
+                # heard of a second board draws the first and is right about it.
+                "boards": [cards_to_list(board) for board in self.boards],
                 "pot": self._pot_total(),
             })
             await self._broadcast_hand_strengths()
@@ -320,6 +409,28 @@ class HandEngine:
         return await self._resolve()
 
     # ── setup ────────────────────────────────────────────────────────────
+
+    async def _post_bomb_ante(self):
+        """What everybody pays to be in a bomb pot.
+
+        Capped at the stack, like every other forced bet here: somebody with
+        less than the ante is all in for what they have, and the side pot
+        arithmetic that already exists takes care of the rest.
+        """
+        entries = []
+        for player in self.players:
+            if player.chips <= 0:
+                continue
+            paid = min(self.bomb_pot_ante, player.chips)
+            player.bet(paid)
+            entries.append({"seat": _seat_of(player), "amount": paid})
+
+        if entries:
+            await self.broadcast("bomb_pot_posted", {
+                "ante": self.bomb_pot_ante,
+                "posts": entries,
+                "pot": self._pot_total(),
+            })
 
     async def _post_antes(self):
         if not self.ante:
@@ -582,6 +693,17 @@ class HandEngine:
                     "seat":      _seat_of(p),
                     "cards":     cards_to_list(p.hole_cards),
                     "hand_name": hand_name(score),
+                    # What they have on each board, where there is more than
+                    # one. The first is the same hand as `hand_name`, so a
+                    # client that ignores this reads exactly what it used to.
+                    "by_board": [
+                        {
+                            "board": index,
+                            "hand_name": hand_name(best_five(p.hole_cards + board)[0]),
+                            "best_cards": cards_to_list(best_five(p.hole_cards + board)[1]),
+                        }
+                        for index, board in enumerate(self.boards)
+                    ] if len(self.boards) > 1 else [],
                     # The score behind the name, so a hand written down now can
                     # be ranked against another later — "Full House" alone
                     # cannot say which of two full houses was bigger. Public
@@ -599,27 +721,46 @@ class HandEngine:
                 if not eligible:
                     eligible = pot.eligible
 
-                scores  = [(p, evaluate(p.hole_cards + self.community_cards)) for p in eligible]
-                best    = max(s for _, s in scores)
-                winners = [p for p, s in scores if s == best]
-                pot_winners.append(winners)
+                # One board or two, the pot is divided between them first and
+                # then between whoever won each — so a hand run twice is two
+                # half pots rather than one pot decided twice, and a player who
+                # wins one board and loses the other gets their money back.
+                # `_share_pot` puts the odd chips on the first board's winner,
+                # which is the same rule a split pot has always used.
+                everybody_in_pot: List[Player] = []
+                for board_index, (board, amount) in enumerate(
+                    _share_pot(pot.amount, len(self.boards), self.boards),
+                ):
+                    scores  = [(p, evaluate(p.hole_cards + board)) for p in eligible]
+                    best    = max(s for _, s in scores)
+                    winners = [p for p, s in scores if s == best]
+                    everybody_in_pot.extend(winners)
 
-                share    = pot.amount // len(winners)
-                odd_chip = pot.amount % len(winners)
+                    share    = amount // len(winners)
+                    odd_chip = amount % len(winners)
+                    board_label = label if len(self.boards) == 1 else f"{label}, board {board_index + 1}"
 
-                for j, w in enumerate(winners):
-                    amt = share + (odd_chip if j == 0 else 0)
-                    w.chips    += amt
-                    w.hands_won += 1
-                    desc = f"{label}: {hand_name(best)}"
-                    if len(winners) > 1:
-                        desc += f" (split {len(winners)}-way)"
-                    awards.append((w, amt, desc))
-                    pot_awards_data.append({
-                        "seat": _seat_of(w),
-                        "amount": amt,
-                        "description": desc,
-                    })
+                    for j, w in enumerate(winners):
+                        amt = share + (odd_chip if j == 0 else 0)
+                        if amt <= 0:
+                            continue
+                        w.chips    += amt
+                        w.hands_won += 1
+                        desc = f"{board_label}: {hand_name(best)}"
+                        if len(winners) > 1:
+                            desc += f" (split {len(winners)}-way)"
+                        awards.append((w, amt, desc))
+                        pot_awards_data.append({
+                            "seat": _seat_of(w),
+                            "amount": amt,
+                            "description": desc,
+                            "board": board_index,
+                        })
+
+                # Whoever took any part of this pot, for the knockout
+                # attribution below: a bounty follows the last pot somebody was
+                # playing for, and with two boards that can be two people.
+                pot_winners.append(everybody_in_pot)
 
             await self.broadcast("pot_awarded", pot_awards_data)
 
@@ -638,6 +779,7 @@ class HandEngine:
             pot_awards=awards,
             busted_players=busted,
             community_cards=self.community_cards,
+            boards=[list(board) for board in self.boards],
             hand_number=self.hand_number,
             knockouts=_attribute_knockouts(busted, pots, pot_winners),
         )

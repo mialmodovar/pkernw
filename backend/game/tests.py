@@ -2744,3 +2744,123 @@ class AllInOrFoldTests(TestCase):
 
         first = offers[0]
         self.assertEqual(first["min_raise"], first["max_raise"])
+
+
+class MultipleBoardTests(TestCase):
+    """Two boards: a bomb pot from the start, or a hand run twice at the end."""
+
+    def _hand(self, chips, *, run_it_twice=False, bomb_pot_ante=0, wants="call"):
+        """One hand, with everybody answering the same way.
+
+        `wants` is what each player tries to do; what they are actually offered
+        decides the rest. Asking for a raise you cannot make and being folded
+        for it is what the engine does with any illegal action, and it is not
+        what these tests are about.
+        """
+        from game.engine.hand import HandEngine
+        from game.engine.player import Player
+
+        events = []
+        players = [Player(name=f"p{index}", chips=amount) for index, amount in enumerate(chips)]
+        for index, player in enumerate(players):
+            player._seat = index
+
+        async def request_action(player, context):
+            valid = context["valid_actions"]
+            if wants in valid:
+                return (wants, context["max_raise"] if wants == "raise" else 0)
+            if "call" in valid:
+                return ("call", 0)
+            return ("check", 0) if "check" in valid else ("fold", 0)
+
+        async def broadcast(event_type, payload):
+            events.append((event_type, payload))
+
+        engine = HandEngine(
+            players=players, dealer_pos=0, small_blind=50, big_blind=100, ante=0,
+            hand_number=1, broadcast=broadcast, request_action=request_action,
+            run_it_twice=run_it_twice, bomb_pot_ante=bomb_pot_ante,
+        )
+        result = async_to_sync(engine.run)()
+        return engine, result, events
+
+    def test_an_ordinary_hand_still_has_one_board(self):
+        engine, result, _ = self._hand([2000, 2000, 2000])
+
+        self.assertEqual(len(engine.boards), 1)
+        self.assertEqual(len(result.boards), 1)
+        self.assertFalse(engine.runs_twice)
+
+    def test_a_bomb_pot_deals_two_boards_and_no_preflop_betting(self):
+        asked = []
+
+        from game.engine.hand import HandEngine
+        from game.engine.player import Player
+
+        players = [Player(name=f"p{i}", chips=2000) for i in range(3)]
+        for index, player in enumerate(players):
+            player._seat = index
+
+        async def request_action(player, context):
+            asked.append(context["street"])
+            return ("check", 0)
+
+        async def broadcast(event_type, payload):
+            return None
+
+        engine = HandEngine(
+            players=players, dealer_pos=0, small_blind=50, big_blind=100, ante=0,
+            hand_number=1, broadcast=broadcast, request_action=request_action,
+            bomb_pot_ante=200,
+        )
+        async_to_sync(engine.run)()
+
+        self.assertEqual(len(engine.boards), 2)
+        # Nobody was asked to act before the flop: the ante was the action.
+        self.assertNotIn("preflop", asked)
+        # And everybody paid it: three antes of 200 in, and every chip still
+        # accounted for once the two boards have been settled.
+        for player in players:
+            self.assertEqual(player.total_invested, 200)
+        self.assertEqual(sum(player.chips for player in players), 6000)
+
+    def test_the_two_boards_never_share_a_card(self):
+        """Off the same deck. A second board that could repeat the first is a
+        second chance at it rather than a second run-out."""
+        engine, _result, _ = self._hand([2000, 2000, 2000], bomb_pot_ante=200)
+
+        first, second = engine.boards
+        self.assertEqual(len(first), 5)
+        self.assertEqual(len(second), 5)
+        self.assertEqual(len(set(map(str, first)) & set(map(str, second))), 0)
+
+    def test_running_it_twice_splits_the_pot_in_half(self):
+        """Two half pots rather than one pot decided twice: somebody who wins
+        one board and loses the other gets their money back."""
+        engine, result, _ = self._hand([1000, 1000], run_it_twice=True, wants="raise")
+
+        self.assertTrue(engine.runs_twice)
+        total = sum(amount for _player, amount, _desc in result.pot_awards)
+        self.assertEqual(total, 2000)
+        # Each board carried half of it — with the odd chip, if there was one,
+        # on the first.
+        by_board = {}
+        for _player, amount, desc in result.pot_awards:
+            board = 1 if "board 1" in desc else 2 if "board 2" in desc else 0
+            by_board[board] = by_board.get(board, 0) + amount
+        self.assertEqual(sorted(by_board), [1, 2])
+        self.assertEqual(abs(by_board[1] - by_board[2]) <= 1, True)
+
+    def test_it_is_not_run_twice_when_somebody_can_still_bet(self):
+        """The point of it is that nothing is left to decide but the cards."""
+        engine, _result, _ = self._hand([2000, 2000, 2000], run_it_twice=True, wants="check")
+
+        self.assertFalse(engine.runs_twice)
+
+    def test_the_chips_add_up_however_many_boards_there_were(self):
+        for options in ({"bomb_pot_ante": 200}, {"run_it_twice": True}):
+            with self.subTest(**options):
+                engine, _result, _ = self._hand(
+                    [1500, 1500, 1500], wants="raise", **options,
+                )
+                self.assertEqual(sum(p.chips for p in engine.players), 4500)

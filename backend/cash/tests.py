@@ -1,3 +1,4 @@
+from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
@@ -243,3 +244,171 @@ class CashBankTests(TestCase):
 
         stand_up(seat)
         self.assertEqual(self._balance(), 1000 + 260)
+
+
+class CashRoomTests(TestCase):
+    """A table dealing, with the world stubbed out around it.
+
+    Dictionaries for seats and lists for what went out: what is being checked
+    is the loop — who is dealt in, where the button goes, what happens to the
+    stacks — rather than the plumbing under it.
+    """
+
+    def setUp(self):
+        self.written = []
+        self.hands = []
+        self.events = []
+        self.settled = 0
+
+    def _room(self, seats, **options):
+        from asgiref.sync import async_to_sync   # noqa: F401  (used by callers)
+
+        from .room import CashRoom
+        from .stakes import stake_for
+
+        self.seats = [dict(one) for one in seats]
+
+        async def load_seats():
+            return [dict(one) for one in self.seats]
+
+        async def persist_stacks(stacks):
+            self.written.append(dict(stacks))
+            for seat in self.seats:
+                if seat["seat"] in stacks:
+                    seat["stack"] = stacks[seat["seat"]]
+
+        async def settle_leavers():
+            self.settled += 1
+
+        async def broadcast(event_type, payload):
+            self.events.append((event_type, payload))
+
+        async def request_action(player, context):
+            valid = context["valid_actions"]
+            return ("check", 0) if "check" in valid else ("call", 0)
+
+        async def record_hand(row):
+            self.hands.append(row)
+
+        return CashRoom(
+            table_id=1,
+            stake=stake_for("low"),
+            seat_count=6,
+            load_seats=load_seats,
+            persist_stacks=persist_stacks,
+            settle_leavers=settle_leavers,
+            broadcast=broadcast,
+            request_action=request_action,
+            record_hand=record_hand,
+            pause_between_hands=0,
+            idle_poll=0,
+            **options,
+        )
+
+    def _seat(self, seat, stack=500, **extra):
+        return {"seat": seat, "user_id": 100 + seat, "name": f"p{seat}", "stack": stack, **extra}
+
+    def test_a_hand_is_dealt_and_the_stacks_are_written_down(self):
+        room = self._room([self._seat(0), self._seat(1), self._seat(2)])
+        room.seats = [dict(one) for one in self.seats]
+
+        result = async_to_sync(room.play_hand)()
+
+        self.assertEqual(room.hand_number, 1)
+        self.assertTrue(self.written)
+        # Every coin is still on the table: a cash hand moves chips between
+        # stacks and creates none.
+        self.assertEqual(sum(self.written[-1].values()), 1500)
+        self.assertTrue(result.pot_awards)
+
+    def test_the_button_moves_round_the_players_being_dealt_in(self):
+        room = self._room([self._seat(0), self._seat(2), self._seat(4)])
+        room.seats = [dict(one) for one in self.seats]
+
+        seen = []
+        for _ in range(4):
+            async_to_sync(room.play_hand)()
+            seen.append(room.button)
+
+        self.assertEqual(seen, [0, 2, 4, 0])
+
+    def test_somebody_sitting_out_is_not_dealt_in(self):
+        room = self._room([self._seat(0), self._seat(1), self._seat(2, sitting_out=True)])
+        room.seats = [dict(one) for one in self.seats]
+
+        async_to_sync(room.play_hand)()
+
+        self.assertNotIn(2, self.written[-1])
+
+    def test_a_hand_is_written_to_the_history_with_its_boards(self):
+        room = self._room([self._seat(0), self._seat(1)])
+        room.seats = [dict(one) for one in self.seats]
+
+        async_to_sync(room.play_hand)()
+
+        row = self.hands[-1]
+        self.assertEqual(row["hand_number"], 1)
+        self.assertGreater(row["pot"], 0)
+        self.assertEqual(len(row["boards"]), 1)
+        self.assertFalse(row["was_bomb_pot"])
+
+    def test_a_bomb_pot_comes_round_on_the_count_and_deals_two_boards(self):
+        room = self._room([self._seat(0), self._seat(1)], bomb_pot_every=2, bomb_pot_bb=2)
+        room.seats = [dict(one) for one in self.seats]
+
+        async_to_sync(room.play_hand)()   # an ordinary one
+        async_to_sync(room.play_hand)()   # and the bomb
+
+        self.assertFalse(self.hands[0]["was_bomb_pot"])
+        self.assertTrue(self.hands[1]["was_bomb_pot"])
+        self.assertEqual(len(self.hands[1]["boards"]), 2)
+        # Still nobody's coins invented: two boards, one pot.
+        self.assertEqual(sum(self.written[-1].values()), 1000)
+
+    def test_leavers_are_settled_after_every_hand_rather_than_during_one(self):
+        room = self._room([self._seat(0), self._seat(1)])
+        room.seats = [dict(one) for one in self.seats]
+
+        async_to_sync(room.play_hand)()
+
+        self.assertEqual(self.settled, 1)
+
+    def test_a_table_with_nobody_at_it_waits_rather_than_dealing(self):
+        room = self._room([self._seat(0)])
+        room.running = True
+
+        async def one_pass():
+            room.seats = await room.load_seats()
+            if not __import__("cash.seating", fromlist=["can_deal"]).can_deal(room.seats):
+                await room._announce_waiting()
+
+        async_to_sync(one_pass)()
+
+        self.assertEqual(room.hand_number, 0)
+        self.assertEqual(self.events[-1][0], "table_waiting")
+
+    def test_the_snapshot_says_what_the_table_looks_like_between_hands(self):
+        room = self._room([self._seat(0), self._seat(3, stack=250)])
+        room.seats = [dict(one) for one in self.seats]
+
+        snapshot = room.snapshot()
+
+        self.assertEqual(snapshot["stake"]["big_blind"], 5)
+        self.assertEqual([one["seat"] for one in snapshot["players"]], [0, 3])
+        self.assertEqual(snapshot["players"][1]["chips"], 250)
+
+    def test_a_hand_in_progress_can_be_asked_who_is_at_a_seat(self):
+        room = self._room([self._seat(0), self._seat(1)])
+        room.seats = [dict(one) for one in self.seats]
+
+        async def during():
+            room.hand_number += 1
+            room.button = 0
+            playing = [dict(one) for one in room.seats]
+            room._playing = {one["seat"]: room._runtime(one) for one in playing}
+            return room.player_at(101)
+
+        found = async_to_sync(during)()
+
+        self.assertIsNotNone(found)
+        self.assertEqual(found._seat, 1)

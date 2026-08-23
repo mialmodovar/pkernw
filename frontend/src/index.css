@@ -301,7 +301,10 @@ button:disabled {
    4.5rem twice, and does not need to. */
 @media (max-width: 767px) {
   .table-frame {
-    --seat-safe: 1.5rem;
+    /* A phone has less to spare than this was taking. The seats stand a little
+       further out on the ring than they used to and still finish inside the
+       frame, so the margin that was protecting them is felt nobody was using. */
+    --seat-safe: 1rem;
     width: 100%;
     height: calc(100% - 2 * var(--seat-safe));
     max-width: none;

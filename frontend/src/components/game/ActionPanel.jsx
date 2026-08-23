@@ -6,6 +6,7 @@ import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
 import { timerToneClass, useActionCountdown } from "./useActionCountdown";
+import { useCompactLayout } from "./useCompactLayout";
 
 // Keyboard shortcuts arm on the first press and commit on the second, so a
 // stray keystroke can't fold your hand. The mouse commits immediately.
@@ -147,6 +148,10 @@ function PreselectChips({ value, onChange, keys }) {
  * used to push Fold out from under the cursor.
  */
 function PanelShell({ shell, timerBar, left, above, clock, slots }) {
+  // A phone gives this panel a third of the screen and takes it off the felt.
+  // Every fixed height in here was written for a table with room around it.
+  const compact = useCompactLayout();
+
   return (
     <div className={`${shell} bet-bar overflow-hidden w-full md:w-[34rem] lg:w-[46rem] max-w-full`}>
       {/* Timer bar — regular clock first, then the time bank. Left exactly
@@ -154,12 +159,14 @@ function PanelShell({ shell, timerBar, left, above, clock, slots }) {
           while you wait so the rows below it do not shift up. */}
       <div className="h-1.5 bg-black/50 w-full">{timerBar}</div>
 
-      <div className="p-2 flex flex-col lg:flex-row lg:items-stretch gap-2 lg:gap-3">
+      <div className={`flex flex-col lg:flex-row lg:items-stretch lg:gap-3 ${
+        compact ? "p-1.5 gap-1" : "p-2 gap-2"
+      }`}>
         {/* The sizing block's place. While you wait it holds what is happening
             and the offer to show a card — anything but a button that commits,
             because at a turn this is where the raise presets are. */}
-        <div className="flex flex-col justify-center gap-1.5 min-w-0 min-h-[4.75rem]
-                        lg:w-[14.5rem] lg:shrink-0">
+        <div className={`flex flex-col justify-center min-w-0 lg:w-[14.5rem] lg:shrink-0
+                         lg:min-h-[4.75rem] ${compact ? "gap-1" : "gap-1.5 min-h-[4.75rem]"}`}>
           {left}
         </div>
 
@@ -169,10 +176,19 @@ function PanelShell({ shell, timerBar, left, above, clock, slots }) {
             column inside a taller sizing block moved the buttons a few pixels
             up, which is a few pixels of somebody's cursor. */}
         <div className="flex flex-1 flex-col justify-end gap-1 min-w-0">
-          {/* One line, always drawn, whether or not there is anything in it. */}
-          <div className="h-6 flex items-center justify-end gap-1 overflow-hidden">
-            {above}
-          </div>
+          {/* One line, always drawn, whether or not there is anything in it —
+              the rows below it must not shift up under somebody's cursor.
+              Except on a phone, where there is no cursor to protect and what it
+              holds is a keyboard hint: twenty-four points of guaranteed nothing
+              between the slider and Fold, on the screen that has the least to
+              spare. There it is drawn only when it has something to say. */}
+          {(!compact || above) && (
+            <div className={`flex items-center justify-end gap-1 overflow-hidden ${
+              compact ? "" : "h-6"
+            }`}>
+              {above}
+            </div>
+          )}
 
           <div className="flex items-stretch gap-2">
             <div className="flex flex-col items-center justify-center w-10 shrink-0">{clock}</div>
@@ -508,7 +524,7 @@ export default function ActionPanel({
             {presets.map((preset) => (
               <button key={preset.label}
                 onClick={() => { setRaiseText(null); setRaiseAmount(preset.chips); }}
-                className={`px-2 py-2 md:py-1 rounded text-xs font-semibold transition-colors touch-manipulation ${
+                className={`px-2 py-1.5 md:py-1 rounded text-xs font-semibold transition-colors touch-manipulation ${
                   preset.emphasis
                     ? "bg-[#5a1420] hover:bg-[#6e1a28] border border-(--color-highlight-text) text-[#f0e2d6]"
                     : "btn-secondary"

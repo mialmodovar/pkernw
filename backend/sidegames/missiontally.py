@@ -4,9 +4,13 @@ Kept apart from missions.py, which is arithmetic and copy: this is the one part
 that needs a database, and it exists so that nothing has to be counted as it
 happens. A tally taken from the record cannot drift from the record.
 
-Fast games only — Spin n Go and Sit n Go. A tournament is an evening rather
-than a thing you do three of, and a daily mission that could be finished by
-sitting down at one on Tuesday would be a mission about waiting.
+Fast games and cash. A tournament is an evening rather than a thing you do
+three of, and a daily mission that could be finished by sitting down at one on
+Tuesday would be a mission about waiting.
+
+The cash tally counts hands rather than sessions, for the same reason it counts
+finished games rather than started ones: a hand is over, and a cash session is
+not over until somebody decides it is.
 """
 
 from django.db.models import Count, Max, Q
@@ -43,7 +47,16 @@ def counts_for(user, start, end):
         best_spin=Max("tournament__spin_multiplier"),
     )
 
+    from cash.models import CashHandSeat
+
     from .missions import BIG_MULTIPLIER
+
+    # Hands dealt to this player at a cash table in the same window. A second
+    # query rather than a join: the two records have nothing to do with each
+    # other, and the one thing they share is the clock.
+    cash_hands = CashHandSeat.objects.filter(
+        user=user, played_at__gte=start, played_at__lt=end,
+    ).count()
 
     best_spin = tally["best_spin"] or 0
     return {
@@ -57,4 +70,5 @@ def counts_for(user, start, end):
         "formats": int(tally["spins"] > 0) + int(tally["sitngos"] > 0),
         "best_spin": best_spin,
         "big_spin": int(best_spin >= BIG_MULTIPLIER),
+        "cash_hands": cash_hands,
     }

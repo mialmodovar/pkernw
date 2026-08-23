@@ -281,15 +281,21 @@ export default function PlayerSeat({
       title={`${p.name} — tap for stats`}
       style={{
         // The plate already starts at the middle of the picture (see `body`),
-        // so this is only the rest of the way clear of it.
-        paddingLeft: "calc(var(--seat-avatar) * 0.62)",
+        // so this is only the rest of the way clear of it. Tighter on a phone,
+        // where the name has sixty points to live in and every one the picture
+        // does not need is one more character of somebody's name.
+        paddingLeft: `calc(var(--seat-avatar) * ${compact ? 0.5 : 0.62})`,
         // At least as deep as the half of the picture that overlaps it, so the
         // circle never hangs below the plate it is supposed to be sitting on —
         // and so the name has room above and below it either way.
         minHeight: "calc(var(--seat-avatar) * 0.5)",
       }}
-      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))] rounded-lg pr-2 py-1.5 border-2 ${borderColor} w-full shadow-lg shadow-black/50
-                     flex items-center gap-2 text-left cursor-pointer hover:border-(--color-border-strong) transition-colors`}>
+      className={`relative bg-[linear-gradient(160deg,var(--color-surface-raised),var(--color-surface-sunken))]
+                   rounded-lg border-2 ${borderColor} w-full shadow-lg shadow-black/50
+                   flex items-center text-left cursor-pointer
+                   hover:border-(--color-border-strong) transition-colors ${
+        compact ? "pr-1 py-0.5 gap-1" : "pr-2 py-1.5 gap-2"
+      }`}>
       {/* What this seat is worth to whoever busts them — pinned to the plate
           rather than tucked inside it, because it is a price on a head and not
           another stat. Gone once they are out: the bounty went with them, to
@@ -355,10 +361,12 @@ export default function PlayerSeat({
         </span>
       )}
       <div className="min-w-0 flex-1 leading-tight">
-        <div className="text-xs font-semibold truncate text-(--color-silver)">{p.name}</div>
+        <div className={`font-semibold truncate text-(--color-silver) ${
+          compact ? "text-[11px]" : "text-xs"
+        }`}>{p.name}</div>
         {/* A notch bigger than the rest of the plate's small print: a stack is
             the number you read off somebody else's seat all night. */}
-        <div className="text-[13px] text-(--color-text-muted)">
+        <div className={`text-(--color-text-muted) ${compact ? "text-[11px]" : "text-[13px]"}`}>
           {p.is_eliminated ? (
             <span className="text-(--color-accent-link)">Out</span>
           ) : p.is_all_in && !p.is_waiting ? (
@@ -487,9 +495,14 @@ export default function PlayerSeat({
   // room around it.
   return (
     <div
-      style={{ "--seat-avatar": compact ? (isMe ? "3rem" : "2.75rem") : "clamp(3.6rem,11.75cqw,6.25rem)" }}
+      // The face is the anchor everything else in the seat is measured from,
+      // so on a phone it is also what the name is competing with: the plate is
+      // pushed clear of the circle twice over — once to slide out from under
+      // it, once so the text starts past it — and at 2.75rem that was forty of
+      // a hundred points gone before a letter was drawn.
+      style={{ "--seat-avatar": compact ? (isMe ? "2.25rem" : "2rem") : "clamp(3.6rem,11.75cqw,6.25rem)" }}
       className={`relative flex flex-col items-center gap-1 transition-opacity duration-500 ${
-        compact ? (isMe ? "w-[7.5rem]" : "w-[6.75rem]") : "w-[clamp(8.75rem,27cqw,15rem)]"
+        compact ? (isMe ? "w-[6.75rem]" : "w-[6.5rem]") : "w-[clamp(8.75rem,27cqw,15rem)]"
       } ${
         p.is_disconnected ? "opacity-60" : (dimmed || p.is_waiting) ? "opacity-45" : ""
 

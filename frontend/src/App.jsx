@@ -19,6 +19,7 @@ import BuildStamp from "./components/BuildStamp";
 import AppHeader from "./components/AppHeader";
 import TableShortcut from "./components/lobby/TableShortcut";
 import GameStartAlert from "./components/GameStartAlert";
+import CashTablePage from "./pages/CashTablePage";
 
 export default function App() {
   const { init, loading, user } = useAuthStore();
@@ -66,6 +67,9 @@ export default function App() {
       <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
       <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
       <Route path="/tournament/:id/watch/:watchTable" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+      {/* A room rather than an event, so it has its own path rather than a
+          tournament's with a flag on it. */}
+      <Route path="/cash/:id" element={<ProtectedRoute><CashTablePage /></ProtectedRoute>} />
       <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

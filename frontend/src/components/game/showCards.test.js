@@ -37,3 +37,33 @@ describe("resolvePending", () => {
     })).toBe("stale");
   });
 });
+
+describe("resolvePending, asked by the rest of the table", () => {
+  // The bug this was written for: every seat runs the offer hook, and the ones
+  // that are not yours hold no cards. Each of them saw a pick that did not
+  // match the empty hand in front of it and threw it away as stale — so a card
+  // picked on the way to folding was discarded the instant it was picked, and
+  // nothing was ever shown.
+  it("leaves somebody else's pick alone", () => {
+    expect(resolvePending({
+      stored: pick, hand: "", betweenHands: false, canShow: false, mine: false,
+    })).toBe("idle");
+  });
+
+  it("leaves it alone once the hand is over, too", () => {
+    // The moment it would otherwise have been sent — or, from a seat that is
+    // not yours, dropped.
+    expect(resolvePending({
+      stored: pick, hand: "", betweenHands: true, canShow: false, mine: false,
+    })).toBe("idle");
+  });
+
+  it("still lets the seat holding the cards decide", () => {
+    expect(resolvePending({
+      stored: pick, hand: "As,Kd", betweenHands: true, canShow: true, mine: true,
+    })).toBe("send");
+    expect(resolvePending({
+      stored: pick, hand: "7h,2c", betweenHands: true, canShow: true, mine: true,
+    })).toBe("stale");
+  });
+});

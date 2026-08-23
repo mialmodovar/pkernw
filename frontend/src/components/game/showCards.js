@@ -23,13 +23,24 @@ import useGameStore from "../../store/gameStore";
  * What to do with a pick that was made while the hand was running.
  *
  * `stored` is what the store is holding, `hand` the two cards in front of you
- * now. Three answers: "stale" for a pick about a hand that is gone, "wait"
- * while the hand it belongs to is still running, and "send" once it is over.
- * Pulled out of the effect below because it is the whole of the rule — a card
- * shown late is a card shown, and a card shown early is a card shown to people
- * who are still deciding.
+ * now, and `mine` whether this copy of the question is being asked by the seat
+ * that holds them. Four answers: "idle" for anybody else's seat, "stale" for a
+ * pick about a hand that is gone, "wait" while the hand it belongs to is still
+ * running, and "send" once it is over. Pulled out of the effect below because
+ * it is the whole of the rule — a card shown late is a card shown, and a card
+ * shown early is a card shown to people who are still deciding.
+ *
+ * `mine` is the one that was missing, and it is why picking a card to show did
+ * nothing. Every seat on the table runs this hook — the offer has to be asked
+ * once, for the seat that owns the cards — and a seat that is not yours holds
+ * no cards, so the pick never matched the empty hand in front of it and every
+ * one of them threw it away as stale. Eight seats deciding what to do with the
+ * hero's pick meant seven votes to discard it, cast the instant it was made.
  */
-export function resolvePending({ stored, hand, betweenHands, canShow }) {
+export function resolvePending({ stored, hand, betweenHands, canShow, mine = true }) {
+  // Not this seat's business. Not even to tidy up: the only seat that may
+  // throw a pick away is the one that could have made it.
+  if (!mine) return "idle";
   if (!stored) return "stale";
   // Not about this hand any more: either the deal moved on or the cards did.
   if (stored.cards !== hand) return "stale";
@@ -96,16 +107,20 @@ export function useShowCardsOffer(mySeat, myCards) {
   // Cleared before it is sent, so the two components that ask this question
   // cannot both send it — and so a refusal does not leave the pick sitting
   // there looking like it is still coming.
+  // Whether this is the seat holding the cards. PlayerSeat asks for every seat
+  // on the table and hands nulls in for everybody but you.
+  const mine = mySeat != null;
+
   useEffect(() => {
-    const step = resolvePending({ stored, hand, betweenHands, canShow });
-    if (step === "wait") return;
+    const step = resolvePending({ stored, hand, betweenHands, canShow, mine });
+    if (step === "wait" || step === "idle") return;
     if (step === "stale") {
       if (stored) setPending(null);
       return;
     }
     setPending(null);
     send({ type: "show_cards", cards: stored.indices });
-  }, [stored, hand, betweenHands, canShow, setPending]);
+  }, [stored, hand, betweenHands, canShow, mine, setPending]);
 
   return {
     canShow,

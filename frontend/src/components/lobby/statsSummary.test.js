@@ -51,3 +51,39 @@ describe("hasHandReads", () => {
     expect(hasHandReads(undefined)).toBe(false);
   });
 });
+
+describe("a cash record, which is a different shape", () => {
+  const cash = {
+    kind: "cash", hands_played: 412, net_coins: -240, biggest_pot: 980,
+  };
+
+  it("counts hands rather than games, because a cash game is not a thing you play one of", () => {
+    const [hands] = summaryRow(cash);
+    expect(hands.label).toBe("Hands");
+    expect(hands.value).toBe("412");
+  });
+
+  it("says you are down when you are down", () => {
+    const [, net] = summaryRow(cash);
+    expect(net.value).toBe("-240");
+    expect(net.title).toMatch(/down/);
+  });
+
+  it("says you are up with the sign written out", () => {
+    const [, net] = summaryRow({ ...cash, net_coins: 3200 });
+    expect(net.value).toBe("+3200");
+    expect(net.title).toMatch(/up/);
+  });
+
+  it("has nothing to say about cashes or the money, which do not exist here", () => {
+    expect(summaryRow(cash).map((one) => one.key)).toEqual(["hands", "net", "pot"]);
+  });
+
+  it("reads as zeroes for somebody who has never sat at one", () => {
+    expect(summaryRow({ kind: "cash" }).map((one) => one.value)).toEqual(["0", "0", "0"]);
+  });
+
+  it("leaves a tournament record alone", () => {
+    expect(summaryRow({ kind: "tournament", tournaments_played: 4 })[0].label).toBe("Games");
+  });
+});

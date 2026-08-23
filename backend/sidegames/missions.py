@@ -34,6 +34,12 @@ WEEKLY = "weekly"
 # cheapest Spin n Go is 25 coins, so a day's missions are worth about ten of
 # them and a week's about sixty. Enough that somebody who plays every day is
 # never stuck; not so much that the games stop mattering.
+#
+# The cash ones count hands rather than results. A mission that asked somebody
+# to finish a cash session up would be a mission asking them to quit while
+# winning, which is both bad advice and unreadable — a cash game has no end to
+# be measured at. Hands dealt is the one thing about a cash table that is
+# finished, over and over.
 MISSIONS = (
     {
         "key": "daily_play",
@@ -93,6 +99,31 @@ MISSIONS = (
         "counts": "wins",
         "target": 5,
         "coins": 700,
+    },
+    {
+        "key": "daily_cash",
+        "period": DAILY,
+        "label": "Sit in a cash game",
+        "blurb": "Play twenty hands at any cash table today.",
+        "detail": "Twenty hands dealt to you at any cash table, at any stake, "
+                  "today. Hands you fold count — being dealt in is the whole of "
+                  "it. Sitting out does not, because you are not dealt in.",
+        "counts": "cash_hands",
+        "target": 20,
+        "coins": 80,
+    },
+    {
+        "key": "weekly_cash",
+        "period": WEEKLY,
+        "label": "A hundred at the cash tables",
+        "blurb": "A hundred cash hands across the week.",
+        "detail": "A hundred hands dealt to you at cash tables between Monday "
+                  "and Sunday, in any mixture of stakes. The twenty you play "
+                  "for today's mission count towards this one too. Whether you "
+                  "are up or down at the end of it does not come into it.",
+        "counts": "cash_hands",
+        "target": 100,
+        "coins": 500,
     },
     {
         "key": "weekly_spin",

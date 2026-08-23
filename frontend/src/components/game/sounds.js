@@ -139,12 +139,19 @@ export function playTick(tic) {
   });
 }
 
-/** Time is up. Low, flat and falling, with none of the ring the other cues
- *  have — nothing good happens after this one. */
+/** Time is up, and the hand went without you.
+ *
+ * It was a sawtooth falling half an octave — a buzzer, and buzzers are for
+ * being wrong rather than for being late. What actually happens at this moment
+ * is that the dealer takes your cards, so that is the sound: the brush of them
+ * being swept in, and the soft knock of the muck. The same voice as a fold,
+ * because it is one, with a little more weight so it is clearly yours.
+ */
 export function playTimeExpired() {
   play((ctx, now) => {
-    tone(ctx, { freq: 300, start: now, duration: 0.45, peak: 0.2, type: "sawtooth", endFreq: 120 });
-    noise(ctx, { start: now, duration: 0.18, peak: 0.07, frequency: 400, Q: 0.6 });
+    noise(ctx, { start: now, duration: 0.2, peak: 0.13, frequency: 1100, Q: 0.5 });
+    noise(ctx, { start: now + 0.13, duration: 0.09, peak: 0.11, frequency: 260, Q: 0.8 });
+    tone(ctx, { freq: 170, start: now + 0.13, duration: 0.22, peak: 0.1, type: "sine", endFreq: 80 });
   });
 }
 

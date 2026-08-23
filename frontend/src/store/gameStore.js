@@ -209,6 +209,12 @@ const useGameStore = create((set) => ({
   // The item picked but not yet aimed. While this is set the table is in
   // aiming mode: seats become targets and a click throws instead of opening
   // somebody's stats.
+  // The extra board, when there is one. Null is the ordinary hand.
+  boards: null,
+  // What kind of room this is, when it is a cash table. Null at a tournament.
+  cash: null,
+  // A cash table with nobody to deal to, saying so. Null once cards are out.
+  tableWaiting: null,
   aimingItem: null,
   // When this player may throw again, as a timestamp. Zero means now — which
   // is nearly always, since the limit only bites on a burst.
@@ -375,6 +381,93 @@ const useGameStore = create((set) => ({
         }));
         break;
 
+      // A cash table's own snapshot. The hands that follow it are the same
+      // events off the same engine — the felt cannot tell the two rooms apart
+      // and does not need to — so this only has to land the things a
+      // tournament sends in `game_state` and a cash table says differently:
+      // who is sitting where, what the blinds are, and that there is no clock
+      // ticking towards a bigger one.
+      case "cash_state":
+        set((s) => ({
+          cash: {
+            tableId: data.table_id,
+            seats: data.seats,
+            options: data.options || {},
+            stake: data.stake || null,
+          },
+          players: (data.players || []).map((one) => ({
+            seat: one.seat,
+            user_id: one.user_id,
+            name: one.name,
+            chips: one.chips,
+            is_sitting_out: one.is_sitting_out,
+            is_leaving: one.is_leaving,
+            // The felt reads these three off a player whichever room it is
+            // drawing, so a cash seat has to carry them like a tournament one.
+            avatar: one.avatar,
+            avatar_border: one.avatar_border,
+            avatar_url: one.avatar_url,
+            bet: 0,
+            is_folded: false,
+            is_all_in: false,
+            is_eliminated: false,
+          })),
+          handNumber: data.hand_number || 0,
+          dealerSeat: data.button ?? null,
+          // Blinds that never climb. The bar reads a level, so it is given one
+          // — with no clock on it, which is what a cash table's blinds are.
+          level: data.stake
+            ? {
+              level_number: 0,
+              small_blind: data.stake.small_blind,
+              big_blind: data.stake.big_blind,
+              ante: 0,
+              is_break: false,
+              remaining_seconds: null,
+            }
+            : s.level,
+        }));
+        break;
+
+      // A cash table with nobody to deal to. It says so every couple of
+      // seconds while it waits, which is how an empty room stays a room rather
+      // than a page that appears to have stopped working.
+      case "table_waiting":
+        set({
+          tableWaiting: {
+            seated: data.seated || 0,
+            dealable: data.dealable || 0,
+            seats: data.seats || 0,
+          },
+        });
+        break;
+
+      // A cash seat given up on: away long enough that the table stopped
+      // holding the chair. The coins went back to their wallet, so the seat
+      // goes off the felt the same way a leaver's does.
+      case "player_stood_up":
+        set((s) => {
+          const gone = s.players.find((one) => one.seat === data.seat);
+          return {
+            players: s.players.filter((one) => one.seat !== data.seat),
+            messages: appendLog(s, entry(s, "info",
+              gone
+                ? `${gone.name} left the table`
+                : "A seat was given up")),
+          };
+        });
+        break;
+
+      // Two boards, when a table runs it twice or deals a bomb pot. Held
+      // beside the first, which stays exactly what it was: a client that
+      // ignores this draws one board and is right about it.
+      case "bomb_pot_posted":
+        set((s) => ({
+          messages: appendLog(s, entry(s, "info",
+            `Bomb pot — everybody in for ${data.ante}`)),
+        }));
+        break;
+
       case "tournament_started":
         set({
           ...withLevel(data.level, null),
@@ -432,6 +525,7 @@ const useGameStore = create((set) => ({
           chipFlightKind: null,
           // The wait is over either way: the next hand is being dealt.
           rebuyWindow: null,
+          tableWaiting: null,
           holeCards: [],
           handStrength: null,
           actionOnSeat: null,
@@ -576,6 +670,9 @@ const useGameStore = create((set) => ({
       case "street_dealt":
         set((s) => ({
           street: data.street,
+          // Every board in play. One nearly always; two for a bomb pot or a
+          // hand being run twice.
+          boards: data.boards && data.boards.length > 1 ? data.boards : null,
           // The street is closed, so what anybody did in it is no longer the
           // state of the betting — the chips are on their way to the pot.
           lastActions: {},
@@ -1077,7 +1174,7 @@ const useGameStore = create((set) => ({
       mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
-      lastActions: {},
+      lastActions: {}, boards: null, cash: null, tableWaiting: null,
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,

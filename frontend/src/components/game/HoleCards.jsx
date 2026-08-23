@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { highToLow } from "./cardOrder";
 import PlayingCard, { CardBack } from "./PlayingCard";
+import { nextPending } from "./showCards";
 
 /** How long a selection waits before it forgets it was made. On a phone the
  *  gesture for peeking at your own hand is a tap, and a tap that leaves "Show"
@@ -18,10 +19,14 @@ export default function HoleCards({
   hideUntilHover = false, size = "seat", onShowCards = null,
   showDeferred = false, pendingShow = null, onCancelShow = null,
 }) {
-  // Which cards you have picked to show, by position. Picking is not showing:
-  // the button that appears over them is what turns them over, so one stray
-  // thumb on a phone — where peeking at your own hand is the same tap — cannot
-  // put your ace on the felt. It is also how you show both: pick both.
+  // Which cards you have picked but not yet asked to show, by position.
+  //
+  // Only two situations reach this now. Between hands, where showing is
+  // immediate and cannot be taken back, so it takes a second press. And with
+  // the hand covered, where a press is also the gesture for peeking and one
+  // stray thumb must not put an ace on the felt. While a hand is live and
+  // visible, a press asks directly: nothing is revealed until the hand ends and
+  // pressing again takes it back, so there is nothing to confirm.
   const [picked, setPicked] = useState([]);
 
   useEffect(() => {
@@ -61,20 +66,39 @@ export default function HoleCards({
   // it before and still can, but a player reaching to turn one over reaches for
   // the card, not for a row of labels somewhere else on the screen. Pick either
   // or both — showing one is a real move and so is showing the pair.
-  const toggle = (index) => setPicked((current) => (
-    current.includes(index)
-      ? current.filter((one) => one !== index)
-      : [...current, index].sort()
-  ));
+  // A pick that is waiting for the hand to end. It stands the cards up the same
+  // way picking them does, so what you asked for is on the felt in front of you
+  // for the whole wait rather than being a click you have to remember making.
+  const waiting = new Set(pendingShow || []);
+  const toggle = (index) => {
+    // While the hand is live, pressing a card *is* the request. It used to only
+    // pick the card up, and asking took a second press on a small pill above
+    // it — which is the step everybody missed, and the pick then expired six
+    // seconds later, so pressing your cards looked like it did nothing at all.
+    //
+    // Safe as one press precisely because it is deferred: nothing is revealed
+    // until the hand is over and pressing again takes it back. The immediate
+    // case below keeps its second press, because a card turned over now cannot
+    // be un-turned.
+    // Except where the cards are covered: there a press is also the gesture for
+    // peeking at your own hand — the comment below on `picked` is right about
+    // that — so one stray thumb would put an ace on the felt. Cover mode keeps
+    // both presses.
+    if (showDeferred && onShowCards && !hideUntilHover) {
+      onShowCards(nextPending([...waiting], index));
+      return;
+    }
+    setPicked((current) => (
+      current.includes(index)
+        ? current.filter((one) => one !== index)
+        : [...current, index].sort()
+    ));
+  };
   const showPicked = () => {
     const wanted = [...picked];
     setPicked([]);
     onShowCards(wanted);
   };
-  // A pick that is waiting for the hand to end. It stands the cards up the same
-  // way picking them does, so what you asked for is on the felt in front of you
-  // for the whole wait rather than being a click you have to remember making.
-  const waiting = new Set(pendingShow || []);
   const chosen = (position) => picked.includes(position) || waiting.has(position);
   // The card, wrapped in the press that picks it. Used by a live hand and by a
   // mucked one alike: folding is exactly when a player reaches for their cards,
@@ -87,10 +111,14 @@ export default function HoleCards({
       title={picked.includes(position)
         ? `${card} is picked — press Show, or click it again to put it back`
         : waiting.has(position)
-          ? `${card} goes face up when the hand ends`
-          : `Pick ${card} to show the table`}
+          ? `${card} goes face up when the hand ends — click again to take it back`
+          : showDeferred && !hideUntilHover
+            ? `Show ${card} when the hand ends`
+            : `Pick ${card} to show the table`}
       aria-pressed={chosen(position)}
-      aria-label={`Pick ${card} to show the table`}
+      aria-label={showDeferred && !hideUntilHover
+        ? `Show ${card} when the hand ends`
+        : `Pick ${card} to show the table`}
       className={`block rounded transition-transform cursor-pointer
                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
                   ${chosen(position) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}

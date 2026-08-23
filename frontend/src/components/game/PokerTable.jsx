@@ -454,31 +454,44 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
 function FastPrizePlaque({ fast, compact }) {
   if (!fast?.prize_coins) return null;
   const title = fast.multiplier
-    ? `${fast.stake_coins} coins × ${fast.multiplier}, winner takes all`
+    ? `${fast.stake_coins} coins a seat, drawn at ${fast.multiplier}× — winner takes all`
     : `${fast.label} · ${fast.stake_coins} coins a seat`;
   return (
     <div
       style={{ left: `${FELT_PLAQUE.left}%`, top: `${FELT_PLAQUE.top}%` }}
-      className={`absolute z-10 pointer-events-none
-                  flex items-center gap-2 rounded-full border
-                  border-[rgb(var(--highlight-rgb)/0.45)]
-                  bg-[rgba(12,7,18,0.72)] px-3 py-1
-                  ${compact ? "text-[11px]" : "text-xs"}`}
+      className="absolute z-10 pointer-events-none rounded-lg border
+                 border-[rgb(var(--highlight-rgb)/0.45)]
+                 bg-[rgba(12,7,18,0.82)] px-2.5 py-1 leading-tight"
       title={title}
     >
-      <span className="font-semibold text-(--color-highlight-text) tabular-nums">
-        {"\u{1FA99}"} {fast.prize_coins.toLocaleString()}
-      </span>
-      {/* The multiplier is the whole story of a Spin n Go and does not exist
-          anywhere else, so it is the one thing that earns a second line here. */}
-      {fast.multiplier > 0 && (
-        <>
-          <span className="text-(--color-text-muted)">·</span>
-          <span className="font-semibold text-(--color-highlight-text) tabular-nums">
+      {/* Labelled, because a coin figure on its own was being read as the
+          buy-in as often as the prize. Two numbers, each one said out loud:
+          what this seat cost and what the table is playing for. */}
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-(--color-text-muted)">
+          Prize
+        </span>
+        <span className={`font-bold text-(--color-highlight-text) tabular-nums ${
+          compact ? "text-[13px]" : "text-sm"
+        }`}>
+          {fast.prize_coins.toLocaleString()}
+        </span>
+        {/* The multiplier is the whole story of a Spin n Go and does not exist
+            anywhere else, so it is the one thing that earns its own badge. */}
+        {fast.multiplier > 0 && (
+          <span className="rounded px-1 text-[10px] font-extrabold tabular-nums
+                           bg-[rgb(var(--highlight-rgb)/0.22)] text-(--color-highlight-text)">
             {fast.multiplier}×
           </span>
-        </>
-      )}
+        )}
+      </div>
+      <div className="flex items-baseline gap-1.5 text-[10px]">
+        <span className="uppercase tracking-wider text-(--color-text-muted)">Buy-in</span>
+        <span className="font-semibold text-(--color-silver) tabular-nums">
+          {(fast.stake_coins || 0).toLocaleString()}
+        </span>
+        <span className="text-(--color-text-muted) truncate">{fast.label}</span>
+      </div>
     </div>
   );
 }

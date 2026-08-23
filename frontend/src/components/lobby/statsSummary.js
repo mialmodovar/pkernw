@@ -20,6 +20,7 @@ import { formatEuros } from "../game/formatMoney";
  */
 export function summaryRow(stats, scope = "all") {
   if (!stats) return [];
+  if (stats.kind === "cash") return cashRow(stats);
   const played = stats.tournaments_played || 0;
   const cashes = stats.cashes || 0;
   const completed = stats.tournaments_completed || 0;
@@ -48,6 +49,42 @@ export function summaryRow(stats, scope = "all") {
       title: "Everything you have taken home, before what the nights cost",
     },
   ];
+}
+
+/**
+ * The same glance, for a cash record.
+ *
+ * Nothing above applies: there is no finish at a cash table, nobody is ever in
+ * the money, and "played one" is not a number. Hands, and what they came to —
+ * and the second of those is signed, because a cash record that could not say
+ * you were down would be a scoreboard rather than a record.
+ */
+export function cashRow(stats) {
+  const hands = stats.hands_played || 0;
+  const net = stats.net_coins || 0;
+  return [
+    { key: "hands", label: "Hands", value: String(hands), title: `${hands} hands dealt to you` },
+    {
+      key: "net",
+      label: "Net",
+      value: signedCoins(net),
+      title: net >= 0
+        ? `${net} coins up across every cash hand you have played`
+        : `${Math.abs(net)} coins down across every cash hand you have played`,
+    },
+    {
+      key: "pot",
+      label: "Best pot",
+      value: String(stats.biggest_pot || 0),
+      title: "The largest pot you have taken down",
+    },
+  ];
+}
+
+/** A number that has to be able to be negative, and say so. */
+export function signedCoins(coins) {
+  const amount = Math.round(coins || 0);
+  return amount > 0 ? `+${amount}` : String(amount);
 }
 
 /** Whether there is enough hand data for the meters to mean anything. */

@@ -127,6 +127,11 @@ class CashRoom:
         playing = dealable(self.seats)
         players = [self._runtime(seat) for seat in playing]
         self._playing = {player._seat: player for player in players}
+        # What everybody sat down to this hand with. The difference between
+        # this and what they are left with is the whole result of a hand of
+        # cash poker, and it cannot be worked out afterwards from the pot: a
+        # player can win one and still be down on the hand.
+        started_with = {player._seat: player.chips for player in players}
 
         dealer_index = next(
             (index for index, one in enumerate(playing) if one["seat"] == self.button), 0,
@@ -155,6 +160,9 @@ class CashRoom:
         await self.persist_stacks(stacks)
 
         if self.record_hand is not None:
+            won = {}
+            for player, amount, _description in result.pot_awards:
+                won[player._seat] = won.get(player._seat, 0) + amount
             await self.record_hand({
                 "hand_number": self.hand_number,
                 "pot": sum(amount for _p, amount, _d in result.pot_awards),
@@ -162,6 +170,17 @@ class CashRoom:
                     {"seat": player._seat, "user_id": player._user_id,
                      "amount": amount, "description": description}
                     for player, amount, description in result.pot_awards
+                ],
+                # One row per player, which is what makes "how did I do this
+                # week" a question the record can answer.
+                "seats": [
+                    {
+                        "seat": player._seat,
+                        "user_id": player._user_id,
+                        "net": player.chips - started_with[player._seat],
+                        "won": won.get(player._seat, 0),
+                    }
+                    for player in players
                 ],
                 "boards": [[str(card) for card in board] for board in result.boards],
                 "was_bomb_pot": bomb,

@@ -228,10 +228,16 @@ class MissionPeriodTests(TestCase):
 class MissionCatalogueTests(TestCase):
     """The list itself, before anybody has played anything."""
 
-    def test_every_mission_can_be_finished_in_the_two_fast_formats(self):
+    def test_every_mission_counts_something_the_tally_actually_reads(self):
+        """A mission whose `counts` names a tally nobody produces is a mission
+        stuck at zero forever, and it would look exactly like one nobody has
+        got round to."""
         from .missions import MISSIONS
 
-        tallies = {"games", "wins", "spins", "sitngos", "knockouts", "formats", "big_spin"}
+        tallies = {
+            "games", "wins", "spins", "sitngos", "knockouts", "formats", "big_spin",
+            "cash_hands",
+        }
         for mission in MISSIONS:
             with self.subTest(mission=mission["key"]):
                 self.assertIn(mission["counts"], tallies)
@@ -500,10 +506,12 @@ class MissionClaimTests(APITestCase):
         self.assertEqual(Wallet.objects.get(user=self.user).balance, 0)
 
     def test_the_board_is_readable_before_anybody_has_played_anything(self):
+        from .missions import MISSIONS
+
         response = self.client.get(reverse("coin-missions"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["missions"]), 6)
+        self.assertEqual(len(response.data["missions"]), len(MISSIONS))
         self.assertTrue(all(one["progress"] == 0 for one in response.data["missions"]))
         self.assertFalse(any(one["claimable"] for one in response.data["missions"]))
 
@@ -631,3 +639,77 @@ class BorderShopTests(APITestCase):
         seats = self.client.get(reverse("tournament-detail", args=[night.id])).data["players"]
 
         self.assertEqual(seats[0]["avatar_border"], "gold")
+
+
+class CashMissionTests(TestCase):
+    """The cash missions, and the record they are read out of.
+
+    Hands rather than sessions or results. A mission that asked somebody to
+    finish a cash session up would be asking them to quit while winning, which
+    is bad advice and unreadable besides — a cash game has no end to measure at.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="mission_cash", password="secret123")
+        wallet_for(self.user)
+
+    def _deal(self, count, when=None, user=None):
+        """`count` hands dealt to somebody at a cash table."""
+        from cash.models import CashHand, CashHandSeat, CashTable
+
+        table = CashTable.objects.create(name="Missions", stake="micro", seat_count=6)
+        moment = when or timezone.now()
+        for number in range(count):
+            hand = CashHand.objects.create(table=table, hand_number=number + 1, pot=10)
+            CashHandSeat.objects.create(
+                hand=hand, user=user or self.user, seat=0, net=-2, won=0, played_at=moment,
+            )
+
+    def test_hands_dealt_today_count_towards_the_daily(self):
+        from .missions import DAILY, window
+        from .missiontally import counts_for
+
+        self._deal(3)
+
+        start, end = window(DAILY)
+        self.assertEqual(counts_for(self.user, start, end)["cash_hands"], 3)
+
+    def test_somebody_else_s_hands_are_not_yours(self):
+        from .missions import DAILY, window
+        from .missiontally import counts_for
+
+        other = User.objects.create_user(username="mission_other", password="secret123")
+        self._deal(4, user=other)
+
+        start, end = window(DAILY)
+        self.assertEqual(counts_for(self.user, start, end)["cash_hands"], 0)
+
+    def test_a_hand_from_last_week_is_not_this_week_s(self):
+        from .missions import WEEKLY, window
+        from .missiontally import counts_for
+
+        start, end = window(WEEKLY)
+        self._deal(5, when=start - timedelta(hours=1))
+
+        self.assertEqual(counts_for(self.user, start, end)["cash_hands"], 0)
+
+    def test_the_daily_finishes_at_twenty_hands(self):
+        from .missions import BY_KEY, progress_of
+
+        mission = BY_KEY["daily_cash"]
+
+        self.assertEqual(progress_of(mission, {"cash_hands": 19}), 19)
+        self.assertEqual(progress_of(mission, {"cash_hands": 20}), mission["target"])
+        # Capped: a player who sat for two hundred hands has not finished it ten
+        # times over.
+        self.assertEqual(progress_of(mission, {"cash_hands": 200}), mission["target"])
+
+    def test_the_cash_missions_ask_for_hands_rather_than_winning(self):
+        """Whether somebody is up or down must not come into it — a mission
+        that pays for winning pays the luckiest player, not the one who
+        played."""
+        from .missions import BY_KEY
+
+        for key in ("daily_cash", "weekly_cash"):
+            with self.subTest(mission=key):
+                self.assertEqual(BY_KEY[key]["counts"], "cash_hands")

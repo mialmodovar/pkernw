@@ -5,7 +5,7 @@ import useStatsStore from "../../store/statsStore";
 import { MiniCard } from "../game/HandReplay";
 import { formatEuros } from "../game/formatMoney";
 import BestHandModal from "./BestHandModal";
-import { hasHandReads, summaryRow } from "./statsSummary";
+import { hasHandReads, signedCoins, summaryRow } from "./statsSummary";
 
 /**
  * One number, with the thing that qualifies it underneath.
@@ -67,6 +67,9 @@ const SCOPES = [
   { key: "tournaments", icon: "trophy", title: "Tournaments" },
   { key: "spingo", icon: "spin", title: "Spin n Go" },
   { key: "sitngo", icon: "duel", title: "Sit n Go" },
+  // The one that is not a kind of tournament, and comes back a different
+  // shape: see the cash tiles below.
+  { key: "cash", icon: "coin", title: "Cash games" },
 ];
 
 // Remembered, because a panel that opens closed every time is one people stop
@@ -189,7 +192,35 @@ export default function StatsPanel() {
         </div>
       )}
 
-      {open && (
+      {/* A cash record answers different questions, so it is drawn rather than
+          squeezed into the tournament tiles. There is no finish at a cash
+          table, nobody is ever in the money, and what you have "won" is not a
+          number that can only go up. */}
+      {open && stats.kind === "cash" && (
+      <div className="grid grid-cols-2 gap-2">
+        <StatTile label="Hands" value={stats.hands_played} hint="Dealt to you" />
+        <StatTile
+          label="Net"
+          value={signedCoins(stats.net_coins)}
+          hint={(stats.net_coins || 0) >= 0 ? "coins up" : "coins down"}
+        />
+        <StatTile label="Best pot" value={stats.biggest_pot || 0} hint="Largest you took down" />
+        <StatTile
+          label="Stakes"
+          value={stats.stakes_played?.length ? stats.stakes_played.join(" · ") : "—"}
+          hint={stats.tables_open > 0
+            ? `${stats.on_the_felt} on the felt right now`
+            : "Where you have played"}
+        />
+      </div>
+      )}
+      {open && stats.kind === "cash" && stats.hands_played === 0 && (
+        <p className="text-xs text-(--color-text-muted) pt-1">
+          No cash hands yet. The tables are in the lobby, under Cash games.
+        </p>
+      )}
+
+      {open && stats.kind !== "cash" && (
       <div className="grid grid-cols-2 gap-2">
         <StatTile label={scope === "all" ? "Games" : "Played"} value={stats.tournaments_played} />
         {/* The count is the fact; the rate is what it means. A cash in four is
@@ -219,7 +250,10 @@ export default function StatsPanel() {
         </StatTile>
       </div>
       )}
-      {open && (hasHandReads(stats) ? (
+      {/* The preflop meters come off the tournament hand miner, which has no
+          reading of a cash hand: those are recorded as results rather than as
+          actions. A cash scope shows nothing here rather than showing zeroes. */}
+      {open && stats.kind !== "cash" && (hasHandReads(stats) ? (
         <div className="space-y-2 pt-1">
           <MeterRow label="VPIP" pct={stats.vpip_pct} />
           <MeterRow label="PFR" pct={stats.pfr_pct} />

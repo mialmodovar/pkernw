@@ -24,7 +24,7 @@ from accounts.avatars import avatar_url
 from game.consumers import _broadcast_table, _notify_user, _request_action
 
 from .bank import stand_up
-from .models import CashHand, CashSeat, CashTable
+from .models import CashHand, CashHandSeat, CashSeat, CashTable
 from .room import CashRoom
 from .stakes import stake_for
 
@@ -114,7 +114,7 @@ def _settle_leavers(table_id):
 
 @sync_to_async
 def _record_hand(table_id, row):
-    CashHand.objects.create(
+    hand = CashHand.objects.create(
         table_id=table_id,
         hand_number=row["hand_number"],
         pot=row["pot"],
@@ -123,6 +123,16 @@ def _record_hand(table_id, row):
         was_bomb_pot=row["was_bomb_pot"],
         ran_twice=row["ran_twice"],
     )
+    # And what it did to each of them. Written with the hand's own moment on
+    # it, so a week of somebody's cash play is one query over one index.
+    CashHandSeat.objects.bulk_create([
+        CashHandSeat(
+            hand=hand, user_id=seat["user_id"], seat=seat["seat"],
+            net=seat["net"], won=seat["won"], played_at=hand.played_at,
+        )
+        for seat in row.get("seats", [])
+        if seat.get("user_id")
+    ])
     CashTable.objects.filter(id=table_id).update(
         hands_played=row["hand_number"], last_hand_at=timezone.now(),
     )

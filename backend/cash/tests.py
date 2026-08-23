@@ -1188,3 +1188,182 @@ class SeatAnnouncementTests(TestCase):
         from cash import live
 
         self.assertFalse(live.announce_seats(9_998))
+
+
+class CashRecordTests(TransactionTestCase):
+    """What a hand leaves behind about each player at it.
+
+    The hand row answers "what was the pot". It cannot answer "how did I do
+    last week", which is the question every cash player actually asks and the
+    one a mission has to be able to read — so each hand also writes down what
+    it did to each player in it.
+    """
+
+    def setUp(self):
+        self.players = []
+        for index in range(3):
+            user = User.objects.create_user(username=f"rec_{index}", password="secret123")
+            wallet_for(user)
+            Wallet.objects.filter(user=user).update(balance=1000)
+            self.players.append(user)
+        self.table = CashTable.objects.create(name="Record", stake="low", seat_count=6)
+        for index, user in enumerate(self.players):
+            sit_down(self.table, user, 300, seat_number=index)
+
+    def _play(self, hands=1):
+        from asgiref.sync import async_to_sync
+
+        from cash.live import _load_seats, _persist_stacks, _record_hand, _settle_leavers
+        from cash.room import CashRoom
+        from cash.stakes import stake_for
+
+        async def request_action(player, context):
+            valid = context["valid_actions"]
+            return ("check", 0) if "check" in valid else ("call", 0)
+
+        async def broadcast(event_type, payload):
+            return None
+
+        table_id = self.table.id
+        room = CashRoom(
+            table_id=table_id, stake=stake_for(self.table.stake), seat_count=6,
+            load_seats=lambda: _load_seats(table_id),
+            persist_stacks=lambda stacks: _persist_stacks(table_id, stacks),
+            settle_leavers=lambda: _settle_leavers(table_id),
+            broadcast=broadcast, request_action=request_action,
+            record_hand=lambda row: _record_hand(table_id, row),
+            pause_between_hands=0, idle_poll=0,
+        )
+
+        async def go():
+            for _ in range(hands):
+                room.seats = await room.load_seats()
+                await room.play_hand()
+
+        async_to_sync(go)()
+
+    def test_every_player_in_a_hand_gets_a_row(self):
+        from cash.models import CashHandSeat
+
+        self._play()
+
+        rows = CashHandSeat.objects.all()
+        self.assertEqual(rows.count(), 3)
+        self.assertEqual(
+            {row.user_id for row in rows}, {user.id for user in self.players},
+        )
+
+    def test_the_rows_add_up_to_nothing_because_a_hand_moves_chips(self):
+        """Nobody's coins appear or vanish, so the results of one hand sum to
+        zero — which is also the check that `net` means what it says."""
+        from cash.models import CashHandSeat
+
+        self._play(hands=3)
+
+        self.assertEqual(
+            sum(CashHandSeat.objects.values_list("net", flat=True)), 0,
+        )
+
+    def test_winning_a_pot_and_losing_on_the_hand_are_different_questions(self):
+        from cash.models import CashHandSeat
+
+        self._play()
+
+        winner = CashHandSeat.objects.order_by("-won").first()
+        self.assertGreater(winner.won, 0)
+        # What they took out of the pot is not what the hand did to them: their
+        # own blind was in there.
+        self.assertLessEqual(winner.net, winner.won)
+
+    def test_the_row_carries_the_hand_s_own_moment(self):
+        from cash.models import CashHand, CashHandSeat
+
+        self._play()
+
+        hand = CashHand.objects.get()
+        for row in CashHandSeat.objects.all():
+            self.assertEqual(row.played_at, hand.played_at)
+
+
+class CashStatsTests(TransactionTestCase):
+    """A cash record, which is a different shape from a tournament one."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="stats_ana", password="secret123")
+        wallet_for(self.user)
+        Wallet.objects.filter(user=self.user).update(balance=1000)
+        self.table = CashTable.objects.create(name="Stats", stake="low", seat_count=6)
+
+    def _hand(self, net, won=0):
+        from cash.models import CashHand, CashHandSeat
+
+        hand = CashHand.objects.create(
+            table=self.table, hand_number=CashHand.objects.count() + 1, pot=max(0, won),
+        )
+        CashHandSeat.objects.create(
+            hand=hand, user=self.user, seat=0, net=net, won=won, played_at=hand.played_at,
+        )
+
+    def test_the_record_is_hands_and_what_they_came_to(self):
+        from cash.stats import cash_summary
+
+        self._hand(-20)
+        self._hand(140, won=180)
+        self._hand(-30)
+
+        record = cash_summary(self.user)
+
+        self.assertEqual(record["hands_played"], 3)
+        self.assertEqual(record["net_coins"], 90)
+        self.assertEqual(record["biggest_pot"], 180)
+        self.assertEqual(record["best_hand_coins"], 140)
+
+    def test_a_stack_still_on_the_felt_is_still_your_money(self):
+        """A record that only became true when you stood up would be a record
+        that lies while you are winning."""
+        from cash.stats import cash_summary
+
+        sit_down(self.table, self.user, 300, seat_number=0)
+
+        record = cash_summary(self.user)
+
+        self.assertEqual(record["tables_open"], 1)
+        self.assertEqual(record["on_the_felt"], 300)
+
+    def test_it_says_which_stakes_have_actually_been_played(self):
+        from cash.stats import cash_summary
+
+        self._hand(-20)
+
+        self.assertEqual(cash_summary(self.user)["stakes_played"], ["2/5"])
+
+    def test_a_player_who_has_never_sat_at_one_reads_as_zero_rather_than_blank(self):
+        from cash.stats import cash_summary
+
+        record = cash_summary(self.user)
+
+        self.assertEqual(record["hands_played"], 0)
+        self.assertEqual(record["net_coins"], 0)
+        self.assertEqual(record["stakes_played"], [])
+
+    def test_the_stats_endpoint_answers_in_the_cash_shape(self):
+        from accounts.stats import player_summary
+
+        self._hand(60, won=90)
+
+        record = player_summary(self.user, "cash")
+
+        self.assertEqual(record["kind"], "cash")
+        self.assertEqual(record["scope"], "cash")
+        self.assertEqual(record["hands_played"], 1)
+        # And none of the tournament questions, which mean nothing here.
+        self.assertNotIn("best_finish", record)
+        self.assertNotIn("itm_pct", record)
+
+    def test_a_tournament_scope_still_answers_in_the_tournament_shape(self):
+        from accounts.stats import player_summary
+
+        record = player_summary(self.user, "all")
+
+        self.assertEqual(record["kind"], "tournament")
+        self.assertIn("itm_pct", record)

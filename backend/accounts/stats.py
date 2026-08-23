@@ -27,8 +27,19 @@ STAT_SCOPES = {
     "tournaments": ("standard",),
     "spingo": ("spingo",),
     "sitngo": ("sitngo",),
+    # Not a tournament format at all — see below. It is in this map so that one
+    # list still answers "which scopes are there", which is what the tab strip
+    # is built from.
+    "cash": (),
 }
 DEFAULT_SCOPE = "all"
+
+# The one scope that is not a kind of tournament. A cash record has no finishes
+# in it, nobody is ever in the money, and "played one" is not a number: you sit
+# down, you play hands, you pick your chips up. So it is answered somewhere
+# else entirely and comes back a different shape, which the panel reads off
+# `kind`.
+CASH_SCOPE = "cash"
 
 
 def clean_scope(value) -> str:
@@ -43,7 +54,17 @@ def player_summary(user, scope=DEFAULT_SCOPE):
     Shared by "my stats" and by looking somebody up, so the two can never
     disagree about what a cash or a best finish is.
     """
-    formats = STAT_SCOPES[clean_scope(scope)]
+    scope = clean_scope(scope)
+    if scope == CASH_SCOPE:
+        from cash.stats import cash_summary
+
+        # Marked rather than padded out with zeroes. A cash record with
+        # "best finish: —" in it would be answering a question nobody asked at
+        # a cash table, and a panel that has to guess which shape it is holding
+        # is a panel that will guess wrong.
+        return {"scope": scope, "kind": "cash", **cash_summary(user)}
+
+    formats = STAT_SCOPES[scope]
 
     tps = TournamentPlayer.objects.filter(user=user).select_related("tournament")
     if formats is not None:
@@ -75,7 +96,8 @@ def player_summary(user, scope=DEFAULT_SCOPE):
     preflop = compute_player_stats([user.id], formats=formats).get(user.id, {})
 
     return {
-        "scope": clean_scope(scope),
+        "scope": scope,
+        "kind": "tournament",
         "tournaments_played": tournaments_played,
         "best_finish": best_finish,
         "cashes": cashes,

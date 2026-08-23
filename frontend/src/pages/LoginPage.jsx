@@ -96,6 +96,16 @@ export default function LoginPage() {
             and the new way in should not push the old one down the page. */}
         <GoogleButton onCredential={handleGoogle} text="continue_with" />
 
+        {/* The one trap in this: pressing Google while you already have an
+            account here hands you a second, empty one in your Google account's
+            name. It can be undone — connecting Google from inside the real
+            account takes the identity back — but not having to undo it is
+            better. */}
+        <p className="text-center text-[11px] text-(--color-text-muted) leading-snug">
+          Already have an account? Log in above, then connect Google from your
+          profile — pressing it here makes a new one.
+        </p>
+
         <p className="text-center text-sm text-(--color-text-muted)">
           {/* Carries the destination across: somebody who followed an
               invitation and needs an account first should still end up at the

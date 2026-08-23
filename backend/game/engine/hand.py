@@ -342,7 +342,15 @@ class HandEngine:
 
             # Detect all-in runout: all active players are all-in or at most
             # one can still act — no more meaningful betting will happen.
-            all_in_runout = self._is_all_in_runout()
+            #
+            # In a push-or-fold game that is every hand that gets this far, and
+            # it is the whole format: everybody still in has either shoved or
+            # called a shove, and the chips a caller has left behind are not a
+            # betting round, they are just chips. Without this, three players in
+            # one pot — a shove and two callers who both covered it — met a flop
+            # with a betting round on it, in a game whose name says there is no
+            # such thing.
+            all_in_runout = self.all_in_or_fold or self._is_all_in_runout()
 
             if all_in_runout:
                 # Reveal all hole cards and broadcast equity before each street
@@ -542,8 +550,12 @@ class HandEngine:
             valid = ["fold"]
             if can_check:
                 valid.append("check")
-            else:
+            elif not self.all_in_or_fold or self._street_bet > self.big_blind:
                 valid.append("call")
+            # Otherwise: this is a push-or-fold game and the only thing to call
+            # is the big blind, which is a limp. Nothing goes in here
+            # voluntarily except everything — a limp is a flop with a hundred
+            # chips in the middle, and this format has no flop.
             if p.chips > to_call:
                 valid.append("raise")
 

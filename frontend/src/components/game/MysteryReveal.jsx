@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import useGameStore from "../../store/gameStore";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 import {
   REVEAL_MAX_WAIT_MS, revealHeadline, revealHolds, revealMs, revealTone,
 } from "./mysteryPrize";
@@ -23,6 +23,7 @@ import {
  */
 export default function MysteryReveal() {
   const flash = useGameStore((s) => s.bountyFlash);
+  const money = useBountyMoney();
   // Whether the knockout GIF is on screen. Only its presence matters, so the
   // subscription is a boolean and a new GIF object does not re-run anything.
   const finisherActive = useGameStore((s) => Boolean(s.finisher));
@@ -106,7 +107,7 @@ export default function MysteryReveal() {
           }`}
           style={{ animationDelay: "260ms" }}
         >
-          {formatEuros(showing.mystery.envelope_cents)}
+          {money(showing.mystery.envelope_cents)}
         </p>
 
         <p className="text-xs text-(--color-text-muted) mt-2">
@@ -115,7 +116,7 @@ export default function MysteryReveal() {
             <span className="block mt-0.5 tabular-nums">
               {showing.mystery.envelopes_left} envelope
               {showing.mystery.envelopes_left === 1 ? "" : "s"} left ·
-              {" "}{formatEuros(showing.mystery.top_left_cents)} biggest
+              {" "}{money(showing.mystery.top_left_cents)} biggest
             </span>
           )}
         </p>

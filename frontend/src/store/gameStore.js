@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
-import { formatEuros } from "../components/game/formatMoney";
+import { formatBounty } from "../components/game/formatMoney";
 
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
@@ -869,10 +869,10 @@ const useGameStore = create((set) => ({
             : {}),
           messages: appendLog(s, entry(s, "info",
             data.mystery
-              ? `${data.name} drew ${formatEuros(data.mystery.envelope_cents)} for ${data.victim_name}`
+              ? `${data.name} drew ${formatBounty(data.mystery.envelope_cents, s.fast)} for ${data.victim_name}`
                 + (data.mystery.is_top_prize ? " — the biggest envelope left" : "")
                 + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : "")
-              : `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
+              : `${data.name} took ${formatBounty(data.cash_cents + data.to_head_cents, s.fast)} off ${data.victim_name}`
                 + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
         }));
         break;
@@ -896,9 +896,9 @@ const useGameStore = create((set) => ({
           },
           mysterySequence: s.mysterySequence + 1,
           messages: appendLog(s, entry(s, "info",
-            `Mystery bounties are open — ${formatEuros(data.pool_cents || 0)} in `
+            `Mystery bounties are open — ${formatBounty(data.pool_cents || 0, s.fast)} in `
             + `${(data.envelopes || []).length} envelopes, biggest `
-            + `${formatEuros(data.top_cents || 0)}`)),
+            + `${formatBounty(data.top_cents || 0, s.fast)}`)),
         }));
         break;
 

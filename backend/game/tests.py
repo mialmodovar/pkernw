@@ -2697,7 +2697,10 @@ class AllInOrFoldTests(TestCase):
 
         async def request_action(player, context):
             offers.append(dict(context))
-            return answer
+            # A callable answer can play differently depending on what it is
+            # facing, which is the only way to get somebody to call a shove
+            # with chips left behind — the shape of the bug below.
+            return answer(context) if callable(answer) else answer
 
         async def broadcast(event_type, payload):
             return None
@@ -2734,6 +2737,68 @@ class AllInOrFoldTests(TestCase):
     def test_folding_is_always_on_offer(self):
         for offer in self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True):
             self.assertIn("fold", offer["valid_actions"])
+
+    def test_nobody_is_offered_a_limp(self):
+        """Calling the big blind is a limp, a limp is a flop with a hundred
+        chips in it, and this format has no flop. Calling is on offer facing a
+        shove and nowhere else."""
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True)
+
+        unopened = [one for one in offers if one["to_call"] == 100 and one["street"] == "preflop"]
+        self.assertTrue(unopened, "nobody was ever facing just the blind")
+        for offer in unopened:
+            self.assertNotIn("call", offer["valid_actions"])
+
+    def test_calling_a_shove_is_on_offer(self):
+        offers = self._decisions(
+            [1500, 1500, 1500, 1500], all_in_or_fold=True, answer=("raise", 1500),
+        )
+
+        facing = [one for one in offers if one["to_call"] > 100]
+        self.assertTrue(facing, "nobody was ever facing a shove")
+        for offer in facing:
+            self.assertIn("call", offer["valid_actions"])
+
+    def test_the_ordinary_game_keeps_its_limp(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=False)
+
+        unopened = [one for one in offers if one["to_call"] == 100]
+        self.assertTrue(unopened)
+        self.assertIn("call", unopened[0]["valid_actions"])
+
+    # Shove when nothing is in front of you, call when there is. With unequal
+    # stacks that leaves the callers with chips behind, which is the state the
+    # bug lived in.
+    @staticmethod
+    def _shove_or_call(context):
+        return ("call", 0) if context["to_call"] > 100 else ("raise", 99999)
+
+    def test_a_hand_never_reaches_a_betting_round_after_the_flop(self):
+        """The bug this was written for. The short stack shoves, two deeper
+        players call and both still have chips: nobody is all in, so the engine
+        saw an ordinary hand and dealt a flop with a betting round on it — in a
+        game whose name says there is no such thing."""
+        offers = self._decisions(
+            # Seat 3 acts first at four-handed, so that is the short stack.
+            [1500, 1500, 1500, 1000], all_in_or_fold=True, answer=self._shove_or_call,
+        )
+
+        called = [one for one in offers if one["to_call"] > 100]
+        self.assertTrue(called, "nobody called a shove, so this proves nothing")
+        after_preflop = [one for one in offers if one["street"] != "preflop"]
+        self.assertEqual(
+            after_preflop, [], "somebody was asked to act after the flop",
+        )
+
+    def test_the_ordinary_game_still_plays_a_flop(self):
+        offers = self._decisions(
+            [1500, 1500, 1500, 1000], all_in_or_fold=False, answer=self._shove_or_call,
+        )
+
+        self.assertTrue(
+            [one for one in offers if one["street"] != "preflop"],
+            "the ordinary game lost its postflop betting",
+        )
 
     def test_a_shove_is_clamped_to_the_stack_whatever_the_client_asks_for(self):
         """The number arrives over a socket, so it is not believed — a raise to

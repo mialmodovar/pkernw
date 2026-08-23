@@ -1,5 +1,5 @@
 import useGameStore from "../../store/gameStore";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 
 /**
  * What is still in the pool, in the corner, all game.
@@ -10,11 +10,12 @@ import { formatEuros } from "./formatMoney";
  */
 export default function MysteryBoard({ compact }) {
   const mystery = useGameStore((s) => s.mystery);
+  const money = useBountyMoney();
   if (!mystery?.opened || !mystery.envelopesLeft) return null;
 
   return (
     <div
-      title={`${mystery.envelopesLeft} mystery envelopes left, biggest ${formatEuros(mystery.topLeftCents)}`}
+      title={`${mystery.envelopesLeft} mystery envelopes left, biggest ${money(mystery.topLeftCents)}`}
       className={`absolute left-2 z-10 pointer-events-none flex items-center gap-2
                   rounded-full border border-[rgb(var(--highlight-rgb)/0.45)]
                   bg-[rgba(12,7,18,0.72)] px-3 py-1
@@ -26,7 +27,7 @@ export default function MysteryBoard({ compact }) {
       </span>
       <span className="text-(--color-text-muted)">·</span>
       <span className="font-semibold text-(--color-highlight-text) tabular-nums">
-        {formatEuros(mystery.topLeftCents)} top
+        {money(mystery.topLeftCents)} top
       </span>
     </div>
   );

@@ -1,6 +1,6 @@
 import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 import { entryCount, payoutLabel } from "./prizePool";
 import { levelRemainingLabel, useLevelCountdown } from "./useLevelCountdown";
 
@@ -26,6 +26,7 @@ function Row({ label, children }) {
  * table to repeat what was on screen anyway.
  */
 export default function TournamentInfoPanel({ tournament, username, open, onClose }) {
+  const money = useBountyMoney();
   const level = useGameStore((s) => s.level);
   const levelRemaining = useLevelCountdown();
   const tableSummaries = useGameStore((s) => s.tableSummaries);
@@ -188,17 +189,17 @@ export default function TournamentInfoPanel({ tournament, username, open, onClos
                 {bountyMode === "progressive" ? "Progressive KO" : "Knockouts"}
               </div>
               <Row label="KO winnings">
-                <span className="text-(--color-highlight-text) font-semibold">{formatEuros(myBountyWon)}</span>
+                <span className="text-(--color-highlight-text) font-semibold">{money(myBountyWon)}</span>
                 <span className="text-(--color-text-muted)">
                   {` · ${myKnockouts} KO${myKnockouts === 1 ? "" : "s"}`}
                 </span>
               </Row>
               {myHead > 0 && (
                 <Row label="On your head">
-                  <span className="text-(--color-highlight-text)">{formatEuros(myHead)}</span>
+                  <span className="text-(--color-highlight-text)">{money(myHead)}</span>
                   {bountyMode === "progressive" && myHead > (tournament?.bounty_cents || 0) && (
                     <span className="text-(--color-text-muted)">
-                      {` · from ${formatEuros(tournament.bounty_cents)}`}
+                      {` · from ${money(tournament.bounty_cents)}`}
                     </span>
                   )}
                 </Row>
@@ -206,11 +207,11 @@ export default function TournamentInfoPanel({ tournament, username, open, onClos
               {biggestHead && (
                 <Row label="Biggest bounty">
                   <span className={biggestHead.username === username ? "text-(--color-highlight-text)" : ""}>
-                    {biggestHead.username} · {formatEuros(biggestHead.bounty_cents || 0)}
+                    {biggestHead.username} · {money(biggestHead.bounty_cents || 0)}
                   </span>
                 </Row>
               )}
-              <Row label="KO pool">{formatEuros(bountyPoolCents)}</Row>
+              <Row label="KO pool">{money(bountyPoolCents)}</Row>
               {bountyMode === "progressive" && (
                 <p className="text-[10px] text-(--color-text-muted) leading-snug">
                   {`Knock someone out and ${tournament.bounty_progressive_split_pct}% of their bounty is yours to keep — the rest goes onto your own head.`}

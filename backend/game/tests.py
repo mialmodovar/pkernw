@@ -9,6 +9,7 @@ from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
+from rest_framework import status
 from rest_framework.test import APITestCase
 
 from tournaments.models import Tournament, TournamentPlayer, TournamentTable
@@ -2929,3 +2930,83 @@ class MultipleBoardTests(TestCase):
                     [1500, 1500, 1500], wants="raise", **options,
                 )
                 self.assertEqual(sum(p.chips for p in engine.players), 4500)
+
+
+class IceServersTests(TestCase):
+    """Where two cameras go to find each other.
+
+    The reason this is configurable at all: a player on mobile data is behind
+    carrier-grade NAT, which is symmetric, and two symmetric NATs cannot be
+    introduced to each other by description. STUN gets everybody else talking
+    and gets that player nowhere — they see nobody and nobody sees them, while
+    the rest of the table is fine.
+    """
+
+    def test_stun_is_always_there(self):
+        from game.ice import ice_servers
+
+        servers = ice_servers(urls=[], username="", credential="")
+
+        self.assertEqual(len(servers), 1)
+        self.assertTrue(all(url.startswith("stun:") for url in servers[0]["urls"]))
+
+    def test_a_configured_relay_is_added_to_it(self):
+        from game.ice import ice_servers
+
+        servers = ice_servers(
+            urls=["turn:relay.example.com:3478"], username="ana", credential="secret",
+        )
+
+        self.assertEqual(len(servers), 2)
+        self.assertEqual(servers[1]["urls"], ["turn:relay.example.com:3478"])
+        self.assertEqual(servers[1]["username"], "ana")
+
+    def test_a_relay_with_no_credentials_is_not_a_relay(self):
+        """An entry every browser would waste time failing against."""
+        from game.ice import ice_servers
+
+        servers = ice_servers(urls=["turn:relay.example.com:3478"], username="", credential="")
+
+        self.assertEqual(len(servers), 1)
+
+    def test_whether_the_table_can_get_a_phone_connected(self):
+        from game.ice import has_relay, ice_servers
+
+        self.assertFalse(has_relay(ice_servers(urls=[], username="", credential="")))
+        self.assertTrue(has_relay(ice_servers(
+            urls=["turn:relay.example.com:3478"], username="ana", credential="secret",
+        )))
+
+
+class IceConfigEndpointTests(APITestCase):
+    """The browser asks rather than being told at build time."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="ice_ana", password="secret123")
+        self.client.force_authenticate(self.user)
+
+    def test_it_answers_with_stun_and_says_there_is_no_relay(self):
+        with self.settings(TURN_URLS=[], TURN_USERNAME="", TURN_CREDENTIAL=""):
+            response = self.client.get(reverse("ice-config"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["relay"])
+        self.assertEqual(len(response.data["ice_servers"]), 1)
+
+    def test_it_carries_a_configured_relay_through(self):
+        with self.settings(
+            TURN_URLS=["turn:relay.example.com:3478"],
+            TURN_USERNAME="ana", TURN_CREDENTIAL="secret",
+        ):
+            response = self.client.get(reverse("ice-config"))
+
+        self.assertTrue(response.data["relay"])
+        self.assertEqual(response.data["ice_servers"][1]["username"], "ana")
+
+    def test_nobody_reads_it_while_signed_out(self):
+        self.client.force_authenticate(None)
+
+        self.assertEqual(
+            self.client.get(reverse("ice-config")).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )

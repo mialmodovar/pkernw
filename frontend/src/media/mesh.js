@@ -69,11 +69,35 @@ export const MEDIA_CONSTRAINTS = {
   },
 };
 
-// Public STUN only. Without a relay some pairs behind strict NAT will never
-// connect; that is a per-pair failure the interface has to show, not hide.
+// Public STUN, and whatever else the server says — see backend/game/ice.py.
+// Without a relay some pairs never connect at all, and a player on mobile data
+// is behind carrier-grade NAT and connects to nobody: that is a failure the
+// interface has to show rather than hide, and it is the one this list is asked
+// for rather than hard-coded to fix.
 export const ICE_SERVERS = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
+
+/**
+ * What to tell somebody whose cameras are all failing.
+ *
+ * A table where every peer fails while your own camera is on is not five
+ * separate accidents. It is one thing — your network will not let anybody reach
+ * you directly — and whether it can be fixed at all depends on whether a relay
+ * exists to fall back to. Mobile data is the usual way to arrive here.
+ */
+export function meshFailureMessage({ peerCount, failedCount, relay, cameraOn }) {
+  if (!cameraOn || peerCount === 0 || failedCount < peerCount) return "";
+  if (peerCount === 1) {
+    return relay
+      ? "Could not connect to that camera."
+      : "Could not connect to that camera. One of you is on a network that needs a relay.";
+  }
+  return relay
+    ? "Could not connect to anybody's camera. Something is blocking video on this network."
+    : "Could not connect to anybody's camera — this network needs a relay, and there is "
+      + "none set up. Mobile data does this: the game itself is unaffected.";
+}
 
 /** What to tell a player whose browser refused the camera or microphone. */
 export function permissionMessage(error) {

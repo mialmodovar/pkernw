@@ -570,8 +570,11 @@ export default function GamePage() {
               // Scaled down a little from the pinned corner it grows out of,
               // so it keeps its right and bottom edges and takes slightly less
               // of the felt back off the seat below it.
-              <div className="absolute bottom-2 right-2 z-20 w-max max-w-[calc(100%-1rem)]
-                              scale-95 origin-bottom-right">
+              // Half the felt less the widest a seat gets, so the panel stops
+              // where the hero's own box begins. It used to be allowed the
+              // whole width and took the seat below it with it.
+              <div className="absolute bottom-2 right-2 z-20 w-max
+                              max-w-[calc(50%-8rem)] scale-95 origin-bottom-right">
                 {actionPanel()}
               </div>
             )}

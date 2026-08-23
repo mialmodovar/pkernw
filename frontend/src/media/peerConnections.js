@@ -10,18 +10,85 @@
  */
 
 import { send } from "../api/socket";
+import api from "../api/http";
 import useMediaStore from "../store/mediaStore";
+import { remember, stored, toRestore } from "./rejoinMedia";
 import {
   AUDIO_BITRATE, ICE_SERVERS, MEDIA_CONSTRAINTS, bitrateTier, isPolite, permissionMessage,
 } from "./mesh";
 
 let myUserId = null;
+// What the server says about relays, fetched once per page. Until it arrives,
+// STUN alone — which is what this app used for its whole life and is right for
+// most pairs.
+let iceServers = ICE_SERVERS;
+let hasRelay = false;
+let iceAsked = null;
+// Which table this is, so a camera remembered across a reload is only ever
+// turned back on at the table it was on at. See rejoinMedia.js.
+let tableKey = "";
 let localStream = null;
 let pendingMedia = null;   // an in-flight getUserMedia, so a double mount asks once
 const peers = new Map();   // userId -> { pc, audioSender, videoSender, ... }
 
 export function setMyUserId(userId) {
   myUserId = userId;
+}
+
+/**
+ * Ask the server where the cameras should look for each other.
+ *
+ * Once per page, and nothing waits on it: a connection made before the answer
+ * arrives uses STUN, which is what every connection used before this existed.
+ * See backend/game/ice.py for why a relay is the difference between a player
+ * on mobile data seeing the table and seeing nothing.
+ */
+export function loadIceServers() {
+  iceAsked = iceAsked || api.get("/tournaments/ice/")
+    .then(({ data }) => {
+      if (Array.isArray(data.ice_servers) && data.ice_servers.length) {
+        iceServers = data.ice_servers;
+      }
+      hasRelay = Boolean(data.relay);
+      useMediaStore.getState().setLocal({ relay: hasRelay });
+      return data;
+    })
+    .catch(() => null);
+  return iceAsked;
+}
+
+export function setTableKey(key) {
+  tableKey = String(key || "");
+}
+
+/**
+ * Turn back on whatever this tab had on before it was reloaded.
+ *
+ * Only where the browser already says the permission is granted, so this can
+ * never be the reason a permission dialogue appears — see rejoinMedia.js.
+ */
+export async function restoreFromReload(key) {
+  const saved = stored();
+  if (!saved) return false;
+  let granted = false;
+  try {
+    // Both devices, because either could be the one that was on. Not every
+    // browser implements the query; one that does not simply restores nothing,
+    // which is where this started.
+    const names = [];
+    if (saved.cameraOn) names.push("camera");
+    if (saved.micOn) names.push("microphone");
+    const states = await Promise.all(
+      names.map((name) => navigator.permissions.query({ name })),
+    );
+    granted = states.length > 0 && states.every((one) => one.state === "granted");
+  } catch {
+    return false;
+  }
+  const wanted = toRestore(saved, { table: String(key || ""), granted });
+  if (!wanted) return false;
+  await enable(wanted);
+  return true;
 }
 
 function wanted() {
@@ -61,6 +128,10 @@ export async function enable({ audio, video }) {
   peers.forEach((peer) => attachLocalTracks(peer));
   store.setLocal({ cameraOn: video, micOn: audio, localStream });
   announce({ audio, video });
+  // For the length of this tab only, so a reload comes back with the camera it
+  // had a second ago — see rejoinMedia.js for why that is not the same as
+  // remembering it between sessions.
+  remember({ table: tableKey, cameraOn: video, micOn: audio });
 }
 
 async function acquire(kind) {
@@ -104,6 +175,9 @@ export function disable() {
   store.setLocal({ cameraOn: false, micOn: false, localStream: null });
   store.clearPeers();
   announce({ audio: false, video: false });
+  // Turned off on purpose is the one state worth remembering as itself: a
+  // reload must not undo it.
+  remember({ table: tableKey, cameraOn: false, micOn: false });
 }
 
 /** Release everything, for leaving the page. */
@@ -155,7 +229,7 @@ export function reconcile(desired) {
 }
 
 function createPeer(userId, { opensTheCall } = {}) {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers });
   const peer = {
     pc,
     polite: isPolite(myUserId, userId),

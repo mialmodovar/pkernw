@@ -153,7 +153,13 @@ function PanelShell({ shell, timerBar, left, above, clock, slots }) {
   const compact = useCompactLayout();
 
   return (
-    <div className={`${shell} bet-bar overflow-hidden w-full md:w-[34rem] lg:w-[46rem] max-w-full`}>
+    // Four rem narrower than it was on a wide screen. The seat underneath is
+    // why: the panel is pinned to the bottom-right corner of the felt and the
+    // hero sits at the bottom centre, so the two meet. How much room there
+    // actually is beside that seat depends on the felt rather than on the
+    // window, so the cap on that is where the panel is placed — here it is
+    // only the size it would like to be.
+    <div className={`${shell} bet-bar overflow-hidden w-full md:w-[32rem] lg:w-[42rem] max-w-full`}>
       {/* Timer bar — regular clock first, then the time bank. Left exactly
           where it was: a full-width line above the decision, and drawn empty
           while you wait so the rows below it do not shift up. */}

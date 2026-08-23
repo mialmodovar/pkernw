@@ -30,6 +30,22 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 # so there is no second copy to disagree with this one.
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
+# Where the cameras find each other. STUN alone is enough for most pairs and is
+# no use at all to a player on mobile data: carriers put everybody behind
+# carrier-grade NAT, which is symmetric, and two symmetric NATs cannot be
+# introduced to each other — they need a relay in the middle. Without one, that
+# player connects to nobody and nobody connects to them, while everybody else
+# at the table sees everybody.
+#
+# Configured rather than built into the bundle, so a relay can be pointed at
+# without a frontend release. Empty means STUN only, which is where this
+# started and is still fine for a table of people at home.
+TURN_URLS = [
+    one.strip() for one in os.environ.get("TURN_URLS", "").split(",") if one.strip()
+]
+TURN_USERNAME = os.environ.get("TURN_USERNAME", "")
+TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "")
+
 # Django's SecurityMiddleware sends "same-origin" here by default, which severs
 # window.opener for any popup this site opens. Google's sign-in is a popup that
 # hands the token back through exactly that handle, so with the default it got

@@ -44,6 +44,38 @@ const useAuthStore = create((set, get) => ({
     set({ user: me.data });
   },
 
+  /**
+   * Sign in with a Google ID token.
+   *
+   * Returns what the server said rather than swallowing it: a first-time
+   * sign-in makes the account and hands back its recovery code, which exists
+   * in that one response and nowhere afterwards, and the caller is the only
+   * thing that can put it on screen.
+   */
+  googleSignIn: async (credential) => {
+    const { data } = await api.post("/auth/google/", { credential });
+    localStorage.setItem("access", data.access);
+    localStorage.setItem("refresh", data.refresh);
+    const me = await api.get("/auth/me/");
+    useThemeStore.getState().hydrate(me.data.profile?.theme);
+    useGameStore.getState().hydratePreferences(me.data.profile?.preferences);
+    set({ user: me.data });
+    return data;
+  },
+
+  /** Attach a Google account to the one already signed in. */
+  linkGoogle: async (credential) => {
+    const { data } = await api.post("/auth/google/link/", { credential });
+    get().patchProfile({ google_email: data.google_email });
+    return data;
+  },
+
+  unlinkGoogle: async () => {
+    const { data } = await api.delete("/auth/google/link/");
+    get().patchProfile({ google_email: "" });
+    return data;
+  },
+
   register: async (username, password) => {
     // The reply carries the recovery code, which exists in this response and
     // nowhere else afterwards — only its hash is kept. Handed back to the

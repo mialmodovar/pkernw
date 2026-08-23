@@ -48,6 +48,29 @@ class Profile(models.Model):
     # from their settings whenever they like.
     recovery_code_hash = models.CharField(max_length=128, blank=True, default="")
 
+    # The other way back in: a Google account vouching for who somebody is.
+    # Blank for everybody who has not connected one, which is every account
+    # made before this existed.
+    #
+    # The `sub` claim rather than the email address, because that is what
+    # Google means by "the same account next time" — an address can change
+    # hands and be renamed, and matching on one would eventually hand somebody
+    # a seat that was not theirs. Unique among the accounts that have one, so
+    # one Google identity can never be two accounts here.
+    google_sub = models.CharField(max_length=64, blank=True, default="")
+    # Kept only to show whose it is: "connected as ana@example.com" is the
+    # whole of what anybody needs to see about it.
+    google_email = models.CharField(max_length=254, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["google_sub"],
+                condition=~models.Q(google_sub=""),
+                name="one_account_per_google_identity",
+            ),
+        ]
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 

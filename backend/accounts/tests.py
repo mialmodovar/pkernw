@@ -1392,3 +1392,331 @@ class OnlineCountTests(APITestCase):
 		self.assertEqual(
 			self.client.get(reverse("online-now")).status_code, status.HTTP_401_UNAUTHORIZED,
 		)
+
+
+class GoogleClaimsTests(TestCase):
+	"""What a token has to say before this app believes any of it.
+
+	The signature check is PyJWT's and is not tested here — what is tested is
+	everything after it, which is the half that decides whether a valid token
+	from somewhere else gets somebody into an account.
+	"""
+
+	GOOD = {
+		"iss": "https://accounts.google.com",
+		"aud": "our-client-id",
+		"sub": "1234567890",
+		"email": "Ana@Example.com",
+		"email_verified": True,
+		"name": "Ana",
+	}
+
+	def test_a_good_token_becomes_the_three_things_we_use(self):
+		from .googleauth import clean_claims
+
+		self.assertEqual(
+			clean_claims(self.GOOD, "our-client-id"),
+			{"sub": "1234567890", "email": "ana@example.com", "name": "Ana"},
+		)
+
+	def test_a_token_for_another_application_is_refused(self):
+		"""The audience check, which is what stops a token minted for somebody
+		else's app being replayed at this one."""
+		from .googleauth import clean_claims
+
+		refused = clean_claims({**self.GOOD, "aud": "somebody-elses-app"}, "our-client-id")
+
+		self.assertIsInstance(refused, str)
+		self.assertIn("different application", refused)
+
+	def test_a_token_from_anywhere_but_google_is_refused(self):
+		from .googleauth import clean_claims
+
+		self.assertIsInstance(
+			clean_claims({**self.GOOD, "iss": "https://accounts.evil.example"}, "our-client-id"),
+			str,
+		)
+
+	def test_both_spellings_google_uses_for_itself_are_accepted(self):
+		from .googleauth import clean_claims
+
+		self.assertIsInstance(
+			clean_claims({**self.GOOD, "iss": "accounts.google.com"}, "our-client-id"), dict,
+		)
+
+	def test_an_unconfirmed_address_vouches_for_nothing(self):
+		from .googleauth import clean_claims
+
+		refused = clean_claims({**self.GOOD, "email_verified": False}, "our-client-id")
+
+		self.assertIsInstance(refused, str)
+		self.assertIn("confirmed email", refused)
+
+	def test_a_token_naming_no_account_is_refused(self):
+		from .googleauth import clean_claims
+
+		self.assertIsInstance(clean_claims({**self.GOOD, "sub": ""}, "our-client-id"), str)
+
+	def test_no_client_configured_refuses_everything(self):
+		"""Blank switches the feature off rather than opening it: an audience of
+		nothing must not match a token with no audience either."""
+		from .googleauth import clean_claims, verify
+
+		self.assertIsInstance(clean_claims(self.GOOD, ""), str)
+		self.assertIsInstance(verify("a.b.c", audience=""), str)
+
+	def test_a_token_that_will_not_decode_says_so_without_saying_why(self):
+		"""A login endpoint that explains exactly why a token failed is one that
+		helps somebody guess."""
+		from .googleauth import verify
+
+		def explode(_credential, _audience):
+			raise ValueError("signature mismatch")
+
+		refused = verify("a.b.c", audience="our-client-id", decoder=explode)
+
+		self.assertEqual(refused, "That Google sign-in could not be verified.")
+		self.assertNotIn("signature", refused)
+
+
+class GoogleUsernameTests(TestCase):
+	"""A username for somebody who arrived without one."""
+
+	def test_it_comes_off_the_address_rather_than_the_name(self):
+		from .googleauth import username_for
+
+		self.assertEqual(username_for("ana.silva@example.com", "Ana Silva"), "ana.silva")
+
+	def test_it_keeps_only_what_a_username_may_contain(self):
+		from .googleauth import username_for
+
+		self.assertEqual(username_for("Ana+Poker!@example.com", ""), "anapoker")
+
+	def test_a_name_that_is_already_somebody_s_gets_a_number(self):
+		from .googleauth import username_for
+
+		self.assertEqual(username_for("ana@example.com", "", taken={"ana"}), "ana2")
+		self.assertEqual(username_for("ana@example.com", "", taken={"ana", "ana2"}), "ana3")
+
+	def test_an_address_with_nothing_usable_in_it_falls_back_to_the_name(self):
+		from .googleauth import username_for
+
+		self.assertEqual(username_for("!!!@example.com", "Ana Silva"), "anasilva")
+
+	def test_and_then_to_something_rather_than_nothing(self):
+		from .googleauth import username_for
+
+		self.assertEqual(username_for("", ""), "player")
+
+	def test_a_display_name_is_the_google_name_or_the_address(self):
+		from .googleauth import display_name_for
+
+		self.assertEqual(display_name_for("Ana Silva", "ana@example.com"), "Ana Silva")
+		self.assertEqual(display_name_for("", "ana@example.com"), "ana")
+
+
+class GoogleSignInTests(APITestCase):
+	"""Coming in through Google, first time and every time after."""
+
+	CLAIMS = {"sub": "google-1", "email": "ana@example.com", "name": "Ana"}
+
+	def _sign_in(self, claims=None):
+		"""Sign in with the verification stubbed out — the token itself is
+		Google's to vouch for and PyJWT's to check."""
+		from unittest.mock import patch
+
+		with patch("accounts.googleauth.verify", return_value=claims or self.CLAIMS):
+			return self.client.post(
+				reverse("google-sign-in"), {"credential": "a.b.c"}, format="json",
+			)
+
+	def test_the_first_time_makes_an_account_and_hands_back_a_way_in(self):
+		response = self._sign_in()
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertTrue(response.data["created"])
+		self.assertEqual(response.data["username"], "ana")
+		self.assertTrue(response.data["access"])
+		self.assertTrue(response.data["refresh"])
+		# A code, once, because losing the Google account must not be the end of
+		# it — and this is the only moment anybody can read it.
+		self.assertEqual(len(response.data["recovery_code"].replace("-", "")), 16)
+
+	def test_the_account_it_makes_has_no_password_at_all(self):
+		"""Rather than a random one nobody knows: unusable is Django's way of
+		saying "this account is entered another way"."""
+		self._sign_in()
+
+		self.assertFalse(User.objects.get(username="ana").has_usable_password())
+
+	def test_the_second_time_is_the_same_account_rather_than_a_second_one(self):
+		self._sign_in()
+
+		again = self._sign_in()
+
+		self.assertEqual(again.status_code, status.HTTP_200_OK)
+		self.assertFalse(again.data["created"])
+		self.assertEqual(User.objects.count(), 1)
+
+	def test_it_is_the_google_id_that_identifies_them_and_not_the_address(self):
+		"""People rename their Google accounts. The `sub` is what Google means
+		by the same account next time."""
+		self._sign_in()
+
+		self._sign_in({**self.CLAIMS, "email": "ana.silva@example.com"})
+
+		self.assertEqual(User.objects.count(), 1)
+		self.assertEqual(
+			Profile.objects.get(user__username="ana").google_email, "ana.silva@example.com",
+		)
+
+	def test_a_username_somebody_already_has_does_not_collide(self):
+		User.objects.create_user(username="ana", password="secret123")
+
+		response = self._sign_in()
+
+		self.assertEqual(response.data["username"], "ana2")
+		# And emphatically not by joining them: the two are different people.
+		self.assertEqual(User.objects.count(), 2)
+
+	def test_a_refused_token_gets_nobody_in(self):
+		from unittest.mock import patch
+
+		with patch("accounts.googleauth.verify", return_value="That Google sign-in could not be verified."):
+			response = self.client.post(
+				reverse("google-sign-in"), {"credential": "rubbish"}, format="json",
+			)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(User.objects.count(), 0)
+
+
+class GoogleLinkTests(APITestCase):
+	"""An account that already exists, given a second way in.
+
+	The reason this app can add Google at all without sending an email: there is
+	nothing on the old accounts to match a Google address against, so the person
+	says so themselves, from inside the account.
+	"""
+
+	CLAIMS = {"sub": "google-1", "email": "ana@example.com", "name": "Ana"}
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="legacy_ana", password="secret123")
+		Profile.objects.get_or_create(user=self.user)
+		self.client.force_authenticate(self.user)
+
+	def _link(self, claims=None, method="post"):
+		from unittest.mock import patch
+
+		with patch("accounts.googleauth.verify", return_value=claims or self.CLAIMS):
+			return getattr(self.client, method)(
+				reverse("google-link"), {"credential": "a.b.c"}, format="json",
+			)
+
+	def test_connecting_it_keeps_the_account_and_the_password(self):
+		response = self._link()
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertTrue(response.data["connected"])
+		self.assertEqual(Profile.objects.get(user=self.user).google_sub, "google-1")
+		self.assertTrue(User.objects.get(pk=self.user.pk).has_usable_password())
+		self.assertEqual(User.objects.count(), 1)
+
+	def test_signing_in_with_it_afterwards_lands_on_the_same_account(self):
+		from unittest.mock import patch
+
+		self._link()
+		self.client.force_authenticate(None)
+
+		with patch("accounts.googleauth.verify", return_value=self.CLAIMS):
+			response = self.client.post(
+				reverse("google-sign-in"), {"credential": "a.b.c"}, format="json",
+			)
+
+		self.assertFalse(response.data["created"])
+		self.assertEqual(User.objects.count(), 1)
+
+	def test_one_google_account_cannot_be_two_players(self):
+		other = User.objects.create_user(username="legacy_bea", password="secret123")
+		Profile.objects.get_or_create(user=other)
+		self._link()
+		self.client.force_authenticate(other)
+
+		response = self._link()
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("another player", response.data["error"])
+		self.assertEqual(Profile.objects.get(user=other).google_sub, "")
+
+	def test_connecting_a_second_google_account_to_one_player_is_refused(self):
+		self._link()
+
+		response = self._link({"sub": "google-2", "email": "other@example.com", "name": "Ana"})
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(Profile.objects.get(user=self.user).google_sub, "google-1")
+
+	def test_connecting_the_same_one_again_is_not_an_error(self):
+		self._link()
+
+		self.assertEqual(self._link().status_code, status.HTTP_200_OK)
+
+	def test_disconnecting_it_leaves_the_password_way_in(self):
+		self._link()
+
+		response = self._link(method="delete")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertFalse(response.data["connected"])
+		self.assertEqual(Profile.objects.get(user=self.user).google_sub, "")
+
+	def test_somebody_with_no_password_cannot_disconnect_their_only_way_in(self):
+		self._link()
+		self.user.set_unusable_password()
+		self.user.save(update_fields=["password"])
+
+		response = self._link(method="delete")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("Set a password first", response.data["error"])
+		self.assertEqual(Profile.objects.get(user=self.user).google_sub, "google-1")
+
+	def test_the_profile_says_which_google_account_is_connected(self):
+		self._link()
+
+		me = self.client.get(reverse("me"))
+
+		self.assertEqual(me.data["profile"]["google_email"], "ana@example.com")
+		self.assertTrue(me.data["profile"]["has_password"])
+
+	def test_and_says_nothing_when_none_is(self):
+		me = self.client.get(reverse("me"))
+
+		self.assertEqual(me.data["profile"]["google_email"], "")
+
+	def test_nobody_links_anything_while_signed_out(self):
+		self.client.force_authenticate(None)
+
+		response = self.client.post(reverse("google-link"), {"credential": "a.b.c"}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class GoogleConfigTests(APITestCase):
+	"""Which client the browser should ask, asked rather than baked in."""
+
+	def test_it_answers_with_the_configured_client(self):
+		with self.settings(GOOGLE_CLIENT_ID="our-client-id.apps.googleusercontent.com"):
+			response = self.client.get(reverse("google-config"))
+
+		self.assertEqual(response.data["client_id"], "our-client-id.apps.googleusercontent.com")
+
+	def test_an_empty_answer_is_a_complete_answer(self):
+		"""It means the button is not drawn — which is what a checkout with no
+		Google project of its own needs."""
+		with self.settings(GOOGLE_CLIENT_ID=""):
+			response = self.client.get(reverse("google-config"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["client_id"], "")

@@ -23,6 +23,13 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
+# The OAuth client tokens from "Sign in with Google" are accepted for. Blank
+# switches the whole feature off — the endpoints refuse and the login page draws
+# no button — which is what a checkout with no Google project of its own needs.
+# One variable rather than two: the browser asks the server which client to use,
+# so there is no second copy to disagree with this one.
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", ["*"])
 CSRF_TRUSTED_ORIGINS = _env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 

@@ -222,7 +222,7 @@ export default function ShopModal({ onClose }) {
           ) : (
             <p className="text-xs text-(--color-text-muted)">
               {borders
-                ? "Pick one to see it around your own face."
+                ? "Pick one to see it on your own face."
                 : "Pick one to see what it does when it lands."}
             </p>
           )}

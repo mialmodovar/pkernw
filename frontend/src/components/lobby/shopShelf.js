@@ -99,10 +99,16 @@ export function leftToBuy(items) {
  * The shelves, in the order the shop draws them.
  *
  * Throwables first: they are what the shop was, and what somebody opening it
- * from a table is nearly always after. A border is worn all evening and is
- * chosen once, so it can afford to be the second thing.
+ * from a table is nearly always after. An avatar effect is worn all evening and
+ * is chosen once, so it can afford to be the second thing.
+ *
+ * The key stays `border`: it is the server's word for the shelf and the column
+ * these are stored in, and renaming what a thing is called to people is not a
+ * reason to rewrite what it is called in a database. What changed is that the
+ * ring stopped being only a ring — an effect works on the whole picture, so
+ * "border" had become a description of where it used to stop.
  */
 export const SHELVES = [
   { key: "throwable", label: "Throw", blurb: "Land it on somebody." },
-  { key: "border", label: "Borders", blurb: "The ring around your face, everywhere you play." },
+  { key: "border", label: "Avatar effects", blurb: "How your face looks, everywhere you play." },
 ];

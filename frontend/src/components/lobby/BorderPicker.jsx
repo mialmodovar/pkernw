@@ -29,7 +29,7 @@ export default function BorderPicker() {
   return (
     <div className="mt-3 pt-3 border-t border-(--color-border)">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted) mb-1.5">
-        Border
+        Avatar effect
       </p>
 
       <div className="grid grid-cols-6 gap-1">
@@ -38,7 +38,7 @@ export default function BorderPicker() {
         <button
           type="button"
           onClick={() => wearBorder("")}
-          title="No border"
+          title="No effect"
           aria-pressed={worn === ""}
           className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${
             worn === "" ? "bg-(--color-accent-soft)" : "hover:bg-(--color-accent-soft)"
@@ -56,7 +56,7 @@ export default function BorderPicker() {
               onClick={() => owned && wearBorder(border.id)}
               disabled={!owned}
               title={owned
-                ? `${border.label} border`
+                ? `${border.label} effect`
                 : `${border.label} — buy it in the shop`}
               aria-pressed={worn === border.id}
               className={`w-9 h-9 flex items-center justify-center rounded transition-colors ${

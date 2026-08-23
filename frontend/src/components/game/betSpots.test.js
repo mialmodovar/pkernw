@@ -80,7 +80,7 @@ describe("betPosition", () => {
     // The other half of the same squeeze: held back far enough to clear the
     // board, a side seat's chips landed back on the seat they came from.
     const seatHalf = seatHalfSpanPx(PHONE.width, true);
-    for (const capacity of [2, 3, 6, 8]) {
+    for (const capacity of [2, 3, 4, 6, 8]) {
       for (let seat = 0; seat < capacity; seat += 1) {
         const spot = betPosition(seat, capacity, PORTRAIT, PHONE, pointAt, true);
         const seatAt = pointAt(seat, capacity, 1, PORTRAIT);
@@ -107,6 +107,27 @@ describe("betPosition", () => {
       const cross = toSeat.x * toChips.y - toSeat.y * toChips.x;
       expect(Math.abs(cross)).toBeLessThan(0.5);
     }
+  });
+
+  it("parks the chips beside a seat the board has crowded out", () => {
+    // Eight handed, the two seats on the sides: there is no felt between them
+    // and the flop, so the chips stop trying to sit in front of their owner and
+    // go level with them instead — further from the middle, not nearer it.
+    const spot = betPosition(2, 8, PORTRAIT, PHONE, pointAt, true);
+    const seat = pointAt(2, 8, 1, PORTRAIT);
+    const away = Math.abs(parseFloat(spot.top) - parseFloat(seat.top));
+    expect(away).toBeGreaterThan(4);
+    // And still on their own side of the table.
+    expect(parseFloat(spot.left)).toBeLessThan(50);
+  });
+
+  it("leaves the near seat's chips alone, capped as they always were", () => {
+    // Yours stop short of the middle because they would cross it, not because
+    // the board pushed them — nothing to park.
+    const spot = betPosition(0, 8, PORTRAIT, PHONE, pointAt, true);
+    const seat = pointAt(0, 8, 1, PORTRAIT);
+    expect(parseFloat(spot.left)).toBeCloseTo(parseFloat(seat.left), 5);
+    expect(parseFloat(spot.top)).toBeLessThan(parseFloat(seat.top));
   });
 
   it("clears less on a phone than on a table with room", () => {

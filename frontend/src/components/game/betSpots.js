@@ -111,31 +111,38 @@ export function betPosition(index, capacity, geometry, frame, pointAt, compact =
   const wanted = Math.max(BET_INSET, clearsTheSeat);
   const step = Math.max(0, Math.min(wanted, reach * 0.55, clearsTheBoard));
 
-  // A seat directly beside the board on a phone has nowhere good to put its
-  // chips: far enough in to clear its own cards is on the flop, and off the
-  // flop is back on its cards. When the board has held them back like that,
-  // they go over the seat instead of into it — straight up the felt, where at
-  // eight handed there is nothing between that seat and the one above it.
+  // A seat beside the board on a phone has nowhere good to put its chips: far
+  // enough in to clear its own cards is on the flop, and off the flop is back
+  // on its cards. When the board has held them back like that, they stop
+  // trying to sit in front of the player and park beside them instead — level
+  // with the seat, one seat-height further from the middle of the table, which
+  // is the only felt at that end of the row with nothing on it.
   //
-  // Only when they are already clear of the board sideways. At nine handed the
-  // two side seats are not, and lifting them there would walk them onto the
-  // very cards this is keeping them off; those chips stay put and overlap the
-  // corner of their owner's own, which is the better of the two.
-  const chipX = Math.abs(x - (x / reach) * step);
-  const heldBack = wanted - step > toPercent(6);
-  const clearSideways = chipX >= toPercent(boardHalfSpanPx(frame?.width, compact).x);
-  // A seat exactly on the midline has no side of its own to be lifted away
-  // from, and the two of them are mirror images: without snapping the sign
-  // here, one of them went up and the other went down for no reason a player
+  // Measured from the seat rather than from where the step left the chips: it
+  // is the seat they have to clear, and the two of them are a fixed distance
+  // apart whatever the step did. A seat exactly on the midline has no far side
+  // of its own, so both of those go upwards — without snapping the sign, the
+  // two mirrored seats parked in opposite directions for no reason a player
   // could see.
-  const side = Math.abs(y) < 0.001 ? 1 : Math.sign(y);
-  const lift = heldBack && clearSideways
-    ? -toPercent(seatHalfSpanPx(frame?.width, compact).y + margin) * side
-    : 0;
+  // Held back *by the board*, specifically. Chips that stopped short because
+  // they were about to cross the middle of the table have not been pushed onto
+  // anything and must not be moved: the near seat's are always capped that
+  // way, and parking those beside their owner would be answering a question
+  // nobody asked.
+  // Only on a phone, and only when the board took a real bite out of the step.
+  // A wide table always has felt between the seat and the board — the top
+  // seats there come up a few points short of what they asked for and are
+  // still nowhere near anything, and parking those threw them clean outside
+  // the ring to solve a problem they did not have.
+  const heldBack = compact
+    && clearsTheBoard < Math.min(wanted, reach * 0.55) - toPercent(12);
+  const away = Math.abs(y) < 0.001 ? -1 : Math.sign(y);
+  const parked = y + away * toPercent(seatHalfSpanPx(frame?.width, compact).y + margin);
+  const top = heldBack ? parked : y - (y / reach) * step;
 
   return {
     left: `${50 + (x - (x / reach) * step) / wide}%`,
-    top: `${50 + (y - (y / reach) * step) + lift}%`,
+    top: `${50 + top}%`,
     // Which way the pot lies, horizontally, so the chips can be hung off the
     // point rather than centred on it. The row of markers and the amount is
     // wide and short: centred, its far end reaches back over the face of the

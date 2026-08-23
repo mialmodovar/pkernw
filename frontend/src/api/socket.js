@@ -8,6 +8,8 @@
  *   send({ type: 'player_action', action: 'fold' });
  */
 
+import { socketUrl } from "./socketUrl";
+
 const MAX_ATTEMPTS = 8;
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30000;
@@ -39,13 +41,14 @@ function open(tournamentId, options) {
   currentTournamentId = tournamentId;
   currentOptions = options;
   const token = localStorage.getItem("access");
-  const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  // Watching from the rail is a different socket to playing: the server sends
-  // no hole cards down it and refuses anything sent up it.
-  const spectate = options.spectateTable != null
-    ? `&spectate=1&table=${encodeURIComponent(options.spectateTable)}`
-    : "";
-  const url = `${proto}://${window.location.host}/ws/tournament/${tournamentId}/?token=${token}${spectate}`;
+  // Which room this is. A cash table and a tournament send the same events off
+  // the same engine and differ only in the path — see api/socketUrl.js.
+  const url = socketUrl(options.kind || "tournament", tournamentId, {
+    token,
+    spectateTable: options.spectateTable,
+    host: window.location.host,
+    secure: window.location.protocol === "https:",
+  });
 
   const socket = new WebSocket(url);
   ws = socket;

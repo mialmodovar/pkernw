@@ -19,3 +19,6 @@ export const AUTH = "/auth";
 
 /** Tournaments, and the instant formats inside them. */
 export const TOURNAMENTS = "/tournaments";
+
+/** Cash tables: the lobby, the seats and the chips. */
+export const CASH = "/cash";

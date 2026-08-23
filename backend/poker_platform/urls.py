@@ -11,6 +11,7 @@ urlpatterns = [
     path("api/ledger/", include("tournaments.ledger_urls")),
     path("api/clubs/", include("clubs.urls")),
     path("api/coins/", include("sidegames.urls")),
+    path("api/cash/", include("cash.urls")),
     # Last: anything not claimed above belongs to the client-side router.
     re_path(r"^(?!api/|admin/|ws/|static/).*$", SpaView.as_view(), name="spa"),
 ]

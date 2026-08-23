@@ -15,8 +15,20 @@ export default function CommunityCards({ winningCards, shiningCards }) {
   // showdown ring takes over from it, and the two never overlap.
   const shining = new Set(shiningCards || []);
   const hasRabbit = Boolean(rabbitCards?.length);
+  // Two boards, when a table runs it twice or deals a bomb pot. The first of
+  // them is `communityCards` and is what a hand has always had; this is only
+  // the second, drawn under it and labelled, because a player looking at four
+  // rows of cards needs to know which pot each one is deciding.
+  const boards = useGameStore((s) => s.boards);
+  const secondBoard = boards && boards.length > 1 ? boards[1] : null;
   if (!communityCards?.length && !hasRabbit) return null;
   return (
+    <div className={secondBoard ? "flex flex-col items-center gap-1.5" : ""}>
+    {secondBoard && (
+      <span className="text-[9px] uppercase tracking-[0.2em] text-(--color-highlight-text)">
+        Board 1
+      </span>
+    )}
     <div className="flex items-center gap-1">
       {(communityCards || []).map((card, index) => (
         // Keyed by the card itself so only newly dealt cards mount — and so
@@ -64,6 +76,29 @@ export default function CommunityCards({ winningCards, shiningCards }) {
           </span>
         </span>
       )}
+    </div>
+
+    {/* The second run-out, or the second half of a bomb pot. Half the pot is
+        decided here and the other half above, which is the only thing anybody
+        needs to understand about it. */}
+    {secondBoard && (
+      <>
+        <span className="text-[9px] uppercase tracking-[0.2em] text-(--color-highlight-text)">
+          Board 2
+        </span>
+        <div className="flex items-center gap-1">
+          {secondBoard.map((card, index) => (
+            <PlayingCard
+              key={`b2-${card}`}
+              card={card}
+              size="board"
+              className="animate-card-deal"
+              style={{ animationDelay: `${index < 3 ? index * 90 : 0}ms` }}
+            />
+          ))}
+        </div>
+      </>
+    )}
     </div>
   );
 }

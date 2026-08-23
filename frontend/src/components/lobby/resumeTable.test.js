@@ -145,9 +145,10 @@ describe("shortcutHiddenOn", () => {
     expect(shortcutHiddenOn("/tournament/12/watch")).toBe(true);
   });
 
-  it("is hidden at any table, including the sandbox", () => {
-    // The sandbox renders the same felt, and was not on the old list.
+  it("is hidden at any table, including the sandbox and a cash table", () => {
+    // Both render the same felt. Every route that draws one has to be here.
     expect(shortcutHiddenOn("/dev/table")).toBe(true);
+    expect(shortcutHiddenOn("/cash/7")).toBe(true);
   });
 
   it("is hidden where nobody is signed in", () => {

@@ -11,9 +11,10 @@ django_asgi_app = get_asgi_application()
 from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
 from game.routing import websocket_urlpatterns               # noqa: E402
 from accounts.routing import websocket_urlpatterns as presence_urlpatterns  # noqa: E402
+from cash.routing import websocket_urlpatterns as cash_urlpatterns  # noqa: E402
 from game.middleware import JWTAuthMiddleware                 # noqa: E402
 
 application = ProtocolTypeRouter({
     "http":      django_asgi_app,
-    "websocket": JWTAuthMiddleware(URLRouter(websocket_urlpatterns + presence_urlpatterns)),
+    "websocket": JWTAuthMiddleware(URLRouter(websocket_urlpatterns + presence_urlpatterns + cash_urlpatterns)),
 })

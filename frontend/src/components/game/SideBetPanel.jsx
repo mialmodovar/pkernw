@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { send } from "../../api/socket";
+import Icon from "../icons/Icon";
 import useGameStore from "../../store/gameStore";
 import useWalletStore from "../../store/walletStore";
 import Avatar from "../Avatar";
@@ -62,8 +63,13 @@ export default function SideBetPanel({ mySeat, myUserId, canCall = true }) {
         <span className="text-[10px] font-semibold uppercase tracking-wide text-(--color-silver)">
           {state.mode === "results" ? "Called it" : "Side bet"}
         </span>
-        <span className="text-[10px] text-(--color-text-muted) whitespace-nowrap">
-          {balance != null ? `🪙 ${balance.toLocaleString()}` : myRecord}
+        <span className="flex items-center gap-1 text-[10px] text-(--color-text-muted)
+                         whitespace-nowrap">
+          {/* The app's own coin, not the system emoji: that one is a different
+              picture on every platform and none of them is the one in the
+              header. */}
+          {balance != null && <Icon name="coin" className="w-3 h-3" tone="gold" />}
+          {balance != null ? balance.toLocaleString() : myRecord}
         </span>
       </div>
 
@@ -128,8 +134,10 @@ export default function SideBetPanel({ mySeat, myUserId, canCall = true }) {
       )}
 
       {state.mode === "waiting" && (
-        <p className="px-2.5 pb-2 pt-0.5 text-[11px] leading-snug text-(--color-silver)">
-          🪙 {state.myBet.stake} on{" "}
+        <p className="px-2.5 pb-2 pt-0.5 text-[11px] leading-snug text-(--color-silver)
+                      flex items-center gap-1 flex-wrap">
+          <Icon name="coin" className="w-3 h-3 shrink-0" tone="gold" />
+          {state.myBet.stake} on{" "}
           <span className="font-bold text-(--color-highlight-text)">{state.myBet.on_name}</span>
           <span className="text-(--color-text-muted)"> · {state.myBet.returns} back</span>
         </p>

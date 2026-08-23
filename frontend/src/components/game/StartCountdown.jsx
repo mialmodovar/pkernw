@@ -1,3 +1,4 @@
+import Icon from "../icons/Icon";
 import { send } from "../../api/socket";
 import useGameStore from "../../store/gameStore";
 import SpinReveal from "./SpinReveal";
@@ -43,10 +44,10 @@ export default function StartCountdown({ myUserId }) {
           ) : (
             <div className="flex flex-col items-center">
               <div className="text-(--color-text-muted) text-sm tracking-[0.2em] uppercase mb-2">
-                {fast.label} · {"\u{1FA99}"} {fast.stake_coins} each
+                {fast.label} · <Icon name="coin" className="inline-block w-3 h-3 align-[-0.1em]" tone="gold" /> {fast.stake_coins} each
               </div>
               <div className="text-4xl font-bold tabular-nums text-(--color-highlight-text)">
-                {"\u{1FA99}"} {Number(fast.prize_coins || 0).toLocaleString()}
+                <Icon name="coin" className="inline-block w-4 h-4 align-[-0.15em]" tone="gold" /> {Number(fast.prize_coins || 0).toLocaleString()}
               </div>
               <div className="text-(--color-text-muted) text-sm mt-1">in the middle</div>
             </div>

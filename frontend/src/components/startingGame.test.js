@@ -48,14 +48,14 @@ describe("alertText", () => {
   it("names the format, because 'your game' names nothing when you hold three", () => {
     expect(alertText({ label: "Heads Up", prize_coins: 20 })).toEqual({
       title: "Heads Up is dealing",
-      body: "\u{1FA99} 20 up · your seat is waiting",
+      body: "20 coins up · your seat is waiting",
     });
   });
 
   it("leads a Spin n Go with the multiplier, which was drawn seconds ago", () => {
     expect(alertText({ label: "Spin n Go", spin_multiplier: 100, prize_coins: 2500 })).toEqual({
       title: "Spin n Go is dealing",
-      body: "100× drawn · \u{1FA99} 2,500 up · your seat is waiting",
+      body: "100× drawn · 2,500 coins up · your seat is waiting",
     });
   });
 

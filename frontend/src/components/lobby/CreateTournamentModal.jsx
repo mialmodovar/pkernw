@@ -1,3 +1,4 @@
+import Icon from "../icons/Icon";
 import { useEffect, useState } from "react";
 import api from "../../api/http";
 import BlindStructureEditor from "./BlindStructureEditor";
@@ -30,8 +31,11 @@ const MIN_COIN_BUY_IN = 5;
 const DEFAULT_COIN_BUY_IN = 50;
 
 // No third option on purpose. See the note beside the currency state below.
+// The coin is the app's own drawing rather than the system emoji, which is a
+// different picture on every platform and none of them is the one in the
+// header. The euro sign is a character and stays one.
 const CURRENCIES = [
-  { key: "coins", label: "\u{1FA99} Coins" },
+  { key: "coins", label: "Coins", icon: "coin" },
   { key: "euros", label: "\u20AC Real money" },
 ];
 
@@ -780,12 +784,14 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                   role="radio"
                   aria-checked={currency === one.key}
                   onClick={() => setCurrency(one.key)}
-                  className={`flex-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5
+                              rounded-full text-xs font-semibold border transition-colors ${
                     currency === one.key
                       ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
                       : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
                   }`}
                 >
+                  {one.icon && <Icon name={one.icon} className="w-3.5 h-3.5" tone="gold" />}
                   {one.label}
                 </button>
               ))}

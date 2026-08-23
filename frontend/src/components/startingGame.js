@@ -34,7 +34,11 @@ export function isAtTable(pathname, gameId) {
   return Boolean(match) && Number(match[1]) === Number(gameId);
 }
 
-const coins = (amount) => `\u{1FA99} ${Number(amount || 0).toLocaleString()}`;
+// A notification body is plain text handed to the operating system, so the
+// app's own drawn coin cannot go in it. The word can, and reads the same
+// everywhere — which the system emoji does not: it is a different picture on
+// every platform and none of them is the one in the header.
+const coins = (amount) => `${Number(amount || 0).toLocaleString()} coins`;
 
 /**
  * What the banner and the notification both say.

@@ -1720,3 +1720,46 @@ class GoogleConfigTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual(response.data["client_id"], "")
+
+
+class GoogleSettingShapeTests(TestCase):
+	"""A setting that cannot possibly work, caught here rather than by Google.
+
+	The failure it prevents is genuinely hard to read from the other end: an API
+	key in this setting comes back as `invalid_client` and "no registered
+	origin", because an API key has no origins to register — so the error page
+	names none, and there is nothing to compare against anything.
+	"""
+
+	def test_an_api_key_is_not_a_client_id(self):
+		from .googleauth import client_id_looks_wrong
+
+		complaint = client_id_looks_wrong("AIzaSyC-not-a-client-id")
+
+		self.assertIn("API key", complaint)
+		self.assertIn("no registered origin", complaint)
+
+	def test_anything_not_shaped_like_one_is_flagged(self):
+		from .googleauth import client_id_looks_wrong
+
+		self.assertTrue(client_id_looks_wrong("123456789"))
+
+	def test_a_real_one_passes(self):
+		from .googleauth import client_id_looks_wrong
+
+		self.assertEqual(client_id_looks_wrong("123-abc.apps.googleusercontent.com"), "")
+
+	def test_nothing_configured_is_not_a_complaint(self):
+		"""Blank switches the feature off, which is a choice rather than a
+		mistake."""
+		from .googleauth import client_id_looks_wrong
+
+		self.assertEqual(client_id_looks_wrong(""), "")
+
+	def test_the_check_runs_against_the_setting(self):
+		from django.core.checks import run_checks
+
+		with self.settings(GOOGLE_CLIENT_ID="AIzaSyC-nope"):
+			ids = [warning.id for warning in run_checks()]
+
+		self.assertIn("accounts.W001", ids)

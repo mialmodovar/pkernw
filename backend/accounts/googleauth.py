@@ -61,6 +61,36 @@ def configured() -> bool:
     return bool(client_id())
 
 
+# What an OAuth client id looks like. An API key — AIzaSy… — is a different
+# thing entirely and is what somebody reaches for when they read "generate a
+# key", which Google then rejects as `invalid_client` with no explanation worth
+# the name. Cheap to catch here; nearly impossible to work out from the other
+# end, where the error page names no origin because there are none to name.
+CLIENT_ID_SUFFIX = ".apps.googleusercontent.com"
+
+
+def client_id_looks_wrong(value=None):
+    """Why this setting cannot be an OAuth client, or "" when it could be.
+
+    Only ever a warning. A client id in some shape Google has not used before is
+    still a client id, and refusing to serve one for failing to match a pattern
+    would be a worse failure than the one this explains.
+    """
+    value = client_id() if value is None else value
+    if not value:
+        return ""
+    if value.startswith("AIza"):
+        return ('GOOGLE_CLIENT_ID looks like an API key rather than an OAuth '
+                'client id. API keys have no registered origins, which is what '
+                'Google means by "no registered origin". The one you want ends '
+                f'in {CLIENT_ID_SUFFIX} and comes from Credentials → Create '
+                'credentials → OAuth client ID → Web application.')
+    if not value.endswith(CLIENT_ID_SUFFIX):
+        return (f'GOOGLE_CLIENT_ID does not end in {CLIENT_ID_SUFFIX}, which '
+                'every OAuth client id does. Google will refuse it.')
+    return ""
+
+
 def clean_claims(claims, audience, issuers=ISSUERS):
     """The parts of a verified token this app uses, or a string saying why not.
 

@@ -341,10 +341,15 @@ class Fixture(models.Model):
         "clubs.Season", on_delete=models.SET_NULL, null=True, blank=True, related_name="fixtures",
     )
 
-    # Monday is 0, as Python has it, and the time is local — see fixtures.py for
-    # why that matters on the weekend the clocks change.
+    # Monday is 0, as Python has it. The hour is a wall clock rather than a
+    # moment, so it is meaningless without the room it is on the wall of —
+    # which is what this is. Without it the hour was the server's, and a
+    # Portuguese club's nine o'clock came round at ten all summer.
     weekday = models.IntegerField()
     start_time = models.TimeField()
+    # An IANA name, from the browser of whoever set the series up. Blank means
+    # the server's own, which is what every row made before this meant.
+    timezone_name = models.CharField(max_length=64, blank=True, default="")
 
     # How early the next one opens for registration.
     days_ahead = models.IntegerField(default=4)

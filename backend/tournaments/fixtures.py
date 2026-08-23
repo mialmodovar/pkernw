@@ -19,6 +19,7 @@ the week it is a Friday.
 """
 
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils import timezone
 
@@ -55,45 +56,77 @@ def clean_days_ahead(value):
     return max(1, min(MAX_DAYS_AHEAD, days))
 
 
-def local_at(day, at_time):
-    """A local date and time, as a real moment.
+def zone_of(name):
+    """The clock a fixture's hour is on, or the server's if it has none.
 
-    Through the current timezone rather than by arithmetic on a UTC stamp: "nine
-    o'clock" means nine o'clock in the room, on both sides of a clock change,
-    and a series that drifted an hour every spring would be a series people
-    stopped trusting.
+    Takes a name or a timezone, so callers can pass either without asking
+    which they are holding. An unknown name falls back rather than raising: a
+    timezone renamed out of the database is not a reason to stop a club's
+    Friday.
+    """
+    if not name:
+        return timezone.get_current_timezone()
+    if hasattr(name, "utcoffset"):
+        return name
+    try:
+        return ZoneInfo(str(name))
+    except (ZoneInfoNotFoundError, ValueError):
+        return timezone.get_current_timezone()
+
+
+def local_at(day, at_time, zone=None):
+    """A date and an hour on somebody's wall, as a real moment.
+
+    Through a timezone rather than by arithmetic on a UTC stamp: "nine o'clock"
+    means nine o'clock in the room, on both sides of a clock change, and a
+    series that drifted an hour every spring would be a series people stopped
+    trusting.
+
+    Which room is the fixture's to say. It used to be the server's, and the
+    server keeps its clocks on UTC on purpose — so a club that meets at nine
+    was opening its night at ten for half the year.
     """
     naive = datetime.combine(day, at_time)
-    return timezone.make_aware(naive, timezone.get_current_timezone())
+    return timezone.make_aware(naive, zone_of(zone))
 
 
-def next_occurrence(weekday, at_time, now=None):
+def next_occurrence(weekday, at_time, now=None, zone=None):
     """The next time this fixture comes round, counting from `now`.
 
     Today counts if the hour has not passed yet: a Friday fixture asked about at
-    noon on Friday is asking about tonight, not about next week.
+    noon on Friday is asking about tonight, not about next week. "Friday" is
+    read on the fixture's own clock too — a night that starts at one in the
+    morning is on a different day in two different rooms.
     """
-    local = timezone.localtime(now or timezone.now())
+    here = zone_of(zone)
+    local = (now or timezone.now()).astimezone(here)
     ahead = (weekday - local.weekday()) % 7
-    candidate = local_at(local.date() + timedelta(days=ahead), at_time)
-    return candidate if candidate > local else candidate + timedelta(days=7)
+    candidate = local_at(local.date() + timedelta(days=ahead), at_time, here)
+    if candidate > local:
+        return candidate
+    # A week later on the wall, not 168 hours later: the clocks may change in
+    # between, and the club still meets at nine.
+    return local_at(local.date() + timedelta(days=ahead + 7), at_time, here)
 
 
-def occurrences_within(weekday, at_time, days_ahead, now=None):
+def occurrences_within(weekday, at_time, days_ahead, now=None, zone=None):
     """Every occurrence between now and `days_ahead` from now, soonest first.
 
     Usually one. Two when a fortnight is opened at once, and the list rather
     than the single next one is what makes the opener idempotent: it asks for
     everything that should exist by now and creates whatever does not.
     """
-    local = timezone.localtime(now or timezone.now())
+    here = zone_of(zone)
+    local = (now or timezone.now()).astimezone(here)
     horizon = local + timedelta(days=days_ahead)
 
     found = []
-    when = next_occurrence(weekday, at_time, now)
+    when = next_occurrence(weekday, at_time, now, here)
     while when <= horizon:
         found.append(when)
-        when = when + timedelta(days=7)
+        # Again on the wall rather than by the hour, so a series does not step
+        # sideways the weekend the clocks do.
+        when = local_at(when.astimezone(here).date() + timedelta(days=7), at_time, here)
     return found
 
 
@@ -103,12 +136,17 @@ def describe(weekday, at_time):
     return f"{day} at {at_time.strftime('%H:%M')}"
 
 
-def from_moment(when):
+def from_moment(when, zone=None):
     """The weekday and time a one-off start implies.
 
     A host who scheduled Friday at nine and then asked for it to repeat has
     already said when: reading it back off that moment is better than asking
     them the same question twice in different words.
+
+    On the host's clock, which is the whole point. Read on the server's, a
+    night somebody scheduled for nine came back as a series at eight — and the
+    lobby went on saying nine, because the lobby reads the moment rather than
+    the arrangement. Two answers to the same question, both on screen.
     """
-    local = timezone.localtime(when)
+    local = when.astimezone(zone_of(zone))
     return local.weekday(), time(local.hour, local.minute)

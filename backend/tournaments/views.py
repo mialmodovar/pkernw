@@ -482,13 +482,16 @@ def quit_tournament(request, pk):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # The host owns the tournament and is the only one who can start it, so
-    # leaving would strand everyone else in a lobby nobody can open.
-    if tournament.host_id == request.user.id:
-        return Response(
-            {"error": "The host cannot leave their own tournament"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    # The host may give up their seat like anybody else. Hosting and playing
+    # are two different things that this used to treat as one: opening a
+    # tournament seats you automatically, and somebody who arranges a night
+    # they then cannot play was stuck in it — with no way out that was not
+    # deleting the night for everybody.
+    #
+    # Nobody is stranded by it. What lets a tournament be started is the host
+    # FK on the row, not a seat in the field, and that stays exactly where it
+    # was; the host can still start it, edit it and pause it from a chair by
+    # the wall.
 
     try:
         tp = TournamentPlayer.objects.get(tournament=tournament, user=request.user)
@@ -595,7 +598,12 @@ def repeat_tournament(request, pk):
         stop_series(tournament.fixture)
         return Response({"repeats": None})
 
-    made = start_series(tournament, request.data.get("days_ahead"))
+    # Which clock the hour is on, from the browser that asked. A wall clock
+    # with no wall is the server's, which keeps its clocks on UTC — that is
+    # right for storing a moment and wrong for "every Friday at nine".
+    made = start_series(
+        tournament, request.data.get("days_ahead"), request.data.get("timezone"),
+    )
     if isinstance(made, str):
         return Response({"error": made}, status=status.HTTP_400_BAD_REQUEST)
 

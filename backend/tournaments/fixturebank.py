@@ -16,7 +16,7 @@ two lobby requests arriving together race for that row rather than for a check.
 
 from django.db import IntegrityError, transaction
 
-from .fixtures import clean_days_ahead, from_moment, occurrences_within
+from .fixtures import clean_days_ahead, from_moment, occurrences_within, zone_of
 from .models import BlindLevel, Fixture, Tournament
 
 # The tournament fields a series carries forward. Everything else about a game
@@ -51,7 +51,7 @@ def levels_of(tournament):
     ]
 
 
-def start_series(tournament, days_ahead=None):
+def start_series(tournament, days_ahead=None, zone=None):
     """Make this tournament the first of a weekly series.
 
     Read off the game rather than asked for again: a host who scheduled Friday
@@ -66,7 +66,7 @@ def start_series(tournament, days_ahead=None):
     if tournament.scheduled_start_at is None:
         return "Give it a start time first — a series needs an hour to come round at."
 
-    weekday, at_time = from_moment(tournament.scheduled_start_at)
+    weekday, at_time = from_moment(tournament.scheduled_start_at, zone)
     with transaction.atomic():
         fixture = Fixture.objects.create(
             name=tournament.name,
@@ -75,6 +75,7 @@ def start_series(tournament, days_ahead=None):
             season=tournament.season,
             weekday=weekday,
             start_time=at_time,
+            timezone_name=str(zone or ""),
             days_ahead=clean_days_ahead(days_ahead),
             template=template_of(tournament),
             levels=levels_of(tournament),
@@ -107,6 +108,7 @@ def open_due_fixtures(now=None):
     for fixture in Fixture.objects.filter(active=True).select_related("club", "season", "host"):
         for when in occurrences_within(
             fixture.weekday, fixture.start_time, clean_days_ahead(fixture.days_ahead), now,
+            fixture.timezone_name,
         ):
             if _open_one(fixture, when):
                 opened += 1
@@ -115,7 +117,11 @@ def open_due_fixtures(now=None):
 
 def _open_one(fixture, when):
     """One occurrence, if it is not already there. True when it was made."""
-    occurs_on = when.date()
+    # The date the night falls on, read on the fixture's own clock: a game at
+    # ten in the evening in Lisbon is on the next day's date in UTC, and two
+    # readings of "which night is this" is how the same Friday gets opened
+    # twice.
+    occurs_on = when.astimezone(zone_of(fixture.timezone_name)).date()
     # A cheap look first — this runs on lobby requests and nearly always finds
     # the night already open. The unique constraint below is what actually
     # decides; this only keeps the common case off it.

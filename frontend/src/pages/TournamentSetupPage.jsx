@@ -197,6 +197,15 @@ export default function TournamentSetupPage() {
   const handleJoin = async () => {
     try { await api.post(`/tournaments/${id}/join/`); load(); } catch (e) { setError(e.response?.data?.error || "Error"); }
   };
+
+  // The other half of Join, which this page never had: a seat you took can be
+  // given up again for as long as nothing has been dealt. The lobby card had
+  // it and the tournament's own page did not, so the one place with room to
+  // explain the night was the one place you could not change your mind about
+  // it.
+  const handleQuit = async () => {
+    try { await api.post(`/tournaments/${id}/quit/`); load(); } catch (e) { setError(e.response?.data?.error || "Error"); }
+  };
   const handleStart = async () => {
     try { await api.post(`/tournaments/${id}/start/`); navigate(`/tournament/${id}/play`); } catch (e) { setError(e.response?.data?.error || "Error"); }
   };
@@ -359,7 +368,8 @@ export default function TournamentSetupPage() {
           <TournamentActions
             tournament={tournament} joined={joined} me={me} canManage={canManage}
             scheduledStartPending={scheduledStartPending} id={id} navigate={navigate}
-            handleJoin={handleJoin} handleStart={handleStart} handleResume={handleResume}
+            handleJoin={handleJoin} handleQuit={handleQuit}
+            handleStart={handleStart} handleResume={handleResume}
             handleRebuy={handleRebuy}
           />
         </div>
@@ -699,7 +709,12 @@ function RepeatWeekly({ tournament, id }) {
         await api.delete(`/tournaments/${id}/repeat/`);
         setRepeats(null);
       } else {
-        const { data } = await api.post(`/tournaments/${id}/repeat/`);
+        const { data } = await api.post(`/tournaments/${id}/repeat/`, {
+          // Which clock "every Friday at nine" is on. Without it the hour was
+          // the server's, which keeps its clocks on UTC — right for storing a
+          // moment, wrong for an arrangement people read off a wall.
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
         setRepeats(data.repeats);
       }
     } catch (problem) {
@@ -730,7 +745,7 @@ function RepeatWeekly({ tournament, id }) {
 
 function TournamentActions({
   tournament, joined, me, canManage, scheduledStartPending, id, navigate,
-  handleJoin, handleStart, handleResume, handleRebuy,
+  handleJoin, handleQuit, handleStart, handleResume, handleRebuy,
 }) {
   const seatedInPlay = me && !me.is_eliminated
     && (tournament.status === "running" || tournament.status === "paused");
@@ -761,6 +776,18 @@ function TournamentActions({
       )}
       {!joined && tournament.status === "lobby" && (
         <button onClick={handleJoin} className="btn-accent px-4 py-2 rounded font-semibold text-sm transition-colors">Join</button>
+      )}
+      {/* Including for whoever opened it: opening a tournament seats you, and
+          somebody who arranged a night they cannot play was stuck in it.
+          Giving up the seat does not give up the night — they still run it. */}
+      {joined && tournament.status === "lobby" && (
+        <button
+          onClick={handleQuit}
+          title="Give up your seat. You can take it again while the lobby is open."
+          className="btn-secondary px-4 py-2 rounded font-semibold text-sm transition-colors"
+        >
+          Unregister
+        </button>
       )}
       {canManage && tournament.status === "lobby" && tournament.players.length >= 2 && (
         <button

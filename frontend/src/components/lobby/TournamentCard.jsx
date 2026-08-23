@@ -257,7 +257,12 @@ export default function TournamentCard({
         {full && !t.is_joined && !isFinished && (
           <span className="text-[11px] text-(--color-text-muted)">full</span>
         )}
-        {t.is_joined && !t.is_host && t.status === "lobby" && onQuit && (
+        {/* The host too. Opening a tournament seats you automatically, so the
+            person most likely to want out of one is the person who arranged
+            it and then could not make it — and they were the one player this
+            button was hidden from. Giving up the seat does not give up the
+            night: they still host it. */}
+        {t.is_joined && t.status === "lobby" && onQuit && (
           <button onClick={() => onQuit(t.id)}
             title="Give up your seat and free it for someone else"
             className="px-2 py-1 panel-raised hover:border-(--color-border-strong) rounded text-xs

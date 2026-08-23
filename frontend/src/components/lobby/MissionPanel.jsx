@@ -4,6 +4,7 @@ import Icon from "../icons/Icon";
 import useMissionStore from "../../store/missionStore";
 import {
   PERIODS, barPct, claimableCount, forPeriod, headline, periodSummary, progressLabel,
+  resetNote,
   unclaimedCoins,
 } from "./missions";
 
@@ -110,7 +111,10 @@ export default function MissionPanel() {
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-(--color-text-muted)">
               {period.label}
             </h3>
-            <span title={period.note} className="text-[10px] text-(--color-text-muted)">
+            {/* When it turns over, on the reader's own clock — the server
+                counts these in UTC, and "midnight" is not midnight for most
+                people reading it. */}
+            <span title={resetNote(period.key)} className="text-[10px] text-(--color-text-muted)">
               {periodSummary(missions, period.key)}
             </span>
           </div>

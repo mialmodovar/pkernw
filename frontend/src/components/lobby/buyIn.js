@@ -11,9 +11,15 @@
  * a stake that people are deciding whether to pay.
  */
 
-/** "🪙 50" — coins, and coins are always whole. */
+/** "50" — coins, and coins are always whole. The count alone, for the places
+ *  that draw the chip beside it (see components/icons). */
+export function coinCount(coins) {
+  return Number(coins || 0).toLocaleString();
+}
+
+/** "50 coins" — for prose, where an icon mid-sentence reads as a rebus. */
 export function formatCoins(coins) {
-  return `\u{1FA99} ${Number(coins || 0).toLocaleString()}`;
+  return `${coinCount(coins)} coins`;
 }
 
 /** "20.00€" — the way the lobby has always printed a euro buy-in. */

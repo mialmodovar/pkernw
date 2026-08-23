@@ -1,7 +1,7 @@
 import base64
 from datetime import timedelta
 
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
@@ -20,6 +20,7 @@ from tournaments.models import LedgerEntry, Tournament, TournamentPlayer
 from . import presence
 from .avatars import AVATAR_MAX_BYTES
 from .consumers import PresenceConsumer
+from .notify import notify_user
 from .models import AvatarImage, Profile
 
 User = get_user_model()
@@ -43,6 +44,40 @@ class FinisherGifTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.user.profile.refresh_from_db()
 		self.assertEqual(self.user.profile.theme["finisher_gif_id"], "3o7abKhOpu0NwenH3O")
+
+	def test_the_deck_a_player_reads_best_is_saved_with_the_theme(self):
+		response = self._patch(deck="inverted")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["deck"], "inverted")
+
+	def test_a_theme_that_names_no_deck_gets_the_printed_one(self):
+		"""Every profile saved before the setting existed, and every client that
+		has not been updated."""
+		response = self._patch()
+
+		self.assertEqual(response.data["deck"], "classic")
+
+	def test_a_chosen_card_back_colour_is_saved(self):
+		response = self._patch(card_back="#1f4fd8")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.user.profile.refresh_from_db()
+		self.assertEqual(self.user.profile.theme["card_back"], "#1f4fd8")
+
+	def test_no_colour_means_the_one_the_theme_prints(self):
+		self.assertIsNone(self._patch().data["card_back"])
+
+	def test_a_card_back_that_is_not_a_colour_is_refused(self):
+		self.assertEqual(
+			self._patch(card_back="rebeccapurple").status_code, status.HTTP_400_BAD_REQUEST,
+		)
+
+	def test_a_deck_nobody_prints_is_refused(self):
+		response = self._patch(deck="holographic")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 	def test_a_url_is_refused(self):
 		response = self._patch(finisher_gif_id="https://evil.example/x.gif")
@@ -1164,6 +1199,97 @@ class PresenceSocketTests(TestCase):
 		self.assertEqual(presence.online_user_ids(), set())
 
 
+class PlayerAlertTests(TestCase):
+	"""Reaching a player who is not looking at the thing being said.
+
+	The presence socket is the only one open from every page, so it is the only
+	way to tell somebody at one table that a game of theirs at another has
+	started. These pin the delivery itself; that a filled fast game sends one is
+	pinned in tournaments.tests.
+	"""
+
+	def setUp(self):
+		self.ana = User.objects.create_user(username="alert_ana", password="secret123")
+		self.bea = User.objects.create_user(username="alert_bea", password="secret123")
+
+	def tearDown(self):
+		presence._socket_counts.clear()
+
+	def _communicator(self, user):
+		communicator = WebsocketCommunicator(PresenceConsumer.as_asgi(), "/ws/presence/")
+		communicator.scope["user"] = user
+		return communicator
+
+	def test_a_message_reaches_the_player_it_is_for(self):
+		async def scenario():
+			socket = self._communicator(self.ana)
+			await socket.connect()
+			# notify_user is sync, and sync code called from inside a running loop
+			# has to go back out through a thread — which is how a view calls it.
+			sent = await sync_to_async(notify_user)(self.ana.id, {"type": "hello", "n": 1})
+			self.assertTrue(sent)
+
+			message = await socket.receive_json_from(timeout=1)
+			await socket.disconnect()
+			return message
+
+		self.assertEqual(async_to_sync(scenario)(), {"type": "hello", "n": 1})
+
+	def test_a_message_reaches_nobody_else(self):
+		"""One group per player. Everybody's own news, and only their own."""
+		async def scenario():
+			mine, theirs = self._communicator(self.ana), self._communicator(self.bea)
+			await mine.connect()
+			await theirs.connect()
+
+			await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+			await mine.receive_json_from(timeout=1)
+			quiet = await theirs.receive_nothing(timeout=0.3)
+
+			await mine.disconnect()
+			await theirs.disconnect()
+			return quiet
+
+		self.assertTrue(async_to_sync(scenario)())
+
+	def test_both_of_a_players_tabs_are_told(self):
+		"""The app open twice is one player, and the news is for the player."""
+		async def scenario():
+			first, second = self._communicator(self.ana), self._communicator(self.ana)
+			await first.connect()
+			await second.connect()
+
+			await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+			both = [
+				await first.receive_json_from(timeout=1),
+				await second.receive_json_from(timeout=1),
+			]
+
+			await first.disconnect()
+			await second.disconnect()
+			return both
+
+		self.assertEqual(async_to_sync(scenario)(), [{"type": "hello"}] * 2)
+
+	def test_telling_somebody_who_is_not_there_is_not_an_error(self):
+		"""A player with the app shut has no socket and no group. That is a
+		delivery to nowhere, and the thing that prompted it still happened."""
+		self.assertTrue(notify_user(self.bea.id, {"type": "hello"}))
+
+	def test_a_closed_socket_stops_being_told(self):
+		async def scenario():
+			socket = self._communicator(self.ana)
+			await socket.connect()
+			await socket.disconnect()
+
+			# Nothing to assert on the socket itself; what matters is that the
+			# group no longer holds a channel pointing at it, and that sending
+			# into it is still harmless.
+			return await sync_to_async(notify_user)(self.ana.id, {"type": "hello"})
+
+		self.assertTrue(async_to_sync(scenario)())
+
+
 class PresenceRoutingTests(TransactionTestCase):
 	"""The whole path a browser takes: the URL, the token, the consumer.
 
@@ -1199,3 +1325,70 @@ class PresenceRoutingTests(TransactionTestCase):
 		async_to_sync(scenario)()
 		self.assertEqual(presence.online_user_ids(), set())
 
+
+
+class OnlineCountTests(APITestCase):
+	"""How many people are in the app, for the counter in the header."""
+
+	def setUp(self):
+		from accounts import presence
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		self.user = User.objects.create_user(username="on_me", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def tearDown(self):
+		from accounts import presence
+		from game.consumers import _player_channels
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		_player_channels.clear()
+
+	def test_somebody_with_the_app_open_is_online(self):
+		from accounts import presence
+
+		presence.arrived(self.user.id)
+
+		response = self.client.get(reverse("online-now"))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["online"], 1)
+
+	def test_two_tabs_are_one_player(self):
+		from accounts import presence
+
+		presence.arrived(self.user.id)
+		presence.arrived(self.user.id)
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_somebody_at_a_table_counts_without_a_presence_socket(self):
+		"""Their app socket may be mid-reconnect; they are plainly here."""
+		from game.consumers import _player_channels
+
+		_player_channels[(77, 4242)] = "channel"
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_the_same_player_in_both_places_is_still_one_player(self):
+		from accounts import presence
+		from game.consumers import _player_channels
+
+		presence.arrived(self.user.id)
+		_player_channels[(77, self.user.id)] = "channel"
+
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 1)
+
+	def test_a_room_of_nobody_is_answered_rather_than_refused(self):
+		# Nothing in either registry — which happens on a fresh process, and
+		# reads as zero rather than as an error.
+		self.assertEqual(self.client.get(reverse("online-now")).data["online"], 0)
+
+	def test_it_takes_being_signed_in(self):
+		self.client.force_authenticate(None)
+
+		self.assertEqual(
+			self.client.get(reverse("online-now")).status_code, status.HTTP_401_UNAUTHORIZED,
+		)

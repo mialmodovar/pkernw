@@ -19,10 +19,29 @@
 export const DEFAULT_PRESET = "burgundy";
 export const DEFAULT_PATTERN = "weave";
 
+export const DEFAULT_DECK = "classic";
+
+/**
+ * How the front of a card is printed. `pattern` above is its back.
+ *
+ * "classic" is the four-colour deck this app has always dealt: ink on ivory.
+ * "inverted" fills the card with the suit's own colour and prints the rank in
+ * white — the suit is then readable from across the felt at seat size, where a
+ * small red pip on cream is the thing people squint at. Matches
+ * AVAILABLE_CARD_DECKS in accounts/serializers.py.
+ */
+export const DECKS = ["classic", "inverted"];
+
 export const DEFAULT_THEME = {
   preset: DEFAULT_PRESET,
   accent: null,
   pattern: DEFAULT_PATTERN,
+  deck: DEFAULT_DECK,
+  // The colour of the card back. Null means "whatever this preset prints",
+  // which is what everybody had before it could be chosen — the two settings
+  // then stay independent, so switching preset restyles the deck along with
+  // everything else until somebody actually picks a colour of their own.
+  cardBack: null,
   // The GIF that plays in the middle of the table when you knock somebody out.
   // A Giphy id, never a URL — see api/giphy.js. Null is "no finisher", which is
   // what everyone starts with.
@@ -463,11 +482,19 @@ export function normalizeTheme(theme) {
   const preset = PRESETS[theme?.preset] ? theme.preset : DEFAULT_PRESET;
   const accent = isHexColour(theme?.accent) ? theme.accent.toLowerCase() : null;
   const pattern = PATTERNS[theme?.pattern] ? theme.pattern : DEFAULT_PATTERN;
+  const deck = DECKS.includes(theme?.deck) ? theme.deck : DEFAULT_DECK;
+  // Both spellings on the way in, like the finisher below: the server says
+  // card_back and the client says cardBack.
+  const rawBack = theme?.cardBack ?? theme?.card_back ?? null;
+  const cardBack = isHexColour(rawBack) ? rawBack.toLowerCase() : null;
   // The server speaks snake_case and the client camelCase; this is the one
   // place the two names meet, so both spellings are accepted on the way in.
   const rawGif = theme?.finisherGifId ?? theme?.finisher_gif_id ?? null;
   const finisherGifId = GIF_ID.test(String(rawGif || "")) ? String(rawGif) : null;
-  return { preset, accent, pattern, finisherGifId, finishers: normalizeFinishers(theme) };
+  return {
+    preset, accent, pattern, deck, cardBack, finisherGifId,
+    finishers: normalizeFinishers(theme),
+  };
 }
 
 /**
@@ -495,10 +522,30 @@ export function normalizeFinishers(theme) {
   return GIF_ID.test(String(legacy || "")) ? [{ gifId: String(legacy), sound: "none" }] : [];
 }
 
-/** The card back a preset/pattern pair produces. Exported so the settings panel
- *  can draw a swatch of each option in the colours actually in play. */
-export function cardBackImage(preset, pattern) {
-  const { base, ink } = (PRESETS[preset] || PRESETS[DEFAULT_PRESET]).cardBack;
+/**
+ * The two colours a card back is printed in.
+ *
+ * A preset ships a pair — a ground and a figure a few points lighter than it —
+ * and a player who picks their own colour gets the same relationship derived
+ * from it rather than one flat block: the patterns are made of the difference
+ * between the two, so a single colour would print a weave nobody can see.
+ */
+export function cardBackColours(preset, cardBack) {
+  const chosen = isHexColour(cardBack) ? cardBack.toLowerCase() : null;
+  if (!chosen) return (PRESETS[preset] || PRESETS[DEFAULT_PRESET]).cardBack;
+  return {
+    base: chosen,
+    // Lighter for a dark colour, darker for a light one: the figure has to
+    // stand off the ground either way, and a pale pink card back was the case
+    // that made lightening unconditionally look flat.
+    ink: shift(chosen, { l: rgbToHsl(toRgb(chosen))[2] > 60 ? -9 : 7 }),
+  };
+}
+
+/** The card back a preset/pattern/colour produces. Exported so the settings
+ *  panel can draw a swatch of each option in the colours actually in play. */
+export function cardBackImage(preset, pattern, cardBack = null) {
+  const { base, ink } = cardBackColours(preset, cardBack);
   return (PATTERNS[pattern] || PATTERNS[DEFAULT_PATTERN]).build(base, ink);
 }
 
@@ -509,12 +556,22 @@ export function cardBackImage(preset, pattern) {
  * a nine-stop felt gradient from one hex reliably produces mud, and the felt is
  * the largest surface on screen to get wrong. */
 export function resolveTokens(theme) {
-  const { preset, accent, pattern } = normalizeTheme(theme);
+  const { preset, accent, pattern, cardBack } = normalizeTheme(theme);
   const base = PRESETS[preset].tokens;
+  // A chosen card-back colour takes its edge and its pip with it. Left to the
+  // preset, a dark blue card kept a warm burgundy edge and read as a rendering
+  // fault rather than as a choice.
+  const deck = isHexColour(cardBack)
+    ? {
+      "--card-back-edge": withAlpha(shift(cardBack, { l: 26 }), 0.45),
+      "--card-back-pip": withAlpha(shift(cardBack, { l: 34 }), 0.55),
+    }
+    : {};
 
   return {
     ...base,
-    "--card-back-bg": cardBackImage(preset, pattern),
+    ...deck,
+    "--card-back-bg": cardBackImage(preset, pattern, cardBack),
     // A custom accent is not a special case: the preset's own accent goes
     // through exactly the same derivation, so the two cannot look different in
     // kind, only in hue.

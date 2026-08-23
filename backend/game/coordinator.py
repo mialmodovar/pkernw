@@ -116,6 +116,8 @@ class MultiTableTournamentCoordinator:
         mystery_release: str = "",
         mystery_envelopes: Optional[List[int]] = None,
         mystery_opened: bool = False,
+        mystery_winner_keeps: bool = False,
+        all_in_or_fold: bool = False,
         # Cuts the pool into envelopes and writes them down, returning the list.
         # The count of entries is a database question, so the answer comes from
         # there rather than from anything the engine has been carrying.
@@ -159,6 +161,13 @@ class MultiTableTournamentCoordinator:
         self.mystery_release = mystery.clean_release(mystery_release)
         self._mystery_envelopes: List[int] = list(mystery_envelopes or [])
         self._mystery_opened = bool(mystery_opened)
+        # One envelope per head rather than one per knockout — see
+        # mystery.envelope_count. The extra one is never drawn and goes to the
+        # winner, because it was on their own head.
+        self.mystery_winner_keeps = bool(mystery_winner_keeps)
+        # Push or fold. The rule itself is one line in the hand engine; this is
+        # only how it gets there.
+        self.all_in_or_fold = bool(all_in_or_fold)
         self.open_mystery = open_mystery
         self.persist_mystery = persist_mystery
         self.broadcast_tournament = broadcast_tournament
@@ -843,6 +852,28 @@ class MultiTableTournamentCoordinator:
             # mid-game should still see what they are playing for, and the felt
             # should not change shape under them.
             "fast": self.fast,
+            # And the mystery board. Until now this only ever arrived on the
+            # broadcast that opened it, so a player who reloaded afterwards lost
+            # the envelope count entirely — and, worse, lost the mark on every
+            # head saying there is one to be drawn for it.
+            "mystery": self._mystery_payload(),
+        }
+
+    def _mystery_payload(self) -> Optional[dict]:
+        """What is left on the mystery board, for a client that just arrived.
+
+        None outside a mystery tournament, and before the pool is cut it says so
+        rather than being absent: "sealed" is a state the table shows, not the
+        absence of one.
+        """
+        if not self.bounty.is_mystery:
+            return None
+        return {
+            "opened": self._mystery_opened,
+            "envelopes_left": len(self._mystery_envelopes),
+            "pool_left_cents": sum(self._mystery_envelopes),
+            "top_left_cents": max(self._mystery_envelopes, default=0),
+            "release": self.mystery_release,
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:
@@ -1000,6 +1031,7 @@ class MultiTableTournamentCoordinator:
             runtime_player.name = record.get("display_name") or record["username"]
             runtime_player._username = record["username"]
             runtime_player._avatar = record.get("avatar") or "\U0001F0CF"
+            runtime_player._avatar_border = record.get("avatar_border") or ""
             runtime_player._avatar_url = record.get("avatar_url")
             runtime_player._finisher_gif_id = record.get("finisher_gif_id")
             runtime_player._finishers = record.get("finishers") or []
@@ -1160,6 +1192,7 @@ class MultiTableTournamentCoordinator:
             broadcast=lambda event_type, payload: self._hand_event(table.table_number, event_type, payload),
             request_action=lambda player, context: self._request_action_tracked(table, player, context),
             rabbit_hunting_enabled=self.rabbit_hunting_enabled,
+            all_in_or_fold=self.all_in_or_fold,
         )
         self._open_side_bets(table)
         result = await engine.run()
@@ -1508,6 +1541,7 @@ class MultiTableTournamentCoordinator:
             "name": player.name,
             "username": getattr(player, "_username", player.name),
             "avatar": getattr(player, "_avatar", "\U0001F0CF"),
+            "avatar_border": getattr(player, "_avatar_border", ""),
             # The picture, when there is one. The emoji above stays the
             # fallback, so a client that cannot load it still has a seat marker.
             "avatar_url": getattr(player, "_avatar_url", None),
@@ -1617,9 +1651,10 @@ class MultiTableTournamentCoordinator:
         ):
             return
 
-        # One envelope per knockout still to come: everybody left but the
-        # winner is going to be busted by somebody.
-        draws = max(0, remaining - 1)
+        # One envelope per knockout still to come — everybody left but the
+        # winner is going to be busted by somebody — or one per head, where the
+        # winner keeps their own.
+        draws = mystery.envelope_count(remaining, self.mystery_winner_keeps)
         if draws <= 0:
             return
 

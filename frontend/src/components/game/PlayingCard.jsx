@@ -1,4 +1,5 @@
-import { CARD_BACK, CARD_FACE, CARD_WINNING, SUIT_COLOR, parseCard } from "./cardStyles";
+import useThemeStore from "../../store/themeStore";
+import { CARD_BACK, CARD_WINNING, deckFace, parseCard } from "./cardStyles";
 
 /** The four suits, drawn rather than typed.
  *
@@ -55,17 +56,22 @@ export function CardBack({ size = "seat", className = "" }) {
 }
 
 export default function PlayingCard({ card, size = "seat", winning, shine, className = "", style }) {
+  // How this player has their deck printed. Read here rather than passed down:
+  // every card on the felt asks the same question, and threading it through the
+  // board, the seats and the replays would be the same answer written eleven
+  // times.
+  const deck = useThemeStore((s) => s.deck);
   const parsed = typeof card === "string" ? parseCard(card) : card;
   if (!parsed) return <CardBack size={size} className={className} />;
 
   const s = SIZE[size];
-  const colour = SUIT_COLOR[parsed.suit] || "#14161a";
+  const printed = deckFace(deck, parsed.suit);
 
   return (
     <div
-      className={`${s.box} ${CARD_FACE} ${winning ? CARD_WINNING : ""} ${shine ? "animate-card-glow" : ""} relative flex flex-col
+      className={`${s.box} ${printed.face} ${winning ? CARD_WINNING : ""} ${shine ? "animate-card-glow" : ""} relative flex flex-col
                   items-center justify-center leading-none ${className}`}
-      style={{ color: colour, ...style }}
+      style={{ ...printed.style, ...style }}
     >
       {/* The sheen is clipped to the card and sits over the pips, so it reads as
           light crossing the face rather than a shape drawn on it. */}

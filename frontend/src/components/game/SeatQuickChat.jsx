@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { cooldownLabel, cooldownLeft, nextTickMs } from "./throwCooldown";
 
 import QuickMessageList from "./QuickMessageList";
 import useGameStore from "../../store/gameStore";
 import { sendQuickMessage } from "./quickMessages";
-import { THROWABLES } from "./throwables";
+import { THROWABLES, pickerOrder } from "./throwables";
 import useWalletStore from "../../store/walletStore";
 
 // The two buttons share a size and a shape; only what they open differs.
@@ -38,10 +39,15 @@ export default function SeatQuickChat() {
   const [panel, setPanel] = useState(null);
   const wrapper = useRef(null);
   const aimingItem = useGameStore((s) => s.aimingItem);
+  // Three in a row and the arm is tired for ten seconds — the server's rule,
+  // counted down here so the button says so rather than going quiet.
+  const throwReadyAt = useGameStore((s) => s.throwReadyAt);
+  const [cooling, setCooling] = useState(0);
   // What is locked is shown anyway, greyed: a shelf you cannot see is a shelf
   // nobody buys from.
   const owns = useWalletStore((s) => s.owns);
   const priceOf = useWalletStore((s) => s.priceOf);
+  const onSale = useWalletStore((s) => s.onSale);
   const balance = useWalletStore((s) => s.balance);
   const buyItem = useWalletStore((s) => s.buy);
   const setAiming = useGameStore((s) => s.setAiming);
@@ -91,6 +97,19 @@ export default function SeatQuickChat() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [aimingItem, setAiming]);
+
+  // Ticked to the next whole second rather than on an interval, so the number
+  // changes when it is due to rather than up to a second late.
+  useEffect(() => {
+    const left = cooldownLeft(throwReadyAt, Date.now());
+    setCooling(left);
+    if (!left) return undefined;
+    const timer = setTimeout(
+      () => setCooling(cooldownLeft(throwReadyAt, Date.now())),
+      nextTickMs(throwReadyAt, Date.now()) ?? 1000,
+    );
+    return () => clearTimeout(timer);
+  }, [throwReadyAt, cooling]);
 
   const toggle = (which) => setPanel((current) => (current === which ? null : which));
 
@@ -149,19 +168,33 @@ export default function SeatQuickChat() {
 
       <button
         type="button"
+        disabled={cooling > 0}
         onClick={() => (aimingItem ? setAiming(null) : toggle("throw"))}
-        title={aimingItem ? "Pick a seat, or click here to put it down" : "Throw something"}
+        title={cooling > 0
+          ? `Your arm is tired — ${cooling}s`
+          : aimingItem ? "Pick a seat, or click here to put it down" : "Throw something"}
         aria-label="Throw something"
         aria-expanded={panel === "throw"}
-        className={`${BUTTON} ${panel === "throw" || aimingItem ? OPEN_STYLE : SHUT_STYLE}`}
+        className={`${BUTTON} ${
+          cooling > 0
+            ? "opacity-50 cursor-not-allowed tabular-nums text-[11px] font-bold"
+            : panel === "throw" || aimingItem ? OPEN_STYLE : SHUT_STYLE
+        }`}
       >
-        {aimingItem ? "\u{1F3AF}" : "\u{1F345}"}
+        {cooling > 0
+          ? cooldownLabel(cooling)
+          : aimingItem ? "\u{1F3AF}" : "\u{1F345}"}
       </button>
 
       {panel === "throw" && (
-        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-44 p-1.5 flex flex-wrap gap-1
+        <span className="absolute left-full bottom-0 ml-1.5 z-40 w-52 p-1.5 flex flex-wrap gap-1
                          rounded-lg panel-raised panel-solid shadow-xl shadow-black/60 animate-fade-in">
-          {THROWABLES.map((item) => {
+          {/* What the server actually sells, in the order this client draws
+              them. A build that knows about an item the server has never heard
+              of would otherwise offer it and have every throw silently
+              refused; before the shop has been read once, everything shows,
+              which is what it did before any of it could be bought. */}
+          {pickerOrder(owns).filter((item) => onSale(item.id)).map((item) => {
             const owned = owns(item.id);
             const price = priceOf(item.id);
             return (

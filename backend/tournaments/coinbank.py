@@ -57,11 +57,17 @@ def balance_of(user) -> int:
 
 
 def coin_pot(tournament, entries: int) -> int:
-    """The coins being played for.
+    """The coins the payout structure divides.
 
     A tournament pays out what was paid in. A Spin n Go pays out the draw — one
     buy-in times the multiplier — which is more than was paid in as often as it
     is less, and averages out to exactly the three buy-ins that were.
+
+    Where part of every buy-in went onto a head instead, that part is not in
+    here: it is paid out knockout by knockout (see mystery_prizes below), and
+    counting it twice would hand out coins nobody paid in. In All In or Fold the
+    whole buy-in goes that way, so this is zero and the places play for nothing
+    — which is the format.
     """
     if not is_coin_game(tournament):
         return 0
@@ -69,7 +75,49 @@ def coin_pot(tournament, entries: int) -> int:
     # many people paid in. Everything else, tournaments included, is the buy-ins.
     if (tournament.spin_multiplier or 0) > 0:
         return (tournament.buy_in_coins or 0) * tournament.spin_multiplier
-    return (tournament.buy_in_coins or 0) * max(0, entries)
+
+    from .bounties import BountyConfig, prize_pool_share_cents
+
+    share = prize_pool_share_cents(
+        BountyConfig.from_tournament(tournament), tournament.buy_in_coins or 0,
+    )
+    return share * max(0, entries)
+
+
+def mystery_prizes(tournament, players) -> dict:
+    """What each player takes out of a coin mystery pool, by user id.
+
+    What they drew, plus — for the winner — whatever was never drawn at all.
+    In All In or Fold that last part is exactly one envelope, the one that was
+    on the winner's own head; in a tournament where the pool is cut one envelope
+    per knockout it is usually nothing, and is whatever a hand that busted two
+    players at once left behind.
+
+    The engine records a draw as `bounty_won_cents`, and in a coin game the
+    integer on a head is coins. That is the same arithmetic in a different
+    currency rather than a special case: see bounties.py, where every amount is
+    an opaque integer.
+    """
+    from .bounties import BountyConfig
+
+    bounty = BountyConfig.from_tournament(tournament)
+    if not bounty.is_mystery:
+        return {}
+
+    prizes = {
+        player.user_id: max(0, player.bounty_won_cents or 0)
+        for player in players
+        if (player.bounty_won_cents or 0) > 0
+    }
+
+    entries = sum(1 + (player.rebuy_count or 0) for player in players)
+    pool = bounty.amount_cents * entries
+    unclaimed = pool - sum(prizes.values())
+    if unclaimed > 0:
+        champion = next((one for one in players if one.finish_position == 1), None)
+        if champion is not None:
+            prizes[champion.user_id] = prizes.get(champion.user_id, 0) + unclaimed
+    return prizes
 
 
 def settle_tournament_coins(tournament) -> bool:
@@ -79,9 +127,6 @@ def settle_tournament_coins(tournament) -> bool:
     who wins — a pot with no structure behind it is not something to guess at.
     """
     if not is_coin_game(tournament):
-        return False
-    payouts = tournament.payout_structure or []
-    if not payouts:
         return False
 
     memo = stake_memo(tournament.id)
@@ -97,12 +142,19 @@ def settle_tournament_coins(tournament) -> bool:
         # the pot. A Spin n Go allows none, and coin_pot ignores the count there.
         entries = sum(1 + (player.rebuy_count or 0) for player in players)
         pot = coin_pot(tournament, entries)
-        if pot <= 0:
-            return False
-
+        payouts = tournament.payout_structure or []
         prizes = _prizes_for(
             pot, payouts, {player.user_id: player.finish_position for player in players},
-        )
+        ) if pot > 0 and payouts else {}
+
+        # And whatever the heads paid out, which in All In or Fold is the whole
+        # of it. Added rather than replacing: a coin tournament may perfectly
+        # well pay places and bounties both.
+        for user_id, amount in mystery_prizes(tournament, players).items():
+            prizes[user_id] = prizes.get(user_id, 0) + amount
+
+        if not prizes:
+            return False
         users_by_id = {player.user_id: player.user for player in players}
 
         # Inside the same transaction as the already-paid check above, and in a

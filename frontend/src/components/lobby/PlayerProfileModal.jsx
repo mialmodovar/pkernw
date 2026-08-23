@@ -193,6 +193,7 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
               <Avatar
                 url={profile.avatar_url}
                 emoji={profile.avatar_emoji}
+        border={profile.avatar_border}
                 name={profile.display_name || profile.username}
                 className="w-11 h-11 shrink-0 rounded-full panel-raised"
                 emojiClassName="text-2xl"

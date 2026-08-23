@@ -27,6 +27,56 @@ export const CARD_BACK =
   "bg-[image:var(--card-back-bg)] " +
   "shadow-[0_2px_5px_rgba(0,0,0,0.55),inset_0_0_0_1px_rgba(0,0,0,0.35)]";
 
+/**
+ * The two ways a card can be printed, as the classes and colours for one card.
+ *
+ * "classic" is ink on ivory: the four-colour deck this app has always dealt.
+ * "inverted" fills the card with the suit's own colour and prints the rank in
+ * white — at seat size the suit is then legible from across the felt, where a
+ * small red pip on cream is the thing people lean in to check. It is also the
+ * kinder of the two for anybody who reads red on cream badly.
+ *
+ * Returns {face, ink, edge}: the card's classes, the colour its rank and pip
+ * are drawn in, and the colour of the hairline that keeps a dark card from
+ * dissolving into a dark felt.
+ */
+export function deckFace(deck, suit) {
+  const colour = SUIT_COLOR[suit] || SUIT_COLOR["♠"];
+  if (deck === "inverted") {
+    return {
+      face:
+        "rounded-[4px] border "
+        + "shadow-[0_2px_5px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.28)]",
+      style: {
+        // A touch lighter at the top, like the ivory card's sheen — without it
+        // a flat block of colour stops reading as an object on the felt.
+        backgroundImage: `linear-gradient(163deg, ${colour} 0%, ${colour} 55%, ${shade(colour, -0.18)} 100%)`,
+        borderColor: shade(colour, -0.35),
+        color: "#ffffff",
+      },
+    };
+  }
+  return { face: CARD_FACE, style: { color: colour } };
+}
+
+/**
+ * A colour, moved towards black or white.
+ *
+ * Kept here rather than reaching for a colour library: one card needs one
+ * darker edge, and the alternative was writing four more hex codes that nobody
+ * would remember to change when the suits do.
+ */
+export function shade(hex, amount) {
+  const value = String(hex).replace("#", "");
+  const to = amount < 0 ? 0 : 255;
+  const mix = Math.abs(amount);
+  const channel = (index) => {
+    const from = parseInt(value.slice(index * 2, index * 2 + 2), 16);
+    return Math.round(from + (to - from) * mix).toString(16).padStart(2, "0");
+  };
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+}
+
 // Ring on the five cards that made the winning hand at showdown.
 export const CARD_WINNING =
   "ring-2 ring-(--color-highlight-bright) ring-offset-1 ring-offset-black/50 shadow-[0_0_12px_var(--color-highlight-edge)]";

@@ -17,6 +17,11 @@ describe("what a thrown thing sounds like when it lands", () => {
   });
 
   it("falls back rather than throwing on an item from a newer client", () => {
-    expect(landingFor("anvil")).toBeNull();
+    expect(landingFor("piano-from-a-future-shop")).toBeNull();
+  });
+
+  it("does not land a bucket of water like a rubber chicken", () => {
+    expect(landingFor("water")).not.toBe(landingFor("duck"));
+    expect(landingFor("anvil")).not.toBe(landingFor("confetti"));
   });
 });

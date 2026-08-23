@@ -210,6 +210,9 @@ const useGameStore = create((set) => ({
   // aiming mode: seats become targets and a click throws instead of opening
   // somebody's stats.
   aimingItem: null,
+  // When this player may throw again, as a timestamp. Zero means now — which
+  // is nearly always, since the limit only bites on a burst.
+  throwReadyAt: 0,
   setAiming: (aimingItem) => set({ aimingItem }),
   // Whether one of the quick panels is hanging off your own seat. Every seat is
   // translated into its place on the ring, and a transform makes a stacking
@@ -283,6 +286,9 @@ const useGameStore = create((set) => ({
   // Keep your own cards face down until you look at them. Off by default —
   // most people play alone in a room — and remembered per browser, because it
   // is a fact about where you are sitting rather than about your account.
+  // What each seat did last, keyed by seat. The felt draws it on the seat; see
+  // components/game/seatAction.js for how long each one is worth showing.
+  lastActions: {},
   hideHand: readStoredFlag(HIDE_HAND_KEY, false),
   toggleHideHand: () => set((s) => {
     const hideHand = !s.hideHand;
@@ -347,6 +353,24 @@ const useGameStore = create((set) => ({
           // Carried on the snapshot too, so a reload mid-game gets the format
           // and the prize back rather than a table with no stakes on it.
           fast: data.fast ?? s.fast,
+          // The mystery board, for the same reason. Merged rather than
+          // replaced: the snapshot knows what is left on the board, and the
+          // opening broadcast knows the envelopes it was cut into — a reload
+          // must not lose the second by arriving with the first. `announcement`
+          // is deliberately not revived; the opening plays once, when it opens.
+          ...(data.mystery
+            ? {
+              mystery: {
+                ...(s.mystery || {}),
+                opened: Boolean(data.mystery.opened),
+                envelopesLeft: data.mystery.envelopes_left,
+                poolLeftCents: data.mystery.pool_left_cents,
+                topLeftCents: data.mystery.top_left_cents,
+                reason: s.mystery?.reason ?? data.mystery.release ?? null,
+                announcement: null,
+              },
+            }
+            : {}),
           sideBetsOpen: Boolean(data.side_bets?.open),
         }));
         break;
@@ -383,6 +407,7 @@ const useGameStore = create((set) => ({
       case "hand_started":
         set({
           handNumber: data.hand_number,
+          lastActions: {},
           dealerSeat: data.dealer_seat ?? null,
           sbSeat: null,
           bbSeat: null,
@@ -499,12 +524,31 @@ const useGameStore = create((set) => ({
               chips: data.chips ?? p.chips,
               bet: data.bet ?? p.bet,
               is_all_in: data.is_all_in ?? p.is_all_in,
+              // Acting is proof of presence. Whatever the table believed about
+              // this seat a moment ago, somebody just bet from it — and a
+              // player who has plainly not left must not be wearing a badge
+              // that says they have.
+              is_disconnected: false,
               // Marking the fold here is what makes the mucked hand leave the
               // table: no game_state follows an action, so nothing else would.
               is_folded: data.action === "fold" ? true : p.is_folded,
             };
           }),
           pot: data.pot ?? s.pot,
+          // What this seat did, for the pill the felt draws on it. Replaces
+          // whatever that seat did before: a player who calls a raise has not
+          // also still checked.
+          lastActions: {
+            ...s.lastActions,
+            [data.seat]: {
+              action: data.action,
+              amount: data.amount || 0,
+              allIn: Boolean(data.is_all_in),
+              // Two identical actions in a row are the same object by value,
+              // and the second one still has to restart a fold's timer.
+              id: (s.lastActions[data.seat]?.id || 0) + 1,
+            },
+          },
           messages: appendLog(s, entry(s, "action",
             `${nameFor(s, data.seat)} ${verb}${data.amount ? ` ${data.amount.toLocaleString()}` : ""}`)),
         }));
@@ -532,6 +576,9 @@ const useGameStore = create((set) => ({
       case "street_dealt":
         set((s) => ({
           street: data.street,
+          // The street is closed, so what anybody did in it is no longer the
+          // state of the betting — the chips are on their way to the pot.
+          lastActions: {},
           communityCards: data.cards || [],
           pot: data.pot || 0,
           ...(data.street === "river" ? { riverShownAt: Date.now() } : {}),
@@ -610,6 +657,7 @@ const useGameStore = create((set) => ({
 
       case "hand_complete":
         set((s) => ({
+          lastActions: {},
           // The window in which cards can be shown. It closes when the next
           // hand starts, which is the server's rule too — this only decides
           // whether the button is on screen.
@@ -893,9 +941,20 @@ const useGameStore = create((set) => ({
             toSeat: data.to_seat,
             fromName: data.from_name,
             toName: data.to_name,
+            // Who caught it. Everybody watches it cross and land on a seat;
+            // the player it was aimed at gets it on their own screen, and this
+            // is how they know it was them.
+            toUserId: data.to_user_id,
           }],
           throwSequence: s.throwSequence + 1,
         }));
+        break;
+
+      // Three in a row and the arm is tired. Told rather than silently
+      // dropped: a button that does nothing reads as a broken button, and the
+      // player then presses it more.
+      case "throw_cooldown":
+        set({ throwReadyAt: Date.now() + Math.max(0, (data.seconds || 0) * 1000) });
         break;
 
       case "player_disconnected":
@@ -1018,6 +1077,7 @@ const useGameStore = create((set) => ({
       mystery: null,
       players: [], communityCards: [], pot: 0, street: null,
       handNumber: 0, holeCards: [], handStrength: null, actionOnSeat: null,
+      lastActions: {},
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,

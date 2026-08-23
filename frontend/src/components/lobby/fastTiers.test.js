@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  formatMeta, isMyTier, myGameAction, myQueueAt, myTablesAt, myTierGames, payoutRows,
-  prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
+  formatMeta, hasSharedPrizes, isMyTier, myGameAction, myQueueAt, myTablesAt, myTierGames,
+  payoutRows, prizeRows, prizeSummary, seatCounts, seatPips, tierAction,
 } from "./fastTiers";
 
 const tier = { key: "spingo", stake: 25, seats_needed: 3, game: null, odds: [] };
@@ -25,20 +25,22 @@ describe("prizeSummary", () => {
   it("gives a drawn game its range, which is the whole point of it", () => {
     const drawn = {
       odds: [
-        { multiplier: 2, prize_coins: 50 },
-        { multiplier: 10, prize_coins: 250 },
-        { multiplier: 100, prize_coins: 2500 },
+        { multiplier: 2, prize_coins: 50, winner_coins: 50 },
+        { multiplier: 10, prize_coins: 250, winner_coins: 250 },
+        // The big one is shared three ways, so the winner takes 2,000 of the
+        // 2,500 — and the headline is what one player takes home.
+        { multiplier: 100, prize_coins: 2500, winner_coins: 2000, shared: true },
       ],
     };
     expect(prizeSummary(drawn, { draws_multiplier: true })).toEqual({
-      label: "Prize", value: "🪙 50 – 🪙 2,500",
+      label: "Prize", value: "50 – 2,000",
     });
   });
 
   it("names the winner's share where one place is paid", () => {
     const hu = { payouts: [{ place: 1, label: "1st", percentage: 100, coins: 20 }] };
     expect(prizeSummary(hu, { draws_multiplier: false })).toEqual({
-      label: "Winner takes", value: "🪙 20",
+      label: "Winner takes", value: "20",
     });
   });
 
@@ -50,7 +52,7 @@ describe("prizeSummary", () => {
       ],
     };
     expect(prizeSummary(sixmax, { draws_multiplier: false })).toEqual({
-      label: "Top 2 paid", value: "🪙 97 · 🪙 52",
+      label: "Top 2 paid", value: "97 · 52",
     });
   });
 
@@ -214,5 +216,34 @@ describe("payoutRows", () => {
 
   it("is empty for a drawn game", () => {
     expect(payoutRows(tier)).toEqual([]);
+  });
+});
+
+describe("prizeRows", () => {
+  it("prints the winner's share and marks the rows that pay everybody", () => {
+    const rows = prizeRows({
+      odds: [
+        { multiplier: 2, chance_pct: 68.55, prize_coins: 50, winner_coins: 50, shared: false },
+        { multiplier: 100, chance_pct: 0.1, prize_coins: 2500, winner_coins: 2000, shared: true },
+      ],
+    });
+    expect(rows[0]).toMatchObject({ prize: 50, shared: false, chance: "68.55%" });
+    expect(rows[1]).toMatchObject({ prize: 2000, shared: true, chance: "0.1%" });
+  });
+
+  it("falls back to the pool for a server that sends no share", () => {
+    const rows = prizeRows({ odds: [{ multiplier: 2, chance_pct: 70, prize_coins: 50 }] });
+    expect(rows[0].prize).toBe(50);
+  });
+});
+
+describe("hasSharedPrizes", () => {
+  it("is true when any row on the ladder pays every seat", () => {
+    expect(hasSharedPrizes({ odds: [{ shared: false }, { shared: true }] })).toBe(true);
+  });
+
+  it("is false for a ladder that is winner takes all throughout", () => {
+    expect(hasSharedPrizes({ odds: [{ shared: false }] })).toBe(false);
+    expect(hasSharedPrizes({})).toBe(false);
   });
 });

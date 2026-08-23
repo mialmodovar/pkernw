@@ -278,6 +278,18 @@ export default function GamePage() {
       bare={bare}
     />
   );
+  // The host's controls, and the one place their URLs are written. Built out of
+  // the button's own word before this, which read fine and meant the paths only
+  // existed at runtime — so nothing could check they were paths the server
+  // serves. Now they are literals, and a test on the other side of the app
+  // resolves every one of them.
+  const ADMIN_PATHS = {
+    start: `/tournaments/${id}/start/`,
+    pause: `/tournaments/${id}/pause/`,
+    resume: `/tournaments/${id}/resume/`,
+    "skip-level": `/tournaments/${id}/skip-level/`,
+  };
+
   const handleAdminControl = async (control) => {
     setAdminError("");
     if (sandbox) {
@@ -287,7 +299,9 @@ export default function GamePage() {
       return;
     }
     try {
-      await api.post(`/tournaments/${id}/${control}/`);
+      const path = ADMIN_PATHS[control];
+      if (!path) return;
+      await api.post(path);
       await loadTournament();
     } catch (error) {
       setAdminError(error.response?.data?.error || "Unable to update tournament.");
@@ -329,7 +343,9 @@ export default function GamePage() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    // Nothing on a table is there to be copied — see .no-select in index.css,
+    // which lets the chat, the hand history and every input opt back in.
+    <div className="h-full flex flex-col overflow-hidden no-select">
       <ConnectionBanner status={connectionStatus} onRetry={retry} />
       {/* Every other table you have open. Draws nothing when this is the only
           one, which is most of the time. */}
@@ -547,8 +563,10 @@ export default function GamePage() {
               // amounts, and a deep-stacked table asks for more room than a
               // short-stacked one. The floor stops it shrinking to a nub
               // between hands, and the ceiling stops it hanging off the felt.
-              // It grows leftwards from a pinned corner, so the buttons keep
-              // the same right edge whatever the numbers do.
+              // A definite width, set by the panel itself, rather than one
+              // taken from the numbers printed on the buttons: a bigger pot
+              // used to make a wider panel, and a panel pinned to this corner
+              // grows leftwards — so every button moved when the amounts did.
               // Scaled down a little from the pinned corner it grows out of,
               // so it keeps its right and bottom edges and takes slightly less
               // of the felt back off the seat below it.

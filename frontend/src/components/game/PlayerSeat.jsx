@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Avatar from "../Avatar";
 import HoleCards from "./HoleCards";
 import SeatBubble from "./SeatBubble";
+import SeatActionPill from "./SeatActionPill";
 import SeatQuickChat from "./SeatQuickChat";
 import useMediaStore from "../../store/mediaStore";
 import SeatVideo from "./SeatVideo";
@@ -86,7 +87,7 @@ function TimerRing({ pct, tone = "--color-highlight" }) {
 export default function PlayerSeat({
   player, isMe, isActive, myCards, isWinner, winAmount, equity, outs,
   position, timerPct, timerTone, showdownEntry, faceDownAtShowdown, dimmed, topHalf,
-  stats, onInspect, handStrength, shine, raisedCards, compact = false,
+  stats, onInspect, shine, raisedCards, compact = false,
   backers = [],
 }) {
   const showBB = useGameStore((s) => s.showBB);
@@ -115,6 +116,13 @@ export default function PlayerSeat({
   const showOffer = useShowCardsOffer(isMe ? player.seat : null, isMe ? myCards : null);
   const bountyFlash = useBountyFlash(p.seat);
   const bountyCents = p.bounty_cents || 0;
+  // A mystery head. Once the pool is cut, every player still in carries an
+  // envelope worth an unknown amount — which is the whole format, and the felt
+  // said nothing about it: a mystery bounty puts no figure on a head, so the
+  // badge beside this one is never drawn in one of these.
+  const mysteryOpen = useGameStore((s) => Boolean(s.mystery?.opened));
+  const mysteryTopCents = useGameStore((s) => s.mystery?.topLeftCents || 0);
+  const carriesEnvelope = mysteryOpen && !p.is_eliminated && bountyCents <= 0;
   const borderColor = p.is_disconnected
     ? "border-(--color-accent)"
     : isActive
@@ -129,6 +137,10 @@ export default function PlayerSeat({
   // the top half and the plate always ends up on the outer edge.
   const badges = (
     <div key="badges" className="flex flex-col items-center gap-1">
+      {/* What they just did. On the table-facing side of the seat — this column
+          flips to the inner edge for the seats above the centre — because a
+          hand is read across the felt, from the middle outwards. */}
+      {!p.is_eliminated && <SeatActionPill seat={p.seat} />}
       {/* Back from a rebuy, at the table but not in the hand being dealt. The
           alternative was being invisible until the next one, which reads as a
           rebuy that did not work. */}
@@ -235,17 +247,6 @@ export default function PlayerSeat({
         // since that is the one hand you actually have to read.
         size={compact && isMe ? "board" : "seat"}
       />
-      {/* Your own read on what you hold, over your cards. */}
-      {isMe && handStrength && !p.is_folded && !showdownEntry && (
-        // Hidden by display rather than by opacity: a covered hand should not
-        // leave a strip of nothing over the cards for the seat to float on.
-        <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center
-                        bg-black/60 border border-(--color-border) text-(--color-highlight-text) whitespace-nowrap ${
-                          coverHand ? "hidden peer-hover/hand:block peer-active/hand:block" : ""
-                        }`}>
-          {handStrength}
-        </div>
-      )}
       {showdownEntry && !faceDownAtShowdown && (
         <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded text-center ${
           isWinner ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
@@ -304,6 +305,24 @@ export default function PlayerSeat({
                       ${bountyFlash ? "animate-bounty-bump" : ""}`}
         >
           {formatEuros(bountyCents)}
+        </span>
+      )}
+
+      {/* The envelope on their head. No number on it, because there is not one
+          to know — that is what makes it worth chasing. It lands with a pop the
+          moment the pool opens, and goes with them when they bust. */}
+      {carriesEnvelope && (
+        <span
+          title={`${p.name} is worth a mystery envelope`
+            + (mysteryTopCents > 0 ? ` — up to ${formatEuros(mysteryTopCents)}` : "")}
+          className="animate-mystery-head absolute -top-2 -right-1 z-10 flex items-center gap-0.5
+                     px-1.5 py-px rounded-full text-[10px] font-extrabold leading-none
+                     bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
+                     text-(--color-highlight-ink) border border-(--color-highlight-deeper)
+                     shadow shadow-black/60 whitespace-nowrap"
+        >
+          <span aria-hidden="true">✉️</span>
+          <span>?</span>
         </span>
       )}
 
@@ -412,7 +431,8 @@ export default function PlayerSeat({
                   ${isActive ? "ring-2 ring-(--color-highlight-edge)" : ""}`}
     >
       {!cameraInCircle && (
-        <Avatar url={p.avatar_url} emoji={p.avatar} name={p.name}
+        <Avatar url={p.avatar_url} emoji={p.avatar}
+            border={p.avatar_border} name={p.name}
           className="w-full h-full"
           emojiClassName="text-[calc(var(--seat-avatar)*0.5)]" />
       )}

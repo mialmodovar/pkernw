@@ -18,6 +18,7 @@ import StaffRoute from "./components/auth/StaffRoute";
 import BuildStamp from "./components/BuildStamp";
 import AppHeader from "./components/AppHeader";
 import TableShortcut from "./components/lobby/TableShortcut";
+import GameStartAlert from "./components/GameStartAlert";
 
 export default function App() {
   const { init, loading, user } = useAuthStore();
@@ -73,6 +74,9 @@ export default function App() {
           the whole app, not about the page you happen to be reading. It hides
           itself at the table and on the login pages. */}
       <TableShortcut />
+      {/* Out here for the same reason, and one step more so: this one has to
+          reach somebody who is at a different table entirely. */}
+      <GameStartAlert />
     </div>
   );
 }

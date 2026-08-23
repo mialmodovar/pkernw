@@ -4,13 +4,14 @@
  * Kept beside the onboarding rather than read off the lobby: this is the pitch
  * for each mode, not its live state, and it has to read the same whether or not
  * anybody happens to be sitting at a table right now. The tabs it describes are
- * LOBBY_TABS in LobbyPage.
+ * LOBBY_TABS in LobbyPage. `icon` is a name in the app's own set
+ * (components/icons), not an emoji: these are drawn, so they take the theme.
  */
 
 export const MODES = [
   {
     key: "tournaments",
-    icon: "🏆",
+    icon: "trophy",
     label: "Tournaments",
     blurb: "A night somebody arranges: a start time, a structure, and everyone who "
       + "turns up. Played for coins, or for real money the app writes down and you settle "
@@ -19,7 +20,7 @@ export const MODES = [
   },
   {
     key: "spingo",
-    icon: "🎡",
+    icon: "spin",
     label: "Spin n Go",
     blurb: "Three players and a prize drawn when the third one sits — usually twice the "
       + "buy-in, once in a while a hundred times it. Winner takes all of it.",
@@ -27,7 +28,7 @@ export const MODES = [
   },
   {
     key: "sitngo",
-    icon: "⚔️",
+    icon: "duel",
     label: "Sit n Go",
     blurb: "Heads up or six-handed. You sit, and when the last seat fills the cards are "
       + "in the air. No draw — it pays out exactly what went in.",

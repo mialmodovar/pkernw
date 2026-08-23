@@ -153,6 +153,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
     # it becomes. Both come out of maps the parent builds — a lookup per row
     # would be a query per player, and these lists run to twenty.
     avatar_emoji = serializers.SerializerMethodField()
+    avatar_border = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     table_id = serializers.IntegerField(source="table.id", read_only=True)
     table_number = serializers.IntegerField(source="table.table_number", read_only=True)
@@ -164,6 +165,7 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
             "username",
             "display_name",
             "avatar_emoji",
+            "avatar_border",
             "avatar_url",
             "table_id",
             "table_number",
@@ -188,6 +190,12 @@ class TournamentPlayerSerializer(serializers.ModelSerializer):
 
     def get_avatar_emoji(self, player):
         return self.context.get("emoji_by_user", {}).get(player.user_id) or "\U0001F0CF"
+
+    def get_avatar_border(self, player):
+        """The ring they bought, drawn wherever their face is. Blank is the
+        plain one everybody starts with."""
+        profile = getattr(player.user, "profile", None)
+        return getattr(profile, "avatar_border", "") or ""
 
     def get_avatar_url(self, player):
         return avatar_url(player.user_id, self.context.get("stamp_by_user", {}).get(player.user_id))
@@ -269,6 +277,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                 "username": user.username,
                 "display_name": shown_name(user.username, profile.display_name if profile else ""),
                 "avatar_emoji": (profile.avatar_emoji if profile else None) or "\U0001F0CF",
+                "avatar_border": (profile.avatar_border if profile else "") or "",
                 "avatar_url": avatar_url(user.id, image.updated_at if image else None),
                 # Dimmed rather than dropped: who played is part of what a
                 # finished tournament was.
@@ -366,6 +375,9 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
 class TournamentDetailSerializer(serializers.ModelSerializer):
     host_name = serializers.CharField(source="host.username", read_only=True)
+    # Whether this night comes round again, and when. Null for a one-off, which
+    # is most of them.
+    repeats = serializers.SerializerMethodField()
     club_name    = serializers.CharField(source="club.name", read_only=True, default=None)
     club_emoji   = serializers.CharField(source="club.emoji", read_only=True, default=None)
     club_slug    = serializers.CharField(source="club.slug", read_only=True, default=None)
@@ -374,6 +386,18 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
     players   = serializers.SerializerMethodField()
     tables    = TournamentTableSerializer(many=True, read_only=True)
     levels    = BlindLevelSerializer(many=True, read_only=True)
+
+    def get_repeats(self, tournament):
+        fixture = tournament.fixture
+        if fixture is None or not fixture.active:
+            return None
+        from .fixtures import describe
+
+        return {
+            "id": fixture.id,
+            "label": describe(fixture.weekday, fixture.start_time),
+            "days_ahead": fixture.days_ahead,
+        }
     late_registration_open = serializers.SerializerMethodField()
     late_registration_seconds_left = serializers.SerializerMethodField()
     rebuys_open = serializers.SerializerMethodField()
@@ -415,7 +439,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "mystery_release", "mystery_envelopes", "mystery_opened_at",
                   "showdown_seconds",
-                  "created_at")
+                  "created_at", "repeats")
 
     def get_players(self, tournament):
         from .models import LedgerEntry

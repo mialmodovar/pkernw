@@ -7,6 +7,12 @@ from django.db.models import F, Prefetch, Q
 from django.utils import timezone
 from accounts.models import AvatarImage
 
+from datetime import timedelta
+
+from .absentees import drop_absent_registrations, seconds_until
+from .fixtures import describe as describe_fixture
+from .fixturebank import open_due_fixtures, start_series, stop_series
+from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soon
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
@@ -29,17 +35,65 @@ from game.consumers import (
 )
 
 
+def _sweep_lobby(here=None, now=None):
+    """The housekeeping a lobby request runs on its way past.
+
+    Two jobs that need doing regularly and have no scheduler to do them: start
+    the tournaments whose time has come, and give up the seats of people who
+    registered and then went away (see absentees.py). Both are cheap, both are
+    idempotent, and both only matter while somebody is around to look at a
+    lobby — which is exactly when this runs.
+    """
+    at = now or timezone.now()
+    # Next Friday's game, opened a few days early so people can register for
+    # it. Before the starts, because a night opened now may be due now.
+    open_due_fixtures(at)
+    _start_due_scheduled_tournaments()
+    _warn_about_tournaments_about_to_start(at)
+    drop_absent_registrations(at, here=here)
+
+
+# How many have to be registered before a tournament starts itself.
+#
+# Three, not two. A night that fires on the stroke of nine with whoever happened
+# to be early is a heads-up match nobody signed up for — and those two are then
+# locked into it while the people who were a minute late find a game already
+# running. Waiting for a third costs a few minutes and is what everybody assumed
+# was happening anyway.
+#
+# A host pressing Start is a different matter and still needs only two: that is
+# somebody choosing to play heads-up, out loud, rather than a clock choosing it
+# for them.
+MIN_TO_START_ITSELF = 3
+
+
 def _start_due_scheduled_tournaments():
+    now = timezone.now()
     due_tournaments = Tournament.objects.filter(
         status="lobby",
         scheduled_start_at__isnull=False,
-        scheduled_start_at__lte=timezone.now(),
+        scheduled_start_at__lte=now,
     )
     for tournament in due_tournaments:
-        if tournament.players.count() >= 2:
+        if tournament.players.count() >= MIN_TO_START_ITSELF:
             tournament.status = "running"
-            tournament.started_at = timezone.now()
+            tournament.started_at = now
             tournament.save(update_fields=["status", "started_at"])
+            # Whoever registered is not necessarily watching the clock. See
+            # announce.py — this reaches them wherever they are in the app.
+            announce_start(tournament)
+
+
+def _warn_about_tournaments_about_to_start(now):
+    """The five minutes before a scheduled start, once per tournament."""
+    soon = Tournament.objects.filter(
+        status="lobby",
+        scheduled_start_at__isnull=False,
+        scheduled_start_at__gt=now,
+        scheduled_start_at__lte=now + timedelta(seconds=WARN_BEFORE_SECONDS),
+    )
+    for tournament in soon:
+        announce_starting_soon(tournament, seconds_until(tournament.scheduled_start_at, now))
 
 
 def manageable_tournament(user, pk):
@@ -90,7 +144,7 @@ class TournamentListCreateView(generics.ListCreateAPIView):
         return self._scoped_queryset().prefetch_related(*self.ROSTER_PREFETCH)
 
     def _scoped_queryset(self):
-        _start_due_scheduled_tournaments()
+        _sweep_lobby(here=getattr(self.request.user, "id", None))
         scope = self.request.query_params.get("scope")
         user = self.request.user
 
@@ -235,6 +289,9 @@ def start_tournament(request, pk):
     # starting again, and would otherwise reset how long this has been running.
     tournament.started_at = timezone.now()
     tournament.save(update_fields=["status", "started_at"])
+    # The host pressed a button; everybody else has to be told. Whoever is
+    # already looking at the table drops the alert themselves.
+    announce_start(tournament)
     return Response({"status": "running"})
 
 
@@ -513,3 +570,39 @@ def delete_tournament(request, pk):
 
     tournament.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["POST", "DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def repeat_tournament(request, pk):
+    """Make this night a weekly series, or stop the series it belongs to.
+
+    POST turns the game into the first of a series: same weekday, same hour,
+    same everything, opened a few days ahead every week from now on. DELETE
+    stops it coming round — what it has already opened stays open, because
+    people have registered for those.
+
+    Whoever may run the tournament may do this: it is the same decision as
+    scheduling it, made once instead of every week.
+    """
+    tournament = manageable_tournament(request.user, pk)
+    if tournament is None:
+        return Response({"error": "Not found or not yours to run"}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "DELETE":
+        if tournament.fixture is None:
+            return Response({"error": "This is not part of a series"}, status=status.HTTP_400_BAD_REQUEST)
+        stop_series(tournament.fixture)
+        return Response({"repeats": None})
+
+    made = start_series(tournament, request.data.get("days_ahead"))
+    if isinstance(made, str):
+        return Response({"error": made}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response({
+        "repeats": {
+            "id": made.id,
+            "label": describe_fixture(made.weekday, made.start_time),
+            "days_ahead": made.days_ahead,
+        },
+    }, status=status.HTTP_201_CREATED)

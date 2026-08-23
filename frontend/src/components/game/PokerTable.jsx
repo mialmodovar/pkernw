@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { send } from "../../api/socket";
 import useGameStore from "../../store/gameStore";
@@ -14,11 +14,13 @@ import {
 } from "./useShowdownReveal";
 import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
+import HitEffect from "./HitEffect";
 import ChipFlight from "./ChipFlight";
 import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
 import {
   CLASSIC_ASPECT,
+  FELT_PLAQUE,
   PORTRAIT,
   SHORT_TABLES,
   landscapeGeometry,
@@ -33,7 +35,7 @@ import FinisherOverlay from "./FinisherOverlay";
 import MysteryBoard from "./MysteryBoard";
 import MysteryOpening from "./MysteryOpening";
 import MysteryReveal from "./MysteryReveal";
-import ThrownItem from "./ThrownItem";
+import ThrownItem, { FLIGHT_MS } from "./ThrownItem";
 import AimOverlay from "./AimOverlay";
 
 
@@ -198,6 +200,46 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
   // Hold the result back until every hand has turned over — otherwise the
   // winner banner and the gold rings give it away mid-reveal.
   const resultRevealed = resultIsRevealed({ showdown, revealedSeats, faceUpSeats });
+  // Your own read on what you hold, for the line under the board. Only while
+  // the hand is still yours to play: at showdown every hand is named on its own
+  // seat, and a folded player holds nothing worth naming.
+  //
+  // Covering your cards covers this too. It is the same secret said twice, and
+  // a table that hides the cards while printing "Two pair, aces and kings" in
+  // the middle of the felt has hidden nothing from anybody standing behind you.
+  const hideHand = useGameStore((s) => s.hideHand);
+  const mine = players.find((p) => p.seat === mySeat) || null;
+  const myHandRead = handStrength && mine && !mine.is_folded && !showdown && !hideHand
+    ? handStrength
+    : null;
+
+  // Throws that were aimed at this player, held back until they land. The
+  // store knows a throw exists the moment it is broadcast; the mess belongs to
+  // the moment it arrives.
+  const myUserId = players.find((p) => p.seat === mySeat)?.user_id ?? null;
+  const [landedOnMe, setLandedOnMe] = useState([]);
+  // The highest throw id already scheduled. Without it, every re-render while
+  // one is in the air would queue the same landing again.
+  const seenThrow = useRef(0);
+  const clearHit = useCallback((id) => {
+    setLandedOnMe((hits) => hits.filter((one) => one.id !== id));
+  }, []);
+
+  useEffect(() => {
+    if (myUserId == null) return undefined;
+    const mine = throws.filter((one) => one.toUserId === myUserId);
+    if (!mine.length) return undefined;
+    const timers = mine
+      .filter((one) => one.id > seenThrow.current)
+      .map((one) => {
+        seenThrow.current = Math.max(seenThrow.current, one.id);
+        return setTimeout(() => {
+          setLandedOnMe((hits) => (hits.some((h) => h.id === one.id) ? hits : [...hits, one]));
+        }, FLIGHT_MS);
+      });
+    return () => timers.forEach(clearTimeout);
+  }, [throws, myUserId]);
+
   const winningBoardCards = resultRevealed
     ? winnerSeats.flatMap((seat) => showdownBySeat.get(seat)?.best_cards || [])
     : [];
@@ -296,6 +338,14 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         ) : null
       ))}
 
+      {/* The ones aimed at you, on your own screen. The seat everybody else
+          watched it land on is not where it landed for you. Delayed until the
+          thing has actually crossed — see FLIGHT_MS — so the mess arrives with
+          the object rather than ahead of it. */}
+      {landedOnMe.map((one) => (
+        <HitEffect key={one.id} hit={one} onDone={clearHit} />
+      ))}
+
       {aimingItem && seatPixel(mySeat) && (
         <AimOverlay
           item={aimingItem}
@@ -332,6 +382,18 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2">
         <CommunityCards winningCards={winningBoardCards} shiningCards={shiningBoard} />
         <PotDisplay />
+        {/* What you have, under the board you have it with.
+            It used to sit on your own seat, a few pixels from your name, your
+            stack and the big blinds it is worth — which is the busiest corner
+            of the felt and the one place a quiet line of text cannot be read.
+            Here it is beside the cards it is talking about, and it belongs to
+            nobody else's seat, so it can stay quiet. */}
+        {myHandRead && (
+          <span className="max-w-[14rem] truncate text-[11px] font-semibold tracking-wide
+                           text-(--color-highlight-text)/85 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+            {myHandRead}
+          </span>
+        )}
         {allInEquity?.length > 0 && (
           <span className="text-[10px] font-extrabold uppercase tracking-[0.3em] text-(--color-highlight-text) animate-pulse">
             All in
@@ -385,7 +447,6 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
                 // Keyed on the login name, never on the one they can change.
                 stats={statsByName?.[p.username]}
                 onInspect={onInspectPlayer ? () => onInspectPlayer(p) : undefined}
-                handStrength={isMe ? handStrength : null}
                 backers={backersOf(sideBets, p.seat)}
                 shine={isMe && heroShines && !p.is_folded}
                 // Only your own: the lift is there to tell you what you just
@@ -453,10 +514,16 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
 }
 
 
-/** The prize, printed on the felt above the board.
-
+/** The prize, printed on the felt.
+ *
  *  Deliberately quiet — it sits there for the whole game, so it is a plaque
  *  rather than a banner. The moment a draw lands is SpinReveal's job.
+ *
+ *  In the corner rather than above the board. Centred at the top is where it
+ *  was, and heads-up that is precisely where the other player sits: the prize
+ *  landed on their nameplate and, once seats started saying what they had just
+ *  done, on top of that too. FELT_PLAQUE is the corner, and a test keeps every
+ *  seat of every table shape away from it.
  */
 function FastPrizePlaque({ fast, compact }) {
   if (!fast?.prize_coins) return null;
@@ -465,11 +532,12 @@ function FastPrizePlaque({ fast, compact }) {
     : `${fast.label} · ${fast.stake_coins} coins a seat`;
   return (
     <div
-      className={`absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none
+      style={{ left: `${FELT_PLAQUE.left}%`, top: `${FELT_PLAQUE.top}%` }}
+      className={`absolute z-10 pointer-events-none
                   flex items-center gap-2 rounded-full border
                   border-[rgb(var(--highlight-rgb)/0.45)]
                   bg-[rgba(12,7,18,0.72)] px-3 py-1
-                  ${compact ? "top-[16%] text-[11px]" : "top-[24%] text-xs"}`}
+                  ${compact ? "text-[11px]" : "text-xs"}`}
       title={title}
     >
       <span className="font-semibold text-(--color-highlight-text) tabular-nums">

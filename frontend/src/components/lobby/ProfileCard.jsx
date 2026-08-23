@@ -23,6 +23,7 @@ export default function ProfileCard() {
           <Avatar
             url={user?.profile?.avatar_url}
             emoji={user?.profile?.avatar_emoji}
+          border={user?.profile?.avatar_border}
             name={user?.profile?.display_name || user?.username}
             className="w-full h-full"
             emojiClassName="text-3xl"

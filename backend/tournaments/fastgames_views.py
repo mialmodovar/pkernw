@@ -19,9 +19,11 @@ from rest_framework.response import Response
 
 from accounts.avatars import avatar_url
 from accounts.naming import shown_name
+from accounts.notify import notify_user
 from sidegames.models import CoinLedger
 
 from . import fastgames, spingo
+from .absentees import drop_absent_registrations
 from .coinbank import balance_of, charge_entry, refund_entry, stake_memo
 from .models import BlindLevel, Tournament, TournamentPlayer
 
@@ -44,6 +46,7 @@ def _seat_face(player):
         "username": user.username,
         "display_name": shown_name(user.username, profile.display_name if profile else ""),
         "avatar_emoji": (profile.avatar_emoji if profile else None) or "\U0001F0CF",
+        "avatar_border": (profile.avatar_border if profile else "") or "",
         "avatar_url": avatar_url(user.id, image.updated_at if image else None),
     }
 
@@ -255,6 +258,12 @@ def fast_lobby(request):
     whichever tab is on screen, because a game you are queued for fires whether
     or not you are looking at it.
     """
+    # A queue with somebody in it who closed the app never fills, and the game
+    # never fires — so the lobby clears those seats on its way past. See
+    # absentees.py; five minutes away is enough here, because sitting in a queue
+    # is itself the statement that you are ready to play now.
+    drop_absent_registrations(timezone.now(), here=request.user.id)
+
     my_games = _my_live_games(request.user)
 
     mine_finished = list(_finished_games(
@@ -284,6 +293,26 @@ def fast_lobby(request):
         ],
         "top": [_finished_payload(game, me=request.user) for game in biggest],
     })
+
+
+def _announce_start(game, payload, *, filled_by):
+    """Tell everybody at a game that just fired, except whoever filled it.
+
+    The player who took the last seat is standing in front of the answer: their
+    own request returns the started game and takes them to the table. Everybody
+    else sat down some minutes ago and went somewhere else — another table, the
+    club page, a backgrounded tab — and the only thing that was telling them was
+    the lobby's poll, which is not running unless the lobby is on screen. Now
+    that a player can hold seats at several tiers at once, that is most of the
+    time.
+
+    The message goes to the presence socket, which is open wherever they are.
+    What it does not do is move them: somebody halfway through a hand at another
+    table is not to be dragged out of it. The client rings, and they decide.
+    """
+    message = {"type": "fast_game_started", "game": payload}
+    for user_id in game.players.exclude(user_id=filled_by).values_list("user_id", flat=True):
+        notify_user(user_id, message)
 
 
 @api_view(["POST"])
@@ -332,15 +361,29 @@ def fast_sit(request):
         _seat(fmt, game, request.user)
 
         if game.players.count() >= fmt.seats:
+            fields = ["spin_multiplier", "status", "started_at"]
             if fmt.draws_multiplier:
                 game.spin_multiplier = spingo.draw_multiplier()
+                # A big draw pays every seat, so the split is stamped on now,
+                # with the number that decided it. Working it out at settlement
+                # instead would leave the table and the lobby promising a
+                # winner-takes-all prize that the ledger then divides.
+                game.payout_structure = spingo.payout_for(game.spin_multiplier)
+                fields.append("payout_structure")
             game.status = "running"
             game.started_at = timezone.now()
-            game.save(update_fields=["spin_multiplier", "status", "started_at"])
+            game.save(update_fields=fields)
 
     game.refresh_from_db()
+    payload = _game_payload(game)
+    # After the block, so it is a committed game being announced: a rollback
+    # here would otherwise have rung three phones about a game nobody is in.
+    # The same payload the sitter is about to be handed, built once.
+    if game.status == "running":
+        _announce_start(game, payload, filled_by=request.user.id)
+
     return Response(
-        {"game": _game_payload(game), "balance": balance_of(request.user)},
+        {"game": payload, "balance": balance_of(request.user)},
         status=status.HTTP_201_CREATED,
     )
 

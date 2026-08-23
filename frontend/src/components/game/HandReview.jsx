@@ -42,7 +42,9 @@ export default function HandReview({ tournamentId, onClose }) {
             Close
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {/* A record of hands played, which people read back and quote at each
+            other — so unlike the felt it behind it, it can be selected. */}
+        <div className="selectable flex-1 overflow-y-auto p-3 space-y-3">
           {error && <p className="text-sm text-[#c76b7a]">{error}</p>}
           {!error && hands == null && (
             <p className="text-sm text-(--color-text-muted)">Loading…</p>

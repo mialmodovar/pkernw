@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  HAND_FRESH_MS, handToShow, liveSeats, openTableTabs, resumeLabel, seatIsLive, tableToResume,
+  HAND_FRESH_MS, handToShow, liveSeats, openTableTabs, resumeLabel, seatIsLive,
+  shortcutHiddenOn, tableToResume,
 } from "./resumeTable";
 
 const live = { id: 4, is_joined: true, status: "running", my_finish_position: null, name: "Friday" };
@@ -134,5 +135,34 @@ describe("openTableTabs", () => {
 
   it("carries the table number a watched tab has to go back to", () => {
     expect(openTableTabs([], [watch])[0].table).toBe(2);
+  });
+});
+
+describe("shortcutHiddenOn", () => {
+  it("is hidden at the table it would take you to", () => {
+    // A door drawn on the inside of the room it opens into.
+    expect(shortcutHiddenOn("/tournament/12/play")).toBe(true);
+    expect(shortcutHiddenOn("/tournament/12/watch")).toBe(true);
+  });
+
+  it("is hidden at any table, including the sandbox", () => {
+    // The sandbox renders the same felt, and was not on the old list.
+    expect(shortcutHiddenOn("/dev/table")).toBe(true);
+  });
+
+  it("is hidden where nobody is signed in", () => {
+    for (const path of ["/login", "/register", "/recover"]) {
+      expect(shortcutHiddenOn(path), path).toBe(true);
+    }
+  });
+
+  it("shows everywhere a player might wander off to", () => {
+    for (const path of ["/", "/clubs", "/clubs/quinta", "/tournament/12", "/tournaments/new"]) {
+      expect(shortcutHiddenOn(path), path).toBe(false);
+    }
+  });
+
+  it("survives a path that has not arrived", () => {
+    expect(shortcutHiddenOn(undefined)).toBe(false);
   });
 });

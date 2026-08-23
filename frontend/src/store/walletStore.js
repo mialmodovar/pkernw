@@ -1,6 +1,8 @@
 import { create } from "zustand";
 
 import api from "../api/http";
+import { COINS } from "../api/paths";
+import useAuthStore from "./authStore";
 
 /**
  * Coins: the side games' own currency.
@@ -35,7 +37,7 @@ const useWalletStore = create((set, get) => ({
 
   fetchWallet: async () => {
     try {
-      const { data } = await api.get("/coins/wallet/");
+      const { data } = await api.get(`${COINS}/wallet/`);
       get().apply(data);
     } catch {
       // A balance that will not load is not worth an error on the lobby.
@@ -45,7 +47,7 @@ const useWalletStore = create((set, get) => ({
   fetchShop: async () => {
     set({ loading: true, error: "" });
     try {
-      const { data } = await api.get("/coins/shop/");
+      const { data } = await api.get(`${COINS}/shop/`);
       get().apply(data);
     } catch {
       set({ error: "The shop could not be opened." });
@@ -57,17 +59,17 @@ const useWalletStore = create((set, get) => ({
   claim: async () => {
     set({ error: "" });
     try {
-      const { data } = await api.post("/coins/claim/");
+      const { data } = await api.post(`${COINS}/claim/`);
       get().apply(data);
     } catch (error) {
       set({ error: error.response?.data?.error || "Could not claim today's coins." });
     }
   },
 
-  buy: async (item) => {
+  buy: async (item, shelf = "throwable") => {
     set({ error: "" });
     try {
-      const { data } = await api.post("/coins/shop/buy/", { item });
+      const { data } = await api.post(`${COINS}/shop/buy/`, { item, shelf });
       get().apply(data);
       return true;
     } catch (error) {
@@ -85,6 +87,48 @@ const useWalletStore = create((set, get) => ({
     // Unknown until the shop has been read once. Everything the client can see
     // is offered; the server refuses what was never bought.
     return row ? row.owned : true;
+  },
+
+  /**
+   * Whether the server sells this at all.
+   *
+   * True before the shop has been read once, which is how the picker keeps
+   * working on a table opened before the catalogue arrives. After that it is
+   * the server's list: a client that knows about an item the server does not
+   * would otherwise offer it and have every throw quietly refused.
+   */
+  /**
+   * Put a ring on, or take one off.
+   *
+   * The profile carries it — it is how everybody else sees you rather than how
+   * you see the app — so the answer goes back into authStore, where the header
+   * and the seat both read it from.
+   */
+  wearBorder: async (border) => {
+    set({ error: "" });
+    try {
+      const { data } = await api.patch(`${COINS}/shop/border/`, { border });
+      useAuthStore.getState().patchProfile({ avatar_border: data.border });
+      return true;
+    } catch (error) {
+      set({ error: error.response?.data?.error || "Could not put that on." });
+      return false;
+    }
+  },
+
+  /** What is on a given shelf: "throwable" or "border". */
+  shelf: (name) => get().items.filter((one) => (one.shelf || "throwable") === name),
+
+  /** Whether this player owns this ring. The plain one is nobody's purchase. */
+  ownsBorder: (border) => {
+    if (!border) return true;
+    const row = get().items.find((one) => one.item === border && one.shelf === "border");
+    return row ? row.owned : false;
+  },
+
+  onSale: (item) => {
+    const items = get().items;
+    return items.length === 0 || items.some((one) => one.item === item);
   },
 
   /** What one costs, or 0 for the ones everybody has. The till is the

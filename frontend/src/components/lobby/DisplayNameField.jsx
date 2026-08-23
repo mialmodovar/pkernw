@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "../icons/Icon";
 
 import useAuthStore from "../../store/authStore";
 
@@ -78,7 +79,7 @@ export default function DisplayNameField() {
                          rounded text-xs leading-none text-(--color-text-muted)
                          hover:text-(--color-silver) hover:bg-white/10 transition-colors"
             >
-              ✕
+              <Icon name="close" className="w-3.5 h-3.5" />
             </button>
           )}
         </div>

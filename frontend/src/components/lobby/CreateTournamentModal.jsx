@@ -973,7 +973,7 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
             <div className="grid grid-cols-[70px_1fr_90px_32px] gap-2 text-xs text-(--color-text-muted)">
               <span>Place</span>
               <span>Label</span>
-              <span>{buyInCents > 0 ? "Percent / €" : stakeCoins > 0 ? "Percent / 🪙" : "Percent"}</span>
+              <span>{buyInCents > 0 ? "Percent / €" : stakeCoins > 0 ? "Percent / coins" : "Percent"}</span>
               <span></span>
             </div>
             {payoutRows.map((row, index) => (

@@ -139,6 +139,7 @@ export default function WatchPanel() {
               <Avatar
                 url={player.avatar_url}
                 emoji={player.avatar_emoji}
+              border={player.avatar_border}
                 name={player.username}
                 className="w-full h-full rounded-full"
                 emojiClassName="text-2xl"

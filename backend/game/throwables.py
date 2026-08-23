@@ -27,12 +27,21 @@ FREE_THROWABLES = (
 THROWABLE_PRICES = {
     "banana": 100,
     "ice": 100,
+    "water": 100,
+    "coffee": 150,
     "pie": 150,
     "fish": 150,
+    "duck": 150,
+    "cake": 200,
     "brick": 200,
+    "confetti": 200,
     "cigar": 250,
+    "skull": 250,
     "bomb": 300,
+    "octopus": 300,
+    "lightning": 300,
     "crown": 400,
+    "anvil": 400,
 }
 
 THROWABLES = FREE_THROWABLES + tuple(THROWABLE_PRICES)

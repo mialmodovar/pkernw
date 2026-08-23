@@ -1,5 +1,7 @@
 import PlayerFaces from "./PlayerFaces";
-import { buyInLabel, isSpinGo, prizeLabel } from "./buyIn";
+import Icon from "../icons/Icon";
+import { seatedEntries, totalPool } from "../game/prizePool";
+import { isSpinGo, prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { countdownLabel } from "./tournamentVitals";
 import { useCountdown } from "./useCountdown";
@@ -62,6 +64,27 @@ function StatusPill({ tournament: t }) {
 // tournament is something other than the default everybody assumes.
 const GAME_LABELS = { nlh: "NLH" };
 
+/**
+ * One number, said the way a list says numbers: a small label over a figure,
+ * right-aligned, in a column of its own.
+ *
+ * What it costs and what it pays are the two things anybody scans a lobby for,
+ * and both used to be words in the middle of a line of nine other facts. Given
+ * the same shape, they read as a pair — and read down a column of tournaments
+ * without stopping at each one.
+ */
+function Figure({ label, value, coin = false, tone = "text-(--color-silver)", title }) {
+  return (
+    <div className="shrink-0 text-right leading-tight" title={title}>
+      <div className="text-[9px] uppercase tracking-wider text-(--color-text-muted)">{label}</div>
+      <div className={`flex items-center justify-end gap-1 text-sm font-bold tabular-nums ${tone}`}>
+        {coin && <Icon name="coin" className="w-3.5 h-3.5" />}
+        {value}
+      </div>
+    </div>
+  );
+}
+
 export default function TournamentCard({
   tournament: t, onJoin, onOpen, onOpenTable, onQuit, onDelete, onEdit, onRebuy,
 }) {
@@ -69,6 +92,7 @@ export default function TournamentCard({
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
+  const buyInCoins = t.buy_in_coins || 0;
   const spinGo = isSpinGo(t);
   const startTime = formatTime(t.scheduled_start_at);
   const full = t.player_count >= t.max_players;
@@ -82,6 +106,10 @@ export default function TournamentCard({
   // by placing, which is why it is not in the pool above — but it is money, and
   // a card that leaves it out says a KO night was worth half what it was.
   const koPoolCents = bountyOn ? (t.bounty_cents || 0) * t.player_count : 0;
+  // Everything paid in, which is the number anybody scanning a list is actually
+  // after: how big is this. It was only ever available here in halves — "€150
+  // places" beside "KO €150" — and never as the one figure people ask for.
+  const pool = totalPool(t, seatedEntries(t));
 
   const running = t.status === "running" || t.status === "paused";
   // How long it has been going, or how long it took. Neither can be read off
@@ -100,13 +128,11 @@ export default function TournamentCard({
     // 8-max and 9-max play differently enough that it belongs next to the
     // turnout rather than buried in the setup screen.
     t.players_per_table ? `${t.players_per_table}-max` : null,
-    // Euros or coins, and never a bare number that could be either.
-    buyInLabel(t),
-    // Never the percentages: a share is a rule for splitting a pot, and the pot
-    // is knowable here. Places paid is the count, the pool is the money.
-    poolCents > 0
-      ? `${euros(poolCents)} ${bountyOn ? "places" : "pool"}`
-      : prizeLabel(t, t.player_count),
+    // What the places divide, when that is not the whole pool. The total has a
+    // block of its own now, and on a knockout night the two are different
+    // numbers — so this says which of them it is or is left out entirely.
+    bountyOn && poolCents > 0 ? `${euros(poolCents)} to places` : null,
+    pool ? null : prizeLabel(t, t.player_count),
     // A Spin n Go says so, and says what it drew. Only ever seen on the
     // finished ones — a waiting queue is not listed here at all — so the
     // multiplier is history rather than news.
@@ -180,7 +206,12 @@ export default function TournamentCard({
           {isFinished ? (
             <>
               {t.winner_name
-                ? <span className="text-(--color-highlight-text)">🏆 {t.winner_name}</span>
+                ? (
+                  <span className="inline-flex items-center gap-1 text-(--color-highlight-text)">
+                    <Icon name="trophy" className="w-3.5 h-3.5" />
+                    {t.winner_name}
+                  </span>
+                )
                 : "no winner recorded"}
               {t.my_finish_position && (
                 <span className={iWon ? "text-(--color-highlight-text)" : "text-(--color-silver)"}>
@@ -191,10 +222,7 @@ export default function TournamentCard({
                   of what anybody asks about a night that is over. */}
               {` · ${t.player_count} played`}
               {elapsed && ` · took ${elapsed}`}
-              {/* Everything that was on the table, bounties included: on a night
-                  that is over, "€30" beside the winner's name is read as what
-                  the night was worth, not as one of its two pools. */}
-              {poolCents + koPoolCents > 0 && ` · ${euros(poolCents + koPoolCents)}`}
+
             </>
           ) : (
             <>
@@ -207,6 +235,43 @@ export default function TournamentCard({
 
       {/* Who is in it, before the buttons that let you join them. */}
       <PlayerFaces players={t.registered} />
+
+      {/* What it costs, and what is at stake. The two figures a lobby is read
+          for, in the order they are asked in — both of them prose in the line
+          under the name until now, one of them in halves.
+
+          Wrapped together, so a phone drops them onto the next line as a pair
+          rather than leaving the price up beside the name and the pool
+          stranded underneath it. */}
+      <div className="flex items-center gap-3 shrink-0">
+      <Figure
+        label="Buy-in"
+        value={buyInCoins > 0 ? buyInCoins.toLocaleString() : buyInCents > 0 ? euros(buyInCents) : "free"}
+        coin={buyInCoins > 0}
+        title={bountyOn
+          ? `${euros(buyInCents - (t.bounty_cents || 0))} to the places, `
+            + `${euros(t.bounty_cents || 0)} onto your head`
+          : buyInCoins > 0
+            ? "Coins, taken from your wallet when you sit down"
+            : buyInCents > 0
+              ? "Recorded, and settled between yourselves in Calotes"
+              : "No buy-in at all"}
+      />
+
+      {pool && (
+        <Figure
+          label={isFinished ? "Pool" : "Prize pool"}
+          value={pool.kind === "coins" ? pool.amount.toLocaleString() : euros(pool.amount)}
+          coin={pool.kind === "coins"}
+          tone="text-(--color-highlight-text)"
+          title={pool.kind === "coins"
+            ? "Everything paid in, in coins"
+            : bountyOn
+              ? `Everything paid in: ${euros(poolCents)} to the places, ${euros(koPoolCents)} on heads`
+              : "Everything paid in, across every entry so far"}
+        />
+      )}
+      </div>
 
       <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         {full && !t.is_joined && !isFinished && (

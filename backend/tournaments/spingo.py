@@ -6,9 +6,18 @@ chips. What makes it a Spin n Go rather than a fast three-hander is the draw: th
 prize is the buy-in multiplied by a number picked when the third player sits, so
 most games are worth two buy-ins and one in two thousand is worth a hundred.
 
-The weights below average out to exactly three, which is what three players paid
-in. Nothing is raked off. These are coins, not money, and a house edge on a
-currency the house prints is only a slower way of emptying wallets.
+The weights below average out to 3.166 buy-ins against the three that were paid
+in. That is deliberate and it is not a rake in reverse by accident: coins are
+the app's own currency, the house prints them daily anyway, and a game that pays
+back a little more than it took is a better faucet than a bigger daily handout —
+it arrives while somebody is playing rather than while they are logging in. The
+cost is that every Spin n Go adds about five per cent of its own pool to the
+coins in circulation, on top of the daily claim.
+
+Above 25x the prize stops being winner-takes-all and pays all three seats. A
+hundred-times game where two of the three walk away with nothing is the harshest
+thing the format does, and the players who lost it were as much a part of it as
+the one who won.
 
 Everything here is arithmetic and constants: no database, no random state of its
 own. The draw takes its generator as an argument so a test can pin it.
@@ -28,16 +37,35 @@ STARTING_CHIPS = 1500
 SEATS = 3
 
 # (weight out of TOTAL_WEIGHT, multiplier applied to one buy-in). The weights
-# are what tunes the average; see expected_multiplier, which a test pins to 3.
+# are what tunes the average; see expected_multiplier, which a test pins.
+#
+# Read down the second column: most games are worth two buy-ins, one in a
+# thousand is worth twenty-five, and one in a thousand games is worth a hundred.
+# The tail is what anybody sits down for, so it is drawn twice as often as it
+# used to be, and the flat two-times game is rarer than it was.
 MULTIPLIERS = (
-    (7200, 2),
-    (1700, 3),
-    (700, 5),
-    (275, 10),
-    (90, 25),
-    (30, 50),
-    (5, 100),
+    (6855, 2),
+    (1900, 3),
+    (800, 5),
+    (300, 10),
+    (100, 25),
+    (35, 50),
+    (10, 100),
 )
+
+# From here up, the prize is shared. See PAYOUT_SHARED below.
+SHARED_FROM = 25
+
+# How a shared prize is split. The winner still takes the great majority of it —
+# this is not a consolation prize, it is the difference between busting out of a
+# hundred-times game with nothing and busting out of it with eight buy-ins.
+PAYOUT_SHARED = (
+    {"place": 1, "label": "1st", "percentage": 80},
+    {"place": 2, "label": "2nd", "percentage": 12},
+    {"place": 3, "label": "3rd", "percentage": 8},
+)
+
+PAYOUT_WINNER_TAKES_ALL = ({"place": 1, "label": "1st", "percentage": 100},)
 
 TOTAL_WEIGHT = sum(weight for weight, _ in MULTIPLIERS)
 
@@ -93,11 +121,32 @@ def prize_coins(stake: int, multiplier: int) -> int:
 
 
 def expected_multiplier() -> Fraction:
-    """The average draw, exactly. Three: what three players paid in."""
+    """The average draw, exactly.
+
+    Above three — see the note at the top of the file. Returned as a fraction so
+    a test can pin it to the digit rather than to a float that nearly matches.
+    """
     return Fraction(
         sum(weight * multiplier for weight, multiplier in MULTIPLIERS),
         TOTAL_WEIGHT,
     )
+
+
+def is_shared(multiplier: int) -> bool:
+    """Whether a draw this big pays every seat rather than only the winner."""
+    return int(multiplier or 0) >= SHARED_FROM
+
+
+def payout_for(multiplier: int) -> list:
+    """How a drawn pool is split, as payout_structure rows.
+
+    Stamped onto the tournament at the moment of the draw rather than worked out
+    at settlement, so the table, the lobby and the coin ledger all read the same
+    split from the same row — and so a game already under way keeps the deal it
+    started under if these numbers ever change.
+    """
+    rows = PAYOUT_SHARED if is_shared(multiplier) else PAYOUT_WINNER_TAKES_ALL
+    return [dict(row) for row in rows]
 
 
 def odds_table(stake: int | None = None) -> list:
@@ -112,9 +161,17 @@ def odds_table(stake: int | None = None) -> list:
         row = {
             "multiplier": multiplier,
             "chance_pct": float(Fraction(weight * 100, TOTAL_WEIGHT)),
+            # Whether every seat is paid at this multiplier. The lobby says so
+            # against the row rather than in a footnote: "one in a thousand" and
+            # "and you get something for second" are the same sentence.
+            "shared": is_shared(multiplier),
         }
         if stake is not None:
-            row["prize_coins"] = prize_coins(stake, multiplier)
+            pool = prize_coins(stake, multiplier)
+            row["prize_coins"] = pool
+            # What first place actually receives, which is the pool itself until
+            # the pool is shared.
+            row["winner_coins"] = pool * payout_for(multiplier)[0]["percentage"] // 100
         rows.append(row)
     return rows
 
@@ -166,9 +223,10 @@ def tournament_defaults(stake: int) -> dict:
         "time_bank_seconds": 10,
         "time_bank_refill_rule": "none",
         "showdown_seconds": 3,
-        # Winner takes the drawn pool. The percentage is still how it is paid
-        # out, so the coin settlement needs no special case for the format.
-        "payout_structure": [{"place": 1, "label": "1st", "percentage": 100}],
+        # Winner takes the drawn pool — until the draw says otherwise. The row
+        # is replaced at the moment the multiplier comes up (see payout_for),
+        # and a game that never fires keeps this one.
+        "payout_structure": payout_for(0),
         "bounty_mode": "none",
         "bounty_cents": 0,
     }

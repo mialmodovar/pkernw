@@ -6,6 +6,19 @@ import useThemeStore from "./themeStore";
 
 const useAuthStore = create((set, get) => ({
   user: null,
+
+  /**
+   * One field of the profile, changed in place.
+   *
+   * The three or four endpoints below each rewrite the whole profile object
+   * around one answer; this is the same move for anything else that changes a
+   * single field — the border a player is wearing, to begin with — without a
+   * fifth copy of the spread.
+   */
+  patchProfile: (patch) => set((state) => (
+    state.user ? { user: { ...state.user, profile: { ...state.user.profile, ...patch } } } : state
+  )),
+
   loading: true,
 
   init: async () => {

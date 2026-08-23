@@ -89,3 +89,38 @@ export function paidLabel(tournament, record, row, entries) {
   if (!row) return null;
   return payoutLabel(tournament, row, entries);
 }
+
+/**
+ * The whole prize pool, in whichever currency it is in.
+ *
+ * Everything paid in, bounties included. `placingPoolCents` above deliberately
+ * leaves the bounty money out, because the percentages never divide it — but a
+ * list is not dividing anything, and a knockout night whose card said "€150"
+ * when €300 had been paid in was describing half of itself.
+ *
+ * Returns {kind, amount} — "euros" in cents, "coins" whole — or null when there
+ * is no pool at all, so a caller can leave the fact out rather than print a
+ * zero. Structured rather than formatted because the two currencies are drawn
+ * differently: coins have a chip beside them.
+ */
+export function totalPool(tournament, entries = entryCount(tournament)) {
+  const coins = poolCoins(tournament, entries);
+  if (coins > 0) return { kind: "coins", amount: coins };
+
+  const cents = (tournament?.buy_in_cents || 0) * Math.max(0, entries);
+  if (cents > 0) return { kind: "euros", amount: cents };
+
+  return null;
+}
+
+/**
+ * Entries counted from a list row, which carries no rebuys.
+ *
+ * The lobby list sends a seat count and nothing about buy-backs, so a pool read
+ * off it is what has been paid in by the people sitting there — right at the
+ * start, and an undercount later in a tournament with rebuys. Named for what it
+ * is so nobody reads the figure as final.
+ */
+export function seatedEntries(tournament) {
+  return Math.max(0, tournament?.player_count || 0);
+}

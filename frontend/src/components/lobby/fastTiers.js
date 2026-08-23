@@ -107,10 +107,17 @@ export function myGameAction(game) {
  * sentence back apart.
  */
 export function prizeSummary(tier, format) {
-  const coins = (amount) => `\u{1FA99} ${Number(amount || 0).toLocaleString()}`;
+  // Figures only. The chip is drawn beside them by the card — it is one icon
+  // for the whole line rather than one per number, which is what the emoji
+  // version turned into: "🪙 97 · 🪙 52".
+  const coins = (amount) => Number(amount || 0).toLocaleString();
 
   if (format?.draws_multiplier) {
-    const prizes = (tier.odds || []).map((row) => row.prize_coins).filter(Boolean);
+    // The winner's share, not the pool: at the top of the ladder they are
+    // different numbers, and the headline is what one player takes home.
+    const prizes = (tier.odds || [])
+      .map((row) => row.winner_coins ?? row.prize_coins)
+      .filter(Boolean);
     if (!prizes.length) return { label: "Prize", value: "drawn at the table" };
     // The range is the format: most of the time it is the bottom of it, and the
     // top is the reason anybody sits down.
@@ -147,7 +154,21 @@ export function prizeRows(tier) {
     ...row,
     // Two decimals is enough for the rarest row and not silly on the commonest.
     chance: `${Number(row.chance_pct.toFixed(2))}%`,
+    // What the winner takes, which is the pool until the pool is shared. The
+    // server sends both; a row that quietly printed the pool as the prize would
+    // be overstating first place by a fifth on exactly the rows people read
+    // most carefully.
+    prize: Number(row.winner_coins ?? row.prize_coins ?? 0),
+    shared: Boolean(row.shared),
   }));
+}
+
+/**
+ * Whether any row of this tier shares its prize, so the card knows whether the
+ * ladder needs a line explaining itself.
+ */
+export function hasSharedPrizes(tier) {
+  return (tier.odds || []).some((row) => row.shared);
 }
 
 /** What a Sit n Go pays, as places rather than odds. */

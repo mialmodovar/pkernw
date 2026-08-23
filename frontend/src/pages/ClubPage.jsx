@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Icon from "../components/icons/Icon";
 import { useNavigate, useParams } from "react-router-dom";
 
 import api from "../api/http";
@@ -437,7 +438,10 @@ export default function ClubPage() {
                     )}
                   </span>
                   {night.winner ? (
-                    <span className="text-(--color-highlight-text) shrink-0">🏆 {night.winner}</span>
+                    <span className="flex items-center gap-1 text-(--color-highlight-text) shrink-0">
+                      <Icon name="trophy" className="w-3.5 h-3.5" />
+                      {night.winner}
+                    </span>
                   ) : (
                     <span className="text-(--color-text-muted) shrink-0">{night.status}</span>
                   )}

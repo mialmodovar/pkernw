@@ -57,3 +57,26 @@ export function revealHeadline(tone) {
     plain: "Mystery bounty",
   }[tone] || "Mystery bounty";
 }
+
+/**
+ * How long a queued reveal will wait for the knockout GIF to get out of its way.
+ *
+ * The two land on the same event, and the GIF sits over the top of the felt at
+ * a higher layer — so the envelope, the part with the money in it, was being
+ * covered by the celebration of the thing that won it. The reveal now waits its
+ * turn, but only for as long as a GIF can possibly last (four seconds, plus up
+ * to two waiting out the river): past that something has gone wrong with the
+ * overlay and the envelope should be shown regardless.
+ */
+export const REVEAL_MAX_WAIT_MS = 7000;
+
+/**
+ * Whether a drawn envelope should keep waiting before it is shown.
+ *
+ * Pure so the ordering can be pinned: an envelope that never appears is the bug
+ * being fixed here, and "waits forever behind a stuck GIF" would be the same
+ * bug wearing a hat.
+ */
+export function revealHolds(finisherActive, waitedMs) {
+  return Boolean(finisherActive) && (waitedMs || 0) < REVEAL_MAX_WAIT_MS;
+}

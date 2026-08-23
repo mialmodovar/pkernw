@@ -9,11 +9,11 @@ const runnerUp = { stake: 25, prize_coins: 150, i_won: false, my_finish: 2, my_r
 
 describe("drawLabel", () => {
   it("says the draw and what it paid", () => {
-    expect(drawLabel(won)).toBe("10× · 🪙 250");
+    expect(drawLabel(won)).toBe("10× · 250");
   });
 
   it("says only the prize where there was no draw", () => {
-    expect(drawLabel(runnerUp)).toBe("🪙 150");
+    expect(drawLabel(runnerUp)).toBe("150");
   });
 });
 

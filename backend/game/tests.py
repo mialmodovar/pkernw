@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import time
 from unittest.mock import patch
@@ -1310,6 +1311,68 @@ class HandSnapshotTests(CoordinatorHarness, TestCase):
         )
 
 
+class MysterySnapshotTests(CoordinatorHarness, TestCase):
+    """A player who reloads still sees the mystery board.
+
+    It used to arrive only on the broadcast that opened the envelopes, so a
+    refresh after that point left the table with no envelope count — and, once
+    the felt started marking every head with one, no marks either.
+    """
+
+    def _mystery_coordinator(self, envelopes, opened):
+        from tournaments.bounties import BountyConfig
+
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)], players_per_table=3,
+        )
+        coordinator.bounty = BountyConfig(mode="mystery", amount_cents=1000)
+        coordinator._mystery_envelopes = list(envelopes)
+        coordinator._mystery_opened = opened
+        coordinator.mystery_release = "reg_closed"
+        self._sync_and_rebalance(coordinator)
+        return coordinator
+
+    def test_the_snapshot_carries_what_is_left_on_the_board(self):
+        coordinator = self._mystery_coordinator([5000, 2000, 1000], opened=True)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertEqual(snapshot["mystery"], {
+            "opened": True,
+            "envelopes_left": 3,
+            "pool_left_cents": 8000,
+            "top_left_cents": 5000,
+            "release": "reg_closed",
+        })
+
+    def test_a_sealed_pool_says_so_rather_than_saying_nothing(self):
+        coordinator = self._mystery_coordinator([], opened=False)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertFalse(snapshot["mystery"]["opened"])
+        self.assertEqual(snapshot["mystery"]["envelopes_left"], 0)
+
+    def test_a_tournament_with_no_mystery_pool_has_no_board(self):
+        coordinator = self._build_coordinator(
+            [self._record(index) for index in range(3)], players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertIsNone(snapshot["mystery"])
+
+    def test_the_board_empties_as_the_envelopes_are_drawn(self):
+        coordinator = self._mystery_coordinator([5000, 2000], opened=True)
+        coordinator._mystery_envelopes = [2000]
+
+        snapshot = coordinator._table_snapshot(coordinator._tables[1], [])
+
+        self.assertEqual(snapshot["mystery"]["envelopes_left"], 1)
+        self.assertEqual(snapshot["mystery"]["top_left_cents"], 2000)
+
+
 class GifIdTests(TestCase):
 	"""A GIF is an id, never a URL. Everything else about the feature rests on
 	that, so the rule is checked rather than assumed."""
@@ -1412,11 +1475,21 @@ class ThrowRelayTests(TransactionTestCase):
 	"""Throwing across a live table."""
 
 	def _consumer(self, tournament_id=4321, user_id=1):
-		"""A consumer with just enough on it to reach _throw_item."""
+		"""A consumer with just enough on it to reach _throw_item.
+
+		`sent_to_self` collects what would go back down this player's own
+		socket, which is how a refused throw tells them to wait.
+		"""
 		consumer = TournamentConsumer()
 		consumer.tournament_id = tournament_id
 		consumer.user = type("U", (), {"id": user_id})()
 		consumer.shown_name = "thrower"
+		consumer.sent_to_self = []
+
+		async def send(text_data=None, **kwargs):
+			consumer.sent_to_self.append(json.loads(text_data))
+
+		consumer.send = send
 		return consumer
 
 	def _runner(self, seats):
@@ -1487,10 +1560,12 @@ class ThrowRelayTests(TransactionTestCase):
 			self._throw({1: (0, 1), 2: (3, 1)}, {"item": "egg", "at_user_id": "everyone"}), [],
 		)
 
-	def test_a_flood_is_cut_off(self):
-		"""Throwing lands on somebody else's screen rather than in a panel they
-		can close, so it gets a tighter budget than chat."""
+	def test_a_burst_gets_through_and_the_flood_behind_it_does_not(self):
+		"""Three in a row is a joke; twenty is a way of stopping somebody
+		playing. See throwlimit.py — it lands on another player's screen rather
+		than in a panel they can close."""
 		from game.consumers import _tournament_runners
+		from game.throwlimit import BURST
 
 		seats = {1: (0, 1), 2: (3, 1)}
 		sent = []
@@ -1505,8 +1580,30 @@ class ThrowRelayTests(TransactionTestCase):
 				async_to_sync(consumer._throw_item)({"item": "egg", "at_user_id": 2})
 		_tournament_runners.pop(4321, None)
 
-		self.assertGreater(len(sent), 0)
-		self.assertLessEqual(len(sent), 6)
+		self.assertEqual(len(sent), BURST)
+
+	def test_a_refused_throw_says_how_long_to_wait(self):
+		"""A button that does nothing reads as a broken button, and the player
+		then presses it more."""
+		from game.consumers import _tournament_runners
+		from game.throwlimit import BURST, COOLDOWN_SECONDS
+
+		_tournament_runners[4321] = self._runner({1: (0, 1), 2: (3, 1)})
+		consumer = self._consumer()
+
+		async def capture(tid, table, event_type, data):
+			return None
+
+		with patch("game.consumers._broadcast_table", capture):
+			for _ in range(BURST + 2):
+				async_to_sync(consumer._throw_item)({"item": "egg", "at_user_id": 2})
+		_tournament_runners.pop(4321, None)
+
+		refusals = [one for one in consumer.sent_to_self if one["type"] == "throw_cooldown"]
+		self.assertEqual(len(refusals), 2)
+		for refusal in refusals:
+			self.assertGreater(refusal["seconds"], 0)
+			self.assertLessEqual(refusal["seconds"], COOLDOWN_SECONDS)
 
 
 class LevelClockTests(TestCase):
@@ -2374,3 +2471,276 @@ class BountyLiveTests(TransactionTestCase):
             len(opened["envelopes"]) - len(tournament.mystery_envelopes),
             len({(m["victim_name"], m["mystery"]["envelopes_left"]) for m in drawn}),
         )
+
+
+class ThrowLimitTests(TestCase):
+    """Three in a row is a joke; ten in a row is a way of stopping somebody
+    playing. The difference is entirely a question of rate."""
+
+    def test_a_burst_of_three_is_allowed(self):
+        from game.throwlimit import BURST, check
+
+        kept, now = [], 100.0
+        for index in range(BURST):
+            allowed, kept, cooling = check(kept, now + index * 0.5)
+            self.assertTrue(allowed, index)
+            self.assertEqual(cooling, 0)
+
+    def test_the_fourth_in_a_row_is_refused_with_the_wait(self):
+        from game.throwlimit import COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(3):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        allowed, kept, cooling = check(kept, 101.5)
+        self.assertFalse(allowed)
+        # The clock runs from the throw that spent the burst, not from now.
+        self.assertAlmostEqual(cooling, COOLDOWN_SECONDS - 0.5, places=2)
+
+    def test_leaning_on_the_button_does_not_push_the_wait_further_out(self):
+        """A refused throw is not recorded. Otherwise impatience would be
+        punished harder than the spam the rule is for."""
+        from game.throwlimit import COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(3):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        for attempt in range(20):
+            allowed, kept, cooling = check(kept, 102.0 + attempt * 0.1)
+            self.assertFalse(allowed)
+
+        # Ten seconds after the third throw, and not a moment later.
+        allowed, _, _ = check(kept, 101.0 + COOLDOWN_SECONDS)
+        self.assertTrue(allowed)
+
+    def test_three_spread_over_a_minute_is_a_table_having_fun(self):
+        from game.throwlimit import check
+
+        kept = []
+        for index in range(6):
+            allowed, kept, _ = check(kept, 100.0 + index * 20)
+            self.assertTrue(allowed, index)
+
+    def test_the_wait_ends_and_the_next_burst_starts_clean(self):
+        from game.throwlimit import BURST, COOLDOWN_SECONDS, check
+
+        kept = []
+        for index in range(BURST):
+            _, kept, _ = check(kept, 100.0 + index * 0.5)
+
+        after = 101.0 + COOLDOWN_SECONDS
+        allowed, kept, cooling = check(kept, after)
+        self.assertTrue(allowed)
+        self.assertEqual(cooling, 0)
+        # And a whole fresh burst behind it: what happened before the wait is
+        # history rather than credit against the next three.
+        for index in range(1, BURST):
+            allowed, kept, _ = check(kept, after + index * 0.3)
+            self.assertTrue(allowed, index)
+        self.assertFalse(check(kept, after + 1.5)[0])
+
+    def test_nothing_thrown_yet_is_always_allowed(self):
+        from game.throwlimit import check
+
+        allowed, kept, cooling = check([], 500.0)
+        self.assertTrue(allowed)
+        self.assertEqual(kept, [500.0])
+        self.assertEqual(cooling, 0)
+
+
+class AwayTests(TestCase):
+    """Disconnected means gone, not "looking at something else"."""
+
+    def test_a_player_who_closed_the_app_is_gone(self):
+        from game.away import truly_gone
+
+        self.assertTrue(truly_gone(app_open=False, other_tables=False))
+
+    def test_walking_over_to_the_lobby_is_not_being_disconnected(self):
+        """The seat lit up DISCONNECTED for somebody who was in the app the
+        whole time, reading the lobby."""
+        from game.away import truly_gone
+
+        self.assertFalse(truly_gone(app_open=True, other_tables=False))
+
+    def test_playing_another_table_is_not_being_disconnected_at_this_one(self):
+        from game.away import truly_gone
+
+        # The app allows several at once, and switching between two of your own
+        # used to mark you gone at whichever you were not looking at.
+        self.assertFalse(truly_gone(app_open=False, other_tables=True))
+        self.assertFalse(truly_gone(app_open=True, other_tables=True))
+
+    def test_only_the_seat_of_somebody_actually_gone_says_anything(self):
+        from game.away import label_for
+
+        self.assertIsNone(label_for(app_open=True, at_this_table=True))
+        self.assertIsNone(label_for(app_open=False, at_this_table=True))
+        # In the app, elsewhere: their clock says it better than a badge would.
+        self.assertIsNone(label_for(app_open=True, at_this_table=False))
+        self.assertEqual(label_for(app_open=False, at_this_table=False), "disconnected")
+
+
+class GoneOrJustElsewhereTests(TransactionTestCase):
+    """What the table is told when a player's table socket closes.
+
+    The registries here are the real ones — one process, by design — so these
+    drive them directly rather than opening sockets: what is being checked is
+    the decision, not the plumbing under it.
+    """
+
+    def setUp(self):
+        from accounts import presence
+        from game.consumers import _player_channels, _tournament_runners
+
+        presence._socket_counts.clear()
+        _player_channels.clear()
+        _tournament_runners.clear()
+        self.told = []
+
+    def tearDown(self):
+        from accounts import presence
+        from game.consumers import _player_channels, _tournament_runners
+
+        presence._socket_counts.clear()
+        _player_channels.clear()
+        _tournament_runners.clear()
+
+    def _runner(self, user_id=7, seat=2, table=1):
+        class Player:
+            _seat = seat
+            _table_number = table
+            name = "ana"
+
+        class Runner:
+            def get_runtime_player(self, uid):
+                return Player() if uid == user_id else None
+
+        return Runner()
+
+    async def _capture(self, tournament_id, table_number, event_type, data):
+        self.told.append((tournament_id, event_type, data))
+
+    def test_closing_a_table_while_the_app_is_open_says_nothing(self):
+        """Walking to the lobby is not a disconnection, and the seat used to
+        light up DISCONNECTED for somebody who never left."""
+        from game.away import truly_gone
+
+        self.assertFalse(truly_gone(app_open=True, other_tables=False))
+
+    def test_the_app_closing_tells_every_table_they_are_sitting_at(self):
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        _tournament_runners[12] = self._runner()
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 2)
+        self.assertEqual({event for _tid, event, _data in self.told}, {"player_disconnected"})
+        self.assertEqual({tid for tid, _event, _data in self.told}, {11, 12})
+
+    def test_a_table_they_are_still_sitting_at_is_not_told(self):
+        """Their socket there is open: whatever the app is doing, they are at
+        that table."""
+        from game.consumers import _player_channels, _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        _tournament_runners[12] = self._runner()
+        _player_channels[(12, 7)] = "still-open"
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 1)
+        self.assertEqual(self.told[0][0], 11)
+
+    def test_nothing_is_announced_while_the_app_is_still_open(self):
+        from accounts import presence
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner()
+        presence.arrived(7)
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(7)
+
+        self.assertEqual(told, 0)
+        self.assertEqual(self.told, [])
+
+    def test_somebody_who_is_not_seated_anywhere_is_nobody_s_news(self):
+        from game.consumers import _tournament_runners, announce_gone
+
+        _tournament_runners[11] = self._runner(user_id=7)
+
+        with patch("game.consumers._broadcast_table", self._capture):
+            told = async_to_sync(announce_gone)(999)
+
+        self.assertEqual(told, 0)
+
+
+class AllInOrFoldTests(TestCase):
+    """Push or fold: a raise may only ever be the whole stack."""
+
+    def _decisions(self, chips, *, all_in_or_fold, answer=("fold", 0)):
+        """Run one hand and collect what each player was offered."""
+        from game.engine.hand import HandEngine
+        from game.engine.player import Player
+
+        offers = []
+        players = [Player(name=f"p{index}", chips=amount) for index, amount in enumerate(chips)]
+        for index, player in enumerate(players):
+            player._seat = index
+
+        async def request_action(player, context):
+            offers.append(dict(context))
+            return answer
+
+        async def broadcast(event_type, payload):
+            return None
+
+        engine = HandEngine(
+            players=players, dealer_pos=0, small_blind=50, big_blind=100, ante=0,
+            hand_number=1, broadcast=broadcast, request_action=request_action,
+            all_in_or_fold=all_in_or_fold,
+        )
+        async_to_sync(engine.run)()
+        return offers
+
+    def test_the_only_raise_on_offer_is_the_whole_stack(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True)
+
+        self.assertTrue(offers)
+        for offer in offers:
+            if "raise" in offer["valid_actions"]:
+                self.assertEqual(
+                    offer["min_raise"], offer["max_raise"],
+                    "a raise smaller than the stack was on offer",
+                )
+
+    def test_an_ordinary_hand_still_offers_a_range(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=False)
+
+        raises = [one for one in offers if "raise" in one["valid_actions"]]
+        self.assertTrue(raises)
+        self.assertTrue(
+            any(one["min_raise"] < one["max_raise"] for one in raises),
+            "the ordinary game lost its raise range",
+        )
+
+    def test_folding_is_always_on_offer(self):
+        for offer in self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True):
+            self.assertIn("fold", offer["valid_actions"])
+
+    def test_a_shove_is_clamped_to_the_stack_whatever_the_client_asks_for(self):
+        """The number arrives over a socket, so it is not believed — a raise to
+        four hundred in a push-or-fold game is a shove or it is nothing."""
+        offers = self._decisions(
+            [1500, 1500, 1500, 1500], all_in_or_fold=True, answer=("raise", 400),
+        )
+
+        first = offers[0]
+        self.assertEqual(first["min_raise"], first["max_raise"])

@@ -124,7 +124,8 @@ export default function ChatPanel({ className = "w-72 h-48", bare = false }) {
         </div>
       )}
 
-      <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-2 text-xs space-y-1.5">
+      {/* What people said is text, and text is for copying out. */}
+      <div ref={scroller} className="selectable flex-1 overflow-y-auto px-3 py-2 text-xs space-y-1.5">
         {chat.length === 0 ? (
           <p className="text-(--color-text-muted)">Nobody has said anything yet.</p>
         ) : (

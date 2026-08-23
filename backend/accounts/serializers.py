@@ -23,6 +23,13 @@ AVAILABLE_THEME_PRESETS = ["burgundy", "midnight", "slate"]
 # Likewise PATTERNS in frontend/src/theme/themes.js.
 AVAILABLE_CARD_PATTERNS = ["weave", "crosshatch", "pinstripe", "grid", "gradient", "solid"]
 
+# How the front of a card is printed. The patterns above are its back; this is
+# the face, which until now every player saw the same way. "classic" is ink on
+# ivory, four-colour; "inverted" fills the whole card with the suit's colour and
+# prints the rank in white, which is far easier to read at a glance across a
+# felt — and much easier for anybody who finds a red pip on cream hard going.
+AVAILABLE_CARD_DECKS = ["classic", "inverted"]
+
 HEX_COLOUR = r"^#[0-9a-fA-F]{6}$"
 
 
@@ -75,7 +82,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ("avatar_emoji", "avatar_url", "display_name", "theme", "preferences",
+        fields = ("avatar_emoji", "avatar_border", "avatar_url", "display_name", "theme", "preferences",
                   "has_recovery_code")
 
     def get_has_recovery_code(self, profile):
@@ -164,6 +171,11 @@ class ThemeUpdateSerializer(serializers.Serializer):
     preset = serializers.ChoiceField(choices=AVAILABLE_THEME_PRESETS, default="burgundy")
     accent = serializers.RegexField(HEX_COLOUR, allow_null=True, default=None)
     pattern = serializers.ChoiceField(choices=AVAILABLE_CARD_PATTERNS, default="weave")
+    # The face of the card, as against `pattern`, which is its back.
+    deck = serializers.ChoiceField(choices=AVAILABLE_CARD_DECKS, default="classic")
+    # What colour that back is printed in. Null means "whatever this preset
+    # prints", which is what every profile saved before this said.
+    card_back = serializers.RegexField(HEX_COLOUR, allow_null=True, default=None)
     # The GIF that plays in the middle of the table when this player knocks
     # somebody out. Stored as a Giphy id, never a URL — see game/giphy.py for
     # why that distinction is the whole security of the feature.

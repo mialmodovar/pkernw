@@ -134,9 +134,22 @@ body {
   background-color: var(--panel-floating-bg);
 }
 
-.panel-raised {
-  background: linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65));
-  border: 1px solid var(--color-border-strong);
+/* In a layer, unlike everything else here, and for a reason worth the note: a
+   rule written outside every layer beats every utility, whatever the utility
+   says and however specific it is. So a `border-2 border-(--color-silver)` on a
+   .panel-raised button did nothing at all — the panel's own one-pixel border
+   won — and the selected option in a group of them looked exactly like the
+   unselected ones. That is what a player saw on the registration page, where
+   picking chips or big blinds left both buttons looking untouched.
+
+   Inside @layer components the panel still styles anything that does not argue
+   with it, and loses to anything that does, which is the relationship a
+   utility class is for. */
+@layer components {
+  .panel-raised {
+    background: linear-gradient(160deg, var(--color-surface-raised), rgba(10, 7, 8, 0.65));
+    border: 1px solid var(--color-border-strong);
+  }
 }
 
 /* The dark end of this gradient used to be a fixed red, which meant a blue or
@@ -169,10 +182,12 @@ body {
 /* Raised panels are used as buttons all over the app — the lobby cards, the
    table header, the stats tiles. They had no hover of their own, so half the
    buttons on screen felt dead under the mouse. */
-button.panel-raised:hover:not(:disabled),
-button.panel:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
-  background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
+@layer components {
+  button.panel-raised:hover:not(:disabled),
+  button.panel:hover:not(:disabled) {
+    border-color: var(--color-border-strong);
+    background: linear-gradient(160deg, var(--color-surface-hover), var(--color-surface-hover-deep));
+  }
 }
 
 /* A raised panel with nothing showing through it.
@@ -229,6 +244,19 @@ button:disabled {
 .link-accent:hover {
   color: var(--color-accent-link-hover);
   text-decoration: underline;
+}
+
+/* The betting bar measures itself, so its buttons can be sized against the
+   panel rather than against the window.
+
+   They used to be sized in vw. The panel has a definite width — see
+   ActionPanel — so on a large monitor the type and the padding grew to their
+   maximum while the buttons stayed exactly as wide as they were, and "Raise
+   148,600" was cut off by thirty pixels. Sized against the panel, a button and
+   the words on it grow and shrink together, which is the only relationship
+   between them that can hold. */
+.bet-bar {
+  container-type: inline-size;
 }
 
 /* The table area measures itself, so the felt can be told to fit inside it. */
@@ -391,6 +419,131 @@ button:disabled {
 .animate-mystery-flap {
   transform-origin: top center;
   animation: mystery-flap 500ms 250ms cubic-bezier(0.6, -0.3, 0.4, 1.4) both;
+}
+
+/* The felt dimming behind a drawn envelope. A plain fade, because the card in
+   front of it is doing the moving — and because the knockout GIF sits on the
+   layer underneath, which is what used to hide the money. */
+@keyframes mystery-scrim {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-mystery-scrim {
+  animation: mystery-scrim 240ms ease-out both;
+}
+
+/* An envelope landing on a player's head the moment the pool is cut. Every head
+   at the table is worth one from then on, and this is how the felt says so. */
+@keyframes mystery-head {
+  0%   { transform: translateY(-12px) scale(0.4) rotate(-14deg); opacity: 0; }
+  60%  { transform: translateY(0) scale(1.2) rotate(5deg); opacity: 1; }
+  100% { transform: translateY(0) scale(1) rotate(0deg); opacity: 1; }
+}
+
+.animate-mystery-head {
+  animation: mystery-head 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* A table is a game, not a document.
+   Dragging across the felt used to select it — the pot, somebody's stack, the
+   blinds — and leave half the table highlighted in blue, which happens by
+   accident constantly: every mis-drag on a button, every double-click on a
+   seat. Nothing on the felt is there to be copied, so nothing on it is
+   selectable.
+
+   Where text really is text, it stays selectable and says so: the chat, the
+   hand history and every input. A rule rather than a utility class on each of
+   them, because the exceptions have to beat an ancestor that switched
+   selection off, and because a form field that cannot be selected is broken in
+   a way people notice immediately. */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.no-select input,
+.no-select textarea,
+.no-select [contenteditable],
+.no-select .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* An action landing on a seat. A short rise rather than a pop: it appears while
+   the chips are still moving, and something that jumps at the same time reads as
+   two separate events. */
+@keyframes seat-action {
+  from { transform: translateY(4px) scale(0.94); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.animate-seat-action {
+  animation: seat-action 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Being hit by something somebody threw. Four parts, all of them brief: the
+   colour of the thing over everything, what ran down the glass, what stuck to
+   it, and — for the heavy ones — the knock the table takes.
+
+   Every one of these runs once and clears itself. There is a hand being played
+   underneath. */
+@keyframes hit-wash {
+  0%   { opacity: 0; }
+  12%  { opacity: var(--hit-wash, 0.2); }
+  100% { opacity: 0; }
+}
+
+.animate-hit-wash {
+  animation: hit-wash cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hit-drip {
+  0%   { transform: scaleY(0); opacity: 0; }
+  18%  { opacity: 0.55; }
+  100% { transform: scaleY(1); opacity: 0; }
+}
+
+.animate-hit-drip {
+  transform-origin: top center;
+  animation: hit-drip cubic-bezier(0.32, 0, 0.5, 1) both;
+}
+
+@keyframes hit-fleck {
+  0%   { transform: scale(0.2); opacity: 0; }
+  16%  { transform: scale(1.25); opacity: 1; }
+  40%  { transform: scale(1); opacity: 0.9; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+.animate-hit-fleck {
+  animation: hit-fleck cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The knock. Small and quick — this is a brick landing on the glass, not an
+   earthquake, and the cards under it still have to be readable. */
+@keyframes hit-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15%      { transform: translate(-5px, 3px); }
+  32%      { transform: translate(4px, -3px); }
+  50%      { transform: translate(-3px, -2px); }
+  70%      { transform: translate(2px, 2px); }
+  86%      { transform: translate(-1px, 0); }
+}
+
+.animate-hit-shake {
+  animation: hit-shake 420ms ease-in-out both;
+}
+
+/* The one ring that moves. A slow turn rather than a flash: it is worn all
+   evening, at a table people are trying to read, and anything quicker would be
+   somebody else's animation running in the corner of your eye all night. */
+@keyframes ring-turn {
+  to { filter: hue-rotate(360deg); }
+}
+
+.animate-ring-turn {
+  animation: ring-turn 9s linear infinite;
 }
 
 /* A claim waiting to be taken. Slow enough to be noticed rather than nagged at:

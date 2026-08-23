@@ -1,5 +1,6 @@
 import random
 import time
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
@@ -282,8 +283,13 @@ class TournamentCreationTests(APITestCase):
 		)
 		primary_table = tournament.ensure_table(1)
 		tournament.players.create(user=self.user, table=primary_table, seat=0, seat_at_table=0, chips=10000)
-		opponent = User.objects.create_user(username="due_opponent", password="secret123")
-		tournament.players.create(user=opponent, table=primary_table, seat=1, seat_at_table=1, chips=10000)
+		# Three, because a tournament no longer starts itself with two: that
+		# would be a heads-up match nobody signed up for. See MIN_TO_START_ITSELF.
+		for index, name in enumerate(("due_opponent", "due_third"), start=1):
+			other = User.objects.create_user(username=name, password="secret123")
+			tournament.players.create(
+				user=other, table=primary_table, seat=index, seat_at_table=index, chips=10000,
+			)
 
 		response = self.client.get(reverse("tournament-detail", kwargs={"pk": tournament.id}))
 
@@ -3073,6 +3079,10 @@ class PlayTimestampTests(APITestCase):
 		self.tournament = Tournament.objects.create(host=self.host, name="Timed", status="lobby")
 		TournamentPlayer.objects.create(tournament=self.tournament, user=self.host, seat=0, chips=1000)
 		TournamentPlayer.objects.create(tournament=self.tournament, user=self.other, seat=1, chips=1000)
+		# A third, because a scheduled tournament no longer starts itself with
+		# two — see MIN_TO_START_ITSELF. A host pressing Start still may.
+		self.third = User.objects.create_user(username="clock_third", password="secret123")
+		TournamentPlayer.objects.create(tournament=self.tournament, user=self.third, seat=2, chips=1000)
 
 	def tearDown(self):
 		_tournament_runners.clear()
@@ -3492,12 +3502,64 @@ class BadBeatTests(TestCase):
 class SpinGoRulesTests(TestCase):
 	"""The format's arithmetic, which has to add up before anything is staked."""
 
-	def test_the_draw_averages_exactly_three_buy_ins(self):
+	def test_the_draw_pays_back_more_than_it_takes(self):
+		from fractions import Fraction
+
 		from tournaments import spingo
 
-		# Three players pay in, three buy-ins come out. Coins are the app's own
-		# currency and raking one it prints would only empty wallets slower.
-		self.assertEqual(spingo.expected_multiplier(), 3)
+		# Three players pay in and 3.166 buy-ins come back out. Deliberate:
+		# coins are printed by the house anyway, and paying a little extra out
+		# through the games is a better faucet than a bigger daily handout.
+		# Pinned exactly rather than as "more than three", because the amount
+		# above three is coins created out of nothing and is worth knowing.
+		self.assertEqual(spingo.expected_multiplier(), Fraction(1583, 500))
+		self.assertGreater(spingo.expected_multiplier(), 3)
+
+	def test_the_weights_still_add_up_to_the_whole(self):
+		from tournaments import spingo
+
+		self.assertEqual(
+			sum(weight for weight, _ in spingo.MULTIPLIERS), spingo.TOTAL_WEIGHT,
+		)
+		# A tail worth sitting down for: one game in a thousand pays a hundred
+		# times the buy-in, and one in a hundred pays twenty-five or better.
+		big = sum(w for w, m in spingo.MULTIPLIERS if m >= spingo.SHARED_FROM)
+		self.assertGreaterEqual(big / spingo.TOTAL_WEIGHT, 0.014)
+
+	def test_a_big_draw_pays_every_seat_and_a_small_one_pays_the_winner(self):
+		from tournaments import spingo
+
+		self.assertEqual(
+			[row["percentage"] for row in spingo.payout_for(100)], [80, 12, 8],
+		)
+		self.assertEqual(
+			[row["percentage"] for row in spingo.payout_for(25)], [80, 12, 8],
+		)
+		# Just under the line, and every ordinary game, is winner takes all.
+		self.assertEqual(spingo.payout_for(10), [{"place": 1, "label": "1st", "percentage": 100}])
+		self.assertEqual(spingo.payout_for(0), [{"place": 1, "label": "1st", "percentage": 100}])
+
+	def test_a_shared_split_still_hands_out_the_whole_pool(self):
+		from tournaments import spingo
+
+		for multiplier in (25, 50, 100):
+			with self.subTest(multiplier=multiplier):
+				self.assertEqual(
+					sum(row["percentage"] for row in spingo.payout_for(multiplier)), 100,
+				)
+
+	def test_the_odds_table_says_what_first_place_actually_takes(self):
+		from tournaments import spingo
+
+		rows = {row["multiplier"]: row for row in spingo.odds_table(25)}
+		# An ordinary game: the pool and the winner's prize are the same number.
+		self.assertEqual(rows[2]["prize_coins"], 50)
+		self.assertEqual(rows[2]["winner_coins"], 50)
+		self.assertFalse(rows[2]["shared"])
+		# A hundred-times game: 2,500 in the pool, 2,000 of it to the winner.
+		self.assertEqual(rows[100]["prize_coins"], 2500)
+		self.assertEqual(rows[100]["winner_coins"], 2000)
+		self.assertTrue(rows[100]["shared"])
 
 	def test_every_weight_in_the_table_can_actually_be_drawn(self):
 		from tournaments import spingo
@@ -3538,6 +3600,8 @@ class SpinGoRulesTests(TestCase):
 		self.assertEqual(defaults["buy_in_cents"], 0)
 		self.assertFalse(defaults["allow_rebuys"])
 		self.assertEqual(defaults["late_reg_level"], 0)
+		# Winner takes all until a draw says otherwise; a game that never fires
+		# keeps this row.
 		self.assertEqual(defaults["payout_structure"], [{"place": 1, "label": "1st", "percentage": 100}])
 
 
@@ -3650,6 +3714,37 @@ class SpinGoLobbyTests(APITestCase):
 		self.assertEqual(response.data["error"], "Not enough coins")
 		self.assertEqual(self._balance(self.players["ana"]), 10)
 		self.assertFalse(Tournament.objects.filter(format="spingo").exists())
+
+	def test_the_split_is_stamped_on_the_game_when_the_draw_is_made(self):
+		"""What the three of them are playing for, decided once.
+
+		The lobby, the table and the coin ledger all read the tournament's own
+		payout rows, so the split has to be on the row before the first hand —
+		not worked out again at settlement, where nobody can see it coming.
+		"""
+		from unittest.mock import patch
+
+		from tournaments import spingo
+
+		with patch.object(spingo, "draw_multiplier", return_value=100):
+			for name in ("ana", "bea", "caio"):
+				self._sit(name)
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual(game.spin_multiplier, 100)
+		self.assertEqual([row["percentage"] for row in game.payout_structure], [80, 12, 8])
+
+	def test_an_ordinary_draw_leaves_the_winner_everything(self):
+		from unittest.mock import patch
+
+		from tournaments import spingo
+
+		with patch.object(spingo, "draw_multiplier", return_value=2):
+			for name in ("ana", "bea", "caio"):
+				self._sit(name)
+
+		game = Tournament.objects.get(format="spingo")
+		self.assertEqual([row["percentage"] for row in game.payout_structure], [100])
 
 	def test_a_player_can_wait_at_both_tiers_at_once(self):
 		self._sit("ana")
@@ -4360,7 +4455,7 @@ class SitNGoTests(APITestCase):
 		lobby = self.client.get(reverse("fast-lobby")).data
 
 		by_key = {one["key"]: one for one in lobby["formats"]}
-		self.assertEqual(sorted(by_key), ["hu", "sixmax", "spingo"])
+		self.assertEqual(sorted(by_key), ["allinfold", "hu", "sixmax", "spingo"])
 		for key, expected in (("hu", [10, 50]), ("sixmax", [25, 100]), ("spingo", [25, 50])):
 			with self.subTest(format=key):
 				self.assertEqual([tier["stake"] for tier in by_key[key]["tiers"]], expected)
@@ -4484,6 +4579,117 @@ class SitNGoTests(APITestCase):
 
 		self.assertFalse(can_manage_tournament(self.players["a"], game))
 		self.assertFalse(can_manage_tournament(boss, game))
+
+
+class FastGameStartAlertTests(APITestCase):
+	"""Telling the players who were not the one to fill the table.
+
+	Whoever takes the last seat is standing in front of the answer — their own
+	request returns a started game and the lobby takes them to it. Everybody else
+	sat down minutes ago and went somewhere else, and until now the only thing
+	telling them was the lobby's poll, which does not run unless the lobby is the
+	page on screen. With seats at several tiers held at once, that is most of the
+	time.
+	"""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=f"al_{name}", password="x")
+			for name in ("a", "b", "c")
+		}
+		for user in self.players.values():
+			from sidegames.economy import wallet_for
+			from sidegames.models import Wallet
+
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _sit(self, name, key, stake):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(reverse("fast-sit"), {"key": key, "stake": stake}, format="json")
+
+	def test_the_player_already_waiting_is_told_the_game_has_started(self):
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			self._sit("a", "hu", 10)
+			self.assertEqual(told.call_args_list, [], "nothing has started yet")
+
+			self._sit("b", "hu", 10)
+
+		game = Tournament.objects.get(format="sitngo")
+		# Ana, who has been waiting, and not Bea, who is being taken to the table
+		# by her own request.
+		self.assertEqual([call.args[0] for call in told.call_args_list], [self.players["a"].id])
+
+		payload = told.call_args_list[0].args[1]
+		self.assertEqual(payload["type"], "fast_game_started")
+		# Enough to say which game, and to say it in words: the table it opens and
+		# the name of the format are both in the message rather than fetched after.
+		self.assertEqual(payload["game"]["id"], game.id)
+		self.assertEqual(payload["game"]["status"], "running")
+		self.assertEqual(payload["game"]["label"], "Heads Up")
+		self.assertEqual(payload["game"]["stake"], 10)
+
+	def test_everybody_but_the_last_one_in_is_told(self):
+		"""Six-handed: five have been waiting, and all five are rung."""
+		for name in ("a", "b"):
+			self._sit(name, "sixmax", 25)
+
+		others = [
+			User.objects.create_user(username=f"al_x{index}", password="x")
+			for index in range(3)
+		]
+		for user in others:
+			from sidegames.economy import wallet_for
+			from sidegames.models import Wallet
+
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+			self.client.force_authenticate(user)
+			self.client.post(reverse("fast-sit"), {"key": "sixmax", "stake": 25}, format="json")
+
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			self._sit("c", "sixmax", 25)
+
+		self.assertEqual(
+			sorted(call.args[0] for call in told.call_args_list),
+			sorted([self.players["a"].id, self.players["b"].id] + [user.id for user in others]),
+		)
+
+	def test_a_seat_that_does_not_fill_the_table_rings_nobody(self):
+		"""Five of six is not a game starting, and four sitting down is not four
+		interruptions."""
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			for name in ("a", "b", "c"):
+				self._sit(name, "sixmax", 25)
+
+		self.assertEqual(told.call_args_list, [])
+
+	def test_a_refused_seat_rings_nobody(self):
+		"""Sitting twice at a tier you are already waiting at is refused, and a
+		refusal is not news for the people who are waiting properly."""
+		self._sit("a", "hu", 10)
+
+		with patch("tournaments.fastgames_views.notify_user") as told:
+			response = self._sit("a", "hu", 10)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(told.call_args_list, [])
+
+	def test_a_game_that_cannot_be_announced_still_starts(self):
+		"""The notification is the last thing to happen and the least important.
+		A channel layer that is down must not cost somebody the seat they paid
+		for — notify_user swallows its own failures, and this pins that the view
+		does not undo the game if one gets out."""
+		self._sit("a", "hu", 50)
+
+		with patch("tournaments.fastgames_views.notify_user", return_value=False):
+			response = self._sit("b", "hu", 50)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Tournament.objects.get(format="sitngo").status, "running")
 
 
 class FastGamesStayOutOfTheTournamentListTests(APITestCase):
@@ -5386,3 +5592,902 @@ class WinnersOwnBountyTests(TestCase):
 		# first, plus 30.00 of bounties.
 		self.assertEqual(entries["w_ana"].prize_cents, 3000 + 3000)
 		self.assertEqual(entries["w_ana"].net_cents, 6000 - 2000)
+
+
+class AbsentRegistrationTests(APITestCase):
+	"""Seats held by people who closed the app.
+
+	A registration is a promise to turn up, and in the instant formats a ghost
+	in a queue holds a whole game: it fires when the last seat fills, and a seat
+	that is never going to act keeps everybody else waiting.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="ab_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="ab_player", password="secret123")
+
+	def _sweep(self, **kwargs):
+		"""One sweep, now. The rate limit is about not walking the table a
+		hundred times a minute in production, and has nothing to say about a
+		test that wants two sweeps in a row."""
+		from tournaments.absentees import drop_absent_registrations, reset_sweep_clock
+
+		reset_sweep_clock()
+		return drop_absent_registrations(timezone.now(), **kwargs)
+
+	def tearDown(self):
+		from accounts import presence
+		from tournaments.absentees import reset_sweep_clock
+
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+		reset_sweep_clock()
+		_tournament_runners.clear()
+
+	def _away_for(self, user, seconds):
+		"""Pretend this player closed the app that long ago."""
+		import time
+
+		from accounts import presence
+
+		presence._socket_counts.pop(user.id, None)
+		presence._gone_since[user.id] = time.monotonic() - seconds
+
+	def _tournament(self, **overrides):
+		fields = {
+			"name": "Friday", "host": self.host, "status": "lobby",
+			"buy_in_cents": 0, "max_players": 9, "players_per_table": 9,
+		}
+		fields.update(overrides)
+		return Tournament.objects.create(**fields)
+
+	def _seat(self, tournament, user):
+		table = tournament.ensure_table(1)
+		return TournamentPlayer.objects.create(
+			tournament=tournament, user=user, table=table, seat=1,
+			seat_at_table=1, chips=tournament.starting_chips,
+		)
+
+	def test_a_seat_is_given_up_after_long_enough_away(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+
+		self.assertEqual(self._sweep(), 1)
+		self.assertFalse(tournament.players.filter(user=self.player).exists())
+
+	def test_somebody_who_has_the_app_open_keeps_their_seat(self):
+		from accounts import presence
+		
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		presence.arrived(self.player.id)
+
+		self.assertEqual(self._sweep(), 0)
+		self.assertTrue(tournament.players.filter(user=self.player).exists())
+
+	def test_a_seat_survives_a_restart_that_never_saw_anybody_leave(self):
+		"""Nothing is assumed about a player this process never watched go."""
+		
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+
+		self.assertEqual(self._sweep(), 0)
+
+	def test_registering_days_ahead_and_closing_the_app_is_allowed(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament(
+			scheduled_start_at=timezone.now() + timedelta(days=2),
+		)
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 3600)
+
+		# This is the normal way to enter a Friday night on a Wednesday.
+		self.assertEqual(self._sweep(), 0)
+		self.assertTrue(tournament.players.filter(user=self.player).exists())
+
+	def test_the_same_seat_goes_once_the_night_is_nearly_on(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament(
+			scheduled_start_at=timezone.now() + timedelta(minutes=5),
+		)
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+
+		self.assertEqual(self._sweep(), 1)
+
+	def test_the_host_is_never_unregistered_from_their_own_tournament(self):
+		"""Taking their seat strands everybody else in a lobby nobody can start."""
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament()
+		self._seat(tournament, self.host)
+		self._away_for(self.host, TOURNAMENT_AFTER_SECONDS * 10)
+
+		self.assertEqual(self._sweep(), 0)
+
+	def test_a_tournament_already_dealing_is_left_alone(self):
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament(status="running")
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS * 10)
+
+		# Their chips belong to the prize pool now. Being away is the engine's
+		# business from here, and it sits them out rather than removing them.
+		self.assertEqual(self._sweep(), 0)
+
+	def test_a_queue_gives_up_a_seat_far_sooner_than_a_tournament(self):
+		from tournaments.absentees import QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS
+		from tournaments import spingo
+
+		self.assertLess(QUEUE_AFTER_SECONDS, TOURNAMENT_AFTER_SECONDS)
+
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self._seat(game, self.player)
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+
+		self.assertEqual(self._sweep(), 1)
+		# Nobody is left in it, so the queue row goes too: an empty one would be
+		# offered to the next player as a game with somebody in it.
+		self.assertFalse(Tournament.objects.filter(pk=game.pk).exists())
+
+	def test_the_coins_come_back_with_the_seat(self):
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+		from tournaments import spingo
+		from tournaments.absentees import QUEUE_AFTER_SECONDS
+		from tournaments.coinbank import charge_entry
+
+		wallet_for(self.player)
+		Wallet.objects.filter(user=self.player).update(balance=500)
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self.assertTrue(charge_entry(self.player, game))
+		self._seat(game, self.player)
+		self.assertEqual(Wallet.objects.get(user=self.player).balance, 475)
+
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+		self._sweep()
+
+		self.assertEqual(Wallet.objects.get(user=self.player).balance, 500)
+
+	def test_two_sweeps_in_a_row_do_not_both_walk_the_table(self):
+		"""The lobby is polled every few seconds and this reads every waiting
+		seat. Nothing it measures moves on that timescale."""
+		from tournaments.absentees import (
+			TOURNAMENT_AFTER_SECONDS, drop_absent_registrations, reset_sweep_clock,
+		)
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS + 60)
+		reset_sweep_clock()
+
+		self.assertEqual(drop_absent_registrations(timezone.now()), 1)
+		# A second call moments later does nothing at all — including nothing
+		# to a seat that has since become droppable.
+		other = User.objects.create_user(username="ab_second", password="secret123")
+		self._seat(tournament, other)
+		self._away_for(other, TOURNAMENT_AFTER_SECONDS + 60)
+		self.assertEqual(drop_absent_registrations(timezone.now()), 0)
+		self.assertTrue(tournament.players.filter(user=other).exists())
+
+		# And the next one, once the gap has passed, catches up.
+		self.assertEqual(self._sweep(), 1)
+
+	def test_a_restart_does_not_make_an_absent_seat_safe(self):
+		"""The in-memory record is gone; the profile still says when they left."""
+		from accounts import presence
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		from accounts.models import Profile
+
+		Profile.objects.create(
+			user=self.player,
+			last_seen=timezone.now() - timedelta(seconds=TOURNAMENT_AFTER_SECONDS + 120),
+		)
+		# Nothing in memory: this process never watched them leave.
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+
+		self.assertEqual(self._sweep(), 1)
+
+	def test_a_profile_that_was_never_stamped_keeps_its_seat(self):
+		from accounts import presence
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		presence._socket_counts.clear()
+		presence._gone_since.clear()
+
+		# last_seen is null: nobody has ever seen this player leave, so nothing
+		# is assumed about them.
+		self.assertEqual(self._sweep(), 0)
+
+	def test_the_player_asking_never_loses_their_own_seat(self):
+		"""Whatever the presence socket believes, somebody making a request is
+		plainly here — and a socket that failed to open must not cost them a
+		seat while they sit in the lobby watching it."""
+		from tournaments.absentees import TOURNAMENT_AFTER_SECONDS
+
+		tournament = self._tournament()
+		self._seat(tournament, self.player)
+		self._away_for(self.player, TOURNAMENT_AFTER_SECONDS * 10)
+
+		self.assertEqual(self._sweep(here=self.player.id), 0)
+		self.assertEqual(self._sweep(), 1)
+
+	def test_a_queue_that_still_has_somebody_in_it_is_kept(self):
+		from tournaments import spingo
+		from tournaments.absentees import QUEUE_AFTER_SECONDS
+
+		other = User.objects.create_user(username="ab_other", password="secret123")
+		game = Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+		self._seat(game, self.player)
+		TournamentPlayer.objects.create(
+			tournament=game, user=other, table=game.ensure_table(1), seat=2,
+			seat_at_table=2, chips=game.starting_chips,
+		)
+		self._away_for(self.player, QUEUE_AFTER_SECONDS + 30)
+
+		self._sweep()
+
+		game.refresh_from_db()
+		self.assertEqual(game.players.count(), 1)
+		# The host column pointed at the player who left, so it is handed on.
+		self.assertEqual(game.host_id, other.id)
+
+
+class NobodyPausesAFastGameTests(APITestCase):
+	"""A Spin n Go or a Sit n Go cannot be paused, by anybody, ever.
+
+	Ten minutes of poker between strangers has nothing worth pausing: there is
+	no host — the column points at whoever sat first — and a game held open
+	while two people are disconnected is a game nobody can finish. The engine
+	deals on, folds the seats that do not answer, and the tournament ends.
+	"""
+
+	def setUp(self):
+		self.player = User.objects.create_user(username="np_player", password="secret123")
+		self.boss = User.objects.create_superuser(username="np_boss", password="secret123")
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _game(self):
+		from tournaments import spingo
+
+		return Tournament.objects.create(host=self.player, **spingo.tournament_defaults(25))
+
+	def test_the_pause_button_is_refused_to_the_seat_that_holds_the_host_column(self):
+		game = self._game()
+		self.client.force_authenticate(self.player)
+
+		response = self.client.post(reverse("tournament-pause", args=[game.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_not_even_the_superuser_can_pause_one(self):
+		game = self._game()
+		self.client.force_authenticate(self.boss)
+
+		response = self.client.post(reverse("tournament-pause", args=[game.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_nothing_in_the_engine_pauses_a_table_on_its_own(self):
+		"""The only way into a pause is the endpoint above.
+
+		Checked by reading the engine rather than by playing one out: a
+		disconnection sits a player out and, past the timeout, removes them —
+		it never stops the clock. If a future change adds an automatic pause
+		this test is where it will be noticed.
+		"""
+		import inspect
+
+		from game import coordinator
+
+		source = inspect.getsource(coordinator)
+		# The two places is_paused is switched on are pause() itself and the
+		# snapshot that reports it. Nothing else may set it.
+		setters = [
+			line.strip() for line in source.splitlines()
+			if "self.is_paused = True" in line
+		]
+		self.assertEqual(len(setters), 1)
+		pause_source = inspect.getsource(coordinator.MultiTableTournamentCoordinator.pause)
+		self.assertIn("self.is_paused = True", pause_source)
+
+
+class TournamentAnnouncementTests(APITestCase):
+	"""Being told your own game is about to deal, from wherever you are."""
+
+	def setUp(self):
+		from tournaments import announce
+
+		announce.forget()
+		self.host = User.objects.create_user(username="an_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="an_player", password="secret123")
+		self.tournament = Tournament.objects.create(
+			name="Nine o'clock", host=self.host, status="lobby",
+			buy_in_cents=2000, max_players=9, players_per_table=9,
+		)
+		self.third = User.objects.create_user(username="an_third", password="secret123")
+		# Three: a scheduled tournament does not start itself with two.
+		for index, user in enumerate((self.host, self.player, self.third)):
+			TournamentPlayer.objects.create(
+				tournament=self.tournament, user=user,
+				table=self.tournament.ensure_table(1), seat=index,
+				seat_at_table=index, chips=self.tournament.starting_chips,
+			)
+
+	def tearDown(self):
+		from tournaments import announce
+
+		announce.forget()
+		_tournament_runners.clear()
+
+	def test_starting_a_tournament_tells_everybody_holding_a_seat(self):
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append((uid, payload))):
+			self.client.force_authenticate(self.host)
+			response = self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual({uid for uid, _ in sent}, {self.host.id, self.player.id, self.third.id})
+		self.assertEqual(sent[0][1]["type"], "tournament_started")
+		self.assertEqual(sent[0][1]["game"]["id"], self.tournament.id)
+		self.assertEqual(sent[0][1]["game"]["label"], "Nine o'clock")
+
+	def test_the_warning_goes_out_once_and_not_again(self):
+		"""This is swept from the lobby, which is polled every few seconds. A
+		reminder that arrives on every poll is a nag, not a reminder."""
+		from tournaments.announce import WARN_BEFORE_SECONDS, announce_starting_soon
+
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append(uid)):
+			first = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 30)
+			second = announce_starting_soon(self.tournament, WARN_BEFORE_SECONDS - 60)
+
+		self.assertEqual(first, 3)
+		self.assertEqual(second, 0)
+		self.assertEqual(len(sent), 3)
+
+	def test_nothing_is_said_about_a_start_that_is_still_hours_off(self):
+		from tournaments.announce import announce_starting_soon
+
+		with patch("tournaments.announce.notify_user") as told:
+			self.assertEqual(announce_starting_soon(self.tournament, 3 * 3600), 0)
+			# Nor about one whose time has already passed: that is a start, and
+			# it has its own message.
+			self.assertEqual(announce_starting_soon(self.tournament, -30), 0)
+			self.assertEqual(announce_starting_soon(self.tournament, None), 0)
+
+		told.assert_not_called()
+
+	def test_a_scheduled_tournament_announces_itself_when_its_time_comes(self):
+		self.tournament.scheduled_start_at = timezone.now() - timedelta(seconds=5)
+		self.tournament.save(update_fields=["scheduled_start_at"])
+
+		sent = []
+		with patch("tournaments.announce.notify_user", side_effect=lambda uid, payload: sent.append(payload)):
+			self.client.force_authenticate(self.player)
+			self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+		self.assertTrue(sent)
+		self.assertTrue(all(one["type"] == "tournament_started" for one in sent))
+
+	def test_a_message_that_cannot_be_sent_does_not_fail_the_start(self):
+		"""A player who cannot be told still has a game that has started."""
+		with patch("tournaments.announce.notify_user", side_effect=RuntimeError("no redis")):
+			self.client.force_authenticate(self.host)
+			with self.assertRaises(RuntimeError):
+				self.client.post(reverse("tournament-start", args=[self.tournament.id]))
+
+		# The raise above is the channel layer failing *inside* notify_user,
+		# which the real one swallows — see accounts/notify.py. What matters
+		# here is that the tournament was already saved before anybody was told.
+		self.tournament.refresh_from_db()
+		self.assertEqual(self.tournament.status, "running")
+
+
+class RecurringNightTests(APITestCase):
+	"""Friday at nine, every week.
+
+	The thing a club with a league actually runs, and until now it was somebody
+	remembering to make the same tournament by hand every Thursday.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="rc_host", password="secret123", is_staff=True)
+		self.player = User.objects.create_user(username="rc_player", password="secret123")
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _night(self, when=None, **overrides):
+		from tournaments.models import BlindLevel
+
+		fields = {
+			"name": "Friday night", "host": self.host, "status": "lobby",
+			"buy_in_cents": 2000, "max_players": 9, "players_per_table": 9,
+			"scheduled_start_at": when or (timezone.now() + timedelta(days=1)),
+		}
+		fields.update(overrides)
+		night = Tournament.objects.create(**fields)
+		BlindLevel.objects.create(
+			tournament=night, level_number=1, small_blind=25, big_blind=50,
+			ante=0, duration_minutes=10,
+		)
+		return night
+
+	def _repeat(self, night, **payload):
+		return self.client.post(reverse("tournament-repeat", args=[night.id]), payload, format="json")
+
+	def test_a_night_becomes_a_series_at_its_own_hour(self):
+		from tournaments.fixtures import from_moment
+		from tournaments.models import Fixture
+
+		when = timezone.now() + timedelta(days=2)
+		night = self._night(when)
+
+		response = self._repeat(night)
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		fixture = Fixture.objects.get()
+		# Read off the game rather than asked for again: the host already said
+		# when by scheduling it.
+		self.assertEqual((fixture.weekday, fixture.start_time), from_moment(when))
+		self.assertEqual(fixture.name, "Friday night")
+		self.assertIn("at", response.data["repeats"]["label"])
+
+	def test_the_first_night_belongs_to_the_series_it_started(self):
+		"""Otherwise the series would immediately open a second game for a
+		night that already has one."""
+		night = self._night()
+
+		self._repeat(night)
+
+		night.refresh_from_db()
+		self.assertIsNotNone(night.fixture_id)
+		self.assertEqual(night.occurs_on, night.scheduled_start_at.date())
+
+	def test_a_night_with_no_hour_cannot_repeat(self):
+		night = self._night(scheduled_start_at=None)
+
+		response = self._repeat(night)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_only_somebody_who_runs_it_may_set_it_repeating(self):
+		night = self._night()
+		self.client.force_authenticate(self.player)
+
+		self.assertEqual(self._repeat(night).status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_the_next_night_opens_by_itself_with_the_same_terms(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		night = self._night(timezone.now() + timedelta(minutes=5), buy_in_cents=3000)
+		self._repeat(night)
+
+		# Five days later somebody opens the lobby, and next week's night is
+		# close enough to register for.
+		later = timezone.now() + timedelta(days=5)
+		self.assertEqual(open_due_fixtures(later), 1)
+
+		nights = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on")
+		self.assertEqual(nights.count(), 2)
+		nxt = nights.last()
+		self.assertEqual(nxt.buy_in_cents, 3000)
+		self.assertEqual(nxt.name, "Friday night")
+		self.assertEqual(nxt.levels.count(), 1)
+		self.assertEqual(nxt.status, "lobby")
+		# Seven days after the first, at the same hour and minute — the seconds
+		# of the original are dropped on purpose, since nobody schedules a night
+		# for 21:00:37.
+		first = timezone.localtime(night.scheduled_start_at)
+		again = timezone.localtime(nxt.scheduled_start_at)
+		self.assertEqual((again.date() - first.date()).days, 7)
+		self.assertEqual((again.hour, again.minute), (first.hour, first.minute))
+
+	def test_sweeping_twice_does_not_open_the_same_night_twice(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		self._repeat(self._night(timezone.now() + timedelta(minutes=5)))
+		later = timezone.now() + timedelta(days=5)
+
+		self.assertEqual(open_due_fixtures(later), 1)
+		self.assertEqual(open_due_fixtures(later), 0)
+		self.assertEqual(Tournament.objects.count(), 2)
+
+	def test_a_night_nobody_was_there_for_is_not_opened_after_the_fact(self):
+		"""A fixture swept a fortnight late opens the one coming, not the two
+		that have been and gone: a game scheduled in the past is a row nobody
+		can play and nobody can clear."""
+		from tournaments.fixturebank import open_due_fixtures
+
+		self._repeat(self._night(timezone.now() + timedelta(minutes=5)))
+
+		opened = open_due_fixtures(timezone.now() + timedelta(days=14))
+
+		self.assertLessEqual(opened, 1)
+		for night in Tournament.objects.filter(fixture__isnull=False):
+			if night.occurs_on != timezone.localtime(night.scheduled_start_at).date():
+				continue
+			self.assertGreaterEqual(
+				night.scheduled_start_at, timezone.now() - timedelta(days=1),
+				"a night was opened for a date that had already passed",
+			)
+
+	def test_stopping_it_leaves_the_games_it_already_opened(self):
+		from tournaments.fixturebank import open_due_fixtures
+
+		night = self._night(timezone.now() + timedelta(minutes=5))
+		self._repeat(night)
+		later = timezone.now() + timedelta(days=5)
+		open_due_fixtures(later)
+
+		response = self.client.delete(reverse("tournament-repeat", args=[night.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		# Two nights still there — people have registered for those.
+		self.assertEqual(Tournament.objects.count(), 2)
+		# And nothing new opens.
+		self.assertEqual(open_due_fixtures(timezone.now() + timedelta(days=30)), 0)
+
+	def test_the_detail_page_says_whether_it_comes_round_again(self):
+		night = self._night()
+
+		before = self.client.get(reverse("tournament-detail", args=[night.id]))
+		self.assertIsNone(before.data["repeats"])
+
+		self._repeat(night)
+		after = self.client.get(reverse("tournament-detail", args=[night.id]))
+		self.assertIsNotNone(after.data["repeats"])
+		self.assertIn("at", after.data["repeats"]["label"])
+
+	def test_a_club_night_keeps_its_club_and_its_league(self):
+		from clubs.models import Club, League, Membership, Season
+		from tournaments.fixturebank import open_due_fixtures
+
+		club = Club.objects.create(name="Quinta", created_by=self.host)
+		Membership.objects.create(club=club, user=self.host, role=Membership.OWNER)
+		season = Season.objects.create(league=League.objects.create(club=club, name="Sunday"), name="Autumn")
+		night = self._night(timezone.now() + timedelta(minutes=5), club=club, season=season)
+
+		self._repeat(night)
+		open_due_fixtures(timezone.now() + timedelta(days=5))
+
+		nxt = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on").last()
+		self.assertEqual(nxt.club_id, club.id)
+		self.assertEqual(nxt.season_id, season.id)
+
+	def test_a_closed_season_takes_no_new_nights_and_the_night_runs_anyway(self):
+		from clubs.models import Club, League, Membership, Season
+		from tournaments.fixturebank import open_due_fixtures
+
+		club = Club.objects.create(name="Quinta", created_by=self.host)
+		Membership.objects.create(club=club, user=self.host, role=Membership.OWNER)
+		season = Season.objects.create(league=League.objects.create(club=club, name="Sunday"), name="Autumn")
+		night = self._night(timezone.now() + timedelta(minutes=5), club=club, season=season)
+		self._repeat(night)
+
+		season.closed_at = timezone.now()
+		season.save(update_fields=["closed_at"])
+		open_due_fixtures(timezone.now() + timedelta(days=5))
+
+		nxt = Tournament.objects.filter(fixture__isnull=False).order_by("occurs_on").last()
+		# The night is not worth cancelling over a closed season: it runs, and
+		# counts for nothing.
+		self.assertEqual(nxt.club_id, club.id)
+		self.assertIsNone(nxt.season_id)
+
+
+class FixtureCalendarTests(TestCase):
+	"""Which Friday, and at what hour."""
+
+	def test_today_counts_if_the_hour_has_not_passed(self):
+		from datetime import time
+
+		from tournaments.fixtures import local_at, next_occurrence
+
+		# A Friday at noon, asking about Fridays at nine in the evening.
+		noon = local_at(timezone.localtime().date(), time(12, 0))
+		friday_noon = noon + timedelta(days=(4 - timezone.localtime(noon).weekday()) % 7)
+
+		self.assertEqual(
+			next_occurrence(4, time(21, 0), friday_noon).date(),
+			timezone.localtime(friday_noon).date(),
+		)
+
+	def test_an_hour_that_has_passed_means_next_week(self):
+		from datetime import time
+
+		from tournaments.fixtures import local_at, next_occurrence
+
+		late = local_at(timezone.localtime().date(), time(23, 0))
+		friday_late = late + timedelta(days=(4 - timezone.localtime(late).weekday()) % 7)
+
+		self.assertEqual(
+			(next_occurrence(4, time(21, 0), friday_late) - friday_late).days, 6,
+		)
+
+	def test_a_fortnight_opened_at_once_is_two_nights(self):
+		from datetime import time
+
+		from tournaments.fixtures import occurrences_within
+
+		found = occurrences_within(4, time(21, 0), 14)
+
+		self.assertEqual(len(found), 2)
+		self.assertEqual((found[1] - found[0]).days, 7)
+
+	def test_how_early_a_night_opens_is_held_between_a_day_and_three_weeks(self):
+		from tournaments.fixtures import DEFAULT_DAYS_AHEAD, MAX_DAYS_AHEAD, clean_days_ahead
+
+		self.assertEqual(clean_days_ahead(0), 1)
+		self.assertEqual(clean_days_ahead(400), MAX_DAYS_AHEAD)
+		self.assertEqual(clean_days_ahead("nonsense"), DEFAULT_DAYS_AHEAD)
+		self.assertEqual(clean_days_ahead(5), 5)
+
+	def test_it_says_the_arrangement_out_loud(self):
+		from datetime import time
+
+		from tournaments.fixtures import describe
+
+		self.assertEqual(describe(4, time(21, 0)), "Fridays at 21:00")
+		self.assertEqual(describe(0, time(9, 30)), "Mondays at 09:30")
+
+
+class ScheduledStartTests(APITestCase):
+	"""A night that starts itself, and what it waits for."""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="ss_host", password="secret123", is_staff=True)
+		self.players = [
+			User.objects.create_user(username=f"ss_{index}", password="secret123")
+			for index in range(4)
+		]
+		self.client.force_authenticate(self.host)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _due_night(self, seated):
+		night = Tournament.objects.create(
+			name="Nine o'clock", host=self.host, status="lobby",
+			buy_in_cents=0, max_players=9, players_per_table=9,
+			scheduled_start_at=timezone.now() - timedelta(seconds=30),
+		)
+		for index, user in enumerate(self.players[:seated]):
+			TournamentPlayer.objects.create(
+				tournament=night, user=user, table=night.ensure_table(1),
+				seat=index, seat_at_table=index, chips=night.starting_chips,
+			)
+		return night
+
+	def _sweep(self):
+		"""Whatever a lobby request does on its way past."""
+		self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+	def test_two_people_do_not_make_a_night(self):
+		"""It would be a heads-up match nobody signed up for, and those two are
+		locked into it while anybody a minute late finds it already running."""
+		night = self._due_night(seated=2)
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "lobby")
+
+	def test_three_do(self):
+		night = self._due_night(seated=3)
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_it_starts_as_soon_as_the_third_arrives(self):
+		night = self._due_night(seated=2)
+		self._sweep()
+
+		self.client.force_authenticate(self.players[2])
+		self.client.post(reverse("tournament-join", args=[night.id]))
+		self.client.force_authenticate(self.host)
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_a_host_may_still_start_a_heads_up_on_purpose(self):
+		"""Two people deciding to play heads-up is a decision. A clock deciding
+		it for them is not."""
+		night = self._due_night(seated=2)
+
+		response = self.client.post(reverse("tournament-start", args=[night.id]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		night.refresh_from_db()
+		self.assertEqual(night.status, "running")
+
+	def test_an_hour_that_has_not_come_starts_nothing(self):
+		night = self._due_night(seated=4)
+		night.scheduled_start_at = timezone.now() + timedelta(hours=2)
+		night.save(update_fields=["scheduled_start_at"])
+
+		self._sweep()
+
+		night.refresh_from_db()
+		self.assertEqual(night.status, "lobby")
+
+
+class AllInOrFoldFormatTests(APITestCase):
+	"""Four players, fifteen blinds, and the buy-ins are the bounties."""
+
+	def setUp(self):
+		self.players = {
+			name: User.objects.create_user(username=name, password="secret123")
+			for name in ("aif_a", "aif_b", "aif_c", "aif_d")
+		}
+		from sidegames.economy import wallet_for
+		from sidegames.models import Wallet
+
+		for user in self.players.values():
+			wallet_for(user)
+			Wallet.objects.filter(user=user).update(balance=500)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _sit(self, name, stake=25):
+		self.client.force_authenticate(self.players[name])
+		return self.client.post(
+			reverse("fast-sit"), {"key": "allinfold", "stake": stake}, format="json",
+		)
+
+	def _balance(self, name):
+		from sidegames.models import Wallet
+
+		return Wallet.objects.get(user=self.players[name]).balance
+
+	def test_the_format_is_four_seats_and_fifteen_blinds(self):
+		from tournaments.fastgames import FORMATS
+
+		fmt = FORMATS["allinfold"]
+		self.assertEqual(fmt.seats, 4)
+		self.assertEqual(fmt.big_blinds, 15)
+		self.assertTrue(fmt.all_in_or_fold)
+		self.assertEqual(len(fmt.stakes), 2)
+
+	def test_four_players_fill_it_and_it_deals(self):
+		for name in ("aif_a", "aif_b", "aif_c"):
+			self.assertEqual(self._sit(name).status_code, status.HTTP_201_CREATED)
+
+		game = Tournament.objects.get(format="allinfold")
+		self.assertEqual(game.status, "lobby")
+
+		self._sit("aif_d")
+		game.refresh_from_db()
+		self.assertEqual(game.status, "running")
+		self.assertEqual(game.players.count(), 4)
+
+	def test_the_whole_buy_in_goes_on_the_heads(self):
+		from tournaments.bounties import BountyConfig, prize_pool_share_cents
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+
+		self.assertEqual(game.bounty_mode, "mystery")
+		self.assertEqual(game.bounty_cents, 25)
+		self.assertTrue(game.mystery_winner_keeps)
+		# Nothing at all is left for the places.
+		self.assertEqual(
+			prize_pool_share_cents(BountyConfig.from_tournament(game), game.buy_in_coins), 0,
+		)
+
+	def test_the_places_divide_nothing(self):
+		from tournaments.coinbank import coin_pot
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+
+		self.assertEqual(coin_pot(game, 4), 0)
+
+	def test_there_is_an_envelope_for_every_head(self):
+		from tournaments.mystery import envelope_count
+
+		# Three knockouts to come and four heads: the fourth envelope is the
+		# one nobody draws, and it is the winner's own.
+		self.assertEqual(envelope_count(4, winner_keeps_own=True), 4)
+		self.assertEqual(envelope_count(4, winner_keeps_own=False), 3)
+
+	def test_the_winner_takes_the_envelope_that_was_on_their_own_head(self):
+		from tournaments.coinbank import settle_tournament_coins
+
+		for name in ("aif_a", "aif_b", "aif_c", "aif_d"):
+			self._sit(name)
+		game = Tournament.objects.get(format="allinfold")
+		# Everybody paid 25, so the pool is 100. Three envelopes were drawn by
+		# the three knockouts; the fourth was never drawn.
+		drawn = {"aif_a": 40, "aif_b": 22, "aif_c": 0, "aif_d": 0}
+		for index, (name, won) in enumerate(drawn.items(), start=1):
+			seat = game.players.get(user=self.players[name])
+			seat.bounty_won_cents = won
+			seat.finish_position = index if name != "aif_a" else 1
+			seat.save(update_fields=["bounty_won_cents", "finish_position"])
+		# aif_a wins it.
+		game.players.filter(user=self.players["aif_a"]).update(finish_position=1)
+		game.status = "finished"
+		game.save(update_fields=["status"])
+
+		self.assertTrue(settle_tournament_coins(game))
+
+		# 475 left after the buy-in. The winner drew 40 and keeps the 38 that
+		# nobody drew; the runner-up keeps the 22 they drew.
+		self.assertEqual(self._balance("aif_a"), 475 + 40 + (100 - 62))
+		self.assertEqual(self._balance("aif_b"), 475 + 22)
+		self.assertEqual(self._balance("aif_c"), 475)
+
+	def test_every_coin_paid_in_is_paid_back_out(self):
+		"""The bounties are the whole prize pool, so nothing may stay behind."""
+		from sidegames.models import Wallet
+		from tournaments.coinbank import settle_tournament_coins
+
+		for name in ("aif_a", "aif_b", "aif_c", "aif_d"):
+			self._sit(name)
+		game = Tournament.objects.get(format="allinfold")
+		for index, (name, won) in enumerate(
+			(("aif_a", 55), ("aif_b", 10), ("aif_c", 5), ("aif_d", 0)), start=1,
+		):
+			game.players.filter(user=self.players[name]).update(
+				bounty_won_cents=won, finish_position=index,
+			)
+		game.status = "finished"
+		game.save(update_fields=["status"])
+
+		settle_tournament_coins(game)
+
+		total = sum(
+			Wallet.objects.get(user=user).balance for user in self.players.values()
+		)
+		# Four wallets of 500, four buy-ins of 25 taken, and the whole 100 back.
+		self.assertEqual(total, 4 * 500)
+
+	def test_it_is_not_listed_among_the_tournaments(self):
+		self._sit("aif_a")
+		self.client.force_authenticate(self.players["aif_b"])
+
+		listed = self.client.get(reverse("tournament-list"), {"scope": "upcoming"})
+
+		self.assertEqual(listed.data, [])
+
+	def test_nobody_runs_one(self):
+		from tournaments.permissions import can_manage_tournament
+
+		self._sit("aif_a")
+		game = Tournament.objects.get(format="allinfold")
+		boss = User.objects.create_superuser(username="aif_boss", password="x")
+
+		self.assertFalse(can_manage_tournament(self.players["aif_a"], game))
+		self.assertFalse(can_manage_tournament(boss, game))
+
+	def test_the_lobby_offers_two_tiers_of_it(self):
+		self.client.force_authenticate(self.players["aif_a"])
+
+		lobby = self.client.get(reverse("fast-lobby")).data
+		fmt = next(one for one in lobby["formats"] if one["key"] == "allinfold")
+
+		self.assertEqual(len(fmt["tiers"]), 2)
+		self.assertEqual(fmt["seats"], 4)
+		self.assertEqual(fmt["big_blinds"], 15)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import Icon from "../icons/Icon";
 import useWalletStore from "../../store/walletStore";
 import ShopModal from "./ShopModal";
 
@@ -24,8 +25,10 @@ export default function CoinPanel() {
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">Coins</h2>
-        <span className="text-lg font-bold text-(--color-highlight-text) tabular-nums">
-          🪙 {balance.toLocaleString()}
+        <span className="flex items-center gap-1.5 text-lg font-bold
+                         text-(--color-highlight-text) tabular-nums">
+          <Icon name="coin" className="w-4.5 h-4.5" tone="gold" />
+          {balance.toLocaleString()}
         </span>
       </div>
 

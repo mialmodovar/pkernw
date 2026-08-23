@@ -38,9 +38,11 @@ class Tournament(models.Model):
     # that only existed in the create form would not. Which Sit n Go a row is
     # follows from players_per_table; see tournaments/fastgames.py.
     FORMAT_CHOICES = [
-        ("standard", "Tournament"),
-        ("spingo",   "Spin n Go"),
-        ("sitngo",   "Sit n Go"),
+        ("standard",  "Tournament"),
+        ("spingo",    "Spin n Go"),
+        ("sitngo",    "Sit n Go"),
+        # Push or fold, four seats, and the bounties are the whole prize pool.
+        ("allinfold", "All In or Fold"),
     ]
 
     host           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="hosted_tournaments")
@@ -59,6 +61,14 @@ class Tournament(models.Model):
     format         = models.CharField(max_length=12, choices=FORMAT_CHOICES, default="standard")
     status         = models.CharField(max_length=10, choices=STATUS_CHOICES, default="lobby")
     scheduled_start_at = models.DateTimeField(null=True, blank=True)
+
+    # The series this game came from, if it came from one, and which occurrence
+    # of it. Together they are unique: that is what stops two lobby requests
+    # arriving at once from opening next Friday twice.
+    fixture = models.ForeignKey(
+        "Fixture", on_delete=models.SET_NULL, null=True, blank=True, related_name="tournaments",
+    )
+    occurs_on = models.DateField(null=True, blank=True)
     starting_chips = models.IntegerField(default=10_000)
     # In cents. The app never handles money; it only records what was agreed,
     # and a rounding error here is somebody's actual euro.
@@ -109,6 +119,12 @@ class Tournament(models.Model):
     mystery_release = models.CharField(
         max_length=12, choices=MYSTERY_RELEASE_CHOICES, default=DEFAULT_MYSTERY_RELEASE,
     )
+    # Whether there is an envelope on every head, including the head nobody
+    # knocks out. False is the ordinary reading — the pool is cut into one
+    # envelope per knockout still to come, and every last cent of it is drawn by
+    # somebody. True cuts one more, which is never drawn and goes to the winner
+    # at settlement: it was on their own head all along. See mystery.envelope_count.
+    mystery_winner_keeps = models.BooleanField(default=False)
     # What is still in the pool, biggest first, in cents. Written when the
     # envelopes open and again after every draw, so a server restart cannot
     # hand out a pool twice — the list on the row is the pool, and there is no
@@ -298,3 +314,53 @@ class DebtTransfer(models.Model):
             f"{self.from_user.username} owes {self.to_user.username} "
             f"{self.remaining_cents}c of {self.amount_cents}c"
         )
+
+
+class Fixture(models.Model):
+    """A night that comes round every week.
+
+    The settings of the tournament it produces are kept as they were validated
+    on the way in — the same payload the create endpoint takes, and the same
+    blind levels — so opening next week's game is the ordinary creation path
+    with a date attached rather than a second way of making a tournament.
+
+    Editing a series changes what the *next* one looks like. It deliberately
+    cannot reach into a game already open: people have registered for the terms
+    they were shown, and a buy-in that changed under them is the one thing a
+    recurring night must never do.
+    """
+
+    name = models.CharField(max_length=120)
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fixtures",
+    )
+    club = models.ForeignKey(
+        "clubs.Club", on_delete=models.CASCADE, null=True, blank=True, related_name="fixtures",
+    )
+    season = models.ForeignKey(
+        "clubs.Season", on_delete=models.SET_NULL, null=True, blank=True, related_name="fixtures",
+    )
+
+    # Monday is 0, as Python has it, and the time is local — see fixtures.py for
+    # why that matters on the weekend the clocks change.
+    weekday = models.IntegerField()
+    start_time = models.TimeField()
+
+    # How early the next one opens for registration.
+    days_ahead = models.IntegerField(default=4)
+
+    # Everything else the tournament needs, exactly as the create serializer
+    # validated it, and the blind ladder beside it.
+    template = models.JSONField(default=dict, blank=True)
+    levels = models.JSONField(default=list, blank=True)
+
+    # Stopped rather than deleted: the games it already opened stay, and the
+    # club can see that Friday used to be a thing.
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["weekday", "start_time", "id"]
+
+    def __str__(self):
+        return f"{self.name} ({self.weekday} {self.start_time})"

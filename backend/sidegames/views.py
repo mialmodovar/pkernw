@@ -10,7 +10,8 @@ from .economy import (
     wallet_for,
 )
 from .games import GAMES
-from .shop import buy_throwable, catalogue
+from .missionbank import claim_mission, mission_board
+from .shop import buy_border, buy_throwable, catalogue, owns_border
 
 
 def wallet_payload(wallet) -> dict:
@@ -67,7 +68,72 @@ def shop(request):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def buy(request):
-    result = buy_throwable(request.user, str(request.data.get("item") or "").strip().lower())
+    """Buy one thing off one of the shelves.
+
+    The shelf comes with the request rather than being guessed from the id:
+    they are separate lists and nothing says a border and a throwable will
+    never share a name.
+    """
+    item = str(request.data.get("item") or "").strip().lower()
+    shelf = str(request.data.get("shelf") or "throwable").strip().lower()
+    buy_it = {"throwable": buy_throwable, "border": buy_border}.get(shelf)
+    if buy_it is None:
+        return Response({"error": "No such shelf."}, status=400)
+
+    result = buy_it(request.user, item)
     if isinstance(result, str):
         return Response({"error": result}, status=400)
     return Response({**wallet_payload(result), "items": catalogue(request.user)})
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def wear_border(request):
+    """Put on a border you own, or take one off.
+
+    Ownership is checked here and not only in the shop: this endpoint is the
+    other way a border id reaches the server, and a ring drawn on everybody
+    else's screen is not something to take a client's word for.
+    """
+    from accounts.models import Profile
+
+    from .borders import clean_border
+
+    border = clean_border(request.data.get("border"))
+    if border and not owns_border(request.user, border):
+        return Response({"error": "You do not own that one."}, status=400)
+
+    # get_or_create, like every other endpoint that writes to a profile: a
+    # profile row is made the first time anybody needs one, and an update()
+    # against a user who has never had one writes nothing at all while
+    # answering as though it had.
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    profile.avatar_border = border
+    profile.save(update_fields=["avatar_border"])
+    return Response({"border": border})
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def missions(request):
+    """What is worth doing today and this week, and how far along you are."""
+    return Response({"missions": mission_board(request.user)})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def claim_mission_reward(request):
+    """Take the coins for one that is finished.
+
+    The check and the payment happen in one transaction behind a unique row, so
+    two taps on a slow connection pay once — see missionbank.py.
+    """
+    paid = claim_mission(request.user, request.data.get("key"))
+    if isinstance(paid, str):
+        return Response({"error": paid}, status=400)
+    wallet, coins = paid
+    return Response({
+        **wallet_payload(wallet),
+        "coins": coins,
+        "missions": mission_board(request.user),
+    })

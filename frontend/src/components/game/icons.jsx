@@ -1,9 +1,13 @@
 /**
- * The few line icons the table's navigation uses.
+ * The few line icons the table's own navigation uses.
  *
  * Drawn rather than fetched, like the sounds are synthesised rather than
- * shipped: four paths cost nothing and cannot 404. They inherit `currentColor`,
+ * shipped: a few paths cost nothing and cannot 404. They inherit `currentColor`,
  * so a button styles its icon by styling itself.
+ *
+ * The app's icon set proper lives in components/icons; these are the table's,
+ * and they stay here until the felt gets the same treatment. Home went first,
+ * because the header that used it is now shared with every other page.
  */
 function Glyph({ children, className = "w-3.5 h-3.5" }) {
   return (
@@ -19,16 +23,6 @@ function Glyph({ children, className = "w-3.5 h-3.5" }) {
     >
       {children}
     </svg>
-  );
-}
-
-/** Home — the main menu, not this tournament's lobby. */
-export function HomeIcon(props) {
-  return (
-    <Glyph {...props}>
-      <path d="M3 11 12 3l9 8" />
-      <path d="M5 10v10h14V10" />
-    </Glyph>
   );
 }
 

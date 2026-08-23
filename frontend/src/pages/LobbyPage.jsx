@@ -5,6 +5,8 @@ import useLobbyStore from "../store/lobbyStore";
 import useFastGameStore from "../store/fastGameStore";
 import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
+import Icon from "../components/icons/Icon";
+import { readStoredTab, tabToOpen, writeStoredTab } from "../components/lobby/lobbyTab";
 import { useAutoOpenTable } from "../components/lobby/autoOpenTable";
 import { organisesForAClub, runsThePlace } from "../components/auth/runsThePlace";
 import ProfileCard from "../components/lobby/ProfileCard";
@@ -13,6 +15,7 @@ import StatsPanel from "../components/lobby/StatsPanel";
 import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
 import CoinPanel from "../components/lobby/CoinPanel";
+import MissionPanel from "../components/lobby/MissionPanel";
 import WatchPanel from "../components/lobby/WatchPanel";
 
 // The three things you can be playing. Written as a list rather than three
@@ -22,9 +25,10 @@ import WatchPanel from "../components/lobby/WatchPanel";
 // `formats` is which of the instant formats a tab shows; the tournament tab has
 // none, being the one place where games are arranged rather than sat down at.
 const LOBBY_TABS = [
-  { key: "tournaments", label: "Tournaments", icon: "🏆", formats: null },
-  { key: "spingo", label: "Spin n Go", icon: "🎡", formats: ["spingo"] },
-  { key: "sitngo", label: "Sit n Go", icon: "⚔️", formats: ["hu", "sixmax"] },
+  { key: "tournaments", label: "Tournaments", icon: "trophy", formats: null },
+  { key: "spingo", label: "Spin n Go", icon: "spin", formats: ["spingo"] },
+  { key: "sitngo", label: "Sit n Go", icon: "duel", formats: ["hu", "sixmax"] },
+  { key: "allinfold", label: "All In or Fold", icon: "shove", formats: ["allinfold"] },
 ];
 
 /**
@@ -33,6 +37,12 @@ const LOBBY_TABS = [
  * Kept here rather than inside the tab it belongs to, because you can sit down
  * and then go and read something else — and the game starts dealing whether or
  * not its tab is the one on screen.
+ *
+ * This is the walk-in, not the alarm. It only runs while the lobby is the page
+ * on screen, which is why GameStartAlert exists — it rings on the presence
+ * socket from anywhere in the app, including from here, a moment before this
+ * poll notices. Arriving at the table dismisses its banner, so the two read as
+ * one event.
  *
  * Strictly on the change from waiting to dealing. Sending you to the table
  * because you are *in* a running game is the mistake this used to make: it made
@@ -96,8 +106,17 @@ export default function LobbyPage() {
   // Opening a tournament now takes site staff or a club you help run, and the
   // button follows the same rule the server does.
   const [staffsAClub, setStaffsAClub] = useState(false);
-  const [tab, setTab] = useState("tournaments");
+  // Where you were last. Read once, when the page mounts: coming home from a
+  // table should land you back in the room you play in, and for anybody who
+  // plays one format that is every single time they leave a game.
+  const [tab, setTab] = useState(
+    () => tabToOpen(readStoredTab(), LOBBY_TABS.map((one) => one.key)),
+  );
   const activeTab = LOBBY_TABS.find((one) => one.key === tab) || LOBBY_TABS[0];
+  const openTab = useCallback((key) => {
+    setTab(key);
+    writeStoredTab(key);
+  }, []);
   const onClubsLoaded = useCallback((clubs) => {
     setStaffsAClub(organisesForAClub(clubs));
   }, []);
@@ -188,6 +207,11 @@ export default function LobbyPage() {
     }`}>
       <aside className="lg:w-72 shrink-0 space-y-4 lg:sticky lg:top-8 lg:self-start">
         <ProfileCard />
+        {/* Second, under your own name. It was last of eight, which on a phone
+            is a long way below the fold — and what is worth playing today is
+            the thing that decides what you open, so it has to be read before
+            the lobby rather than after it. */}
+        <MissionPanel />
         <RecoveryCodePanel />
         <StatsPanel />
         <CalotesPanel />
@@ -213,7 +237,7 @@ export default function LobbyPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === one.key}
-                onClick={() => setTab(one.key)}
+                onClick={() => openTab(one.key)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold
                             whitespace-nowrap transition-colors ${
                   tab === one.key
@@ -221,7 +245,13 @@ export default function LobbyPage() {
                     : "text-(--color-text-muted) hover:text-(--color-silver)"
                 }`}
               >
-                <span aria-hidden="true">{one.icon}</span>
+                {/* Gold on the tab you are looking at, so the strip says which
+                    room you are in without relying on the fill alone. */}
+                <Icon
+                  name={one.icon}
+                  className="w-4 h-4"
+                  tone={tab === one.key ? "gold" : "mono"}
+                />
                 {one.label}
               </button>
             ))}
@@ -245,8 +275,8 @@ export default function LobbyPage() {
                   title="Table sandbox — the felt with mock players, for layout work"
                   aria-label="Table sandbox"
                   className="btn-secondary w-8 h-8 rounded flex items-center justify-center
-                             text-sm transition-colors">
-                  🛠
+                             transition-colors">
+                  <Icon name="tools" className="w-4 h-4" />
                 </button>
               </>
             )}

@@ -213,6 +213,7 @@ class HandEngine:
         broadcast:      BroadcastFn,
         request_action: RequestActionFn,
         rabbit_hunting_enabled: bool = False,
+        all_in_or_fold: bool = False,
     ):
         self.players        = players
         self.dealer_pos     = dealer_pos % len(players)
@@ -223,6 +224,11 @@ class HandEngine:
         self.broadcast      = broadcast
         self.request_action = request_action
         self.rabbit_hunting_enabled = rabbit_hunting_enabled
+        # Push or fold, and nothing in between. The whole of the rule is below,
+        # in one line: a raise may only ever be the whole stack. Everything else
+        # about the format — four seats, fifteen blinds, a bounty on every head
+        # — is the tournament's business rather than the hand's.
+        self.all_in_or_fold = all_in_or_fold
 
         self.deck              = Deck()
         self.community_cards:  List[Card] = []
@@ -416,6 +422,11 @@ class HandEngine:
             # A stack too short for a full min-raise can still shove, so the
             # offer collapses to all-in instead of asking for chips it hasn't got.
             min_raise = min(self._street_bet + self._min_raise, max_raise)
+            if self.all_in_or_fold:
+                # The smallest raise is the biggest one. A client asking for
+                # anything between the two is clamped to it below, like every
+                # other number that arrives over a socket.
+                min_raise = max_raise
 
             valid = ["fold"]
             if can_check:

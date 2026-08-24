@@ -97,7 +97,10 @@ export default function GamePage() {
 
   // Cameras and microphones, kept in step with the table. Entirely separate
   // from the game: it reads the table, never writes to it.
-  useTableMedia(!sandbox && watching == null);
+  // On while watching too. A spectator's camera is the other half of being able
+  // to see the table's: watching without being seen is a one-way mirror, and the
+  // server now lets the rail into the mesh — see game/consumers.py.
+  useTableMedia(!sandbox);
 
   useEffect(() => {
     if (sandbox) return undefined;
@@ -354,6 +357,9 @@ export default function GamePage() {
         <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
           <span>Watching table {currentTableNumber ?? watching} — you are not in this hand.</span>
+          {/* The one control the rail gets. Being seen is a choice like it is
+              anywhere else, and off is where it starts. */}
+          <MediaControls />
           <button
             onClick={() => navigate(`/tournament/${id}`)}
             className="btn-secondary px-3 py-1 rounded text-xs font-semibold transition-colors"

@@ -216,6 +216,12 @@ export function reconcile(desired) {
   });
 
   desired.forEach((peer) => {
+    // Their name, whether or not they have a seat to read one off — a watcher
+    // has none, and the strip along the bottom of the felt needs one.
+    useMediaStore.getState().setPeer(peer.userId, {
+      name: peer.name || "",
+      watching: Boolean(peer.watching),
+    });
     // Only one side opens the connection. When both did, both declared their own
     // audio and video up front, and resolving the collision left the exchange
     // carrying two of each: one live pair and one dead pair. A video element

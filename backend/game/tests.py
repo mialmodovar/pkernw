@@ -756,9 +756,12 @@ class MediaSignallingTests(ConsumerTestBase):
             # Bea arrives and is told Ana is already there.
             await bea_socket.send_json_to({"type": "media_presence", "audio": True, "video": True})
             second_roster = await self._next_of_type(bea_socket, "media_roster")
-            self.assertEqual(
-                second_roster["peers"], [{"user_id": ana.id, "audio": True, "video": False}],
-            )
+            # Names and all, because not everybody in a roster has a seat to
+            # read a name off — see the rail, in SpectatorsOnCameraTests.
+            self.assertEqual(second_roster["peers"], [{
+                "user_id": ana.id, "name": ana.username,
+                "audio": True, "video": False, "watching": False,
+            }])
 
             # Ana hears about Bea; the other table hears nothing at all.
             announced = await self._next_of_type(ana_socket, "media_presence")
@@ -3016,3 +3019,153 @@ class IceConfigEndpointTests(APITestCase):
             self.client.get(reverse("ice-config")).status_code,
             status.HTTP_401_UNAUTHORIZED,
         )
+
+
+class SpectatorsOnCameraTests(ConsumerTestBase):
+    """The rail, in the mesh.
+
+    Watching a table meant seeing nobody and being seen by nobody: media was
+    switched off for a spectator on the client, the server refused anything they
+    sent, and there was no way to deliver a signal to them at all — they are
+    deliberately absent from the registry that carries hole cards, and that was
+    the only registry there was.
+    """
+
+    def _spectator(self, user, table=1):
+        from channels.testing import WebsocketCommunicator
+
+        socket = WebsocketCommunicator(
+            TournamentConsumer.as_asgi(),
+            f"/ws/tournament/{self.tournament.id}/?spectate=1&table={table}",
+        )
+        socket.scope["user"] = user
+        socket.scope["url_route"] = {"kwargs": {"tournament_id": str(self.tournament.id)}}
+        socket.scope["query_string"] = f"spectate=1&table={table}".encode()
+        return socket
+
+    def test_a_spectator_can_say_their_camera_is_on(self):
+        """And the table hears it. Before this the server dropped everything a
+        spectator sent, media included."""
+        ana = async_to_sync(sync_to_async(self._seat))("cam_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("cam_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            await watcher.send_json_to({"type": "media_presence", "audio": True, "video": True})
+            told = await self._next_of_type(seated, "media_presence")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return told
+
+        told = async_to_sync(scenario)()
+
+        self.assertEqual(told["user_id"], rail.id)
+        self.assertTrue(told["video"])
+        # And says which they are, since the felt has no seat to draw them at.
+        self.assertTrue(told["watching"])
+
+    def test_a_signal_reaches_somebody_on_the_rail(self):
+        """Down their own channel. A spectator is not in the registry that
+        carries hole cards and must never be."""
+        ana = async_to_sync(sync_to_async(self._seat))("sig_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("sig_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            # The watcher announces so the table knows they are there, then the
+            # seated player calls them.
+            await watcher.send_json_to({"type": "media_presence", "audio": False, "video": True})
+            await self._next_of_type(seated, "media_presence")
+            await seated.send_json_to({
+                "type": "media_signal", "to_user_id": rail.id,
+                "signal": {"description": {"type": "offer"}},
+            })
+            arrived = await self._next_of_type(watcher, "media_signal")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return arrived
+
+        arrived = async_to_sync(scenario)()
+
+        self.assertEqual(arrived["from_user_id"], ana.id)
+        self.assertEqual(arrived["signal"], {"description": {"type": "offer"}})
+
+    def test_and_the_other_way_round(self):
+        ana = async_to_sync(sync_to_async(self._seat))("sig2_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("sig2_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            await watcher.send_json_to({
+                "type": "media_signal", "to_user_id": ana.id,
+                "signal": {"description": {"type": "answer"}},
+            })
+            arrived = await self._next_of_type(seated, "media_signal")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return arrived
+
+        arrived = async_to_sync(scenario)()
+
+        self.assertEqual(arrived["from_user_id"], rail.id)
+
+    def test_a_spectator_still_cannot_touch_the_hand(self):
+        """The hole in the wall is exactly two messages wide."""
+        rail = async_to_sync(sync_to_async(self._user))("quiet_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            watcher = self._spectator(rail)
+            await watcher.connect()
+            await self._drain(watcher)
+            for message in (
+                {"type": "player_action", "action": "fold"},
+                {"type": "chat_message", "text": "hello"},
+                {"type": "sit_out", "value": True},
+                {"type": "throw_item", "item": "tomato", "to_user_id": 1},
+                {"type": "show_cards", "cards": [0, 1]},
+            ):
+                await watcher.send_json_to(message)
+            quiet = await watcher.receive_nothing(timeout=0.4)
+            await watcher.disconnect()
+            return quiet
+
+        self.assertTrue(async_to_sync(scenario)())
+
+    def test_the_roster_names_the_rail(self):
+        """A seated peer's name comes off the felt; a spectator has no seat to
+        read one from, so the roster carries it."""
+        from game.consumers import _media_peers_at, _media_presence
+
+        _media_presence[(self.tournament.id, 4242)] = {
+            "audio": False, "video": True, "table": 1,
+            "name": "Bea", "watching": True,
+        }
+        try:
+            peers = _media_peers_at(self.tournament.id, 1, exclude_user_id=1)
+        finally:
+            _media_presence.pop((self.tournament.id, 4242), None)
+
+        self.assertEqual(peers[0]["name"], "Bea")
+        self.assertTrue(peers[0]["watching"])

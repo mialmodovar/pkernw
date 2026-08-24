@@ -16,6 +16,7 @@ import { useCompactLayout } from "./useCompactLayout";
 import ChipStack from "./ChipStack";
 import HitEffect from "./HitEffect";
 import ChipFlight from "./ChipFlight";
+import WatchersStrip from "./WatchersStrip";
 import PositionMarker from "./PositionMarker";
 import positionLabels from "./tablePositions";
 import {
@@ -283,6 +284,10 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
           onCancel={() => setAiming(null)}
         />
       )}
+
+      {/* Whoever is watching, off the felt: they have no seat to be drawn at,
+          and drawing them nowhere is what made watching a one-way mirror. */}
+      <WatchersStrip compact={compact} />
 
       {/* A knockout GIF, over the middle of the table. Sits inside the frame
           so it covers the felt and not the whole page. */}

@@ -12,6 +12,7 @@ from tournaments import mystery
 from tournaments.seating import pick_free_seat, seat_returning_players
 from tournaments.bounties import BountyConfig, split_knockout
 
+from .button import button_index, next_big_blind
 from .engine.hand import HandEngine, cards_to_list
 from .finishers import DEFAULT_SOUND, pick_finisher
 from .levelclock import seconds_until_level_ends
@@ -52,7 +53,13 @@ class RuntimeTable:
     table_id: Optional[int] = None
     max_seats: int = 9
     players: List[EnginePlayer] = field(default_factory=list)
-    dealer_idx: int = 0
+    # Who paid the big blind last hand, by tournament-player id, and where they
+    # stood in that hand's order — the fallback for when they bust paying it.
+    # Never a seat: seats are handed out again every hand. The button is worked
+    # out from this rather than kept, so that the blinds move one player a hand
+    # whoever arrives in between. See game/button.py.
+    blind_player: Optional[int] = None
+    blind_index: int = 0
     hand_number: int = 0
 
 
@@ -1170,7 +1177,8 @@ class MultiTableTournamentCoordinator:
                 table_id=meta.get("id"),
                 max_seats=meta.get("max_seats", self.players_per_table),
                 players=players,
-                dealer_idx=0 if previous is None else min(previous.dealer_idx, max(0, len(players) - 1)),
+                blind_player=None if previous is None else previous.blind_player,
+                blind_index=0 if previous is None else previous.blind_index,
                 # A brand-new table resumes the tournament's numbering rather
                 # than restarting it: a process restart mid-tournament used to
                 # deal "hand 1" again, so the finish screen — which reads the
@@ -1231,9 +1239,16 @@ class MultiTableTournamentCoordinator:
         if len(players) < 2:
             return [], []
 
+        # Worked out before the hand rather than after it: "the next player
+        # along" is a question only this hand's seating can answer, and by the
+        # time the hand is over the seating has already been handed out again.
+        order = [player._tp_id for player in players]
+        table.blind_player = next_big_blind(order, table.blind_player, table.blind_index)
+        table.blind_index = order.index(table.blind_player)
+
         engine = HandEngine(
             players=players,
-            dealer_pos=table.dealer_idx % len(players),
+            dealer_pos=button_index(len(order), table.blind_index),
             small_blind=level["small_blind"],
             big_blind=level["big_blind"],
             ante=level["ante"],
@@ -1246,7 +1261,6 @@ class MultiTableTournamentCoordinator:
         self._open_side_bets(table)
         result = await engine.run()
         table.hand_number += 1
-        table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))
         table.players = players
         return (
             [player for player in result.busted_players if player.chips == 0],

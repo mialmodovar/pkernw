@@ -4,7 +4,7 @@ import { seatedEntries, totalPool } from "../game/prizePool";
 import { prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { tournamentFacts } from "./tournamentFacts";
-import { useCountdown } from "./useCountdown";
+import { useCountdown, useSecondsUntil } from "./useCountdown";
 
 const formatTime = (value) => (value
   ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
@@ -89,6 +89,7 @@ export default function TournamentCard({
   tournament: t, onJoin, onOpen, onOpenTable, onQuit, onDelete, onEdit, onRebuy,
 }) {
   const lateRegLeft = useCountdown(t.late_registration_seconds_left ?? null);
+  const startsInSeconds = useSecondsUntil(t.scheduled_start_at);
   const isFinished = t.status === "finished";
   const iWon = t.my_finish_position === 1;
   const buyInCents = t.buy_in_cents || 0;
@@ -123,6 +124,9 @@ export default function TournamentCard({
   // facts survive is tournamentFacts.js's judgement, and it is tested there.
   const facts = tournamentFacts(t, {
     startTime,
+    // How long until it starts, for anything near enough that the answer is
+    // "in two hours" rather than "at ten".
+    startsInSeconds,
     elapsed,
     lateRegSeconds: lateRegLeft,
     // When the pool has a column of its own, saying it again in words is

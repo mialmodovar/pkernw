@@ -6,6 +6,7 @@ import { DEFAULT_HANDS } from "./blindStructureDefaults";
 import { formatCoins } from "./buyIn";
 import {
   DEFAULT_PAID_PCT, bountyCentsFor, bountyPctOf, paidPct, payoutCurve, placesPaid,
+  shareExamples,
 } from "./payoutCurve";
 import {
   SPEEDS,
@@ -203,6 +204,9 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       if (data.auto_remove_offline_seconds > 0) setAutoRemoveOfflineSeconds(data.auto_remove_offline_seconds);
 
       const loaded = data.payout_structure || [];
+      // The share, where the tournament has one: it is the setting, and the
+      // structure is only what it came to at the field it had at the time.
+      if (data.payout_share_pct > 0) setPaidPctOfField(data.payout_share_pct);
       if (loaded.length > 0) {
         setPayoutRows(loaded);
         // The template's own field size, not whatever is currently typed into
@@ -250,6 +254,13 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
   const normalizedTimeBankRefillLevel = Math.min(Math.max(timeBankRefillLevel, 1), blindLevelCount || 1);
   // Generated from the share of the field unless somebody has taken the grid
   // over. One source of truth either way: this is what gets sent.
+  // What the share comes to as the field fills, rather than one number worked
+  // out from the cap. That was the bug: a fifth of a cap of a hundred read as
+  // "20 places paid" for a night five people would enter — see payoutCurve.js.
+  const examples = shareExamples(paidPctOfField, maxPlayers);
+  // The split to draw is the one a full house would get: it is the deepest the
+  // structure ever goes, so it shows the shape of the curve rather than the one
+  // place a fresh tournament starts on.
   const paidPlaces = placesPaid(maxPlayers, paidPctOfField);
   const payouts = customPayouts ? payoutRows : payoutCurve(paidPlaces);
   const payoutTotal = payouts.reduce((sum, row) => sum + Number(row.percentage || 0), 0);
@@ -361,6 +372,11 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       time_bank_refill_rule: timeBankEnabled ? timeBankRefillRule : "none",
       time_bank_refill_every_hands: timeBankEnabled && timeBankRefillRule === "hands" ? timeBankRefillEveryHands : null,
       time_bank_refill_level: timeBankEnabled && timeBankRefillRule === "blind_level" ? normalizedTimeBankRefillLevel : null,
+      // A share of the field when that is how it was set up: the server works
+      // the places out from who has actually registered, and keeps doing it —
+      // see tournaments/payouts.py. The grid sends a structure instead, which
+      // is what "by hand" means.
+      payout_share_pct: customPayouts ? 0 : paidPctOfField,
       payout_structure: payouts.map((row) => ({
         place: row.place,
         label: row.label,
@@ -384,7 +400,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
       // and the server refuses it regardless — see LOCKED_AFTER_CREATION.
       delete payload.buy_in_cents;
       delete payload.buy_in_coins;
-      delete payload.payout_structure;
+      // Not the payouts: the server takes those while a tournament is in its
+      // lobby, because nobody has played under them yet.
       delete payload.bounty_mode;
       delete payload.bounty_cents;
       delete payload.bounty_progressive_split_pct;
@@ -759,17 +776,22 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
           )}
         </div>
 
-        {/* Hidden while editing rather than disabled: the money is the deal
-            players joined on, and a greyed-out form still invites the argument
-            about why. The server refuses it either way. */}
-        {editing ? (
-          <p className="text-xs text-(--color-text-muted) panel-raised rounded-lg p-3">
-            Buy-in, payouts and bounties are fixed once a tournament is open —
-            they are what players signed up to. Delete it and make another if
-            those need to change.
-          </p>
-        ) : (
         <div className="panel-raised rounded-lg p-3 space-y-3">
+          {/* The money that has already been taken is hidden while editing
+              rather than disabled: it is the deal players joined on, and a
+              greyed-out field still invites the argument about why. How the
+              pool divides is a different thing — nobody has been paid, nobody
+              has busted, and a host who set the share up wrongly used to have
+              to delete the night and make it again. So that part stays. */}
+          {editing && (
+            <p className="text-xs text-(--color-text-muted)">
+              The buy-in and the bounties are fixed once a tournament is open —
+              they are what players signed up to. How the pool divides is still
+              only a plan until the first hand, so it can be changed here.
+            </p>
+          )}
+          {!editing && (
+          <>
           {/* One currency or the other, and no "off". A game that costs nothing
               is one nobody folds in — coins are the app's own, actually charged
               and actually paid back, and euros are a note for people who settle
@@ -920,6 +942,8 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
               </>
             )}
           </div>
+          </>
+          )}
 
           <div className="space-y-2">
             {/* What a host actually decides. The split follows from it, and the
@@ -942,16 +966,25 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
                   onChange={(e) => setPaidPctOfField(Number(e.target.value))}
                 />
                 <span className="w-24 text-right text-sm text-(--color-silver) tabular-nums">
-                  {customPayouts
-                    ? `${payouts.length} places`
-                    : `${paidPctOfField}% · ${paidPlaces} place${paidPlaces === 1 ? "" : "s"}`}
+                  {customPayouts ? `${payouts.length} places` : `${paidPctOfField}%`}
                 </span>
               </span>
             </label>
 
-            {/* What that comes to, at a glance, without opening anything. */}
+            {/* What that comes to, at a glance, without opening anything. The
+                places are not decided here: the share is, and it follows the
+                field until registration closes. Saying so plainly, with a few
+                points along the way, is the whole fix — a single number here
+                was a promise about a field that had not happened. */}
             {!customPayouts && (
               <p className="text-xs text-(--color-text-muted) leading-snug">
+                <span className="block text-(--color-silver)">
+                  {examples.map((one) => `${one.field} entrants pays ${one.places}`).join(" · ")}
+                </span>
+                <span className="block mt-0.5 mb-1 opacity-80">
+                  Grows with the field as people register, and stops when
+                  registration closes.
+                </span>
                 {payouts.map((row) => `${row.label} ${row.percentage}%`).join(" · ")}
                 {potCents > 0 && (
                   <span className="block mt-0.5">
@@ -1039,7 +1072,6 @@ export default function CreateTournamentForm({ onCancel, onCreate, editing = nul
             </div>
           </div>
         </div>
-        )}
 
         {!editing && (buyInCents > 0 || stakeCoins > 0) && (
           <p className="text-xs text-(--color-text-muted) leading-snug -mt-1">

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_PAID_PLACES, bountyCentsFor, bountyPctOf, paidPct, payoutCurve, placesPaid,
-} from "./payoutCurve";
+  MAX_PAID_PLACES, bountyCentsFor, bountyPctOf, paidPct, payoutCurve, placesPaid, shareExamples } from "./payoutCurve";
 
 describe("placesPaid", () => {
   it("is the share of the field, rounded to whole places", () => {
@@ -100,5 +99,32 @@ describe("bountyPctOf", () => {
 
   it("falls back to half for a tournament with no buy-in yet", () => {
     expect(bountyPctOf(0, 0)).toBe(50);
+  });
+});
+
+describe("shareExamples", () => {
+  // The form used to print one number, worked out from the player cap: 20% of a
+  // cap of 100 was "20 places paid" for a night five people would enter. There
+  // is no one number until registration closes, so it shows the shape instead.
+  it("says what the share comes to at a few field sizes", () => {
+    expect(shareExamples(20, 100)).toEqual([
+      { field: 5, places: 1 },
+      { field: 10, places: 2 },
+      { field: 20, places: 4 },
+      { field: 50, places: 10 },
+      { field: 100, places: 20 },
+    ]);
+  });
+
+  it("stops at the cap, because a bigger field cannot happen", () => {
+    expect(shareExamples(20, 12).map((one) => one.field)).toEqual([5, 10, 12]);
+  });
+
+  it("always shows the full house", () => {
+    expect(shareExamples(50, 9).map((one) => one.field)).toContain(9);
+  });
+
+  it("never pays nobody", () => {
+    expect(shareExamples(5, 10).every((one) => one.places >= 1)).toBe(true);
   });
 });

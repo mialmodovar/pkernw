@@ -105,6 +105,16 @@ class Tournament(models.Model):
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
     payout_structure = models.JSONField(default=list, blank=True)
+    # The share of the field that pays, when that is how the host set it up.
+    # Zero means the structure above was written out by hand and is left alone.
+    #
+    # It is kept as the intention rather than only its result, because the result
+    # depends on who turns up: twenty per cent is one place at five players and
+    # ten at fifty, and the structure is recomputed as the field grows until
+    # registration closes. Before this it was worked out once, at creation, from
+    # the player cap — so a tournament capped at a hundred paid twenty places to
+    # a field of five.
+    payout_share_pct = models.IntegerField(default=0)
     # Bounties come out of the buy-in, they are not charged on top of it: a €20
     # buy-in with a €10 bounty pays €10 into the prize pool and puts €10 on the
     # player's head. Nobody has to work out what a "€20 + €20" tournament costs.

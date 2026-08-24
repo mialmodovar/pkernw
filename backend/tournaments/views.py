@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from .absentees import drop_absent_registrations, seconds_until
 from .fixtures import describe as describe_fixture
+from .payoutbank import refresh_payouts
 from .fixturebank import open_due_fixtures, start_series, stop_series
 from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soon
 from .bounties import BountyConfig, starting_bounty_cents
@@ -249,6 +250,9 @@ def join_tournament(request, pk):
         time_bank_seconds_remaining=tournament.time_bank_seconds,
         bounty_cents=starting_bounty_cents(BountyConfig.from_tournament(tournament)),
     )
+    # One more in the field can be one more place paid — see payoutbank.py. A
+    # share of the field is only a share of the field if it follows it.
+    refresh_payouts(tournament)
     _start_due_scheduled_tournaments()
     return Response(
         {
@@ -501,6 +505,8 @@ def quit_tournament(request, pk):
     tp.delete()
     # Nothing was played, so a coin buy-in goes back where it came from.
     refund_entry(request.user, tournament)
+    # And the field is one smaller, which can be one place fewer.
+    refresh_payouts(tournament)
     return Response({"status": "unregistered"})
 
 

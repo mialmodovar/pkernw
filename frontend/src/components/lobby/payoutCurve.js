@@ -97,3 +97,25 @@ export function bountyPctOf(buyInCents, bountyCents) {
   if (!buyInCents) return 50;
   return Math.round((Math.max(0, bountyCents || 0) / buyInCents) * 100);
 }
+
+
+/**
+ * What a share of the field comes to, as the field fills.
+ *
+ * The share is the setting and the places are what it means, so the form has to
+ * show the second rather than only the first — and it cannot show one number,
+ * because there is no one number until registration closes. A few points along
+ * the way says it better than any single figure: "a fifth" is one place at five
+ * players and four at twenty.
+ *
+ * This is the bug it replaces. The form worked the places out from the player
+ * *cap*: twenty per cent of a cap of a hundred is twenty paid places, printed
+ * as fact, for a night five people would register for.
+ */
+export function shareExamples(pct, cap = MAX_PAID_PLACES) {
+  const ceiling = Math.max(2, Math.floor(cap || 0) || MAX_PAID_PLACES);
+  const fields = [5, 10, 20, 50].filter((field) => field <= ceiling);
+  // Always the cap itself, so a host can see where a full house lands.
+  if (!fields.includes(ceiling)) fields.push(ceiling);
+  return fields.map((field) => ({ field, places: placesPaid(field, pct) }));
+}

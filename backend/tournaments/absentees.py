@@ -32,6 +32,7 @@ from accounts.presence import forget, is_online, offline_seconds
 
 from .coinbank import refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
+from .payoutbank import refresh_payouts
 from .models import Tournament, TournamentPlayer
 
 # How long away is long enough, for each kind of game.
@@ -156,6 +157,8 @@ def drop_absent_registrations(now, here=None):
             # Whatever they paid comes back. They did not play.
             refund_entry(seat.user, tournament)
             _tidy_up(tournament, seat.user_id)
+            # A smaller field can be fewer places paid — see payoutbank.py.
+            refresh_payouts(tournament)
         forget(seat.user_id)
         dropped += 1
 

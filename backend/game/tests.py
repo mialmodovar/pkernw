@@ -3169,3 +3169,70 @@ class SpectatorsOnCameraTests(ConsumerTestBase):
 
         self.assertEqual(peers[0]["name"], "Bea")
         self.assertTrue(peers[0]["watching"])
+
+
+class ReturningPlayersSitAnywhereTests(TestCase):
+    """Where a rebuy puts somebody, once the table has been dealt again.
+
+    The report: several rebuys, the same seat every time, never between two
+    other players. Three things chose the lowest free number, and the rebalance
+    is the one that decided it — it sorts by seat and packs everybody up from
+    zero, and a returning player had just been given the highest free chair.
+    """
+
+    def _players(self, count, returning_index=None):
+        from game.engine.player import Player
+
+        players = []
+        for index in range(count):
+            player = Player(name=f"p{index}", chips=1000)
+            player._tp_id = index + 1
+            player._seat = index
+            player._table_number = 1
+            player.is_eliminated = False
+            player._waiting_for_hand = index == returning_index
+            players.append(player)
+        return players
+
+    def test_the_order_is_unchanged_when_nobody_is_coming_back(self):
+        from tournaments.seating import seat_returning_players
+
+        players = self._players(4)
+
+        self.assertEqual(seat_returning_players(players, []), players)
+
+    def test_a_returning_player_does_not_always_land_at_the_end(self):
+        from tournaments.seating import seat_returning_players
+
+        places = set()
+        for _ in range(200):
+            players = self._players(5, returning_index=4)
+            returning = [one for one in players if one._waiting_for_hand]
+            seated = seat_returning_players(players, returning)
+            places.add(seated.index(returning[0]))
+
+        # The bug was one place, every time, and it was the last one.
+        self.assertGreater(len(places), 2)
+        self.assertNotEqual(places, {4})
+        # And "in the middle" is a place it actually reaches.
+        self.assertTrue(places & {1, 2, 3})
+
+    def test_everybody_else_keeps_their_order(self):
+        from tournaments.seating import seat_returning_players
+
+        players = self._players(5, returning_index=2)
+        returning = [one for one in players if one._waiting_for_hand]
+        others = [one for one in players if not one._waiting_for_hand]
+
+        for _ in range(50):
+            seated = seat_returning_players(players, returning)
+            self.assertEqual([one for one in seated if not one._waiting_for_hand], others)
+
+    def test_a_seat_is_drawn_from_the_chairs_that_are_free(self):
+        """What _seat_waiting_player does now: any free chair, not the lowest."""
+        from tournaments.seating import pick_free_seat
+
+        drawn = {pick_free_seat({0, 1, 2}, 8) for _ in range(200)}
+
+        self.assertTrue(drawn <= {3, 4, 5, 6, 7})
+        self.assertGreater(len(drawn), 1)

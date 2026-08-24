@@ -173,12 +173,16 @@ class TournamentCreationTests(APITestCase):
 		response = self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
 
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-		self.assertEqual(response.data["seat"], 9)
+		# The second table, at whichever of its chairs the draw gave them: the
+		# seat is drawn from the free ones rather than counted off from zero, so
+		# which chair is not a fact about the arithmetic any more. See
+		# tournaments/seating.py.
 		self.assertEqual(response.data["table_number"], 2)
-		self.assertEqual(response.data["seat_at_table"], 0)
+		self.assertIn(response.data["seat"], range(9, 18))
+		self.assertEqual(response.data["seat_at_table"], response.data["seat"] % 9)
 		joined_player = tournament.players.get(user=joiner)
 		self.assertEqual(joined_player.table.table_number, 2)
-		self.assertEqual(joined_player.seat_at_table, 0)
+		self.assertEqual(joined_player.seat_at_table, response.data["seat"] % 9)
 
 	def test_break_level_requires_minute_duration(self):
 		response = self.client.post(
@@ -6994,3 +6998,98 @@ class PayoutsFollowTheFieldTests(APITestCase):
 		)
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SeatingTheReturningTests(TestCase):
+	"""Which chair somebody gets when they sit down.
+
+	Reported from a test night: a player rebought several times and sat in the
+	same seat every time. Three things picked the lowest free number — joining,
+	coming back, and the rebalance that packs everybody up from zero — and
+	together they put a returning player at the end of the row, always.
+	"""
+
+	class Rng:
+		"""A dice that says what it is told to."""
+
+		def __init__(self, *answers):
+			self.answers = list(answers)
+
+		def choice(self, options):
+			return options[self.answers.pop(0) % len(options)]
+
+		def randint(self, low, high):
+			return min(high, max(low, self.answers.pop(0)))
+
+	def test_the_free_seats_are_the_ones_nobody_is_in(self):
+		from tournaments.seating import free_seats
+
+		self.assertEqual(free_seats({0, 2}, 5), [1, 3, 4])
+		self.assertEqual(free_seats({}, 3), [0, 1, 2])
+		self.assertEqual(free_seats({0, 1}, 2), [])
+
+	def test_a_seat_is_drawn_rather_than_counted_off(self):
+		from tournaments.seating import pick_free_seat
+
+		self.assertEqual(pick_free_seat({0, 2}, 5, rng=self.Rng(1)), 3)
+		self.assertEqual(pick_free_seat({0, 2}, 5, rng=self.Rng(2)), 4)
+
+	def test_a_full_table_has_no_seat_to_give(self):
+		from tournaments.seating import pick_free_seat
+
+		self.assertIsNone(pick_free_seat({0, 1, 2}, 3, rng=self.Rng(0)))
+
+	def test_over_many_draws_it_is_not_always_the_same_chair(self):
+		"""The bug, said as a property."""
+		from tournaments.seating import pick_free_seat
+
+		drawn = {pick_free_seat({0, 1}, 8) for _ in range(200)}
+
+		self.assertGreater(len(drawn), 1)
+		self.assertTrue(drawn <= {2, 3, 4, 5, 6, 7})
+
+	def test_somebody_coming_back_can_land_in_the_middle(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c", "d"]
+
+		seated = seat_returning_players(order, ["c"], rng=self.Rng(1))
+
+		self.assertEqual(seated, ["a", "c", "b", "d"])
+
+	def test_nobody_else_is_moved_around_them(self):
+		"""A player who has been sitting there all night does not change places
+		because somebody else rebought."""
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c", "d"]
+
+		seated = seat_returning_players(order, ["a"], rng=self.Rng(2))
+
+		self.assertEqual([one for one in seated if one != "a"], ["b", "c", "d"])
+
+	def test_the_ends_are_chairs_too(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c"]
+
+		self.assertEqual(seat_returning_players(order, ["a"], rng=self.Rng(0)), ["a", "b", "c"])
+		self.assertEqual(seat_returning_players(order, ["a"], rng=self.Rng(9)), ["b", "c", "a"])
+
+	def test_a_table_with_nobody_returning_is_left_exactly_as_it_is(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c"]
+
+		self.assertEqual(seat_returning_players(order, [], rng=self.Rng()), order)
+		self.assertEqual(seat_returning_players(order, ["z"], rng=self.Rng()), order)
+
+	def test_over_many_returns_the_seat_moves_around(self):
+		from tournaments.seating import seat_returning_players
+
+		places = set()
+		for _ in range(200):
+			seated = seat_returning_players(["a", "b", "c", "d"], ["d"])
+			places.add(seated.index("d"))
+
+		self.assertGreater(len(places), 2)

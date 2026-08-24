@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from tournaments import mystery
+from tournaments.seating import pick_free_seat, seat_returning_players
 from tournaments.bounties import BountyConfig, split_knockout
 
 from .engine.hand import HandEngine, cards_to_list
@@ -990,7 +991,9 @@ class MultiTableTournamentCoordinator:
 
         player._table_number = table.table_number
         taken = {seated._seat for seated in table.players}
-        free = next((seat for seat in range(table.max_seats) if seat not in taken), None)
+        # Drawn rather than the lowest free one, which is always the far end of
+        # a table that has been packed up from zero — see tournaments/seating.py.
+        free = pick_free_seat(taken, table.max_seats)
         if free is not None:
             player._seat = free
 
@@ -1089,6 +1092,20 @@ class MultiTableTournamentCoordinator:
             return
 
         active_players.sort(key=lambda item: (item._table_number, item._seat, item._tp_id))
+        # Everybody keeps their place relative to everybody else, and whoever has
+        # just bought back in goes in at a random point rather than on the end.
+        #
+        # This is where the reported bug actually lived: the sort above is the
+        # order the seats are handed out in below, and a returning player was
+        # given the highest free chair a moment earlier — so they sorted last,
+        # every time, and sat in the same place every time. Nobody who has been
+        # sitting there all night moves because somebody else came back.
+        returning = [
+            player for player in active_players
+            if getattr(player, "_waiting_for_hand", False)
+        ]
+        if returning:
+            active_players = seat_returning_players(active_players, returning)
         required_tables = max(1, ((len(active_players) - 1) // self.players_per_table) + 1)
         base_size, remainder = divmod(len(active_players), required_tables)
         target_sizes = [base_size + (1 if index < remainder else 0) for index in range(required_tables)]

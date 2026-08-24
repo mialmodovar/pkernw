@@ -12,6 +12,7 @@ from datetime import timedelta
 from .absentees import drop_absent_registrations, seconds_until
 from .fixtures import describe as describe_fixture
 from .payoutbank import refresh_payouts
+from .seating import pick_free_seat
 from .fixturebank import open_due_fixtures, start_series, stop_series
 from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soon
 from .bounties import BountyConfig, starting_bounty_cents
@@ -241,7 +242,12 @@ def join_tournament(request, pk):
         return Response({"error": "Not enough coins"}, status=status.HTTP_400_BAD_REQUEST)
 
     taken_seats = set(tournament.players.values_list("seat", flat=True))
-    next_seat = next(s for s in range(tournament.max_players) if s not in taken_seats)
+    # Drawn rather than counted off from zero. The lowest free number is the one
+    # that just came free, so somebody who left and came back was handed their
+    # own chair straight back — see tournaments/seating.py.
+    next_seat = pick_free_seat(taken_seats, tournament.max_players)
+    if next_seat is None:
+        return Response({"error": "Tournament is full"}, status=status.HTTP_400_BAD_REQUEST)
     table, seat_at_table = _get_table_assignment(tournament, next_seat)
 
     tp = TournamentPlayer.objects.create(

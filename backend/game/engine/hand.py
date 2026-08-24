@@ -568,6 +568,14 @@ class HandEngine:
                 "valid_actions": valid,
                 "pot":           self._pot_total() - self._uncovered_bet(),
                 "street":        self._street_name,
+                # The biggest bet on this street. What it tells a client is
+                # whether anybody has actually raised: before the flop the big
+                # blind is a bet nobody chose, so a pot standing at one blind is
+                # an unopened pot, and the raise buttons are priced in blinds
+                # rather than in shares of it. Sent rather than inferred — the
+                # client can only guess at it from the minimum raise, and a
+                # guess about what a button costs is not good enough.
+                "street_bet":    self._street_bet,
             }
 
             action, amount = await self.request_action(p, context)

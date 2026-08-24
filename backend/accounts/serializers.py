@@ -167,17 +167,44 @@ class DisplayNameSerializer(serializers.Serializer):
         return name
 
 
+class BetSizesField(serializers.ListField):
+    """The raise buttons somebody wants above their slider.
+
+    Three at most, because the row has four slots and one of them is all-in,
+    and positive because a button that raises by nothing is not a button. Held
+    to two decimal places: these are read off a button, not calculated with.
+    """
+
+    child = serializers.FloatField(min_value=0.1, max_value=1000)
+
+    def __init__(self, **kwargs):
+        # In the constructor rather than as a class attribute: ListField reads
+        # its length limits from the arguments it was built with, and a
+        # class-level max_length is quietly ignored — which is a validation rule
+        # that looks present and is not.
+        kwargs.setdefault("max_length", 3)
+        kwargs.setdefault("allow_empty", True)
+        super().__init__(**kwargs)
+
+
 class PreferencesUpdateSerializer(serializers.Serializer):
     """How this player wants a table to read.
 
-    One flag so far. Spelled out rather than taken as a free blob: what the
-    client sends ends up in a JSON column, and a column that accepts anything is
-    one nothing can be assumed about later.
+    Spelled out rather than taken as a free blob: what the client sends ends up
+    in a JSON column, and a column that accepts anything is one nothing can be
+    assumed about later.
     """
 
     # Chips or big blinds. A stack of 12,400 and a stack of 31bb are the same
     # stack, and which one a player thinks in is a habit, not a table setting.
-    show_bb = serializers.BooleanField()
+    show_bb = serializers.BooleanField(required=False)
+
+    # What a standard open is, in blinds, and what a standard bet is, as a share
+    # of the pot. One host's idea of either has nothing to do with anybody
+    # else's game, so they live on the account — see betPresets.js for which of
+    # the two a given moment is priced in.
+    bet_sizes_preflop = BetSizesField(required=False)
+    bet_sizes_postflop = BetSizesField(required=False)
 
 
 class ThemeUpdateSerializer(serializers.Serializer):

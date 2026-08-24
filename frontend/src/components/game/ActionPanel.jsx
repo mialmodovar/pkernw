@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { raiseLabel, turnSlots, waitingSlots } from "./actionSlots";
 import { BUTTON_SIZE } from "./betBarSizing";
+import { betPresets } from "./betPresets";
 import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
@@ -211,7 +212,9 @@ export default function ActionPanel({
 }) {
   // `bare` is the form used inside a FloatingPanel, which draws the frame itself.
   const shell = bare ? "" : "panel rounded-lg shadow-lg shadow-black/50";
-  const { actionOnSeat, actionContext, showBB, level, players, handNumber, holeCards } = useGameStore();
+  const {
+    actionOnSeat, actionContext, showBB, level, players, handNumber, holeCards, betSizes,
+  } = useGameStore();
   const [preselect, setPreselect] = useState(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
   const [raiseText, setRaiseText] = useState(null); // non-null only while typing
@@ -433,9 +436,14 @@ export default function ActionPanel({
   };
 
   // Touch targets for the slider: dragging a 4px rail with a thumb is hopeless.
+  //
+  // Half a blind a press, which is what the wheel already moves — see
+  // notchChips in wheelBet.js. It used to be the slider's own step, a tenth of
+  // a blind, so a button press moved the raise by an amount nobody bets in and
+  // getting anywhere took twenty of them.
   const nudge = (direction) => {
     setRaiseText(null);
-    setRaiseAmount(clampChips(toChips(fromChips(raiseAmount) + direction * sliderStep)));
+    setRaiseAmount(clampChips(raiseAmount + direction * notchChips(bb, minRaise, maxRaise)));
   };
 
   // The text field holds raw input while typing and only clamps on commit, so
@@ -454,12 +462,23 @@ export default function ActionPanel({
   // amount on the Raise button looked stuck.
   const sliderStep = useBBControls ? 0.1 : 1;
 
-  const presets = [
-    ...(ctx.street === "preflop"
-      ? [2, 2.5, 3.5].map((bbs) => ({ label: `${bbs}bb`, chips: clampChips(Math.round(bbs * bb)) }))
-      : [25, 40, 75].map((pct) => ({ label: `${pct}%`, chips: clampChips(Math.round((ctx.pot || 0) * pct / 100)) }))),
-    { label: "All in", chips: maxRaise, emphasis: true },
-  ];
+  // Blinds for a pot nobody has opened and shares of it for one somebody has —
+  // before the flop as well as after, which is the half that was missing. The
+  // sizes are this player's own. See betPresets.js.
+  const presets = betPresets({
+    street: ctx.street,
+    // Absent from an older server, where zero means "unopened" and the
+    // buttons fall back to being priced in blinds — which is what they did
+    // before any of this.
+    streetBet: ctx.street_bet ?? 0,
+    toCall: ctx.to_call || 0,
+    pot: ctx.pot || 0,
+    bb,
+    maxRaise,
+    preflopBB: betSizes.preflop,
+    postflopPct: betSizes.postflop,
+    clamp: clampChips,
+  });
 
   const armedLabel = armed && armed[0].toUpperCase() + armed.slice(1);
 

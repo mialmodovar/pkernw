@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
+import { DEFAULT_POSTFLOP_PCT, DEFAULT_PREFLOP_BB, cleanSizes } from "../components/game/betPresets";
 import { formatBounty } from "../components/game/formatMoney";
 import { drawnFrom } from "../components/game/mysteryEnvelopes";
 
@@ -280,14 +281,34 @@ const useGameStore = create((set) => ({
    * setting follow you to another browser. When it has none, the preference
    * picked on this device is pushed up rather than thrown away.
    */
+  // The raise buttons, as this player wants them: blinds before the flop and
+  // shares of the pot after it — see components/game/betPresets.js. Kept on the
+  // account rather than the browser: what somebody thinks a standard open is
+  // follows them to another machine.
+  betSizes: { preflop: DEFAULT_PREFLOP_BB, postflop: DEFAULT_POSTFLOP_PCT },
+  setBetSizes: (patch) => set((s) => {
+    const next = {
+      preflop: cleanSizes(patch.preflop ?? s.betSizes.preflop, DEFAULT_PREFLOP_BB),
+      postflop: cleanSizes(patch.postflop ?? s.betSizes.postflop, DEFAULT_POSTFLOP_PCT),
+    };
+    api.patch("/auth/me/preferences/", {
+      bet_sizes_preflop: next.preflop, bet_sizes_postflop: next.postflop,
+    }).catch(() => {});
+    return { betSizes: next };
+  }),
+
   hydratePreferences: (preferences) => set((s) => {
+    const sizes = {
+      preflop: cleanSizes(preferences?.bet_sizes_preflop, DEFAULT_PREFLOP_BB),
+      postflop: cleanSizes(preferences?.bet_sizes_postflop, DEFAULT_POSTFLOP_PCT),
+    };
     const stored = preferences?.show_bb;
     if (typeof stored === "boolean") {
       writeStoredFlag(SHOW_BB_KEY, stored);
-      return { showBB: stored };
+      return { showBB: stored, betSizes: sizes };
     }
     if (s.showBB) api.patch("/auth/me/preferences/", { show_bb: true }).catch(() => {});
-    return {};
+    return { betSizes: sizes };
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
   // Keep your own cards face down until you look at them. Off by default —

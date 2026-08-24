@@ -19,14 +19,10 @@ export default function HoleCards({
   hideUntilHover = false, size = "seat", onShowCards = null,
   showDeferred = false, pendingShow = null, onCancelShow = null,
 }) {
-  // Which cards you have picked but not yet asked to show, by position.
-  //
-  // Only two situations reach this now. Between hands, where showing is
-  // immediate and cannot be taken back, so it takes a second press. And with
-  // the hand covered, where a press is also the gesture for peeking and one
-  // stray thumb must not put an ace on the felt. While a hand is live and
-  // visible, a press asks directly: nothing is revealed until the hand ends and
-  // pressing again takes it back, so there is nothing to confirm.
+  // Which cards have been picked but not yet asked about. Nothing reaches this
+  // any more — a press asks — and it is kept because the bar in the action
+  // panel still sends a pair at once, and because a card can be picked while
+  // there is nobody to offer it to.
   const [picked, setPicked] = useState([]);
 
   useEffect(() => {
@@ -80,12 +76,14 @@ export default function HoleCards({
     // until the hand is over and pressing again takes it back. The immediate
     // case below keeps its second press, because a card turned over now cannot
     // be un-turned.
-    // Except where the cards are covered: there a press is also the gesture for
-    // peeking at your own hand — the comment below on `picked` is right about
-    // that — so one stray thumb would put an ace on the felt. Cover mode keeps
-    // both presses.
-    if (showDeferred && onShowCards && !hideUntilHover) {
-      onShowCards(nextPending([...waiting], index));
+    // One press, every time. It used to take two — pick the card, then press a
+    // pill above it — and the second one is the step nobody finds. While the
+    // hand is live nothing is revealed until it ends and pressing again takes
+    // it back, so there is nothing to confirm; between hands the reveal is
+    // immediate, which is a real cost, but it is the cost of showing your own
+    // cards after a hand is over and it is what was asked for.
+    if (onShowCards) {
+      onShowCards(showDeferred ? nextPending([...waiting], index) : [index]);
       return;
     }
     setPicked((current) => (
@@ -112,13 +110,11 @@ export default function HoleCards({
         ? `${card} is picked — press Show, or click it again to put it back`
         : waiting.has(position)
           ? `${card} goes face up when the hand ends — click again to take it back`
-          : showDeferred && !hideUntilHover
+          : showDeferred
             ? `Show ${card} when the hand ends`
-            : `Pick ${card} to show the table`}
+            : `Show ${card} now`}
       aria-pressed={chosen(position)}
-      aria-label={showDeferred && !hideUntilHover
-        ? `Show ${card} when the hand ends`
-        : `Pick ${card} to show the table`}
+      aria-label={showDeferred ? `Show ${card} when the hand ends` : `Show ${card} now`}
       className={`block rounded transition-transform cursor-pointer
                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-highlight)
                   ${chosen(position) ? "-translate-y-[18%]" : "hover:-translate-y-[12%]"}`}

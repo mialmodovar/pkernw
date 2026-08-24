@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Suit } from "../game/PlayingCard";
+import BetSizeSettings from "./BetSizeSettings";
 import { deckFace, parseCard } from "../game/cardStyles";
 import Icon from "../icons/Icon";
 import useGameStore from "../../store/gameStore";
@@ -282,6 +283,8 @@ export default function ThemeSettings({ onClose }) {
           Your two cards sit face down and lift when you point at them — for
           playing with somebody looking over your shoulder.
         </p>
+
+        <BetSizeSettings />
       </div>
 
       {/* One section for the deck rather than two.

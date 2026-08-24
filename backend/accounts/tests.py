@@ -1848,3 +1848,55 @@ class GoogleIdentityMovesTests(APITestCase):
 		response = self._link_as(real)
 
 		self.assertEqual(response.data["moved_from"], "")
+
+
+class BetSizePreferenceTests(APITestCase):
+	"""The raise buttons, kept on the account.
+
+	What a host thinks a standard open is has nothing to do with anybody else's
+	game, and a preference held in one browser is one that does not follow you to
+	the phone.
+	"""
+
+	def setUp(self):
+		self.user = User.objects.create_user(username="sizes_ana", password="secret123")
+		self.client.force_authenticate(self.user)
+
+	def _save(self, **payload):
+		return self.client.patch(reverse("update_preferences"), payload, format="json")
+
+	def test_the_two_lists_are_saved(self):
+		response = self._save(bet_sizes_preflop=[2, 3, 4.5], bet_sizes_postflop=[33, 66, 100])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		preferences = Profile.objects.get(user=self.user).preferences
+		self.assertEqual(preferences["bet_sizes_preflop"], [2, 3, 4.5])
+		self.assertEqual(preferences["bet_sizes_postflop"], [33, 66, 100])
+
+	def test_one_can_be_changed_without_sending_the_other(self):
+		"""Merged, like every other preference: an older client that has never
+		heard of one of these must not wipe it."""
+		self._save(bet_sizes_preflop=[2, 3], bet_sizes_postflop=[50])
+
+		self._save(show_bb=True)
+
+		preferences = Profile.objects.get(user=self.user).preferences
+		self.assertEqual(preferences["bet_sizes_preflop"], [2, 3])
+		self.assertTrue(preferences["show_bb"])
+
+	def test_four_buttons_are_refused_because_the_row_has_three(self):
+		response = self._save(bet_sizes_preflop=[2, 3, 4, 5])
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_a_size_of_nothing_is_refused(self):
+		"""A button that raises by nothing is not a button."""
+		self.assertEqual(self._save(bet_sizes_postflop=[0]).status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertEqual(self._save(bet_sizes_postflop=[-5]).status_code, status.HTTP_400_BAD_REQUEST)
+
+	def test_they_come_back_with_the_account(self):
+		self._save(bet_sizes_preflop=[2.5])
+
+		me = self.client.get(reverse("me"))
+
+		self.assertEqual(me.data["profile"]["preferences"]["bet_sizes_preflop"], [2.5])

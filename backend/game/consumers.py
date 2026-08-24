@@ -290,8 +290,14 @@ def _db_open_mystery(tournament_id, draws):
         envelopes = mystery.envelope_amounts(pool, draws)
 
         tournament.mystery_envelopes = envelopes
+        # And what there ever was, written once and never touched again: the
+        # difference between the two is what has been drawn, which is what the
+        # board could not show.
+        tournament.mystery_cut = list(envelopes)
         tournament.mystery_opened_at = timezone.now()
-        tournament.save(update_fields=["mystery_envelopes", "mystery_opened_at"])
+        tournament.save(update_fields=[
+            "mystery_envelopes", "mystery_cut", "mystery_opened_at",
+        ])
         return envelopes
 
 
@@ -1202,6 +1208,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             paid_places=len(tournament.payout_structure or []),
             mystery_release=tournament.mystery_release,
             mystery_envelopes=list(tournament.mystery_envelopes or []),
+            mystery_cut=list(tournament.mystery_cut or []),
             mystery_opened=tournament.mystery_opened_at is not None,
             mystery_winner_keeps=tournament.mystery_winner_keeps,
             all_in_or_fold=tournament.format == "allinfold",

@@ -6693,3 +6693,83 @@ class EditingAScheduledNightTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
 		self.tournament.refresh_from_db()
 		self.assertEqual(len(self.tournament.payout_structure), 3)
+
+
+class MysteryBoardVisibilityTests(TestCase):
+	"""What the table can see of the pool once it is cut.
+
+	How many envelopes were left was on screen all game; which ones had gone
+	was not — so "is the big one still out there", which is the question a
+	mystery bounty tournament is played on, had no answer anywhere. The two
+	lists are what answers it: what the pool was cut into, and what is still in
+	it.
+	"""
+
+	def test_the_cut_is_written_down_beside_what_is_left(self):
+		from game.coordinator import MultiTableTournamentCoordinator as Coordinator
+
+		coordinator = Coordinator.__new__(Coordinator)
+		coordinator._mystery_envelopes = [600, 300, 100]
+		coordinator._mystery_cut = [1200, 600, 300, 100]
+		coordinator._mystery_opened = True
+		coordinator.mystery_release = "itm"
+
+		class Bounty:
+			is_mystery = True
+		coordinator.bounty = Bounty()
+
+		payload = coordinator._mystery_payload()
+
+		self.assertEqual(payload["cut"], [1200, 600, 300, 100])
+		self.assertEqual(payload["left"], [600, 300, 100])
+		# And the numbers that were already there still are.
+		self.assertEqual(payload["envelopes_left"], 3)
+		self.assertEqual(payload["top_left_cents"], 600)
+
+	def test_a_row_that_has_never_opened_carries_no_cut(self):
+		tournament = Tournament.objects.create(
+			host=User.objects.create_user(username="cut_host", password="secret123"),
+			name="Sealed", status="lobby", bounty_mode="mystery", bounty_cents=250,
+			buy_in_cents=500,
+		)
+
+		self.assertEqual(tournament.mystery_cut, [])
+
+	def test_opening_the_pool_records_what_it_was_cut_into(self):
+		"""The row is the only copy of the pool, and now of what it was."""
+		from asgiref.sync import async_to_sync
+
+		from game.consumers import _db_open_mystery
+
+		host = User.objects.create_user(username="cut_host2", password="secret123")
+		tournament = Tournament.objects.create(
+			host=host, name="Cut", status="running", bounty_mode="mystery",
+			bounty_cents=250, buy_in_cents=500,
+		)
+		TournamentPlayer.objects.create(tournament=tournament, user=host, seat=0, chips=1000)
+
+		envelopes = async_to_sync(_db_open_mystery)(tournament.id, 3)
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.mystery_cut, envelopes)
+		self.assertEqual(tournament.mystery_envelopes, envelopes)
+		self.assertGreater(len(envelopes), 0)
+
+	def test_the_cut_does_not_change_as_envelopes_are_drawn(self):
+		from asgiref.sync import async_to_sync
+
+		from game.consumers import _db_open_mystery, _db_persist_mystery
+
+		host = User.objects.create_user(username="cut_host3", password="secret123")
+		tournament = Tournament.objects.create(
+			host=host, name="Drawn", status="running", bounty_mode="mystery",
+			bounty_cents=250, buy_in_cents=500,
+		)
+		TournamentPlayer.objects.create(tournament=tournament, user=host, seat=0, chips=1000)
+		envelopes = async_to_sync(_db_open_mystery)(tournament.id, 3)
+
+		async_to_sync(_db_persist_mystery)(tournament.id, envelopes[1:])
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.mystery_cut, envelopes)
+		self.assertEqual(tournament.mystery_envelopes, envelopes[1:])

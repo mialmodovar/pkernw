@@ -130,6 +130,12 @@ class Tournament(models.Model):
     # hand out a pool twice — the list on the row is the pool, and there is no
     # copy of it anywhere else.
     mystery_envelopes = models.JSONField(default=list, blank=True)
+    # Every envelope the pool was cut into, written once when they open and
+    # never touched again. The list above is what is left; this is what there
+    # ever was, and the difference between the two is what has been drawn —
+    # which is the half of the board a player could not see: how many are left
+    # was on screen all game, which ones had gone was not.
+    mystery_cut = models.JSONField(default=list, blank=True)
     # When they opened. Null while they are still sealed; the flag rather than
     # an empty list, because a pool that has been drawn down to nothing is also
     # an empty list and the two mean opposite things.

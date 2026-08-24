@@ -3,6 +3,7 @@ import { create } from "zustand";
 import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
 import { formatBounty } from "../components/game/formatMoney";
+import { drawnFrom } from "../components/game/mysteryEnvelopes";
 
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
@@ -360,10 +361,14 @@ const useGameStore = create((set) => ({
           // and the prize back rather than a table with no stakes on it.
           fast: data.fast ?? s.fast,
           // The mystery board, for the same reason. Merged rather than
-          // replaced: the snapshot knows what is left on the board, and the
-          // opening broadcast knows the envelopes it was cut into — a reload
-          // must not lose the second by arriving with the first. `announcement`
-          // is deliberately not revived; the opening plays once, when it opens.
+          // replaced: `announcement` is deliberately not revived, since the
+          // opening plays once, when it opens.
+          //
+          // The two lists come whole from the snapshot — what the pool was cut
+          // into and what is still in it — so a reload gets the same board as
+          // everybody else rather than a count with no list behind it. What has
+          // been drawn is the difference between them; while the table is live
+          // each knockout says what it drew and is appended instead.
           ...(data.mystery
             ? {
               mystery: {
@@ -374,6 +379,12 @@ const useGameStore = create((set) => ({
                 topLeftCents: data.mystery.top_left_cents,
                 reason: s.mystery?.reason ?? data.mystery.release ?? null,
                 announcement: null,
+                ...(data.mystery.cut?.length
+                  ? {
+                    envelopes: data.mystery.cut,
+                    drawn: drawnFrom(data.mystery.cut, data.mystery.left || []),
+                  }
+                  : {}),
               },
             }
             : {}),
@@ -863,6 +874,11 @@ const useGameStore = create((set) => ({
                   envelopesLeft: data.mystery.envelopes_left,
                   poolLeftCents: data.mystery.pool_left_cents,
                   topLeftCents: data.mystery.top_left_cents,
+                  // Which one went, so the board can show what is left rather
+                  // than only how many. Kept as the amounts drawn in order,
+                  // because envelopes repeat and a draw takes one of them —
+                  // see mysteryEnvelopes.js.
+                  drawn: [...(s.mystery?.drawn || []), data.mystery.envelope_cents],
                   opened: true,
                 },
               }
@@ -884,6 +900,7 @@ const useGameStore = create((set) => ({
           mystery: {
             opened: true,
             envelopes: data.envelopes || [],
+            drawn: [],
             poolCents: data.pool_cents || 0,
             poolLeftCents: data.pool_cents || 0,
             topCents: data.top_cents || 0,

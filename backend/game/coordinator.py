@@ -115,6 +115,7 @@ class MultiTableTournamentCoordinator:
         paid_places: int = 0,
         mystery_release: str = "",
         mystery_envelopes: Optional[List[int]] = None,
+        mystery_cut: Optional[List[int]] = None,
         mystery_opened: bool = False,
         mystery_winner_keeps: bool = False,
         all_in_or_fold: bool = False,
@@ -160,6 +161,10 @@ class MultiTableTournamentCoordinator:
         self.paid_places = max(0, paid_places or 0)
         self.mystery_release = mystery.clean_release(mystery_release)
         self._mystery_envelopes: List[int] = list(mystery_envelopes or [])
+        # Every envelope the pool was cut into. The list above is what is left;
+        # this one does not change, and the difference between them is what has
+        # been drawn — which is the half of the board nobody could see.
+        self._mystery_cut: List[int] = list(mystery_cut or mystery_envelopes or [])
         self._mystery_opened = bool(mystery_opened)
         # One envelope per head rather than one per knockout — see
         # mystery.envelope_count. The extra one is never drawn and goes to the
@@ -874,6 +879,16 @@ class MultiTableTournamentCoordinator:
             "pool_left_cents": sum(self._mystery_envelopes),
             "top_left_cents": max(self._mystery_envelopes, default=0),
             "release": self.mystery_release,
+            # Both lists, so a table can show what is out there and what has
+            # gone — and so a reload gets the same board rather than a count.
+            # The amounts are not secret: they were read out to everybody the
+            # moment the pool was cut.
+            # Falling back to what is left when there is no record of the cut:
+            # every pool opened before this was written has one list and not
+            # two, and a board listing what is out there with nothing struck
+            # off is the true answer from what is known.
+            "cut": list(self._mystery_cut or self._mystery_envelopes),
+            "left": list(self._mystery_envelopes),
         }
 
     def get_runtime_player(self, user_id: int) -> Optional[EnginePlayer]:
@@ -1660,6 +1675,8 @@ class MultiTableTournamentCoordinator:
 
         envelopes = await self.open_mystery(draws)
         self._mystery_envelopes = list(envelopes or [])
+        # What there ever was, so the board can strike off what goes.
+        self._mystery_cut = list(self._mystery_envelopes)
         self._mystery_opened = True
 
         await self.broadcast_tournament(

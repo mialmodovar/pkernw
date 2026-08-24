@@ -1344,6 +1344,12 @@ class MysterySnapshotTests(CoordinatorHarness, TestCase):
             "pool_left_cents": 8000,
             "top_left_cents": 5000,
             "release": "reg_closed",
+            # Both lists, so a table can show which envelopes are out there and
+            # which have gone rather than only how many are left. With no record
+            # of the cut — which is every pool opened before that was written —
+            # the cut is what is left, and nothing is struck off.
+            "cut": [5000, 2000, 1000],
+            "left": [5000, 2000, 1000],
         })
 
     def test_a_sealed_pool_says_so_rather_than_saying_nothing(self):

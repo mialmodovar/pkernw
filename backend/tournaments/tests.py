@@ -7093,3 +7093,168 @@ class SeatingTheReturningTests(TestCase):
 			places.add(seated.index("d"))
 
 		self.assertGreater(len(places), 2)
+
+
+class TournamentSlugRulesTests(TestCase):
+	"""The readable half of a tournament's address.
+
+	Nobody configures it: it comes off the name. What needs deciding is when a
+	rename is a new address and when it is the same one, and that has edges.
+	"""
+
+	def test_a_name_becomes_something_you_could_read_out(self):
+		from tournaments.slugs import base_slug
+
+		self.assertEqual(base_slug("Quinta-feira de Aniversário"), "quinta-feira-de-aniversario")
+		self.assertEqual(base_slug("Friday Night!"), "friday-night")
+
+	def test_a_name_with_nothing_in_it_still_has_an_address(self):
+		from tournaments.slugs import base_slug
+
+		self.assertEqual(base_slug(""), "tournament")
+		self.assertEqual(base_slug("!!!"), "tournament")
+		self.assertEqual(base_slug(None), "tournament")
+
+	def test_two_nights_of_the_same_name_get_different_addresses(self):
+		from tournaments.slugs import unique_slug
+
+		self.assertEqual(unique_slug("Friday", set()), "friday")
+		self.assertEqual(unique_slug("Friday", {"friday"}), "friday-2")
+		self.assertEqual(unique_slug("Friday", {"friday", "friday-2"}), "friday-3")
+
+	def test_a_retired_address_is_not_handed_to_somebody_else(self):
+		"""It still leads somewhere, and that somewhere is not this."""
+		from tournaments.slugs import unique_slug
+
+		self.assertEqual(unique_slug("Friday", {"friday"}), "friday-2")
+
+	def test_a_slug_survives_a_rename_that_is_not_one(self):
+		from tournaments.slugs import still_fits
+
+		self.assertTrue(still_fits("friday-night", "Friday Night"))
+		self.assertTrue(still_fits("friday-night", "friday night"))
+		# The number is ours rather than part of the name.
+		self.assertTrue(still_fits("friday-night-2", "Friday Night"))
+
+	def test_and_does_not_survive_one_that_is(self):
+		from tournaments.slugs import still_fits
+
+		self.assertFalse(still_fits("friday", "Friday Night"))
+		self.assertFalse(still_fits("friday-night", "Friday"))
+		self.assertFalse(still_fits("", "Friday"))
+
+	def test_a_number_in_the_url_is_the_number(self):
+		from tournaments.slugs import looks_like_id
+
+		self.assertTrue(looks_like_id("42"))
+		self.assertFalse(looks_like_id("friday-42"))
+		self.assertFalse(looks_like_id(""))
+
+
+class TournamentAddressTests(APITestCase):
+	"""The link somebody is actually sent.
+
+	"/tournament/42" says nothing to the person receiving it, and that is the
+	thing they see before deciding whether to open it. Nobody configures this:
+	the address comes off the name.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(
+			username="slug_host", password="secret123", is_staff=True,
+		)
+		self.client.force_authenticate(self.host)
+
+	def _make(self, name):
+		return Tournament.objects.create(host=self.host, name=name, status="lobby")
+
+	def test_a_tournament_names_its_own_address(self):
+		tournament = self._make("Quinta-feira de Aniversário")
+
+		self.assertEqual(tournament.slug, "quinta-feira-de-aniversario")
+
+	def test_two_nights_of_the_same_name_do_not_collide(self):
+		first, second = self._make("Friday"), self._make("Friday")
+
+		self.assertEqual(first.slug, "friday")
+		self.assertEqual(second.slug, "friday-2")
+
+	def test_renaming_it_moves_the_address(self):
+		tournament = self._make("Friday")
+
+		tournament.name = "Saturday"
+		tournament.save()
+
+		self.assertEqual(tournament.slug, "saturday")
+
+	def test_and_the_old_one_still_leads_here(self):
+		"""A link in somebody's chat is not going to be corrected."""
+		tournament = self._make("Friday")
+		tournament.name = "Saturday"
+		tournament.save()
+
+		response = self.client.get(reverse("tournament-by-slug", kwargs={"slug": "friday"}))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["id"], tournament.id)
+		# And says what the address is now, so the bar can be corrected.
+		self.assertEqual(response.data["slug"], "saturday")
+
+	def test_a_retired_address_is_never_given_to_another_night(self):
+		"""Those links would open somebody else's tournament."""
+		tournament = self._make("Friday")
+		tournament.name = "Saturday"
+		tournament.save()
+
+		later = self._make("Friday")
+
+		self.assertNotEqual(later.slug, "friday")
+		self.assertEqual(
+			self.client.get(reverse("tournament-by-slug", kwargs={"slug": "friday"})).data["id"],
+			tournament.id,
+		)
+
+	def test_a_rename_that_is_not_one_leaves_the_address_alone(self):
+		tournament = self._make("Friday Night")
+		before = tournament.slug
+
+		tournament.name = "friday night"
+		tournament.save()
+
+		self.assertEqual(tournament.slug, before)
+
+	def test_saving_one_column_does_not_lose_the_new_address(self):
+		"""Half the app saves a single field at a time, and a save that named
+		its fields would otherwise write everything but this."""
+		tournament = self._make("Friday")
+
+		tournament.name = "Saturday"
+		tournament.save(update_fields=["name"])
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.slug, "saturday")
+
+	def test_the_number_still_works_and_always_will(self):
+		tournament = self._make("Friday")
+
+		response = self.client.get(
+			reverse("tournament-detail", kwargs={"pk": tournament.id}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data["slug"], "friday")
+
+	def test_an_address_nobody_has_is_not_found(self):
+		response = self.client.get(
+			reverse("tournament-by-slug", kwargs={"slug": "no-such-night"}),
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_the_lobby_list_carries_it_too(self):
+		"""So a card can link to the readable address rather than the number."""
+		self._make("Friday")
+
+		rows = self.client.get(reverse("tournament-list"), {"scope": "upcoming"}).data
+
+		self.assertEqual(rows[0]["slug"], "friday")

@@ -50,7 +50,7 @@ export default function ShareTournamentButton({ tournament, className = "" }) {
           bookmark. Hidden until it has been used, so the button stays a
           button. */}
       {said === "failed" && (
-        <span className="sr-only">{tournamentUrl(tournament?.id)}</span>
+        <span className="sr-only">{tournamentUrl(tournament)}</span>
       )}
     </button>
   );

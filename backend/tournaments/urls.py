@@ -7,6 +7,7 @@ from .fastgames_views import (
 from .views import (
     TournamentListCreateView,
     TournamentDetailView,
+    tournament_by_slug,
     join_tournament,
     start_tournament,
     pause_tournament,
@@ -29,6 +30,10 @@ urlpatterns = [
     path("fast/sit/",              fast_sit,                           name="fast-sit"),
     path("fast/leave/",            fast_leave,                         name="fast-leave"),
     path("<int:pk>/",              TournamentDetailView.as_view(),     name="tournament-detail"),
+    # The readable address, and every address this tournament has ever had —
+    # see tournaments/slugs.py. After the number, so a link that is a number
+    # still goes where it always did.
+    path("by-name/<slug:slug>/",   tournament_by_slug,                 name="tournament-by-slug"),
     path("<int:pk>/join/",         join_tournament,                    name="tournament-join"),
     path("<int:pk>/start/",        start_tournament,                   name="tournament-start"),
     # Same weekday, same hour, every week — see fixtures.py. POST starts the

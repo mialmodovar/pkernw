@@ -7,11 +7,20 @@
  * already in it — rather than the table, which means nothing until it deals.
  */
 
-/** The address of a tournament, as somebody else would open it. */
-export function tournamentUrl(id, origin) {
+/**
+ * The address of a tournament, as somebody else would open it.
+ *
+ * By its name where it has one — a link that says which night it is survives
+ * being pasted into a group chat far better than a number does, and the server
+ * remembers every name a tournament has had, so renaming it does not break the
+ * link anybody was already sent. The number is the fallback, and stays valid
+ * forever.
+ */
+export function tournamentUrl(tournament, origin) {
   const base = (origin ?? (typeof window === "undefined" ? "" : window.location.origin))
     .replace(/\/+$/, "");
-  return `${base}/tournament/${id}`;
+  const key = tournament?.slug || tournament?.id;
+  return `${base}/tournament/${key}`;
 }
 
 /** What to say when handing it over, for the phones that offer a share sheet. */
@@ -66,7 +75,7 @@ export async function copyToClipboard(text) {
  * not a failure, and telling them it was would be a lie.
  */
 export async function shareTournament(tournament, { url, share, copy } = {}) {
-  const link = url ?? tournamentUrl(tournament?.id);
+  const link = url ?? tournamentUrl(tournament);
   const nativeShare = share ?? (typeof navigator !== "undefined" && navigator.share
     ? navigator.share.bind(navigator)
     : null);

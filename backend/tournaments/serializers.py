@@ -357,7 +357,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
+        fields = ("id", "slug", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "buy_in_coins",
                   "spin_multiplier", "is_joined",
                   "is_host", "can_manage",
@@ -428,7 +428,7 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ("id", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
+        fields = ("id", "slug", "name", "game_type", "format", "club", "club_name", "club_emoji", "club_slug", "season",
                   "league_name", "host_name", "status", "starting_chips", "buy_in_cents", "buy_in_coins",
                   "spin_multiplier",
                   "max_players", "players_per_table", "players", "tables", "levels",

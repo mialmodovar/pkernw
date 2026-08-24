@@ -18,7 +18,7 @@ from .announce import WARN_BEFORE_SECONDS, announce_start, announce_starting_soo
 from .bounties import BountyConfig, starting_bounty_cents
 from .coinbank import charge_entry, refund_entry
 from .fastgames import FAST_TOURNAMENT_FORMATS
-from .models import Tournament, TournamentPlayer, BlindLevel
+from .models import BlindLevel, Tournament, TournamentPlayer, TournamentSlug
 from .permissions import StaffCreatesTournaments, can_manage_tournament
 from .serializers import (
     TournamentListSerializer,
@@ -198,6 +198,29 @@ class TournamentDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         _start_due_scheduled_tournaments()
         return super().get_queryset()
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def tournament_by_slug(request, slug):
+    """One tournament, found by the readable half of its address.
+
+    Old addresses lead here too. A rename gives a night a new slug and the old
+    one is kept — a link in somebody's chat is not going to be corrected — so a
+    retired slug answers with the tournament and the client puts the current
+    address in the bar. The payload is the same one the number returns; nothing
+    downstream needs to know which door it came through.
+    """
+    _start_due_scheduled_tournaments()
+    row = (
+        TournamentSlug.objects.filter(slug=slug)
+        .select_related("tournament").first()
+    )
+    if row is None:
+        return Response({"error": "No such tournament"}, status=status.HTTP_404_NOT_FOUND)
+    return Response(TournamentDetailSerializer(
+        row.tournament, context={"request": request},
+    ).data)
 
 
 @api_view(["POST"])

@@ -345,12 +345,16 @@ class MultiTableTournamentCoordinator:
                 continue
 
             active_before = self._active_player_count()
+            # A fresh deal, so nobody has shown anything yet. Reset here rather
+            # than after the hands: the window opens per table, the moment that
+            # table's hand ends (see _hand_event), and clearing this afterwards
+            # would wipe the record of a player who had already shown — letting
+            # them show again and hold the deal open a card at a time.
+            self._shown_this_hand = set()
             results = await asyncio.gather(*(self._run_table_hand(table, level) for table in playable_tables))
 
-            # Cards can be shown from the moment the hands are over. What
-            # follows — eliminations, bounties, a database write — takes long
-            # enough that a player clicking straight away was being refused.
-            self._shown_this_hand = set()
+            # Belt and braces for a hand that ends without the engine saying so.
+            # The window is normally already open by now — see _hand_event.
             self._show_open = True
 
             busted: List[EnginePlayer] = []
@@ -570,6 +574,19 @@ class MultiTableTournamentCoordinator:
         settle.
         """
         await self._broadcast_to_table(table_number, event_type, payload)
+
+        if event_type == "hand_complete":
+            # The table has just been told the hand is over, so from this moment
+            # a player may show. It has to open here rather than after the round:
+            # a card picked during the hand is sent the instant that message
+            # lands, and what came between — the other tables still playing,
+            # eliminations, bounties, a database write — was long enough that
+            # every one of those arrived before the window opened and was
+            # refused. Nobody saw the card, and the player was never told why.
+            self._show_open = True
+            self._show_deadline = max(
+                self._show_deadline, time.monotonic() + self.showdown_seconds,
+            )
 
         if event_type in ("all_in_equity", "showdown"):
             # The cards are face up. Calling a hand you can already read is not

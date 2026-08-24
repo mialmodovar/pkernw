@@ -3171,6 +3171,65 @@ class SpectatorsOnCameraTests(ConsumerTestBase):
         self.assertTrue(peers[0]["watching"])
 
 
+class ShowCardsWindowTests(CoordinatorHarness, TestCase):
+    """When the table is allowed to be shown a card.
+
+    Reported from a real game: picking a card on your own hand to show at the
+    end did nothing — nobody saw it — while the buttons in the action panel
+    worked. Both send the same message; the difference is only when. The picked
+    card is sent the instant the hand ends, and the window opened later, once
+    every table in the round had finished its hand and the bookkeeping was done.
+    A player pressing a button a second afterwards landed inside the window; the
+    automatic one never did.
+    """
+
+    def _finished_hand(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+        for player in coordinator._players_by_user_id.values():
+            player.hole_cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+        return coordinator
+
+    def test_a_card_can_be_shown_the_moment_the_hand_is_over(self):
+        coordinator = self._finished_hand()
+
+        # Exactly what the browser does: the hand is over on screen, so the card
+        # picked during it goes now.
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+        shown = [payload for _table, event, payload in self.table_events if event == "cards_shown"]
+        self.assertEqual(shown[-1]["cards"], ["A♠"])
+
+    def test_and_it_is_still_shut_while_the_hand_is_running(self):
+        coordinator = self._finished_hand()
+
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [0]))
+
+    def test_showing_once_is_still_all_anybody_gets(self):
+        coordinator = self._finished_hand()
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+        # The cap has to survive the window opening early, or a player could
+        # show a card at a time and hold the deal open.
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [1]))
+
+    def test_a_second_table_finishing_does_not_wipe_what_was_shown(self):
+        """The record of who has shown is reset for a new deal, not by the
+        table next door finishing its hand."""
+        coordinator = self._finished_hand()
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+
+        async_to_sync(coordinator._hand_event)(2, "hand_complete", {"stacks": []})
+
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [1]))
+
+
 class ReturningPlayersSitAnywhereTests(TestCase):
     """Where a rebuy puts somebody, once the table has been dealt again.
 

@@ -3,7 +3,10 @@ import { onMessage } from "../api/socket";
 import useAuthStore from "../store/authStore";
 import useGameStore from "../store/gameStore";
 import { desiredPeers } from "./mesh";
-import { handleSignal, reannounce, reconcile, setMyUserId, teardown } from "./peerConnections";
+import {
+  handleSignal, loadIceServers, reannounce, reconcile, restoreFromReload, setMyUserId,
+  setTableKey, teardown,
+} from "./peerConnections";
 
 /** Keeps the camera connections in step with who is sitting at the table.
  *
@@ -24,6 +27,23 @@ export default function useTableMedia(enabled = true) {
   const wasConnected = useRef(false);
 
   useEffect(() => { setMyUserId(myUserId); }, [myUserId]);
+
+  // Where to look for each other, asked once. Nothing waits on the answer.
+  useEffect(() => { if (enabled) loadIceServers(); }, [enabled]);
+
+  // Pressing reload at a table dropped a camera that was on a second ago, and
+  // turning it back on was two clicks and a dialogue the browser had already
+  // been through. Only within the same tab, only at the same table, and only
+  // where the permission is already granted — see rejoinMedia.js.
+  const tableKey = useGameStore((state) => state.tournamentId);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!enabled || tableKey == null) return;
+    setTableKey(tableKey);
+    if (restored.current) return;
+    restored.current = true;
+    restoreFromReload(tableKey);
+  }, [enabled, tableKey]);
 
   useEffect(() => {
     if (!enabled) return undefined;

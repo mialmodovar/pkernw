@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from tournaments.models import Tournament
 
 from .hand_stats import compute_player_stats
+from .ice import has_relay, ice_servers
 from .models import Hand
 from .serializers import HandSerializer
 
@@ -71,3 +72,22 @@ def tournament_player_stats(request, pk):
         {"username": username, **stats.get(user_id, {})}
         for user_id, username in players
     ])
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def ice_config(request):
+    """Where the cameras at a table should look for each other.
+
+    Asked for rather than built into the bundle, so a relay can be added or
+    moved without a frontend release — see game/ice.py for why a relay is the
+    difference between a player on mobile data seeing the table and seeing
+    nothing at all.
+
+    `relay` is sent alongside so the interface can tell one kind of failure
+    from the other: with no relay configured, a pair that cannot connect is a
+    pair nothing was ever going to connect, and saying so is better than a
+    black rectangle.
+    """
+    servers = ice_servers()
+    return Response({"ice_servers": servers, "relay": has_relay(servers)})

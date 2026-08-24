@@ -1,3 +1,4 @@
+import Icon from "../icons/Icon";
 import { useEffect, useState } from "react";
 
 import { MULTIPLIER_LADDER } from "./spinPrize";
@@ -31,7 +32,7 @@ export default function SpinReveal({ spin }) {
   return (
     <div className="flex flex-col items-center">
       <div className="text-(--color-text-muted) text-sm tracking-[0.2em] uppercase mb-2">
-        Spin n Go · {"\u{1FA99}"} {spin.stake_coins} each
+        Spin n Go · <Icon name="coin" className="inline-block w-3 h-3 align-[-0.1em]" tone="gold" /> {spin.stake_coins} each
       </div>
 
       {/* A window onto the ladder of multipliers, scrolling past too fast to
@@ -60,7 +61,7 @@ export default function SpinReveal({ spin }) {
       <div className={`mt-3 text-lg font-semibold tabular-nums transition-opacity duration-500 ${
         landed ? "opacity-100 text-(--color-highlight-text)" : "opacity-0"
       }`}>
-        {"\u{1FA99}"} {spin.prize_coins.toLocaleString()} · winner takes all
+        <Icon name="coin" className="inline-block w-4 h-4 align-[-0.15em]" tone="gold" /> {spin.prize_coins.toLocaleString()} · winner takes all
       </div>
     </div>
   );

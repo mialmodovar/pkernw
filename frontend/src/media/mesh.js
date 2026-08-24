@@ -13,17 +13,32 @@
  * bust-out, someone switching their camera off — is just this set changing.
  */
 export function desiredPeers(players, roster, myUserId, myTableNumber) {
-  const announced = new Map(roster.map((peer) => [peer.user_id, peer]));
+  const seated = new Map(
+    (players || [])
+      .filter((player) => player.user_id != null)
+      .map((player) => [player.user_id, player]),
+  );
 
-  return players
-    .filter((player) => player.user_id != null && player.user_id !== myUserId)
-    .filter((player) => !player.is_eliminated)
-    .filter((player) => player.table_number === myTableNumber)
-    .filter((player) => announced.has(player.user_id))
-    .map((player) => ({
-      userId: player.user_id,
-      name: player.name,
-      ...announced.get(player.user_id),
+  // Off the roster rather than off the seats. The roster is the server's answer
+  // to "who is at this table with a camera on", and not everybody at a table has
+  // a seat: somebody watching it is there too, and reading the mesh off the
+  // seating plan left them connected to nobody while nobody connected to them.
+  //
+  // A seat still decides one thing — whether they are out of the tournament, and
+  // whether they are at this table rather than another one — because that is
+  // what the seat knows and the roster does not.
+  return (roster || [])
+    .filter((peer) => peer.user_id != null && peer.user_id !== myUserId)
+    .filter((peer) => {
+      const player = seated.get(peer.user_id);
+      if (!player) return true;               // on the rail: the roster is enough
+      return !player.is_eliminated && player.table_number === myTableNumber;
+    })
+    .map((peer) => ({
+      userId: peer.user_id,
+      // Their own name where there is no seat to read one off.
+      name: seated.get(peer.user_id)?.name || peer.name || "",
+      ...peer,
     }));
 }
 
@@ -69,11 +84,35 @@ export const MEDIA_CONSTRAINTS = {
   },
 };
 
-// Public STUN only. Without a relay some pairs behind strict NAT will never
-// connect; that is a per-pair failure the interface has to show, not hide.
+// Public STUN, and whatever else the server says — see backend/game/ice.py.
+// Without a relay some pairs never connect at all, and a player on mobile data
+// is behind carrier-grade NAT and connects to nobody: that is a failure the
+// interface has to show rather than hide, and it is the one this list is asked
+// for rather than hard-coded to fix.
 export const ICE_SERVERS = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
+
+/**
+ * What to tell somebody whose cameras are all failing.
+ *
+ * A table where every peer fails while your own camera is on is not five
+ * separate accidents. It is one thing — your network will not let anybody reach
+ * you directly — and whether it can be fixed at all depends on whether a relay
+ * exists to fall back to. Mobile data is the usual way to arrive here.
+ */
+export function meshFailureMessage({ peerCount, failedCount, relay, cameraOn }) {
+  if (!cameraOn || peerCount === 0 || failedCount < peerCount) return "";
+  if (peerCount === 1) {
+    return relay
+      ? "Could not connect to that camera."
+      : "Could not connect to that camera. One of you is on a network that needs a relay.";
+  }
+  return relay
+    ? "Could not connect to anybody's camera. Something is blocking video on this network."
+    : "Could not connect to anybody's camera — this network needs a relay, and there is "
+      + "none set up. Mobile data does this: the game itself is unaffected.";
+}
 
 /** What to tell a player whose browser refused the camera or microphone. */
 export function permissionMessage(error) {

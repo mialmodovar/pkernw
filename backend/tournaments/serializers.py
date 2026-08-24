@@ -16,6 +16,7 @@ from clubs.permissions import is_club_staff
 from .permissions import can_manage_tournament
 
 from .bounties import BountyConfig, starting_bounty_cents
+from .payouts import clean_share, structure_for
 from .coinbank import charge_entry
 from .mystery import DEFAULT_RELEASE as DEFAULT_MYSTERY_RELEASE, clean_release
 from .models import Tournament, TournamentTable, BlindLevel, TournamentPlayer
@@ -365,7 +366,8 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "late_registration_open", "late_registration_seconds_left",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",
-                  "time_bank_refill_level", "payout_structure", "rabbit_hunting_enabled",
+                  "time_bank_refill_level", "payout_structure", "payout_share_pct",
+                  "rabbit_hunting_enabled",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "mystery_release",
                   "showdown_seconds",
@@ -435,7 +437,8 @@ class TournamentDetailSerializer(serializers.ModelSerializer):
                   "current_level_index", "can_manage",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
-                  "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "payout_structure", "payout_share_pct",
+                  "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "mystery_release", "mystery_envelopes", "mystery_opened_at",
                   "showdown_seconds",
@@ -498,7 +501,8 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
                   "allow_rebuys", "max_rebuys", "rebuy_level",
                   "scheduled_start_at", "time_bank_seconds", "time_bank_refill_rule",
                   "time_bank_refill_every_hands", "time_bank_refill_level",
-                  "payout_structure", "rabbit_hunting_enabled", "auto_remove_offline_seconds",
+                  "payout_structure", "payout_share_pct",
+                  "rabbit_hunting_enabled", "auto_remove_offline_seconds",
                   "bounty_mode", "bounty_cents", "bounty_progressive_split_pct",
                   "mystery_release",
                   "showdown_seconds",
@@ -533,6 +537,9 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
         payout_structure = attrs.get(
             "payout_structure", getattr(self.instance, "payout_structure", None) or [],
         )
+        payout_share = clean_share(attrs.get(
+            "payout_share_pct", getattr(self.instance, "payout_share_pct", 0),
+        ))
         showdown_seconds = attrs.get("showdown_seconds", getattr(self.instance, "showdown_seconds", 5))
         bounty_mode = attrs.get("bounty_mode", getattr(self.instance, "bounty_mode", "none"))
         bounty_cents = attrs.get("bounty_cents", getattr(self.instance, "bounty_cents", 0))
@@ -587,6 +594,21 @@ class TournamentCreateSerializer(serializers.ModelSerializer):
             attrs["time_bank_refill_every_hands"] = None
             attrs["time_bank_refill_level"] = None
         attrs["payout_structure"] = _normalize_payout_structure(payout_structure)
+        # A share of the field decides the structure, so whatever was sent
+        # alongside it is overwritten: two answers to "who gets paid" is how
+        # they end up disagreeing. Worked out from the field as it is now — one
+        # player, at creation — and recomputed on every join and every seat
+        # given up until registration closes. See payouts.py and payoutbank.py.
+        attrs["payout_share_pct"] = payout_share
+        if payout_share > 0:
+            field = (
+                self.instance.players.count()
+                if self.instance is not None
+                else 1
+            )
+            attrs["payout_structure"] = _normalize_payout_structure(
+                structure_for(field, payout_share),
+            )
 
         # One currency or the other. Euros are a note of what people agreed and
         # settle between themselves; coins are the app's own and are actually
@@ -755,7 +777,12 @@ LOCKED_AFTER_CREATION = (
     "season",
     "buy_in_cents",
     "buy_in_coins",
-    "payout_structure",
+    # `payout_structure` and `payout_share_pct` are deliberately not here. The
+    # buy-in and what a head is worth are money that has already been taken;
+    # how the pool divides is a plan, and this endpoint refuses any tournament
+    # that has started, so nobody can have played under the old one. Locking it
+    # meant a host who set the split up wrongly — which the old share
+    # arithmetic made easy — had to delete the night and make it again.
     "bounty_mode",
     "bounty_cents",
     "bounty_progressive_split_pct",

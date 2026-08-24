@@ -9,6 +9,7 @@ from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
+from rest_framework import status
 from rest_framework.test import APITestCase
 
 from tournaments.models import Tournament, TournamentPlayer, TournamentTable
@@ -755,9 +756,12 @@ class MediaSignallingTests(ConsumerTestBase):
             # Bea arrives and is told Ana is already there.
             await bea_socket.send_json_to({"type": "media_presence", "audio": True, "video": True})
             second_roster = await self._next_of_type(bea_socket, "media_roster")
-            self.assertEqual(
-                second_roster["peers"], [{"user_id": ana.id, "audio": True, "video": False}],
-            )
+            # Names and all, because not everybody in a roster has a seat to
+            # read a name off — see the rail, in SpectatorsOnCameraTests.
+            self.assertEqual(second_roster["peers"], [{
+                "user_id": ana.id, "name": ana.username,
+                "audio": True, "video": False, "watching": False,
+            }])
 
             # Ana hears about Bea; the other table hears nothing at all.
             announced = await self._next_of_type(ana_socket, "media_presence")
@@ -1343,6 +1347,12 @@ class MysterySnapshotTests(CoordinatorHarness, TestCase):
             "pool_left_cents": 8000,
             "top_left_cents": 5000,
             "release": "reg_closed",
+            # Both lists, so a table can show which envelopes are out there and
+            # which have gone rather than only how many are left. With no record
+            # of the cut — which is every pool opened before that was written —
+            # the cut is what is left, and nothing is struck off.
+            "cut": [5000, 2000, 1000],
+            "left": [5000, 2000, 1000],
         })
 
     def test_a_sealed_pool_says_so_rather_than_saying_nothing(self):
@@ -2697,7 +2707,10 @@ class AllInOrFoldTests(TestCase):
 
         async def request_action(player, context):
             offers.append(dict(context))
-            return answer
+            # A callable answer can play differently depending on what it is
+            # facing, which is the only way to get somebody to call a shove
+            # with chips left behind — the shape of the bug below.
+            return answer(context) if callable(answer) else answer
 
         async def broadcast(event_type, payload):
             return None
@@ -2734,6 +2747,68 @@ class AllInOrFoldTests(TestCase):
     def test_folding_is_always_on_offer(self):
         for offer in self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True):
             self.assertIn("fold", offer["valid_actions"])
+
+    def test_nobody_is_offered_a_limp(self):
+        """Calling the big blind is a limp, a limp is a flop with a hundred
+        chips in it, and this format has no flop. Calling is on offer facing a
+        shove and nowhere else."""
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=True)
+
+        unopened = [one for one in offers if one["to_call"] == 100 and one["street"] == "preflop"]
+        self.assertTrue(unopened, "nobody was ever facing just the blind")
+        for offer in unopened:
+            self.assertNotIn("call", offer["valid_actions"])
+
+    def test_calling_a_shove_is_on_offer(self):
+        offers = self._decisions(
+            [1500, 1500, 1500, 1500], all_in_or_fold=True, answer=("raise", 1500),
+        )
+
+        facing = [one for one in offers if one["to_call"] > 100]
+        self.assertTrue(facing, "nobody was ever facing a shove")
+        for offer in facing:
+            self.assertIn("call", offer["valid_actions"])
+
+    def test_the_ordinary_game_keeps_its_limp(self):
+        offers = self._decisions([1500, 1500, 1500, 1500], all_in_or_fold=False)
+
+        unopened = [one for one in offers if one["to_call"] == 100]
+        self.assertTrue(unopened)
+        self.assertIn("call", unopened[0]["valid_actions"])
+
+    # Shove when nothing is in front of you, call when there is. With unequal
+    # stacks that leaves the callers with chips behind, which is the state the
+    # bug lived in.
+    @staticmethod
+    def _shove_or_call(context):
+        return ("call", 0) if context["to_call"] > 100 else ("raise", 99999)
+
+    def test_a_hand_never_reaches_a_betting_round_after_the_flop(self):
+        """The bug this was written for. The short stack shoves, two deeper
+        players call and both still have chips: nobody is all in, so the engine
+        saw an ordinary hand and dealt a flop with a betting round on it — in a
+        game whose name says there is no such thing."""
+        offers = self._decisions(
+            # Seat 3 acts first at four-handed, so that is the short stack.
+            [1500, 1500, 1500, 1000], all_in_or_fold=True, answer=self._shove_or_call,
+        )
+
+        called = [one for one in offers if one["to_call"] > 100]
+        self.assertTrue(called, "nobody called a shove, so this proves nothing")
+        after_preflop = [one for one in offers if one["street"] != "preflop"]
+        self.assertEqual(
+            after_preflop, [], "somebody was asked to act after the flop",
+        )
+
+    def test_the_ordinary_game_still_plays_a_flop(self):
+        offers = self._decisions(
+            [1500, 1500, 1500, 1000], all_in_or_fold=False, answer=self._shove_or_call,
+        )
+
+        self.assertTrue(
+            [one for one in offers if one["street"] != "preflop"],
+            "the ordinary game lost its postflop betting",
+        )
 
     def test_a_shove_is_clamped_to_the_stack_whatever_the_client_asks_for(self):
         """The number arrives over a socket, so it is not believed — a raise to
@@ -2864,3 +2939,300 @@ class MultipleBoardTests(TestCase):
                     [1500, 1500, 1500], wants="raise", **options,
                 )
                 self.assertEqual(sum(p.chips for p in engine.players), 4500)
+
+
+class IceServersTests(TestCase):
+    """Where two cameras go to find each other.
+
+    The reason this is configurable at all: a player on mobile data is behind
+    carrier-grade NAT, which is symmetric, and two symmetric NATs cannot be
+    introduced to each other by description. STUN gets everybody else talking
+    and gets that player nowhere — they see nobody and nobody sees them, while
+    the rest of the table is fine.
+    """
+
+    def test_stun_is_always_there(self):
+        from game.ice import ice_servers
+
+        servers = ice_servers(urls=[], username="", credential="")
+
+        self.assertEqual(len(servers), 1)
+        self.assertTrue(all(url.startswith("stun:") for url in servers[0]["urls"]))
+
+    def test_a_configured_relay_is_added_to_it(self):
+        from game.ice import ice_servers
+
+        servers = ice_servers(
+            urls=["turn:relay.example.com:3478"], username="ana", credential="secret",
+        )
+
+        self.assertEqual(len(servers), 2)
+        self.assertEqual(servers[1]["urls"], ["turn:relay.example.com:3478"])
+        self.assertEqual(servers[1]["username"], "ana")
+
+    def test_a_relay_with_no_credentials_is_not_a_relay(self):
+        """An entry every browser would waste time failing against."""
+        from game.ice import ice_servers
+
+        servers = ice_servers(urls=["turn:relay.example.com:3478"], username="", credential="")
+
+        self.assertEqual(len(servers), 1)
+
+    def test_whether_the_table_can_get_a_phone_connected(self):
+        from game.ice import has_relay, ice_servers
+
+        self.assertFalse(has_relay(ice_servers(urls=[], username="", credential="")))
+        self.assertTrue(has_relay(ice_servers(
+            urls=["turn:relay.example.com:3478"], username="ana", credential="secret",
+        )))
+
+
+class IceConfigEndpointTests(APITestCase):
+    """The browser asks rather than being told at build time."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="ice_ana", password="secret123")
+        self.client.force_authenticate(self.user)
+
+    def test_it_answers_with_stun_and_says_there_is_no_relay(self):
+        with self.settings(TURN_URLS=[], TURN_USERNAME="", TURN_CREDENTIAL=""):
+            response = self.client.get(reverse("ice-config"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["relay"])
+        self.assertEqual(len(response.data["ice_servers"]), 1)
+
+    def test_it_carries_a_configured_relay_through(self):
+        with self.settings(
+            TURN_URLS=["turn:relay.example.com:3478"],
+            TURN_USERNAME="ana", TURN_CREDENTIAL="secret",
+        ):
+            response = self.client.get(reverse("ice-config"))
+
+        self.assertTrue(response.data["relay"])
+        self.assertEqual(response.data["ice_servers"][1]["username"], "ana")
+
+    def test_nobody_reads_it_while_signed_out(self):
+        self.client.force_authenticate(None)
+
+        self.assertEqual(
+            self.client.get(reverse("ice-config")).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+class SpectatorsOnCameraTests(ConsumerTestBase):
+    """The rail, in the mesh.
+
+    Watching a table meant seeing nobody and being seen by nobody: media was
+    switched off for a spectator on the client, the server refused anything they
+    sent, and there was no way to deliver a signal to them at all — they are
+    deliberately absent from the registry that carries hole cards, and that was
+    the only registry there was.
+    """
+
+    def _spectator(self, user, table=1):
+        from channels.testing import WebsocketCommunicator
+
+        socket = WebsocketCommunicator(
+            TournamentConsumer.as_asgi(),
+            f"/ws/tournament/{self.tournament.id}/?spectate=1&table={table}",
+        )
+        socket.scope["user"] = user
+        socket.scope["url_route"] = {"kwargs": {"tournament_id": str(self.tournament.id)}}
+        socket.scope["query_string"] = f"spectate=1&table={table}".encode()
+        return socket
+
+    def test_a_spectator_can_say_their_camera_is_on(self):
+        """And the table hears it. Before this the server dropped everything a
+        spectator sent, media included."""
+        ana = async_to_sync(sync_to_async(self._seat))("cam_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("cam_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            await watcher.send_json_to({"type": "media_presence", "audio": True, "video": True})
+            told = await self._next_of_type(seated, "media_presence")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return told
+
+        told = async_to_sync(scenario)()
+
+        self.assertEqual(told["user_id"], rail.id)
+        self.assertTrue(told["video"])
+        # And says which they are, since the felt has no seat to draw them at.
+        self.assertTrue(told["watching"])
+
+    def test_a_signal_reaches_somebody_on_the_rail(self):
+        """Down their own channel. A spectator is not in the registry that
+        carries hole cards and must never be."""
+        ana = async_to_sync(sync_to_async(self._seat))("sig_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("sig_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            # The watcher announces so the table knows they are there, then the
+            # seated player calls them.
+            await watcher.send_json_to({"type": "media_presence", "audio": False, "video": True})
+            await self._next_of_type(seated, "media_presence")
+            await seated.send_json_to({
+                "type": "media_signal", "to_user_id": rail.id,
+                "signal": {"description": {"type": "offer"}},
+            })
+            arrived = await self._next_of_type(watcher, "media_signal")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return arrived
+
+        arrived = async_to_sync(scenario)()
+
+        self.assertEqual(arrived["from_user_id"], ana.id)
+        self.assertEqual(arrived["signal"], {"description": {"type": "offer"}})
+
+    def test_and_the_other_way_round(self):
+        ana = async_to_sync(sync_to_async(self._seat))("sig2_ana", self.table_one, 0)
+        rail = async_to_sync(sync_to_async(self._user))("sig2_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            seated, watcher = self._communicator(ana), self._spectator(rail)
+            await seated.connect()
+            await watcher.connect()
+            await self._drain(seated)
+            await self._drain(watcher)
+
+            await watcher.send_json_to({
+                "type": "media_signal", "to_user_id": ana.id,
+                "signal": {"description": {"type": "answer"}},
+            })
+            arrived = await self._next_of_type(seated, "media_signal")
+
+            await seated.disconnect()
+            await watcher.disconnect()
+            return arrived
+
+        arrived = async_to_sync(scenario)()
+
+        self.assertEqual(arrived["from_user_id"], rail.id)
+
+    def test_a_spectator_still_cannot_touch_the_hand(self):
+        """The hole in the wall is exactly two messages wide."""
+        rail = async_to_sync(sync_to_async(self._user))("quiet_rail")
+        Tournament.objects.filter(pk=self.tournament.pk).update(status="running")
+
+        async def scenario():
+            watcher = self._spectator(rail)
+            await watcher.connect()
+            await self._drain(watcher)
+            for message in (
+                {"type": "player_action", "action": "fold"},
+                {"type": "chat_message", "text": "hello"},
+                {"type": "sit_out", "value": True},
+                {"type": "throw_item", "item": "tomato", "to_user_id": 1},
+                {"type": "show_cards", "cards": [0, 1]},
+            ):
+                await watcher.send_json_to(message)
+            quiet = await watcher.receive_nothing(timeout=0.4)
+            await watcher.disconnect()
+            return quiet
+
+        self.assertTrue(async_to_sync(scenario)())
+
+    def test_the_roster_names_the_rail(self):
+        """A seated peer's name comes off the felt; a spectator has no seat to
+        read one from, so the roster carries it."""
+        from game.consumers import _media_peers_at, _media_presence
+
+        _media_presence[(self.tournament.id, 4242)] = {
+            "audio": False, "video": True, "table": 1,
+            "name": "Bea", "watching": True,
+        }
+        try:
+            peers = _media_peers_at(self.tournament.id, 1, exclude_user_id=1)
+        finally:
+            _media_presence.pop((self.tournament.id, 4242), None)
+
+        self.assertEqual(peers[0]["name"], "Bea")
+        self.assertTrue(peers[0]["watching"])
+
+
+class ReturningPlayersSitAnywhereTests(TestCase):
+    """Where a rebuy puts somebody, once the table has been dealt again.
+
+    The report: several rebuys, the same seat every time, never between two
+    other players. Three things chose the lowest free number, and the rebalance
+    is the one that decided it — it sorts by seat and packs everybody up from
+    zero, and a returning player had just been given the highest free chair.
+    """
+
+    def _players(self, count, returning_index=None):
+        from game.engine.player import Player
+
+        players = []
+        for index in range(count):
+            player = Player(name=f"p{index}", chips=1000)
+            player._tp_id = index + 1
+            player._seat = index
+            player._table_number = 1
+            player.is_eliminated = False
+            player._waiting_for_hand = index == returning_index
+            players.append(player)
+        return players
+
+    def test_the_order_is_unchanged_when_nobody_is_coming_back(self):
+        from tournaments.seating import seat_returning_players
+
+        players = self._players(4)
+
+        self.assertEqual(seat_returning_players(players, []), players)
+
+    def test_a_returning_player_does_not_always_land_at_the_end(self):
+        from tournaments.seating import seat_returning_players
+
+        places = set()
+        for _ in range(200):
+            players = self._players(5, returning_index=4)
+            returning = [one for one in players if one._waiting_for_hand]
+            seated = seat_returning_players(players, returning)
+            places.add(seated.index(returning[0]))
+
+        # The bug was one place, every time, and it was the last one.
+        self.assertGreater(len(places), 2)
+        self.assertNotEqual(places, {4})
+        # And "in the middle" is a place it actually reaches.
+        self.assertTrue(places & {1, 2, 3})
+
+    def test_everybody_else_keeps_their_order(self):
+        from tournaments.seating import seat_returning_players
+
+        players = self._players(5, returning_index=2)
+        returning = [one for one in players if one._waiting_for_hand]
+        others = [one for one in players if not one._waiting_for_hand]
+
+        for _ in range(50):
+            seated = seat_returning_players(players, returning)
+            self.assertEqual([one for one in seated if not one._waiting_for_hand], others)
+
+    def test_a_seat_is_drawn_from_the_chairs_that_are_free(self):
+        """What _seat_waiting_player does now: any free chair, not the lowest."""
+        from tournaments.seating import pick_free_seat
+
+        drawn = {pick_free_seat({0, 1, 2}, 8) for _ in range(200)}
+
+        self.assertTrue(drawn <= {3, 4, 5, 6, 7})
+        self.assertGreater(len(drawn), 1)

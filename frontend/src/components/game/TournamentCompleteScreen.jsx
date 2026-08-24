@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { giphyConfigured, gifPreviewUrl } from "../../api/giphy";
 import { formatCoins, isSpinGo } from "../lobby/buyIn";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 import { findOutcomeGif, outcomeOf } from "./outcomeGif";
 import { entryCount, paidLabel, poolCoins } from "./prizePool";
 
@@ -29,6 +29,7 @@ function Stat({ label, value }) {
 export default function TournamentCompleteScreen({
   standings, tournament, username, handNumber, level, onLeave, onViewTournament,
 }) {
+  const money = useBountyMoney();
   const rows = standings || [];
   const winner = rows.find((row) => row.finish === 1);
   const mine = rows.find((row) => row.username === username);
@@ -139,7 +140,7 @@ export default function TournamentCompleteScreen({
               {bountyOn && myRecord ? (
                 <Stat
                   label={`Your KOs (${myRecord.knockouts || 0})`}
-                  value={formatEuros(bountyPrize(myRecord))}
+                  value={money(bountyPrize(myRecord))}
                 />
               ) : (
                 <Stat
@@ -186,8 +187,8 @@ export default function TournamentCompleteScreen({
                     <span>
                       {(payout || record?.prize_cents > 0) ? " " : ""}
                       {record?.prize_cents > 0
-                        ? `(${record.knockouts || 0} KO, ${formatEuros(bountyPrize(record))} of it)`
-                        : `${record.knockouts || 0} KO · ${formatEuros(bountyPrize(record))}`}
+                        ? `(${record.knockouts || 0} KO, ${money(bountyPrize(record))} of it)`
+                        : `${record.knockouts || 0} KO · ${money(bountyPrize(record))}`}
                     </span>
                   )}
                   {record?.rebuy_count > 0

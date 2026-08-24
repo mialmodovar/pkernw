@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import useGameStore from "../../store/gameStore";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 
 // Long enough to read the board and understand what just changed about the
 // tournament, short enough that nobody is waiting on it to play a hand.
@@ -20,6 +20,7 @@ const DEAL_STEP_MS = 90;
  */
 export default function MysteryOpening() {
   const mystery = useGameStore((s) => s.mystery);
+  const money = useBountyMoney();
   const clear = useGameStore((s) => s.clearMysteryAnnouncement);
   const announcement = mystery?.announcement ?? null;
   const [dismissed, setDismissed] = useState(false);
@@ -56,12 +57,12 @@ export default function MysteryOpening() {
           Mystery bounties are open
         </h2>
         <p className="text-(--color-silver) mt-2 tabular-nums">
-          {formatEuros(mystery.poolCents)} in {envelopes.length} envelope
+          {money(mystery.poolCents)} in {envelopes.length} envelope
           {envelopes.length === 1 ? "" : "s"}
         </p>
         <p className="text-(--color-text-muted) text-sm mt-1">
           Biggest: <span className="text-(--color-highlight-text) font-semibold tabular-nums">
-            {formatEuros(mystery.topCents)}
+            {money(mystery.topCents)}
           </span>
         </p>
       </div>
@@ -81,7 +82,7 @@ export default function MysteryOpening() {
             }`}
             style={{ animationDelay: `${400 + index * DEAL_STEP_MS}ms` }}
           >
-            {formatEuros(amount)}
+            {money(amount)}
           </span>
         ))}
       </div>

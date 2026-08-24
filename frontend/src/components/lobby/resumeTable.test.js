@@ -62,14 +62,14 @@ describe("resumeLabel", () => {
   });
 
   it("says the stake for a Spin n Go, which has no name worth reading", () => {
-    expect(resumeLabel({ ...live, format: "spingo", buy_in_coins: 25 })).toBe("Spin n Go · 🪙 25");
+    expect(resumeLabel({ ...live, format: "spingo", buy_in_coins: 25 })).toBe("Spin n Go · 25 coins");
   });
 
   it("says which Sit n Go, since there are two of them", () => {
     expect(resumeLabel({ ...live, format: "sitngo", players_per_table: 2, buy_in_coins: 10 }))
-      .toBe("Sit n Go · Heads up · 🪙 10");
+      .toBe("Sit n Go · Heads up · 10 coins");
     expect(resumeLabel({ ...live, format: "sitngo", players_per_table: 6, buy_in_coins: 25 }))
-      .toBe("Sit n Go · 6-max · 🪙 25");
+      .toBe("Sit n Go · 6-max · 25 coins");
   });
 });
 

@@ -105,6 +105,16 @@ class Tournament(models.Model):
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
     payout_structure = models.JSONField(default=list, blank=True)
+    # The share of the field that pays, when that is how the host set it up.
+    # Zero means the structure above was written out by hand and is left alone.
+    #
+    # It is kept as the intention rather than only its result, because the result
+    # depends on who turns up: twenty per cent is one place at five players and
+    # ten at fifty, and the structure is recomputed as the field grows until
+    # registration closes. Before this it was worked out once, at creation, from
+    # the player cap — so a tournament capped at a hundred paid twenty places to
+    # a field of five.
+    payout_share_pct = models.IntegerField(default=0)
     # Bounties come out of the buy-in, they are not charged on top of it: a €20
     # buy-in with a €10 bounty pays €10 into the prize pool and puts €10 on the
     # player's head. Nobody has to work out what a "€20 + €20" tournament costs.
@@ -130,6 +140,12 @@ class Tournament(models.Model):
     # hand out a pool twice — the list on the row is the pool, and there is no
     # copy of it anywhere else.
     mystery_envelopes = models.JSONField(default=list, blank=True)
+    # Every envelope the pool was cut into, written once when they open and
+    # never touched again. The list above is what is left; this is what there
+    # ever was, and the difference between the two is what has been drawn —
+    # which is the half of the board a player could not see: how many are left
+    # was on screen all game, which ones had gone was not.
+    mystery_cut = models.JSONField(default=list, blank=True)
     # When they opened. Null while they are still sealed; the flag rather than
     # an empty list, because a pool that has been drawn down to nothing is also
     # an empty list and the two mean opposite things.

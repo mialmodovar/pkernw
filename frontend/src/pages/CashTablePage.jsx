@@ -223,7 +223,7 @@ export default function CashTablePage() {
         )}
 
         {!compact && mySeat != null && (
-          <div className="absolute bottom-2 right-2 z-20 w-[min(46rem,calc(100%-1rem))]
+          <div className="absolute bottom-2 right-2 z-20 w-[min(42rem,calc(50%-8rem))]
                           scale-95 origin-bottom-right">
             <ActionPanel mySeat={mySeat} onAction={act} disabled={status !== "open"} />
           </div>

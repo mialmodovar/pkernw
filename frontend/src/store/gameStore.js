@@ -2,7 +2,8 @@ import { create } from "zustand";
 
 import api from "../api/http";
 import { equityShake } from "../components/game/equitySwing";
-import { formatEuros } from "../components/game/formatMoney";
+import { formatBounty } from "../components/game/formatMoney";
+import { drawnFrom } from "../components/game/mysteryEnvelopes";
 
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
@@ -360,10 +361,14 @@ const useGameStore = create((set) => ({
           // and the prize back rather than a table with no stakes on it.
           fast: data.fast ?? s.fast,
           // The mystery board, for the same reason. Merged rather than
-          // replaced: the snapshot knows what is left on the board, and the
-          // opening broadcast knows the envelopes it was cut into — a reload
-          // must not lose the second by arriving with the first. `announcement`
-          // is deliberately not revived; the opening plays once, when it opens.
+          // replaced: `announcement` is deliberately not revived, since the
+          // opening plays once, when it opens.
+          //
+          // The two lists come whole from the snapshot — what the pool was cut
+          // into and what is still in it — so a reload gets the same board as
+          // everybody else rather than a count with no list behind it. What has
+          // been drawn is the difference between them; while the table is live
+          // each knockout says what it drew and is appended instead.
           ...(data.mystery
             ? {
               mystery: {
@@ -374,6 +379,12 @@ const useGameStore = create((set) => ({
                 topLeftCents: data.mystery.top_left_cents,
                 reason: s.mystery?.reason ?? data.mystery.release ?? null,
                 announcement: null,
+                ...(data.mystery.cut?.length
+                  ? {
+                    envelopes: data.mystery.cut,
+                    drawn: drawnFrom(data.mystery.cut, data.mystery.left || []),
+                  }
+                  : {}),
               },
             }
             : {}),
@@ -863,16 +874,21 @@ const useGameStore = create((set) => ({
                   envelopesLeft: data.mystery.envelopes_left,
                   poolLeftCents: data.mystery.pool_left_cents,
                   topLeftCents: data.mystery.top_left_cents,
+                  // Which one went, so the board can show what is left rather
+                  // than only how many. Kept as the amounts drawn in order,
+                  // because envelopes repeat and a draw takes one of them —
+                  // see mysteryEnvelopes.js.
+                  drawn: [...(s.mystery?.drawn || []), data.mystery.envelope_cents],
                   opened: true,
                 },
               }
             : {}),
           messages: appendLog(s, entry(s, "info",
             data.mystery
-              ? `${data.name} drew ${formatEuros(data.mystery.envelope_cents)} for ${data.victim_name}`
+              ? `${data.name} drew ${formatBounty(data.mystery.envelope_cents, s.fast)} for ${data.victim_name}`
                 + (data.mystery.is_top_prize ? " — the biggest envelope left" : "")
                 + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : "")
-              : `${data.name} took ${formatEuros(data.cash_cents + data.to_head_cents)} off ${data.victim_name}`
+              : `${data.name} took ${formatBounty(data.cash_cents + data.to_head_cents, s.fast)} off ${data.victim_name}`
                 + (data.split_ways > 1 ? ` (split ${data.split_ways} ways)` : ""))),
         }));
         break;
@@ -884,6 +900,7 @@ const useGameStore = create((set) => ({
           mystery: {
             opened: true,
             envelopes: data.envelopes || [],
+            drawn: [],
             poolCents: data.pool_cents || 0,
             poolLeftCents: data.pool_cents || 0,
             topCents: data.top_cents || 0,
@@ -896,9 +913,9 @@ const useGameStore = create((set) => ({
           },
           mysterySequence: s.mysterySequence + 1,
           messages: appendLog(s, entry(s, "info",
-            `Mystery bounties are open — ${formatEuros(data.pool_cents || 0)} in `
+            `Mystery bounties are open — ${formatBounty(data.pool_cents || 0, s.fast)} in `
             + `${(data.envelopes || []).length} envelopes, biggest `
-            + `${formatEuros(data.top_cents || 0)}`)),
+            + `${formatBounty(data.top_cents || 0, s.fast)}`)),
         }));
         break;
 

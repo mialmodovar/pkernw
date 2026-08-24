@@ -52,6 +52,22 @@ export function resolvePending({ stored, hand, betweenHands, canShow, mine = tru
 }
 
 /**
+ * What is pending after pressing card `index`, given what is pending now.
+ *
+ * Toggle, and an empty answer means "nothing" rather than "show no cards": a
+ * pick taken back has to be indistinguishable from never having been made.
+ *
+ * Here rather than in the component because it is the rule that makes a single
+ * press enough — see the note on `show` below.
+ */
+export function nextPending(current, index) {
+  const held = new Set(current || []);
+  if (held.has(index)) held.delete(index);
+  else held.add(index);
+  return [...held].sort();
+}
+
+/**
  * Whether this seat can still show, and how.
  *
  * `mySeat` is your seat number and `myCards` the two you were dealt. Returns
@@ -129,6 +145,13 @@ export function useShowCardsOffer(mySeat, myCards) {
     cancel: () => setPending(null),
     show: (indices) => {
       if (!canShow) return;
+      // Nothing asked for is nothing pending. Sending an empty list would ask
+      // the server to show no cards, which it refuses — and would leave a
+      // cancelled pick looking like one still on its way.
+      if (!indices || indices.length === 0) {
+        setPending(null);
+        return;
+      }
       // Mid-hand this is a request, not a reveal. The effect above posts it the
       // moment the hand ends — the same message the bar sends, through the same
       // server check, just later.

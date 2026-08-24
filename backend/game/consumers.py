@@ -47,6 +47,17 @@ _pending_actions: Dict[Tuple[int, int], dict] = {}
 # replica, which is what entrypoint.sh deliberately runs.
 _media_presence: Dict[Tuple[int, int], dict] = {}
 
+# Who can be reached with a media signal, and which table they are at. Seated
+# players and spectators alike: this is the one place the two are treated the
+# same, because a camera does not care whether you have chips in front of you,
+# and somebody watching a table is at it.
+#
+# Deliberately not `_player_channels`. That one is how a hand of cards reaches
+# the player holding it, and a spectator must never be in it — see
+# _connect_as_spectator. Two registries, two jobs, and the one that matters for
+# privacy is left exactly as it was.
+_media_channels: Dict[Tuple[int, int], dict] = {}
+
 CHAT_MAX_CHARS = 240
 CHAT_WINDOW_SECONDS = 10.0
 CHAT_MESSAGE_BUDGET = 8
@@ -61,9 +72,20 @@ MEDIA_SIGNAL_MAX_BYTES = 32_000
 
 
 def _media_peers_at(tournament_id: int, table_number: int, exclude_user_id: int) -> list:
-    """Who at this table currently has a camera or microphone running."""
+    """Who at this table currently has a camera or microphone running.
+
+    Names and all, because not everybody here has a seat to read a name off:
+    somebody watching the table is in this list too, and the felt has nowhere
+    to look them up.
+    """
     return [
-        {"user_id": user_id, "audio": presence["audio"], "video": presence["video"]}
+        {
+            "user_id": user_id,
+            "name": presence.get("name", ""),
+            "audio": presence["audio"],
+            "video": presence["video"],
+            "watching": bool(presence.get("watching")),
+        }
         for (tid, user_id), presence in _media_presence.items()
         if tid == tournament_id and presence["table"] == table_number and user_id != exclude_user_id
     ]
@@ -290,8 +312,14 @@ def _db_open_mystery(tournament_id, draws):
         envelopes = mystery.envelope_amounts(pool, draws)
 
         tournament.mystery_envelopes = envelopes
+        # And what there ever was, written once and never touched again: the
+        # difference between the two is what has been drawn, which is what the
+        # board could not show.
+        tournament.mystery_cut = list(envelopes)
         tournament.mystery_opened_at = timezone.now()
-        tournament.save(update_fields=["mystery_envelopes", "mystery_opened_at"])
+        tournament.save(update_fields=[
+            "mystery_envelopes", "mystery_cut", "mystery_opened_at",
+        ])
         return envelopes
 
 
@@ -739,6 +767,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         key = (self.tournament_id, self.user.id)
         _player_channels[key] = self.channel_name
         _action_queues.setdefault(key, asyncio.Queue())
+        self._register_media_channel(self.current_table_number, watching=False)
 
         await self.channel_layer.group_add(self.tournament_group, self.channel_name)
         if self.current_table_number is not None:
@@ -789,6 +818,9 @@ class TournamentConsumer(AsyncWebsocketConsumer):
 
         self.is_spectator = True
         self.current_table_number = table_number
+        # On the rail, and on camera if they want to be: watching a table
+        # without being seen would make a one-way mirror of it.
+        self._register_media_channel(table_number, watching=True)
         await self.channel_layer.group_add(self.tournament_group, self.channel_name)
         await self.channel_layer.group_add(
             _table_group_name(self.tournament_id, table_number),
@@ -869,6 +901,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         # Only once we know this socket was not superseded — otherwise a
         # reconnect would tear down the presence the live socket just announced.
         await self._forget_media_presence(self.current_table_number)
+        self._forget_media_channel()
         coordinator = _tournament_runners.get(self.tournament_id)
         if coordinator is not None:
             runtime_player = coordinator.get_runtime_player(self.user.id)
@@ -886,13 +919,19 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                         {"seat": runtime_player._seat, "name": runtime_player.name},
                     )
 
+    # What somebody on the rail is allowed to send. Their camera, and nothing
+    # else: no action, no chat, no sitting out, nothing that touches the hand.
+    SPECTATOR_MESSAGES = ("media_signal", "media_presence")
+
     async def receive(self, text_data):
-        # A spectator has no seat, no action queue and no voice at the table.
-        if self.is_spectator:
-            return
         try:
             data = json.loads(text_data)
         except ValueError:
+            return
+        # A spectator has no seat, no action queue and no voice at the table —
+        # but they do have a face, and watching a table without being seen makes
+        # a one-way mirror of it.
+        if self.is_spectator and data.get("type") not in self.SPECTATOR_MESSAGES:
             return
         message_type = data.get("type")
 
@@ -1047,6 +1086,29 @@ class TournamentConsumer(AsyncWebsocketConsumer):
     # deliberately ignorant of what a signal contains.
     # ------------------------------------------------------------------
 
+    def _register_media_channel(self, table_number, *, watching: bool):
+        """Make this socket reachable by a media signal, and say where it is."""
+        _media_channels[(self.tournament_id, self.user.id)] = {
+            "channel": self.channel_name,
+            "table": table_number,
+            "watching": watching,
+        }
+
+    def _forget_media_channel(self):
+        """Only if this socket is still the live one: a reload registers the new
+        one before the old one tears down."""
+        key = (self.tournament_id, getattr(getattr(self, "user", None), "id", None))
+        entry = _media_channels.get(key)
+        if entry is not None and entry.get("channel") == self.channel_name:
+            _media_channels.pop(key, None)
+
+    def _media_table_here(self):
+        """Which table this socket is at, for media. A seat if there is one, and
+        otherwise the table it is watching — which is the whole of what makes a
+        spectator part of the mesh."""
+        entry = _media_channels.get((self.tournament_id, self.user.id))
+        return entry.get("table") if entry else self.current_table_number
+
     def _media_budget_allows(self) -> bool:
         """Keep a flood of signalling from delaying somebody's fold.
 
@@ -1095,20 +1157,35 @@ class TournamentConsumer(AsyncWebsocketConsumer):
         if not isinstance(signal, dict) or len(json.dumps(signal)) > MEDIA_SIGNAL_MAX_BYTES:
             return
 
-        my_table = await self._media_table_of(self.user.id)
-        if my_table is None or my_table != await self._media_table_of(target_id):
+        # Both ends read from the media registry, which knows the rail as well
+        # as the seats. A spectator is not in `_player_channels` and must not be,
+        # so the delivery goes down their own channel rather than through the
+        # one that carries cards.
+        target = _media_channels.get((self.tournament_id, target_id))
+        my_table = self._media_table_here()
+        if my_table is None or target is None or target.get("table") != my_table:
             return
 
-        await _notify_user(self.tournament_id, target_id, {
-            "type": "media_signal",
-            "from_user_id": self.user.id,
-            "signal": signal,
+        await self.channel_layer.send(target["channel"], {
+            "type": "game.message",
+            "data": json.dumps({
+                "type": "media_signal",
+                "from_user_id": self.user.id,
+                "signal": signal,
+            }),
         })
 
     async def _announce_media_presence(self, data):
-        """Say that this player turned a camera or microphone on, or off."""
+        """Say that somebody at this table turned a camera or microphone on.
+
+        Somebody, rather than some player: a spectator announces the same way
+        and is in the same roster. Their table is the one they are watching —
+        see _media_table_here.
+        """
         audio, video = bool(data.get("audio")), bool(data.get("video"))
-        table = await self._media_table_of(self.user.id)
+        table = self._media_table_here()
+        if table is None:
+            table = await self._media_table_of(self.user.id)
         if table is None:
             return
 
@@ -1118,12 +1195,17 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             await _broadcast_table(self.tournament_id, table, "media_left", {"user_id": self.user.id})
             return
 
-        _media_presence[key] = {"audio": audio, "video": video, "table": table}
+        _media_presence[key] = {
+            "audio": audio, "video": video, "table": table,
+            "name": self.shown_name, "watching": bool(self.is_spectator),
+        }
         await _broadcast_table(self.tournament_id, table, "media_presence", {
             "user_id": self.user.id,
             "name": self.shown_name,
             "audio": audio,
             "video": video,
+            # So the felt knows whether to look for a seat to draw them at.
+            "watching": bool(self.is_spectator),
         })
         # The roster is the reply to the announcement, so arriving takes one
         # round trip rather than an announce-then-ask pair.
@@ -1202,6 +1284,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             paid_places=len(tournament.payout_structure or []),
             mystery_release=tournament.mystery_release,
             mystery_envelopes=list(tournament.mystery_envelopes or []),
+            mystery_cut=list(tournament.mystery_cut or []),
             mystery_opened=tournament.mystery_opened_at is not None,
             mystery_winner_keeps=tournament.mystery_winner_keeps,
             all_in_or_fold=tournament.format == "allinfold",
@@ -1285,6 +1368,8 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                 _table_group_name(self.tournament_id, next_table_number),
                 self.channel_name,
             )
+        # Reachable at the new table rather than the old one.
+        self._register_media_channel(next_table_number, watching=bool(self.is_spectator))
 
         await self.send(text_data=json.dumps(data))
         await self._send_snapshot()

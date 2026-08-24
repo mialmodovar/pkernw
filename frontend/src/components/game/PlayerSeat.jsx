@@ -11,7 +11,7 @@ import useGameStore from "../../store/gameStore";
 import { formatChips } from "./formatChips";
 import OutsBubble from "./OutsBubble";
 import { useShowCardsOffer } from "./showCards";
-import { formatEuros } from "./formatMoney";
+import { useBountyMoney } from "./useBountyMoney";
 import { vpipTone } from "./playerProfile";
 import { positionHint } from "./tablePositions";
 
@@ -114,6 +114,7 @@ export default function PlayerSeat({
   // Your own hand, between hands: the same offer the action panel's bar makes,
   // asked once so the two cannot disagree about whether you may show.
   const showOffer = useShowCardsOffer(isMe ? player.seat : null, isMe ? myCards : null);
+  const money = useBountyMoney();
   const bountyFlash = useBountyFlash(p.seat);
   const bountyCents = p.bounty_cents || 0;
   // A mystery head. Once the pool is cut, every player still in carries an
@@ -303,14 +304,14 @@ export default function PlayerSeat({
       {bountyCents > 0 && !p.is_eliminated && (
         <span
           key={bountyFlash?.id || "bounty"}
-          title={`${p.name} is worth ${formatEuros(bountyCents)} to whoever knocks them out`}
+          title={`${p.name} is worth ${money(bountyCents)} to whoever knocks them out`}
           className={`absolute -top-2 -right-1 z-10 px-1.5 py-px rounded-full text-[10px] font-extrabold leading-none
                       bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
                       text-(--color-highlight-ink) border border-(--color-highlight-deeper)
                       shadow shadow-black/60 whitespace-nowrap
                       ${bountyFlash ? "animate-bounty-bump" : ""}`}
         >
-          {formatEuros(bountyCents)}
+          {money(bountyCents)}
         </span>
       )}
 
@@ -320,7 +321,7 @@ export default function PlayerSeat({
       {carriesEnvelope && (
         <span
           title={`${p.name} is worth a mystery envelope`
-            + (mysteryTopCents > 0 ? ` — up to ${formatEuros(mysteryTopCents)}` : "")}
+            + (mysteryTopCents > 0 ? ` — up to ${money(mysteryTopCents)}` : "")}
           className="animate-mystery-head absolute -top-2 -right-1 z-10 flex items-center gap-0.5
                      px-1.5 py-px rounded-full text-[10px] font-extrabold leading-none
                      bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deep))]
@@ -344,11 +345,11 @@ export default function PlayerSeat({
                      shadow-lg shadow-black/60"
         >
           <span className="block text-[11px] font-extrabold leading-tight">
-            KO +{formatEuros(bountyFlash.cashCents)}
+            KO +{money(bountyFlash.cashCents)}
           </span>
           <span className="block text-[8px] font-semibold leading-tight opacity-80">
             {bountyFlash.toHeadCents > 0
-              ? `${formatEuros(bountyFlash.toHeadCents)} onto their head`
+              ? `${money(bountyFlash.toHeadCents)} onto their head`
               : bountyFlash.victimName}
           </span>
         </span>

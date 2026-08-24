@@ -26,3 +26,36 @@ export function useCountdown(seconds) {
 
   return left;
 }
+
+/**
+ * How long until a moment, in seconds, ticking as it goes.
+ *
+ * Same idea as the countdown above, from the other end: the server sends when
+ * something starts and the answer people want is how long that is. Kept in an
+ * effect rather than worked out while rendering, because the clock is not a
+ * pure function of anything — read during a render it makes the render depend
+ * on when it happened.
+ */
+export function useSecondsUntil(when) {
+  const [left, setLeft] = useState(null);
+
+  useEffect(() => {
+    if (!when) {
+      setLeft(null);
+      return undefined;
+    }
+    const at = new Date(when).getTime();
+    if (Number.isNaN(at)) {
+      setLeft(null);
+      return undefined;
+    }
+    const read = () => setLeft(Math.round((at - Date.now()) / 1000));
+    read();
+    // Every ten seconds: the answer is shown to the minute, so a second-by-
+    // second tick would be six times the work for the same words.
+    const id = setInterval(read, 10_000);
+    return () => clearInterval(id);
+  }, [when]);
+
+  return left;
+}

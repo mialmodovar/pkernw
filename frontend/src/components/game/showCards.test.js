@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { resolvePending } from "./showCards";
+import { resolvePending, nextPending } from "./showCards";
 
 const pick = { cards: "As,Kd", indices: [0] };
 
@@ -65,5 +65,31 @@ describe("resolvePending, asked by the rest of the table", () => {
     expect(resolvePending({
       stored: pick, hand: "7h,2c", betweenHands: true, canShow: true, mine: true,
     })).toBe("stale");
+  });
+});
+
+describe("nextPending", () => {
+  // What makes one press enough: pressing a card asks for it, pressing it again
+  // takes it back. Before this, a press only picked the card up and a second
+  // press on a separate little button did the asking — which is the step
+  // everybody missed, and the pick expired six seconds later anyway.
+  it("asks for a card that was not asked for", () => {
+    expect(nextPending([], 0)).toEqual([0]);
+  });
+
+  it("takes back one that was", () => {
+    expect(nextPending([0], 0)).toEqual([]);
+  });
+
+  it("builds up to both", () => {
+    expect(nextPending([1], 0)).toEqual([0, 1]);
+  });
+
+  it("leaves the other one alone when one is taken back", () => {
+    expect(nextPending([0, 1], 0)).toEqual([1]);
+  });
+
+  it("treats nothing pending and nothing asked for as the same", () => {
+    expect(nextPending(null, 1)).toEqual([1]);
   });
 });

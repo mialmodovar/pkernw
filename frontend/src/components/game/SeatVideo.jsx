@@ -26,11 +26,23 @@ export default function SeatVideo({ peer, name, mirrored = false, muted = false 
   // for whatever element is mounted right now.
   const attach = useCallback((node) => {
     element.current = node;
-    if (!node || !stream) return;
+    if (!node || !stream) return undefined;
     if (node.srcObject !== stream) node.srcObject = stream;
     // Browsers can still refuse to start playback. That must not break the
     // render — offer a tap instead.
     node.play().then(() => setNeedsGesture(false)).catch(() => setNeedsGesture(true));
+
+    // And let it go again when the element does. This component swaps between
+    // <audio> and <video> as a peer's camera comes and goes, and every swap
+    // left the old element holding a live MediaStream — which keeps a decoder
+    // alive for a node nothing can ever draw again. Over an evening of cameras
+    // going on and off, connections failing and seats re-rendering, that is a
+    // pile of them, and a renderer that runs out of room is a browser that
+    // stops with no explanation.
+    return () => {
+      node.srcObject = null;
+      if (element.current === node) element.current = null;
+    };
   }, [stream]);
 
   // Nothing has arrived down this connection yet. The avatar is still there and

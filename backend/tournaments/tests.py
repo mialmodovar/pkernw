@@ -173,12 +173,16 @@ class TournamentCreationTests(APITestCase):
 		response = self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
 
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-		self.assertEqual(response.data["seat"], 9)
+		# The second table, at whichever of its chairs the draw gave them: the
+		# seat is drawn from the free ones rather than counted off from zero, so
+		# which chair is not a fact about the arithmetic any more. See
+		# tournaments/seating.py.
 		self.assertEqual(response.data["table_number"], 2)
-		self.assertEqual(response.data["seat_at_table"], 0)
+		self.assertIn(response.data["seat"], range(9, 18))
+		self.assertEqual(response.data["seat_at_table"], response.data["seat"] % 9)
 		joined_player = tournament.players.get(user=joiner)
 		self.assertEqual(joined_player.table.table_number, 2)
-		self.assertEqual(joined_player.seat_at_table, 0)
+		self.assertEqual(joined_player.seat_at_table, response.data["seat"] % 9)
 
 	def test_break_level_requires_minute_duration(self):
 		response = self.client.post(
@@ -6683,13 +6687,409 @@ class EditingAScheduledNightTests(APITestCase):
 		self.tournament.refresh_from_db()
 		self.assertEqual(self.tournament.time_bank_refill_every_hands, 20)
 
-	def test_the_payouts_cannot_be_changed_by_sending_them_either(self):
-		"""Which is why the form leaves them out in the first place: the money
-		is the deal people registered on, and it is locked after creation. The
-		fallback added above must read the tournament's own rather than let an
-		empty payload through the side door."""
-		response = self._edit(payout_structure=[])
+	def test_the_payouts_can_be_changed_while_nobody_has_played(self):
+		"""They used to be locked with the buy-in, and they are a different
+		thing: the buy-in is money already taken, and how the pool divides is a
+		plan until the first hand. A host who set the share up wrongly had to
+		delete the night and make it again."""
+		response = self._edit(payout_structure=[
+			{"place": 1, "label": "1st", "percentage": 60},
+			{"place": 2, "label": "2nd", "percentage": 40},
+		])
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		self.tournament.refresh_from_db()
+		self.assertEqual(len(self.tournament.payout_structure), 2)
+		self.assertEqual(self.tournament.payout_structure[0]["percentage"], 60)
+
+	def test_an_edit_that_says_nothing_about_them_still_leaves_them_alone(self):
+		"""The fallback this class was written for: not sent is not the same as
+		emptied, and the form leaves them out whenever it is not changing
+		them."""
+		response = self._edit(name="Friday night")
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
 		self.tournament.refresh_from_db()
 		self.assertEqual(len(self.tournament.payout_structure), 3)
+
+
+class MysteryBoardVisibilityTests(TestCase):
+	"""What the table can see of the pool once it is cut.
+
+	How many envelopes were left was on screen all game; which ones had gone
+	was not — so "is the big one still out there", which is the question a
+	mystery bounty tournament is played on, had no answer anywhere. The two
+	lists are what answers it: what the pool was cut into, and what is still in
+	it.
+	"""
+
+	def test_the_cut_is_written_down_beside_what_is_left(self):
+		from game.coordinator import MultiTableTournamentCoordinator as Coordinator
+
+		coordinator = Coordinator.__new__(Coordinator)
+		coordinator._mystery_envelopes = [600, 300, 100]
+		coordinator._mystery_cut = [1200, 600, 300, 100]
+		coordinator._mystery_opened = True
+		coordinator.mystery_release = "itm"
+
+		class Bounty:
+			is_mystery = True
+		coordinator.bounty = Bounty()
+
+		payload = coordinator._mystery_payload()
+
+		self.assertEqual(payload["cut"], [1200, 600, 300, 100])
+		self.assertEqual(payload["left"], [600, 300, 100])
+		# And the numbers that were already there still are.
+		self.assertEqual(payload["envelopes_left"], 3)
+		self.assertEqual(payload["top_left_cents"], 600)
+
+	def test_a_row_that_has_never_opened_carries_no_cut(self):
+		tournament = Tournament.objects.create(
+			host=User.objects.create_user(username="cut_host", password="secret123"),
+			name="Sealed", status="lobby", bounty_mode="mystery", bounty_cents=250,
+			buy_in_cents=500,
+		)
+
+		self.assertEqual(tournament.mystery_cut, [])
+
+	def test_opening_the_pool_records_what_it_was_cut_into(self):
+		"""The row is the only copy of the pool, and now of what it was."""
+		from asgiref.sync import async_to_sync
+
+		from game.consumers import _db_open_mystery
+
+		host = User.objects.create_user(username="cut_host2", password="secret123")
+		tournament = Tournament.objects.create(
+			host=host, name="Cut", status="running", bounty_mode="mystery",
+			bounty_cents=250, buy_in_cents=500,
+		)
+		TournamentPlayer.objects.create(tournament=tournament, user=host, seat=0, chips=1000)
+
+		envelopes = async_to_sync(_db_open_mystery)(tournament.id, 3)
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.mystery_cut, envelopes)
+		self.assertEqual(tournament.mystery_envelopes, envelopes)
+		self.assertGreater(len(envelopes), 0)
+
+	def test_the_cut_does_not_change_as_envelopes_are_drawn(self):
+		from asgiref.sync import async_to_sync
+
+		from game.consumers import _db_open_mystery, _db_persist_mystery
+
+		host = User.objects.create_user(username="cut_host3", password="secret123")
+		tournament = Tournament.objects.create(
+			host=host, name="Drawn", status="running", bounty_mode="mystery",
+			bounty_cents=250, buy_in_cents=500,
+		)
+		TournamentPlayer.objects.create(tournament=tournament, user=host, seat=0, chips=1000)
+		envelopes = async_to_sync(_db_open_mystery)(tournament.id, 3)
+
+		async_to_sync(_db_persist_mystery)(tournament.id, envelopes[1:])
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.mystery_cut, envelopes)
+		self.assertEqual(tournament.mystery_envelopes, envelopes[1:])
+
+
+class PayoutShareTests(TestCase):
+	"""How many places a share of the field pays.
+
+	The bug: the places were worked out once, at creation, from the player cap.
+	Twenty per cent of a cap of a hundred is twenty paid places — so a
+	tournament five people registered for was paying twenty of them.
+	"""
+
+	def test_a_share_of_the_field_is_a_share_of_who_turned_up(self):
+		from tournaments.payouts import places_paid
+
+		self.assertEqual(places_paid(5, 20), 1)
+		self.assertEqual(places_paid(10, 20), 2)
+		self.assertEqual(places_paid(50, 20), 10)
+
+	def test_it_never_pays_more_places_than_there_are_players(self):
+		from tournaments.payouts import places_paid
+
+		self.assertEqual(places_paid(3, 100), 3)
+		self.assertEqual(places_paid(1, 50), 1)
+
+	def test_somebody_always_gets_paid(self):
+		from tournaments.payouts import places_paid
+
+		self.assertEqual(places_paid(9, 0), 1)
+		self.assertEqual(places_paid(0, 20), 1)
+
+	def test_the_split_totals_exactly_a_hundred(self):
+		"""Which is what the serializer insists on, at every depth."""
+		from tournaments.payouts import payout_curve
+
+		for places in range(1, 41):
+			with self.subTest(places=places):
+				rows = payout_curve(places)
+				self.assertEqual(len(rows), places)
+				self.assertEqual(sum(row["percentage"] for row in rows), 100)
+
+	def test_no_paid_place_is_paid_nothing(self):
+		"""A place worth zero is not a paid place."""
+		from tournaments.payouts import payout_curve
+
+		for places in (20, 40, 60):
+			with self.subTest(places=places):
+				self.assertTrue(all(row["percentage"] > 0 for row in payout_curve(places)))
+
+	def test_the_places_come_down_in_order(self):
+		from tournaments.payouts import payout_curve
+
+		shares = [row["percentage"] for row in payout_curve(9)]
+
+		self.assertEqual(shares, sorted(shares, reverse=True))
+		self.assertGreater(shares[0], shares[1])
+
+	def test_the_labels_read_like_places(self):
+		from tournaments.payouts import payout_curve
+
+		labels = [row["label"] for row in payout_curve(13)]
+
+		self.assertEqual(labels[:3], ["1st", "2nd", "3rd"])
+		self.assertEqual(labels[10], "11th")
+		self.assertEqual(labels[12], "13th")
+
+	def test_one_place_takes_everything(self):
+		from tournaments.payouts import payout_curve
+
+		self.assertEqual(payout_curve(1), [{"place": 1, "label": "1st", "percentage": 100}])
+
+	def test_a_share_and_a_field_come_to_a_whole_structure(self):
+		from tournaments.payouts import structure_for
+
+		rows = structure_for(20, 25)
+
+		self.assertEqual(len(rows), 5)
+		self.assertEqual(sum(row["percentage"] for row in rows), 100)
+
+
+class PayoutsFollowTheFieldTests(APITestCase):
+	"""A share of the field, as the field turns up.
+
+	Reported as: "I set 20% and it decided twenty places were paid" — twenty per
+	cent of a cap of a hundred, worked out once at creation. Five people
+	registered and twenty of them were being paid.
+	"""
+
+	def setUp(self):
+		# Opening a tournament takes site staff or a club organiser — see
+		# clubs/permissions.py.
+		self.host = User.objects.create_user(
+			username="share_host", password="secret123", is_staff=True,
+		)
+		self.client.force_authenticate(self.host)
+
+	def _make(self, share=20, cap=100):
+		response = self.client.post(reverse("tournament-list"), {
+			"name": "Shared", "starting_chips": 10000, "max_players": cap,
+			"players_per_table": 8, "buy_in_cents": 500,
+			"payout_share_pct": share,
+		}, format="json")
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+		return Tournament.objects.get(pk=response.data["id"])
+
+	def test_a_new_tournament_pays_the_one_player_in_it(self):
+		"""Not twenty places out of a cap nobody has filled."""
+		tournament = self._make(share=20, cap=100)
+
+		self.assertEqual(len(tournament.payout_structure), 1)
+		self.assertEqual(tournament.payout_structure[0]["percentage"], 100)
+
+	def test_the_places_grow_with_the_field(self):
+		tournament = self._make(share=20, cap=100)
+
+		for index in range(9):
+			player = User.objects.create_user(username=f"joiner_{index}", password="secret123")
+			self.client.force_authenticate(player)
+			self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
+
+		tournament.refresh_from_db()
+		# Ten registered, a fifth of them paid.
+		self.assertEqual(tournament.players.count(), 10)
+		self.assertEqual(len(tournament.payout_structure), 2)
+		self.assertEqual(sum(row["percentage"] for row in tournament.payout_structure), 100)
+
+	def test_and_shrink_again_when_somebody_gives_their_seat_up(self):
+		tournament = self._make(share=50, cap=100)
+		players = []
+		for index in range(3):
+			player = User.objects.create_user(username=f"leaver_{index}", password="secret123")
+			players.append(player)
+			self.client.force_authenticate(player)
+			self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
+
+		tournament.refresh_from_db()
+		self.assertEqual(len(tournament.payout_structure), 2)
+
+		self.client.force_authenticate(players[-1])
+		self.client.post(reverse("tournament-quit", kwargs={"pk": tournament.id}))
+
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.players.count(), 3)
+		self.assertEqual(len(tournament.payout_structure), 2)
+
+	def test_a_hand_written_structure_is_left_exactly_as_it_was(self):
+		"""Which is every tournament made before shares existed."""
+		response = self.client.post(reverse("tournament-list"), {
+			"name": "By hand", "starting_chips": 10000, "max_players": 20,
+			"players_per_table": 8, "buy_in_cents": 500,
+			"payout_structure": [
+				{"place": 1, "label": "1st", "percentage": 70},
+				{"place": 2, "label": "2nd", "percentage": 30},
+			],
+		}, format="json")
+		tournament = Tournament.objects.get(pk=response.data["id"])
+
+		for index in range(4):
+			player = User.objects.create_user(username=f"handjoin_{index}", password="secret123")
+			self.client.force_authenticate(player)
+			self.client.post(reverse("tournament-join", kwargs={"pk": tournament.id}))
+
+		tournament.refresh_from_db()
+		self.assertEqual(len(tournament.payout_structure), 2)
+		self.assertEqual(tournament.payout_structure[0]["percentage"], 70)
+
+	def test_the_field_stops_moving_the_money_once_the_night_starts(self):
+		"""Late registration aside — which the live engine decides — a
+		structure somebody has busted out under is not a plan any more."""
+		from tournaments.payoutbank import refresh_payouts
+
+		tournament = self._make(share=50, cap=100)
+		Tournament.objects.filter(pk=tournament.pk).update(status="running")
+		tournament.refresh_from_db()
+		for index in range(5):
+			TournamentPlayer.objects.create(
+				tournament=tournament,
+				user=User.objects.create_user(username=f"late_{index}", password="secret123"),
+				seat=index + 1, chips=10000,
+			)
+
+		self.assertFalse(refresh_payouts(tournament))
+		tournament.refresh_from_db()
+		self.assertEqual(len(tournament.payout_structure), 1)
+
+	def test_the_split_can_be_fixed_before_anybody_plays(self):
+		"""It was locked at creation, so a host who set the share up wrongly had
+		to delete the night and make it again."""
+		tournament = self._make(share=20, cap=100)
+
+		response = self.client.patch(
+			reverse("tournament-edit", kwargs={"pk": tournament.id}),
+			{"payout_share_pct": 50}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		tournament.refresh_from_db()
+		self.assertEqual(tournament.payout_share_pct, 50)
+
+	def test_but_not_once_it_has_started(self):
+		tournament = self._make(share=20, cap=100)
+		Tournament.objects.filter(pk=tournament.pk).update(status="running")
+
+		response = self.client.patch(
+			reverse("tournament-edit", kwargs={"pk": tournament.id}),
+			{"payout_share_pct": 50}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SeatingTheReturningTests(TestCase):
+	"""Which chair somebody gets when they sit down.
+
+	Reported from a test night: a player rebought several times and sat in the
+	same seat every time. Three things picked the lowest free number — joining,
+	coming back, and the rebalance that packs everybody up from zero — and
+	together they put a returning player at the end of the row, always.
+	"""
+
+	class Rng:
+		"""A dice that says what it is told to."""
+
+		def __init__(self, *answers):
+			self.answers = list(answers)
+
+		def choice(self, options):
+			return options[self.answers.pop(0) % len(options)]
+
+		def randint(self, low, high):
+			return min(high, max(low, self.answers.pop(0)))
+
+	def test_the_free_seats_are_the_ones_nobody_is_in(self):
+		from tournaments.seating import free_seats
+
+		self.assertEqual(free_seats({0, 2}, 5), [1, 3, 4])
+		self.assertEqual(free_seats({}, 3), [0, 1, 2])
+		self.assertEqual(free_seats({0, 1}, 2), [])
+
+	def test_a_seat_is_drawn_rather_than_counted_off(self):
+		from tournaments.seating import pick_free_seat
+
+		self.assertEqual(pick_free_seat({0, 2}, 5, rng=self.Rng(1)), 3)
+		self.assertEqual(pick_free_seat({0, 2}, 5, rng=self.Rng(2)), 4)
+
+	def test_a_full_table_has_no_seat_to_give(self):
+		from tournaments.seating import pick_free_seat
+
+		self.assertIsNone(pick_free_seat({0, 1, 2}, 3, rng=self.Rng(0)))
+
+	def test_over_many_draws_it_is_not_always_the_same_chair(self):
+		"""The bug, said as a property."""
+		from tournaments.seating import pick_free_seat
+
+		drawn = {pick_free_seat({0, 1}, 8) for _ in range(200)}
+
+		self.assertGreater(len(drawn), 1)
+		self.assertTrue(drawn <= {2, 3, 4, 5, 6, 7})
+
+	def test_somebody_coming_back_can_land_in_the_middle(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c", "d"]
+
+		seated = seat_returning_players(order, ["c"], rng=self.Rng(1))
+
+		self.assertEqual(seated, ["a", "c", "b", "d"])
+
+	def test_nobody_else_is_moved_around_them(self):
+		"""A player who has been sitting there all night does not change places
+		because somebody else rebought."""
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c", "d"]
+
+		seated = seat_returning_players(order, ["a"], rng=self.Rng(2))
+
+		self.assertEqual([one for one in seated if one != "a"], ["b", "c", "d"])
+
+	def test_the_ends_are_chairs_too(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c"]
+
+		self.assertEqual(seat_returning_players(order, ["a"], rng=self.Rng(0)), ["a", "b", "c"])
+		self.assertEqual(seat_returning_players(order, ["a"], rng=self.Rng(9)), ["b", "c", "a"])
+
+	def test_a_table_with_nobody_returning_is_left_exactly_as_it_is(self):
+		from tournaments.seating import seat_returning_players
+
+		order = ["a", "b", "c"]
+
+		self.assertEqual(seat_returning_players(order, [], rng=self.Rng()), order)
+		self.assertEqual(seat_returning_players(order, ["z"], rng=self.Rng()), order)
+
+	def test_over_many_returns_the_seat_moves_around(self):
+		from tournaments.seating import seat_returning_players
+
+		places = set()
+		for _ in range(200):
+			seated = seat_returning_players(["a", "b", "c", "d"], ["d"])
+			places.add(seated.index("d"))
+
+		self.assertGreater(len(places), 2)

@@ -9,11 +9,16 @@ import { create } from "zustand";
  */
 const useMediaStore = create((set) => ({
   // My own devices. Never restored from a previous session — a camera that
-  // turns itself on is the kind of surprise nobody forgives.
+  // turns itself on tomorrow is the kind of surprise nobody forgives. A reload
+  // of this tab is a different matter and is restored; see media/rejoinMedia.js
+  // for the line between the two.
   cameraOn: false,
   micOn: false,
   localStream: null,
   permissionError: null,
+  // Whether this installation has a relay for the pairs that need one. Off
+  // until the server says otherwise — see backend/game/ice.py.
+  relay: false,
 
   // { [userId]: { stream, status, audio, video } } — status is "connecting",
   // "connected" or "failed", straight from the connection itself.

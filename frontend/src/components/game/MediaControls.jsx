@@ -1,4 +1,5 @@
 import useMediaStore from "../../store/mediaStore";
+import { meshFailureMessage } from "../../media/mesh";
 import { disable, enable } from "../../media/peerConnections";
 
 function ToggleButton({ on, label, icon, onClick }) {
@@ -27,7 +28,19 @@ function ToggleButton({ on, label, icon, onClick }) {
  * table, a microphone you forgot was on leaks more than a bad tell.
  */
 export default function MediaControls() {
-  const { cameraOn, micOn, permissionError } = useMediaStore();
+  const { cameraOn, micOn, permissionError, peers, relay } = useMediaStore();
+
+  // Every camera at the table failing is not several accidents, it is one: this
+  // network cannot be reached directly, and whether anything can be done about
+  // it depends on whether there is a relay to fall back on. A player on mobile
+  // data arrives here and sees nothing but black rectangles otherwise.
+  const connections = Object.values(peers || {});
+  const meshError = meshFailureMessage({
+    peerCount: connections.length,
+    failedCount: connections.filter((one) => one.status === "failed").length,
+    relay,
+    cameraOn: cameraOn || micOn,
+  });
 
   const toggle = (patch) => {
     const next = { audio: micOn, video: cameraOn, ...patch };
@@ -45,8 +58,10 @@ export default function MediaControls() {
         <ToggleButton on={micOn} label={micOn ? "Turn microphone off" : "Turn microphone on"}
           icon={"\u{1F3A4}"} onClick={() => toggle({ audio: !micOn })} />
       </div>
-      {permissionError && (
-        <p className="text-[10px] text-[#c76b7a] max-w-[7rem] leading-tight">{permissionError}</p>
+      {(permissionError || meshError) && (
+        <p className="text-[10px] text-[#c76b7a] max-w-[11rem] leading-tight">
+          {permissionError || meshError}
+        </p>
       )}
     </div>
   );

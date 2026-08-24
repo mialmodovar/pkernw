@@ -60,7 +60,10 @@ export function resumeLabel(tournament) {
   if (fast) {
     const seats = tournament.players_per_table === 2 ? "Heads up" : `${tournament.players_per_table}-max`;
     const label = tournament.format === "spingo" ? fast : `${fast} · ${seats}`;
-    return `${label} · \u{1FA99} ${tournament.buy_in_coins}`;
+    // Words rather than the system emoji: this string is also a title
+    // attribute, where a drawn icon cannot go, and the emoji is a different
+    // picture on every platform.
+    return `${label} · ${tournament.buy_in_coins} coins`;
   }
   return tournament.name || "your table";
 }

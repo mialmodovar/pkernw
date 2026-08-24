@@ -95,12 +95,20 @@ export default function UserChip() {
           {/* A zero-height anchor of the right width, hung where the chip is:
               both panels position themselves against a relative parent, and
               this gives them one. */}
-          <div className="fixed z-50 w-60" style={{ right: at.right, top: at.top }}>
+          {/* Wider than the lobby's column where the screen allows it, and
+              never wider than the screen: at 240px the finisher rows — preview,
+              sound, hear it, remove — had nowhere to go. */}
+          <div
+            className="fixed z-50 w-[min(20rem,calc(100vw-1rem))]"
+            style={{ right: at.right, top: at.top }}
+          >
             <div className="relative">
               {panel === "avatar" && (
                 <EmojiPicker onSelect={updateAvatar} onClose={() => setPanel(null)} />
               )}
-              {panel === "settings" && <ThemeSettings onClose={() => setPanel(null)} />}
+              {panel === "settings" && (
+                <ThemeSettings onClose={() => setPanel(null)} fitViewport />
+              )}
             </div>
           </div>
         </>,

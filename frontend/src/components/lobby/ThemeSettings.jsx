@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Suit } from "../game/PlayingCard";
 import BetSizeSettings from "./BetSizeSettings";
 import { deckFace, parseCard } from "../game/cardStyles";
@@ -7,6 +8,7 @@ import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
 import GifPicker from "../game/GifPicker";
 import { gifPreviewUrl } from "../../api/giphy";
+import { roomBelow } from "./panelRoom";
 import { playFinisherSound } from "../game/sounds";
 import {
   ACCENT_SWATCHES,
@@ -97,7 +99,12 @@ function SectionLabel({ children, action }) {
   );
 }
 
-export default function ThemeSettings({ onClose }) {
+/**
+ * `fitViewport` is for the copy drawn over a poker table: there the page cannot
+ * scroll, so the panel measures the room under its own top edge and scrolls
+ * inside it. In the lobby the page scrolls and this stays off — see panelRoom.js.
+ */
+export default function ThemeSettings({ onClose, fitViewport = false }) {
   const { preset, accent, pattern, deck, cardBack, finishers, update } = useThemeStore();
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
@@ -107,6 +114,28 @@ export default function ThemeSettings({ onClose }) {
   // a flag because "add another" and "choose your first" open the same picker.
   const [finisherOpen, setFinisherOpen] = useState(null);
   const currentAccent = effectiveAccent({ preset, accent });
+  // How tall this may be, measured rather than guessed: it hangs off a chip
+  // whose position depends on the header, and on a phone the difference between
+  // fitting and not is the last section of the panel.
+  const box = useRef(null);
+  const [maxHeight, setMaxHeight] = useState(null);
+
+  useEffect(() => {
+    if (!fitViewport) return undefined;
+    const measure = () => {
+      const top = box.current?.getBoundingClientRect().top;
+      setMaxHeight(roomBelow(top, window.innerHeight));
+    };
+    measure();
+    // Turning a phone sideways halves the room, and a panel left at its old
+    // height would hang off the bottom again.
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, [fitViewport]);
 
   // The list is always saved whole, and the single id goes with it so a client
   // that has not been updated still finds a finisher where it looks for one.
@@ -147,20 +176,33 @@ export default function ThemeSettings({ onClose }) {
   };
 
   return (
-    <div className="absolute left-0 right-0 top-full z-10 mt-2 p-3 panel-raised panel-solid rounded-lg shadow-xl shadow-black/50 animate-fade-in">
-      <SectionLabel
-        action={
-          <button
-            onClick={onClose}
-            title="Close"
-            className="text-(--color-text-muted) hover:text-(--color-silver) text-sm leading-none px-1 transition-colors"
-          >
-            <Icon name="close" className="w-3.5 h-3.5" />
-          </button>
-        }
-      >
-        Theme
-      </SectionLabel>
+    <div
+      ref={box}
+      style={maxHeight ? { maxHeight } : undefined}
+      className={`absolute left-0 right-0 top-full z-10 mt-2 p-3 panel-raised panel-solid rounded-lg
+                  shadow-xl shadow-black/50 animate-fade-in ${
+        fitViewport ? "overflow-y-auto overscroll-contain" : ""
+      }`}
+    >
+      {/* Stays put while the rest scrolls under it: the way out of a panel
+          should not be something you have to scroll back up to find. */}
+      <div className={fitViewport
+        ? "sticky -top-3 z-30 -mx-3 -mt-3 mb-2 px-3 pt-3 pb-1 panel-solid border-b border-(--color-border)"
+        : ""}>
+        <SectionLabel
+          action={
+            <button
+              onClick={onClose}
+              title="Close"
+              className="text-(--color-text-muted) hover:text-(--color-silver) text-sm leading-none px-1 transition-colors"
+            >
+              <Icon name="close" className="w-3.5 h-3.5" />
+            </button>
+          }
+        >
+          Theme
+        </SectionLabel>
+      </div>
 
       <div className="relative">
         <button
@@ -449,17 +491,21 @@ export default function ThemeSettings({ onClose }) {
           )}
         </div>
 
-        {finisherOpen !== null && (
-          <div className="relative">
-            <div className="fixed inset-0 z-10" onClick={() => setFinisherOpen(null)} />
-            <div className="absolute right-0 top-full z-20 mt-1">
+        {/* Through a portal, in the middle of the screen. It used to hang off
+            the finisher row, which put it below the fold on a phone and, now
+            that the panel scrolls, inside the scroll box that clips it. */}
+        {finisherOpen !== null && createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-3">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setFinisherOpen(null)} />
+            <div className="relative">
               <GifPicker
                 title="Search for a finisher"
                 onPick={(id) => { addFinisher(id); setFinisherOpen(null); }}
                 onClose={() => setFinisherOpen(null)}
               />
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
 
         <p className="mt-2 text-[0.65rem] leading-snug text-(--color-text-muted)">

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Suit } from "../game/PlayingCard";
 import BetSizeSettings from "./BetSizeSettings";
@@ -8,7 +8,6 @@ import useGameStore from "../../store/gameStore";
 import useThemeStore from "../../store/themeStore";
 import GifPicker from "../game/GifPicker";
 import { gifPreviewUrl } from "../../api/giphy";
-import { roomBelow } from "./panelRoom";
 import { playFinisherSound } from "../game/sounds";
 import {
   ACCENT_SWATCHES,
@@ -100,11 +99,19 @@ function SectionLabel({ children, action }) {
 }
 
 /**
- * `fitViewport` is for the copy drawn over a poker table: there the page cannot
- * scroll, so the panel measures the room under its own top edge and scrolls
- * inside it. In the lobby the page scrolls and this stays off — see panelRoom.js.
+ * Drawn as a window over the middle of the screen, not as a dropdown.
+ *
+ * It hung off whichever button opened it, which works only while there is room
+ * beneath that button. There is roughly 900px of settings here — theme, accent,
+ * table, raise buttons, cards, finishers — so on a laptop with a short window,
+ * a tablet, or a phone, the bottom of it fell off the screen. At the table the
+ * page does not scroll, so that part was simply unreachable; the finishers are
+ * the last section and nobody could set one at all.
+ *
+ * As a window it does not depend on where it was opened from: it is centred,
+ * it never exceeds the height of the screen, and it scrolls inside itself.
  */
-export default function ThemeSettings({ onClose, fitViewport = false }) {
+export default function ThemeSettings({ onClose, children }) {
   const { preset, accent, pattern, deck, cardBack, finishers, update } = useThemeStore();
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
@@ -114,28 +121,6 @@ export default function ThemeSettings({ onClose, fitViewport = false }) {
   // a flag because "add another" and "choose your first" open the same picker.
   const [finisherOpen, setFinisherOpen] = useState(null);
   const currentAccent = effectiveAccent({ preset, accent });
-  // How tall this may be, measured rather than guessed: it hangs off a chip
-  // whose position depends on the header, and on a phone the difference between
-  // fitting and not is the last section of the panel.
-  const box = useRef(null);
-  const [maxHeight, setMaxHeight] = useState(null);
-
-  useEffect(() => {
-    if (!fitViewport) return undefined;
-    const measure = () => {
-      const top = box.current?.getBoundingClientRect().top;
-      setMaxHeight(roomBelow(top, window.innerHeight));
-    };
-    measure();
-    // Turning a phone sideways halves the room, and a panel left at its old
-    // height would hang off the bottom again.
-    window.addEventListener("resize", measure);
-    window.addEventListener("orientationchange", measure);
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("orientationchange", measure);
-    };
-  }, [fitViewport]);
 
   // The list is always saved whole, and the single id goes with it so a client
   // that has not been updated still finds a finisher where it looks for one.
@@ -175,20 +160,22 @@ export default function ThemeSettings({ onClose, fitViewport = false }) {
     setListOpen(false);
   };
 
-  return (
+  return createPortal(
     <div
-      ref={box}
-      style={maxHeight ? { maxHeight } : undefined}
-      className={`absolute left-0 right-0 top-full z-10 mt-2 p-3 panel-raised panel-solid rounded-lg
-                  shadow-xl shadow-black/50 animate-fade-in ${
-        fitViewport ? "overflow-y-auto overscroll-contain" : ""
-      }`}
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Appearance settings"
     >
+      {/* Clicking away closes it, the same as Escape. */}
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div
+        className="relative w-full max-w-[22rem] sm:max-w-md max-h-[88dvh] overflow-y-auto overscroll-contain
+                   p-3 panel-raised panel-solid rounded-lg shadow-xl shadow-black/50 animate-fade-in"
+      >
       {/* Stays put while the rest scrolls under it: the way out of a panel
           should not be something you have to scroll back up to find. */}
-      <div className={fitViewport
-        ? "sticky -top-3 z-30 -mx-3 -mt-3 mb-2 px-3 pt-3 pb-1 panel-solid border-b border-(--color-border)"
-        : ""}>
+      <div className="sticky -top-3 z-30 -mx-3 -mt-3 mb-2 px-3 pt-3 pb-1 panel-solid border-b border-(--color-border)">
         <SectionLabel
           action={
             <button
@@ -514,6 +501,13 @@ export default function ThemeSettings({ onClose, fitViewport = false }) {
             : "Plays in the middle of the table whenever you knock somebody out."}
         </p>
       </div>
-    </div>
+
+      {/* Anything the page that opened this wants at the bottom of it — the
+          lobby puts the Google connection here, which belongs with the rest of
+          the account rather than loose behind the window. */}
+      {children}
+      </div>
+    </div>,
+    document.body,
   );
 }

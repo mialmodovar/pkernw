@@ -64,13 +64,13 @@ export default function ProfileCard() {
         <EmojiPicker onSelect={updateAvatar} onClose={() => setOpenPanel(null)} />
       )}
       {openPanel === "settings" && (
-        <>
-          <ThemeSettings onClose={() => setOpenPanel(null)} />
+        <ThemeSettings onClose={() => setOpenPanel(null)}>
           {/* Account plumbing rather than appearance, and this is where the
-              account already is: the card with your own name on it. Draws
-              nothing where no Google project is configured. */}
+              account already is: the card with your own name on it. Inside the
+              window rather than after it, now that the settings open as one.
+              Draws nothing where no Google project is configured. */}
           <GoogleAccount />
-        </>
+        </ThemeSettings>
       )}
     </div>
   );

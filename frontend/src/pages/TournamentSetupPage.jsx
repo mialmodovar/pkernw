@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import api from "../api/http";
+import { useTournamentId } from "../api/useTournamentId";
 import Avatar from "../components/Avatar";
 import useAuthStore from "../store/authStore";
 import { claimEntryRedirect } from "../components/lobby/autoOpenTable";
@@ -141,7 +142,10 @@ function TableCard({ table, players, onWatch }) {
 }
 
 export default function TournamentSetupPage() {
-  const { id } = useParams();
+  // Either the number or the name — see api/useTournamentId.js. Everything
+  // below carries on speaking in numbers.
+  const { key } = useParams();
+  const { id, error: addressError } = useTournamentId(key);
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [tournament, setTournament] = useState(null);
@@ -153,6 +157,7 @@ export default function TournamentSetupPage() {
   const lateRegSeconds = useCountdown(tournament?.late_registration_seconds_left ?? null);
 
   const load = useCallback(async () => {
+    if (!id) return;
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
     // Straight to your seat when it starts under you — and when the app opened
@@ -182,6 +187,8 @@ export default function TournamentSetupPage() {
     return [...alive, ...out];
   }, [tournament]);
 
+  // A name nobody has: worth saying so, rather than loading forever.
+  if (addressError) return <p className="text-center mt-10 text-(--color-text-muted)">{addressError}</p>;
   if (!tournament) return <p className="text-center mt-10 text-(--color-text-muted)">Loading...</p>;
 
   // Whose night it is and who may run it are two different questions, and only

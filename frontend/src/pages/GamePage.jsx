@@ -7,6 +7,7 @@ import ChatPanel, { ChatUnreadBadge } from "../components/game/ChatPanel";
 import FloatingPanel from "../components/game/FloatingPanel";
 import MediaControls from "../components/game/MediaControls";
 import api from "../api/http";
+import { useTournamentId } from "../api/useTournamentId";
 import useGameStore from "../store/gameStore";
 import useAuthStore from "../store/authStore";
 import StartCountdown from "../components/game/StartCountdown";
@@ -40,7 +41,12 @@ import useWalletStore from "../store/walletStore";
 const RESULT_DELAY_MS = 8000;
 
 export default function GamePage() {
-  const { id, watchTable } = useParams();
+  // The address may carry the tournament's name rather than its number; the
+  // socket and every endpoint below want the number. See api/useTournamentId.js.
+  const { key, watchTable } = useParams();
+  const { id, error: addressError } = useTournamentId(key, {
+    tail: watchTable != null ? `/watch/${watchTable}` : "/play",
+  });
   const navigate = useNavigate();
   // The watch route carries the table in its path, and that alone is what puts
   // this page behind the rail: no seat, no cards, nothing to send.
@@ -89,6 +95,7 @@ export default function GamePage() {
   const sandboxStats = useSandboxStore((s) => s.statsByName);
 
   const loadTournament = useCallback(async () => {
+    if (!id) return;
     const { data } = await api.get(`/tournaments/${id}/`);
     setTournament(data);
   }, [id]);
@@ -103,7 +110,9 @@ export default function GamePage() {
   useTableMedia(!sandbox);
 
   useEffect(() => {
-    if (sandbox) return undefined;
+    // Not until the address has been turned into a tournament: the socket is
+    // opened on the number, so a name in the bar waits one request here.
+    if (sandbox || !id) return undefined;
     // You are at a table. Anything that would later "take you to your table" is
     // from here on a drag backwards, so the arrival redirect is spent.
     markArrivedAtTable();
@@ -122,7 +131,7 @@ export default function GamePage() {
   // Watching a table is this browser's business — nothing on the server knows
   // or cares — so it is remembered here, and stays a tab until it is closed.
   useEffect(() => {
-    if (sandbox || watching == null) return;
+    if (sandbox || !id || watching == null) return;
     useTablesStore.getState().openWatch({
       id: Number(id),
       table: watching,
@@ -149,6 +158,7 @@ export default function GamePage() {
       setPlayerStats(sandboxStats);
       return undefined;
     }
+    if (!id) return undefined;
     let cancelled = false;
     const load = () => api.get(`/tournaments/${id}/player-stats/`)
       .then(({ data }) => {
@@ -316,6 +326,13 @@ export default function GamePage() {
   const eliminationShowing = Boolean(myEliminationFinish) && eliminationReady && !spectating;
 
   if (leaving) return null;
+  if (!sandbox && !id) {
+    return (
+      <p className="text-center mt-10 text-(--color-text-muted)">
+        {addressError || "Loading..."}
+      </p>
+    );
+  }
 
   if (standings && (standingsReady || eliminationShowing)) {
     return (

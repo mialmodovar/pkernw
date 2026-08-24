@@ -1,10 +1,11 @@
-from django.db import models
 from django.conf import settings
+from django.db import models
 
 from .mystery import (
     DEFAULT_RELEASE as DEFAULT_MYSTERY_RELEASE,
     RELEASE_CHOICES as MYSTERY_RELEASE_CHOICES,
 )
+from .slugs import still_fits, unique_slug
 
 
 class Tournament(models.Model):
@@ -104,6 +105,10 @@ class Tournament(models.Model):
     time_bank_refill_rule = models.CharField(max_length=20, choices=TIME_BANK_REFILL_CHOICES, default="none")
     time_bank_refill_every_hands = models.IntegerField(null=True, blank=True)
     time_bank_refill_level = models.IntegerField(null=True, blank=True)
+    # The readable half of the address people are sent. Off the name, nobody
+    # configures it, and it changes when the name does — see tournaments/slugs.py
+    # and TournamentSlug below, which is what keeps the old link working.
+    slug = models.SlugField(max_length=70, unique=True, blank=True, null=True)
     payout_structure = models.JSONField(default=list, blank=True)
     # The share of the field that pays, when that is how the host set it up.
     # Zero means the structure above was written out by hand and is left alone.
@@ -181,8 +186,54 @@ class Tournament(models.Model):
         )
         return table
 
+    def save(self, *args, **kwargs):
+        """Keep the address in step with the name, and never lose an old one.
+
+        The slug is computed here rather than asked for anywhere: it is not a
+        setting, it is what the name comes to. A rename gives a new one and the
+        old one is kept — see TournamentSlug — so a link already sitting in
+        somebody's chat still leads to the right night.
+        """
+        if not still_fits(self.slug, self.name):
+            self.slug = unique_slug(self.name, TournamentSlug.taken(exclude=self.pk))
+            # A save that named its fields would otherwise write everything but
+            # this: half the app saves one column at a time.
+            fields = kwargs.get("update_fields")
+            if fields is not None:
+                kwargs["update_fields"] = list({*fields, "slug"})
+        super().save(*args, **kwargs)
+        TournamentSlug.objects.get_or_create(slug=self.slug, defaults={"tournament": self})
+
     def __str__(self):
         return f"{self.name} ({self.status})"
+
+
+class TournamentSlug(models.Model):
+    """Every address a tournament has ever had.
+
+    One row per slug, including the one in use, for two reasons that are really
+    the same reason. A link handed out under the old name has to keep working —
+    it is in a chat somewhere and nobody is going to fix it — and a retired slug
+    must never be handed to a second tournament, or those links would open
+    somebody else's night.
+    """
+
+    slug = models.SlugField(max_length=70, unique=True)
+    tournament = models.ForeignKey(
+        Tournament, on_delete=models.CASCADE, related_name="slugs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def taken(cls, exclude=None):
+        """Every slug spoken for, so a new one can avoid all of them."""
+        rows = cls.objects.all()
+        if exclude is not None:
+            rows = rows.exclude(tournament_id=exclude)
+        return set(rows.values_list("slug", flat=True))
+
+    def __str__(self):
+        return self.slug
 
 
 class TournamentTable(models.Model):

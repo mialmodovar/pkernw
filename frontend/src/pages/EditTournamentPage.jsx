@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import api from "../api/http";
+import { useTournamentId } from "../api/useTournamentId";
 import CreateTournamentForm from "../components/lobby/CreateTournamentModal";
 import useLobbyStore from "../store/lobbyStore";
 import useAuthStore from "../store/authStore";
@@ -15,13 +16,16 @@ import useAuthStore from "../store/authStore";
  * the buy-in, the payouts and the bounties are what players joined on.
  */
 export default function EditTournamentPage() {
-  const { id } = useParams();
+  // Either the number or the name — see api/useTournamentId.js.
+  const { key } = useParams();
+  const { id, error: addressError } = useTournamentId(key, { correct: false });
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [tournament, setTournament] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!id) return;
     api.get(`/tournaments/${id}/`)
       .then(({ data }) => setTournament(data))
       .catch(() => setError("That tournament could not be loaded."));
@@ -34,8 +38,8 @@ export default function EditTournamentPage() {
     navigate("/");
   };
 
-  if (error) {
-    return <p className="max-w-2xl mx-auto px-4 py-16 text-center text-(--color-text-muted)">{error}</p>;
+  if (error || addressError) {
+    return <p className="max-w-2xl mx-auto px-4 py-16 text-center text-(--color-text-muted)">{error || addressError}</p>;
   }
   if (!tournament) {
     return <p className="max-w-2xl mx-auto px-4 py-16 text-center text-(--color-text-muted)">Loading…</p>;

@@ -6,11 +6,17 @@ const night = { id: 7, name: "Friday Game", host_name: "dancast", host_display_n
 
 describe("tournamentUrl", () => {
   it("points at the lobby page, which is the one that says what the night is", () => {
-    expect(tournamentUrl(7, "https://poker.example")).toBe("https://poker.example/tournament/7");
+    expect(tournamentUrl({ id: 7 }, "https://poker.example")).toBe("https://poker.example/tournament/7");
+  });
+
+  it("uses the name when the tournament has one", () => {
+    // What lands in a group chat should say which night it is.
+    expect(tournamentUrl({ id: 7, slug: "friday-game" }, "https://poker.example"))
+      .toBe("https://poker.example/tournament/friday-game");
   });
 
   it("does not double the slash on an origin that came with one", () => {
-    expect(tournamentUrl(7, "https://poker.example/")).toBe("https://poker.example/tournament/7");
+    expect(tournamentUrl({ id: 7 }, "https://poker.example/")).toBe("https://poker.example/tournament/7");
   });
 });
 

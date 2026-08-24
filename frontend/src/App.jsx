@@ -69,12 +69,15 @@ export default function App() {
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/" element={<ProtectedRoute><LobbyPage /></ProtectedRoute>} />
       <Route path="/tournaments/new" element={<ProtectedRoute><CreateTournamentPage /></ProtectedRoute>} />
-      <Route path="/tournaments/:id/edit" element={<ProtectedRoute><EditTournamentPage /></ProtectedRoute>} />
+      <Route path="/tournaments/:key/edit" element={<ProtectedRoute><EditTournamentPage /></ProtectedRoute>} />
       <Route path="/clubs" element={<ProtectedRoute><ClubsPage /></ProtectedRoute>} />
       <Route path="/clubs/:slug" element={<ProtectedRoute><ClubPage /></ProtectedRoute>} />
-      <Route path="/tournament/:id" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
-      <Route path="/tournament/:id/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
-      <Route path="/tournament/:id/watch/:watchTable" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+      {/* Either the number or the name: "/tournament/42" and
+          "/tournament/quinta-feira" are the same night, and an address a
+          tournament used to have still leads to it. See api/tournamentKey.js. */}
+      <Route path="/tournament/:key" element={<ProtectedRoute><TournamentSetupPage /></ProtectedRoute>} />
+      <Route path="/tournament/:key/play" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+      <Route path="/tournament/:key/watch/:watchTable" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
       {/* A room rather than an event, so it has its own path rather than a
           tournament's with a flag on it. */}
       <Route path="/cash/:id" element={<ProtectedRoute><CashTablePage /></ProtectedRoute>} />

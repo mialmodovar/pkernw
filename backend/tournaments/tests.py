@@ -4721,6 +4721,59 @@ class FastGameStartAlertTests(APITestCase):
 		self.assertEqual(Tournament.objects.get(format="sitngo").status, "running")
 
 
+class LobbyPoolTests(APITestCase):
+	"""What the lobby is told the prize pool is made of.
+
+	Reported as the home page showing a stale prize pool: the tournament's own
+	page had it right and the card did not. The list sent how many people were
+	in the tournament and nothing about buy-backs, so a card's pool stopped
+	growing the moment somebody re-entered — and a re-entry is the one thing
+	that changes a pool after everybody has already registered.
+	"""
+
+	def setUp(self):
+		self.host = User.objects.create_user(username="pool_host", password="x")
+		self.client.force_authenticate(self.host)
+		self.tournament = Tournament.objects.create(
+			host=self.host, name="Pool night", buy_in_cents=2000, allow_rebuys=True,
+		)
+
+	def tearDown(self):
+		_tournament_runners.clear()
+
+	def _row(self):
+		rows = self.client.get(reverse("tournament-list"), {"scope": "upcoming"}).data
+		return next(row for row in rows if row["id"] == self.tournament.id)
+
+	def _seat(self, name, seat, rebuys=0):
+		user = User.objects.create_user(username=name, password="x")
+		return TournamentPlayer.objects.create(
+			tournament=self.tournament, user=user, seat=seat, chips=1000,
+			rebuy_count=rebuys,
+		)
+
+	def test_the_row_counts_the_buy_ins_and_not_only_the_seats(self):
+		self._seat("pool_a", 0)
+		self._seat("pool_b", 1, rebuys=2)
+
+		row = self._row()
+
+		# Two people, four buy-ins: the pool is 80€ and the card should say so.
+		self.assertEqual(row["player_count"], 2)
+		self.assertEqual(row["entry_count"], 4)
+
+	def test_an_empty_tournament_has_nothing_in_the_pool(self):
+		self.assertEqual(self._row()["entry_count"], 0)
+
+	def test_a_player_who_busted_still_paid_to_be_there(self):
+		self._seat("pool_out", 0).__class__.objects.filter(seat=0).update(
+			is_eliminated=True, finish_position=2,
+		)
+		self._seat("pool_in", 1)
+
+		self.assertEqual(self._row()["entry_count"], 2)
+
+
 class FastGamesStayOutOfTheTournamentListTests(APITestCase):
 	"""The lobby's tournament tab is for nights people arranged."""
 

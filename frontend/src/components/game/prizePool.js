@@ -114,13 +114,16 @@ export function totalPool(tournament, entries = entryCount(tournament)) {
 }
 
 /**
- * Entries counted from a list row, which carries no rebuys.
+ * Entries counted from a lobby list row.
  *
- * The lobby list sends a seat count and nothing about buy-backs, so a pool read
- * off it is what has been paid in by the people sitting there — right at the
- * start, and an undercount later in a tournament with rebuys. Named for what it
- * is so nobody reads the figure as final.
+ * Buy-ins, not people: a re-entry is another buy-in into the pool, and it is
+ * the one thing that changes a pool after everybody has registered. The list
+ * used to send only the seat count, so a card's prize pool stopped growing the
+ * moment somebody bought back in while the tournament's own page — which gets
+ * the full roster — showed the real figure. The seat count is the fallback for
+ * a row from a server that has not been updated.
  */
-export function seatedEntries(tournament) {
+export function rowEntries(tournament) {
+  if (tournament?.entry_count != null) return Math.max(0, tournament.entry_count);
   return Math.max(0, tournament?.player_count || 0);
 }

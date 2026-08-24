@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  entryCount, payoutLabel, placeCents, placingPoolCents, seatedEntries, totalPool,
+  entryCount, payoutLabel, placeCents, placingPoolCents, rowEntries, totalPool,
 } from "./prizePool";
 
 // A 20€ progressive with a 10€ bounty: three players, one of whom rebought.
@@ -103,13 +103,20 @@ describe("totalPool", () => {
   });
 });
 
-describe("seatedEntries", () => {
-  it("is the seat count a list row carries", () => {
-    expect(seatedEntries({ player_count: 7 })).toBe(7);
+describe("rowEntries", () => {
+  it("counts the buy-ins a list row reports", () => {
+    // Seven people and nine buy-ins: two of them have re-entered, and the pool
+    // is nine buy-ins deep.
+    expect(rowEntries({ player_count: 7, entry_count: 9 })).toBe(9);
+  });
+
+  it("falls back to the seat count where a row carries no entries", () => {
+    expect(rowEntries({ player_count: 7 })).toBe(7);
   });
 
   it("is nothing for a row that has not loaded", () => {
-    expect(seatedEntries(undefined)).toBe(0);
-    expect(seatedEntries({ player_count: -3 })).toBe(0);
+    expect(rowEntries(undefined)).toBe(0);
+    expect(rowEntries({ player_count: -3 })).toBe(0);
+    expect(rowEntries({ entry_count: -3 })).toBe(0);
   });
 });

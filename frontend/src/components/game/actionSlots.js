@@ -8,8 +8,9 @@
  * way landed on whatever had moved into that spot. At a table with a clock
  * running, that is somebody's tournament.
  *
- * There are three slots, always, in this order, and both faces of the panel
- * fill the same three:
+ * There are three slots, always, in this order. A turn fills them; while you
+ * wait they are drawn empty, and what you can pre-commit to sits in the line
+ * above them:
  *
  *   fold        give it up
  *   passive     the cheapest way to stay in — check when it is free, call when
@@ -42,24 +43,22 @@ export function turnSlots(can = {}) {
 }
 
 /**
- * What each slot holds while you are waiting for it.
+ * What each slot holds while you are waiting for it: nothing.
  *
- * The two that map cleanly onto a button take that button's place: Fold above
- * Fold, Check above the slot the check or call will appear in. Nothing
- * pre-commits a raise, so the third slot waits empty — which is also what stops
- * a cursor resting there from finding a live Raise button under it.
+ * Fold and Check used to be drawn here at full size, standing where the buttons
+ * they anticipate would stand, with Check/Fold and Call any as small pills in
+ * the line above. That split read as two classes of control for what is one
+ * choice out of four — and the two big ones sat exactly where a live Fold or
+ * Call lands a moment later, which is the one place a pre-selection should not
+ * be. All four are pills in the line above now, in one row, in the order you
+ * would say them; see PRESELECTS in ActionPanel.jsx.
  *
- * The other two pre-selections (check/fold, call any) are conditional rather
- * than positional — what they do depends on what happens in front of you — and
- * they go in the line above, where a turn puts only text.
+ * So the three slots wait empty and full-size. That is still the point of them:
+ * the row keeps its shape, and there is nothing pressable under the cursor until
+ * the decision is actually yours.
  */
-export function waitingSlots({ inHand = true } = {}) {
-  if (!inHand) return SLOTS.map((slot) => ({ slot, kind: "empty" }));
-  return [
-    { slot: "fold", kind: "preselect", preselect: "fold" },
-    { slot: "passive", kind: "preselect", preselect: "check" },
-    { slot: "aggressive", kind: "empty" },
-  ];
+export function waitingSlots() {
+  return SLOTS.map((slot) => ({ slot, kind: "empty" }));
 }
 
 /**

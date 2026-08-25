@@ -23,9 +23,16 @@ const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif";
  * The picture wins whenever there is one, so picking an emoji while one is set
  * would otherwise change nothing visible — which is why choosing an emoji also
  * takes the picture down. One avatar, one place to change it.
+ *
+ * A page inside the settings window rather than a panel of its own: it draws no
+ * frame, no shadow and no position of its own, because whatever is showing it
+ * has already decided all three. It used to hang off the chip that opened it,
+ * which on a short screen put the emoji grid below the bottom of the window
+ * with nothing able to scroll to it.
  */
-export default function EmojiPicker({ onSelect, onClose }) {
+export default function EmojiPicker({ onClose }) {
   const profile = useAuthStore((s) => s.user?.profile);
+  const updateAvatar = useAuthStore((s) => s.updateAvatar);
   const uploadAvatarImage = useAuthStore((s) => s.uploadAvatarImage);
   const removeAvatarImage = useAuthStore((s) => s.removeAvatarImage);
   const fileInput = useRef(null);
@@ -40,7 +47,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
     setError(null);
     try {
       if (hasPicture) await removeAvatarImage();
-      await onSelect(emoji);
+      await updateAvatar(emoji);
       onClose();
     } catch {
       setError("That could not be saved. Try again.");
@@ -89,7 +96,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
   };
 
   return (
-    <div className="absolute z-10 mt-2 p-3 panel-raised panel-solid rounded-lg shadow-xl shadow-black/50 animate-fade-in">
+    <div>
       {/* The name first: it is the part of you that other players read, and the
           part that used to have nowhere sensible to live. */}
       <div className="pb-3 mb-3 border-b border-(--color-border)">
@@ -152,7 +159,8 @@ export default function EmojiPicker({ onSelect, onClose }) {
             type="button"
             disabled={busy}
             onClick={() => pickEmoji(emoji)}
-            className="text-xl w-9 h-9 flex items-center justify-center rounded hover:bg-(--color-accent-soft) transition-colors disabled:opacity-50"
+            className="text-xl w-full aspect-square max-h-12 flex items-center justify-center rounded
+                       hover:bg-(--color-accent-soft) transition-colors disabled:opacity-50"
           >
             {emoji}
           </button>

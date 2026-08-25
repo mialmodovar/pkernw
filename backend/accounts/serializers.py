@@ -199,6 +199,13 @@ class PreferencesUpdateSerializer(serializers.Serializer):
     # stack, and which one a player thinks in is a habit, not a table setting.
     show_bb = serializers.BooleanField(required=False)
 
+    # Whether the mouse gets the keyboard's two-step on a decision that puts in
+    # half a stack or more. On the account rather than the browser: it is how
+    # somebody plays, and the misclick it exists for costs the same on every
+    # machine they sit at. See components/game/confirmAction.js for the
+    # threshold.
+    confirm_big_bets = serializers.BooleanField(required=False)
+
     # What a standard open is, in blinds, and what a standard bet is, as a share
     # of the pot. One host's idea of either has nothing to do with anybody
     # else's game, so they live on the account — see betPresets.js for which of

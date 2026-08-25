@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { gifFullUrl } from "../../api/giphy";
+import { gifFullUrl, gifOriginalUrl } from "../../api/giphy";
 import useGameStore from "../../store/gameStore";
 import { playFinisherSound } from "./sounds";
 
@@ -92,6 +92,15 @@ export default function FinisherOverlay() {
             key={`${one.gifId}-${index}`}
             src={gifFullUrl(one.gifId)}
             alt=""
+            // Not every GIF has a downsized rendition. One that does not falls
+            // back to the original rather than showing nothing — a knockout
+            // with no clip is the one thing this overlay must not be.
+            onError={(event) => {
+              const image = event.currentTarget;
+              if (image.dataset.fellBack) return;
+              image.dataset.fellBack = "1";
+              image.src = gifOriginalUrl(one.gifId);
+            }}
             // The height cap is in cqw too, not cqh: the table is a container
             // sized on its inline axis, so cqh is not available to it. The
             // frame holds a 5:3 aspect, which makes 22cqw about a third of its

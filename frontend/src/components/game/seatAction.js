@@ -6,19 +6,17 @@
  * was the one thing the felt did not say — the chips appeared, the stack moved,
  * and what the player had actually done was a line in a list somewhere else.
  *
- * Two lifetimes, and they are not a style choice. A fold is over the moment it
- * happens: the cards are gone, the seat is out, and leaving "Fold" sitting there
- * for the rest of the street describes somebody who is no longer in the hand. A
- * check, a call, a raise or an all in is still true — it is the state of the
- * betting until somebody changes it — so it stays until the street closes or
- * that player acts again.
+ * One lifetime, for every action: it stays until the street closes or that
+ * player acts again. What was on the felt when it came round to you is the
+ * whole reason these exist, and that includes who gave it up — a street where
+ * two players folded early reads differently from one where nobody did, and it
+ * used to read the same because the folds had timed themselves out before your
+ * turn arrived. A fold keeps the spent tone it already had, so it is legible
+ * without competing with the seats still in the hand.
  *
  * Pure, and tested, because the wrong lifetime here is a table that lies about
  * who is still to act.
  */
-
-/** How long a fold is worth showing, in milliseconds. */
-export const FOLD_MS = 3200;
 
 // Posting is not a decision — it is the price of the seat, and it is already on
 // the felt as chips. A pill saying "Posts 100" on the big blind every hand is
@@ -68,7 +66,11 @@ export function actionTone({ action, allIn = false } = {}) {
 /**
  * How long this pill stays up: a number of milliseconds, or null for "until
  * something else clears it".
+ *
+ * Always null now — folds used to expire on a timer and no longer do. Kept
+ * rather than deleted because it is the one place a lifetime could ever differ
+ * again, and the panel already asks it the question.
  */
-export function actionHoldMs({ action, allIn = false } = {}) {
-  return action === "fold" && !allIn ? FOLD_MS : null;
+export function actionHoldMs() {
+  return null;
 }

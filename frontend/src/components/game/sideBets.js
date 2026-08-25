@@ -18,8 +18,10 @@ export function contenders(players) {
 /**
  * Whether you are watching this hand rather than playing it.
  *
- * Folded, sitting it out, or never dealt in — the three ways to be at the table
- * with nothing riding on the pot, which is exactly who may call it.
+ * Folded, sitting it out, never dealt in, or with no seat at this table at all
+ * — the ways to be at the table with nothing riding on the pot, which is
+ * exactly who may call it. A spectator has no seat, so they land here too:
+ * that is the whole of what lets somebody on the rail call a hand.
  */
 export function isOnTheRail(players, mySeat) {
   const mine = players.find((p) => p.seat === mySeat);
@@ -43,15 +45,10 @@ export function sideBetState({
   bets = [],
   results = null,
   myUserId = null,
-  canCall = true,
 }) {
   if (results?.length) {
     return { mode: "results", results, contenders: [], myBet: null };
   }
-  // Watching from the rail: you get to see how the calls went, but a table you
-  // have no seat at is not one you have a say in.
-  if (!canCall) return { mode: null, results: null, contenders: [], myBet: null };
-
   const myBet = bets.find((bet) => bet.user_id === myUserId) || null;
   if (myBet) return { mode: "waiting", results: null, contenders: [], myBet };
 

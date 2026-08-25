@@ -19,6 +19,10 @@ const useMediaStore = create((set) => ({
   // Whether this installation has a relay for the pairs that need one. Off
   // until the server says otherwise — see backend/game/ice.py.
   relay: false,
+  // Set when the mesh has been opening connections far faster than a table
+  // ever legitimately needs to, and has been told to stop — see
+  // media/peerConnections.js. It clears itself once the burst has passed.
+  meshPaused: false,
 
   // { [userId]: { stream, status, audio, video } } — status is "connecting",
   // "connected" or "failed", straight from the connection itself.
@@ -40,6 +44,7 @@ const useMediaStore = create((set) => ({
 
   reset: () => set({
     cameraOn: false, micOn: false, localStream: null, permissionError: null, peers: {},
+    meshPaused: false,
   }),
 }));
 

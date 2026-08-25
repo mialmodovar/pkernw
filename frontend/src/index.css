@@ -311,6 +311,45 @@ button:disabled {
   }
 }
 
+/* The one thing the utilities cannot say for the settings window — see
+   components/SettingsWindow.jsx. */
+@media (max-width: 639px) {
+  /* iOS zooms the whole page in when a control smaller than 16px is focused,
+     and then leaves it zoomed. Every select and text field in here is 12px,
+     which is right for the layout and wrong for the phone; the window runs the
+     full width of a phone screen and can carry them at full size instead. */
+  .settings-window input:not([type="color"]):not([type="checkbox"]):not([type="range"]),
+  .settings-window select,
+  .settings-window textarea {
+    font-size: 16px;
+  }
+}
+
+/* A hit area wider than the ink, for the small controls in the header. Only
+   where there is no pointer to aim with: on a mouse the ink IS the target, and
+   an invisible box around it only steals clicks from its neighbours. */
+@media (hover: none) {
+  .tap-target {
+    position: relative;
+  }
+
+  .tap-target::before {
+    content: "";
+    position: absolute;
+    inset: -0.5rem;
+  }
+}
+
+/* A strip that scrolls without saying so. For the settings tabs, where a
+   scrollbar under five words is louder than the words. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Keeps the bottom row clear of the iOS home indicator. */
 .pb-safe {
   padding-bottom: max(0.25rem, env(safe-area-inset-bottom));

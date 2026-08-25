@@ -11,7 +11,7 @@ describe("the three slots", () => {
     for (const can of [FACING_A_BET, NOBODY_BET, FACING_AN_ALL_IN, {}]) {
       expect(turnSlots(can).map((cell) => cell.slot)).toEqual(SLOTS);
     }
-    expect(waitingSlots({ inHand: true }).map((cell) => cell.slot)).toEqual(SLOTS);
+    expect(waitingSlots().map((cell) => cell.slot)).toEqual(SLOTS);
   });
 
   it("are always three, so the row is the same shape every hand", () => {
@@ -37,39 +37,37 @@ describe("turnSlots", () => {
 });
 
 describe("waitingSlots", () => {
-  it("puts each pre-selection where its own button will appear", () => {
-    const [fold, passive, aggressive] = waitingSlots({ inHand: true });
-    expect(fold).toMatchObject({ kind: "preselect", preselect: "fold" });
-    expect(passive).toMatchObject({ kind: "preselect", preselect: "check" });
-    // Nothing pre-commits a raise, and a cursor resting here must not find one.
-    expect(aggressive.kind).toBe("empty");
-  });
-
-  it("offers nothing to somebody who is not in the hand", () => {
-    expect(waitingSlots({ inHand: false }).every((cell) => cell.kind === "empty")).toBe(true);
+  it("holds all three open and empty, with the pre-selections in the line above", () => {
+    // Nothing pressable while you wait: a cursor resting on any slot has to
+    // find the row unchanged when the decision becomes yours.
+    expect(waitingSlots().every((cell) => cell.kind === "empty")).toBe(true);
+    expect(waitingSlots()).toHaveLength(3);
   });
 });
 
 describe("the property the whole layout exists for", () => {
   it("means a still cursor finds the same decision when the turn arrives", () => {
     for (const can of [FACING_A_BET, NOBODY_BET, FACING_AN_ALL_IN]) {
-      expect(slotsAgree(waitingSlots({ inHand: true }), turnSlots(can)), JSON.stringify(can))
+      expect(slotsAgree(waitingSlots(), turnSlots(can)), JSON.stringify(can))
         .toBe(true);
     }
   });
 
-  it("catches a layout that would move a decision under the cursor", () => {
-    const shuffled = [
-      { slot: "fold", kind: "raise" },
-      { slot: "passive", kind: "call" },
+  it("catches a pre-selection standing where a different decision will land", () => {
+    // Nothing is drawn in the slots while waiting today, so this is the guard
+    // for putting one back there: a Check pill over the fold slot is exactly
+    // the misclick the layout exists to prevent.
+    const misplaced = [
+      { slot: "fold", kind: "preselect", preselect: "check" },
+      { slot: "passive", kind: "empty" },
       { slot: "aggressive", kind: "empty" },
     ];
-    expect(slotsAgree(waitingSlots({ inHand: true }), shuffled)).toBe(false);
+    expect(slotsAgree(misplaced, turnSlots(FACING_A_BET))).toBe(false);
   });
 
   it("catches the slots being reordered", () => {
     const reordered = turnSlots(FACING_A_BET).slice().reverse();
-    expect(slotsAgree(waitingSlots({ inHand: true }), reordered)).toBe(false);
+    expect(slotsAgree(waitingSlots(), reordered)).toBe(false);
   });
 });
 

@@ -247,6 +247,13 @@ class TournamentListSerializer(serializers.ModelSerializer):
     club_slug    = serializers.CharField(source="club.slug", read_only=True, default=None)
     league_name  = serializers.CharField(source="season.league.name", read_only=True, default=None)
     player_count = serializers.IntegerField(source="players.count", read_only=True)
+    # Seats and buy-backs. player_count above is how many people are in it,
+    # which is what a card says out loud; this is how many buy-ins have been
+    # paid, which is what the prize pool is made of. They part company the
+    # moment somebody re-enters, and the lobby was showing a pool that had
+    # stopped growing while the tournament page — which gets the full roster —
+    # showed the real one.
+    entry_count  = serializers.SerializerMethodField()
     table_count  = serializers.IntegerField(source="tables.count", read_only=True)
     is_joined    = serializers.SerializerMethodField()
     is_host      = serializers.SerializerMethodField()
@@ -349,6 +356,11 @@ class TournamentListSerializer(serializers.ModelSerializer):
         seat = self._my_seat(tournament)
         return seat.finish_position if seat else None
 
+    def get_entry_count(self, tournament):
+        # Off the prefetched roster the list already loads, so this costs no
+        # query of its own.
+        return sum(1 + (seat.rebuy_count or 0) for seat in tournament.players.all())
+
     def get_my_rebuy_count(self, tournament):
         """How many of your rebuys are already spent — what a capped tournament
         needs before it can offer you another one from the lobby list."""
@@ -362,7 +374,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
                   "spin_multiplier", "is_joined",
                   "is_host", "can_manage",
                   "winner_name", "my_finish_position", "my_rebuy_count",
-                  "max_players", "players_per_table", "player_count", "table_count", "late_reg_level",
+                  "max_players", "players_per_table", "player_count", "entry_count", "table_count", "late_reg_level",
                   "late_registration_open", "late_registration_seconds_left",
                   "allow_rebuys", "max_rebuys", "rebuy_level", "rebuys_open", "scheduled_start_at",
                   "time_bank_seconds", "time_bank_refill_rule", "time_bank_refill_every_hands",

@@ -8,6 +8,7 @@ import Icon from "../components/icons/Icon";
 import ActionPanel from "../components/game/ActionPanel";
 import ConnectionBanner from "../components/game/ConnectionBanner";
 import PokerTable from "../components/game/PokerTable";
+import ErrorBoundary from "../errors/ErrorBoundary";
 import { useCompactLayout } from "../components/game/useCompactLayout";
 import useAuthStore from "../store/authStore";
 import SitDownModal from "../components/lobby/SitDownModal";
@@ -200,7 +201,11 @@ export default function CashTablePage() {
       )}
 
       <div className="flex-1 min-h-0 relative table-area">
-        <PokerTable mySeat={mySeat} capacity={cash?.seats || table?.seats || 6} />
+        {/* Guarded on its own, the same as the tournament felt: a failure to
+            draw the table must not take the buttons that play the hand. */}
+        <ErrorBoundary label="table">
+          <PokerTable mySeat={mySeat} capacity={cash?.seats || table?.seats || 6} />
+        </ErrorBoundary>
 
         {/* A table with nobody to deal to, saying so. It is not a hand that has
             stalled and it is not a connection that has dropped — it is a room

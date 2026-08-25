@@ -9,6 +9,7 @@ import { drawnFrom } from "../components/game/mysteryEnvelopes";
 const SHOW_BB_KEY = "poker.showBB";
 const SOUND_KEY = "poker.turnSound";
 const HIDE_HAND_KEY = "poker.hideHand";
+const CONFIRM_BIG_KEY = "poker.confirmBigBets";
 
 /** This table's hand, filed under the table it was dealt at. */
 const rememberHand = (state, cards) => {
@@ -43,6 +44,9 @@ const writeStoredFlag = (key, value) => {
 // printing seat indices.
 let logSequence = 0;
 const LOG_LIMIT = 200;
+// A table that has just seen a bad beat throws a handful of things at once;
+// anything beyond that is a list that is not being emptied.
+const THROW_LIMIT = 24;
 
 const nameFor = (state, seat) =>
   state.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
@@ -267,6 +271,20 @@ const useGameStore = create((set) => ({
     return { showBB };
   }),
 
+  // A second click before a decision that puts in a serious share of your
+  // stack. On by default: the cost of it is one click a handful of times a
+  // night, and the cost of not having it is a tournament. Kept on the account
+  // as well as in this browser, for the same reason as the units above — it is
+  // how somebody plays, not where they are sitting. See confirmAction.js for
+  // what counts as big.
+  confirmBigBets: readStoredFlag(CONFIRM_BIG_KEY, true),
+  toggleConfirmBigBets: () => set((s) => {
+    const confirmBigBets = !s.confirmBigBets;
+    writeStoredFlag(CONFIRM_BIG_KEY, confirmBigBets);
+    api.patch("/auth/me/preferences/", { confirm_big_bets: confirmBigBets }).catch(() => {});
+    return { confirmBigBets };
+  }),
+
   /** Set it outright rather than flipping it — what the onboarding asks for. */
   setShowBB: (showBB) => set(() => {
     writeStoredFlag(SHOW_BB_KEY, showBB);
@@ -302,13 +320,26 @@ const useGameStore = create((set) => ({
       preflop: cleanSizes(preferences?.bet_sizes_preflop, DEFAULT_PREFLOP_BB),
       postflop: cleanSizes(preferences?.bet_sizes_postflop, DEFAULT_POSTFLOP_PCT),
     };
+    // The confirmation is the same bargain as the units: the account wins when
+    // it has an opinion, and this device's is pushed up when it has none. Its
+    // default is on, so an account that has never said anything is left alone
+    // rather than told it wants what it already has.
+    const confirm = preferences?.confirm_big_bets;
+    const next = { betSizes: sizes };
+    if (typeof confirm === "boolean") {
+      writeStoredFlag(CONFIRM_BIG_KEY, confirm);
+      next.confirmBigBets = confirm;
+    } else if (!s.confirmBigBets) {
+      api.patch("/auth/me/preferences/", { confirm_big_bets: false }).catch(() => {});
+    }
+
     const stored = preferences?.show_bb;
     if (typeof stored === "boolean") {
       writeStoredFlag(SHOW_BB_KEY, stored);
-      return { showBB: stored, betSizes: sizes };
+      return { ...next, showBB: stored };
     }
     if (s.showBB) api.patch("/auth/me/preferences/", { show_bb: true }).catch(() => {});
-    return { betSizes: sizes };
+    return next;
   }),
   soundEnabled: readStoredFlag(SOUND_KEY, true), // turn cue, on by default
   // Keep your own cards face down until you look at them. Off by default —
@@ -1069,6 +1100,11 @@ const useGameStore = create((set) => ({
       // landed — the store holds no timers.
       case "item_thrown":
         set((s) => ({
+          // Capped, because this list is emptied by whatever draws it and there
+          // are ways for a throw never to be drawn — one aimed at a seat that
+          // is not on this felt, from a table that rebalanced under it. Those
+          // used to sit in the list for the rest of the night, and the list is
+          // walked on every render of the table.
           throws: [...s.throws, {
             id: s.throwSequence + 1,
             item: data.item,
@@ -1080,7 +1116,7 @@ const useGameStore = create((set) => ({
             // the player it was aimed at gets it on their own screen, and this
             // is how they know it was them.
             toUserId: data.to_user_id,
-          }],
+          }].slice(-THROW_LIMIT),
           throwSequence: s.throwSequence + 1,
         }));
         break;

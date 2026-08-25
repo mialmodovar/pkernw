@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_POSTFLOP_PCT, DEFAULT_PREFLOP_BB, betPresets, cleanSizes, potIsOpen, raiseToShare,
+  DEFAULT_POSTFLOP_PCT, DEFAULT_PREFLOP_BB, SIZE_LIMITS, betPresets, cleanSizes, nudge,
+  potIsOpen, raiseToShare,
 } from "./betPresets";
 
 const clamp = (min, max) => (chips) => Math.min(Math.max(chips, min), max);
@@ -112,5 +113,39 @@ describe("cleanSizes", () => {
 
   it("rounds to something a button can print", () => {
     expect(cleanSizes([2.66666], DEFAULT_PREFLOP_BB)).toEqual([2.7]);
+  });
+});
+
+describe("nudge", () => {
+  const bb = SIZE_LIMITS.preflop;
+  const pct = SIZE_LIMITS.postflop;
+
+  it("moves a size by one step", () => {
+    expect(nudge(2.5, 1, bb)).toBe(3);
+    expect(nudge(2.5, -1, bb)).toBe(2);
+    expect(nudge(40, 1, pct)).toBe(45);
+  });
+
+  // Somebody who typed 2.3 meant it, and keeps it — until they press an arrow,
+  // which puts them back on the grid the rest of the table thinks in.
+  it("snaps a typed-in size onto the step", () => {
+    expect(nudge(2.3, 1, bb)).toBe(2.5);
+    expect(nudge(2.3, -1, bb)).toBe(2);
+    expect(nudge(38, 1, pct)).toBe(40);
+  });
+
+  it("never walks off either end", () => {
+    expect(nudge(bb.min, -1, bb)).toBe(bb.min);
+    expect(nudge(bb.max, 1, bb)).toBe(bb.max);
+    expect(nudge(pct.min, -1, pct)).toBe(pct.min);
+  });
+
+  it("has an answer for a field somebody emptied", () => {
+    expect(nudge("", 1, bb)).toBe(bb.min + bb.step);
+    expect(nudge(undefined, -1, bb)).toBe(bb.min);
+  });
+
+  it("keeps a size to one decimal, like the stored list does", () => {
+    expect(cleanSizes([nudge(2, 1, bb)])).toEqual([2.5]);
   });
 });

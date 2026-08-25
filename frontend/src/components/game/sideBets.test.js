@@ -87,10 +87,13 @@ describe("sideBetState", () => {
     expect(state.mode).toBe("results");
   });
 
-  it("gives a spectator the results and nothing else", () => {
-    const watching = { players: table, mySeat: null, open: true, myUserId: null, canCall: false };
-    expect(sideBetState(watching).mode).toBeNull();
-    expect(sideBetState({ ...watching, results: [{ user_id: 11, correct: true }] }).mode).toBe("results");
+  it("lets somebody on the rail call it, seat or no seat", () => {
+    // Watching a table you have no cards at is the purest case of what a side
+    // bet is: no stake in the pot, an opinion about who takes it.
+    const watching = { players: table, mySeat: null, open: true, myUserId: 99 };
+    expect(sideBetState(watching).mode).toBe("picking");
+    expect(sideBetState({ ...watching, results: [{ user_id: 11, correct: true }] }).mode)
+      .toBe("results");
   });
 });
 

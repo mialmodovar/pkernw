@@ -27,6 +27,7 @@ from .levelclock import seconds_until_level_ends
 from .besthand import best_of
 from .sidebets import record_for, settle, updated_records
 from .engine.hand import HandEngine
+from .button import button_index, next_big_blind
 from .engine.player import Player
 
 
@@ -1781,6 +1782,42 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
         self.assertFalse(results[0]["correct"])
         self.assertEqual(results[0]["record"], {"right": 0, "called": 1})
 
+    def test_somebody_on_the_rail_can_back_a_hand_they_have_no_seat_in(self):
+        # The report this exists for: a watcher had no seat, so the coordinator
+        # could not find a bettor and dropped every call they made.
+        coordinator = self._hand_in_progress()
+
+        placed = async_to_sync(coordinator.place_side_bet)(
+            999, 101, 50, table_number=1, name="Railbird",
+        )
+
+        self.assertTrue(placed)
+        bet = coordinator.side_bets_at(1)["bets"][0]
+        self.assertEqual(bet["user_id"], 999)
+        self.assertEqual(bet["on_user_id"], 101)
+        # No seat, and the name the table knows them by rather than an empty one.
+        self.assertIsNone(bet["seat"])
+        self.assertEqual(bet["name"], "Railbird")
+
+    def test_a_watcher_is_paid_like_anybody_else_who_called_it_right(self):
+        coordinator = self._hand_in_progress()
+        async_to_sync(coordinator.place_side_bet)(999, 101, 50, table_number=1, name="Railbird")
+
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 1, "amount": 60}])
+
+        results = [
+            payload for _table, event, payload in self.table_events
+            if event == "side_bet_results"
+        ][-1]["results"]
+        self.assertEqual([one["user_id"] for one in results], [999])
+        self.assertTrue(results[0]["correct"])
+
+    def test_a_watcher_still_cannot_back_a_hand_at_another_table(self):
+        coordinator = self._hand_in_progress()
+        self.assertFalse(
+            async_to_sync(coordinator.place_side_bet)(999, 101, 50, table_number=2)
+        )
+
     def test_a_reconnecting_client_is_handed_the_open_book(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)
@@ -3169,6 +3206,195 @@ class SpectatorsOnCameraTests(ConsumerTestBase):
 
         self.assertEqual(peers[0]["name"], "Bea")
         self.assertTrue(peers[0]["watching"])
+
+
+class BlindOrderTests(TestCase):
+    """The rule itself, away from a table — see game/button.py."""
+
+    def test_the_blind_moves_one_player_a_hand(self):
+        order = ["a", "b", "c", "d"]
+        paying = next_big_blind(order)
+        seen = [paying]
+        for _ in range(5):
+            paying = next_big_blind(order, paying, order.index(paying))
+            seen.append(paying)
+
+        self.assertEqual(seen, ["b", "c", "d", "a", "b", "c"])
+
+    def test_somebody_arriving_does_not_make_it_skip_or_repeat(self):
+        # The whole bug: a player re-enters between the button and the blinds,
+        # which is exactly where a position-based button loses count.
+        paying = next_big_blind(["a", "b", "c", "d"], "b", 1)
+        self.assertEqual(paying, "c")
+
+        arrived = ["a", "x", "b", "c", "d"]
+        self.assertEqual(next_big_blind(arrived, "c", arrived.index("c")), "d")
+
+    def test_a_player_who_busts_paying_it_hands_it_on(self):
+        # "c" is gone and the table has closed up behind them, so the position
+        # they held now holds "d" — who is next, which is the answer.
+        self.assertEqual(next_big_blind(["a", "b", "d"], "c", 2), "d")
+
+    def test_an_empty_table_has_nobody_to_pay(self):
+        self.assertIsNone(next_big_blind([], "a", 0))
+
+    def test_the_button_sits_two_back_from_the_blind(self):
+        # Six-handed: blind fourth in the order, button second, small blind
+        # third — the ordinary arrangement.
+        self.assertEqual(button_index(6, 3), 1)
+        # And it wraps rather than running off the front.
+        self.assertEqual(button_index(6, 0), 4)
+
+    def test_heads_up_the_button_is_the_small_blind(self):
+        self.assertEqual(button_index(2, 1), 0)
+        self.assertEqual(button_index(2, 0), 1)
+
+
+class ButtonMovesTests(CoordinatorHarness, TestCase):
+    """The blinds move on, whoever arrives or leaves.
+
+    Reported from a real tournament: three big blinds in a row, on a table where
+    two players had re-entered. Two in a row happens when a table shrinks under
+    you; three is the button standing still.
+
+    Standing still is what it was doing. The button was kept as a position in
+    the list of players, and the seats are handed out afresh every hand — so a
+    player re-entering and going in *before* the button pushed everybody after
+    them along one, and the same position then named the player one earlier.
+    The button had gone backwards, which is the same thing as the blinds not
+    moving, and the player behind it paid the big blind again.
+    """
+
+    LEVEL = {"small_blind": 10, "big_blind": 20, "ante": 0, "duration_hands": 8}
+
+    def _table_of(self, count):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1) for index in range(count)],
+            players_per_table=6,
+        )
+        self._sync_and_rebalance(coordinator)
+        return coordinator
+
+    def _deal(self, coordinator):
+        """One hand, and who had to put the big blind up for it.
+
+        By name rather than by seat: the seats are renumbered every hand, so
+        "seat 3" is not the same player from one hand to the next — and it is
+        the player who has to keep paying, not the chair.
+        """
+        table = coordinator._tables[1]
+        async_to_sync(coordinator._run_table_hand)(table, self.LEVEL)
+        posted = [
+            payload for _table, event, payload in self.table_events
+            if event == "blinds_posted"
+        ][-1]
+        seat = posted["bb"]["seat"]
+        return next(one.name for one in table.players if one._seat == seat)
+
+    def _re_enter(self, coordinator, seat_at_table):
+        """Somebody buys in again and goes in among the players already there.
+
+        A re-entry does not queue up on the end — see seat_returning_players —
+        so this is the ordinary case, not a corner of one.
+        """
+        index = len(self.records)
+        self.records.append(
+            self._record(index, table_number=1, seat_at_table=seat_at_table),
+        )
+        self._sync_and_rebalance(coordinator)
+
+    def test_nobody_pays_the_big_blind_twice_running(self):
+        coordinator = self._table_of(4)
+
+        paid = [self._deal(coordinator), self._deal(coordinator)]
+        # Two re-entries on consecutive hands, each sitting in among the players
+        # already there, which is the night this was reported from.
+        self._re_enter(coordinator, 1)
+        paid.append(self._deal(coordinator))
+        self._re_enter(coordinator, 1)
+        paid.append(self._deal(coordinator))
+
+        repeats = [one for one, following in zip(paid, paid[1:]) if one == following]
+        self.assertEqual(repeats, [], f"big blind repeated in {paid}")
+
+    def test_the_blind_goes_round_the_table_in_order(self):
+        coordinator = self._table_of(4)
+
+        paid = [self._deal(coordinator) for _ in range(8)]
+
+        # Twice round a settled table, in the same order both times.
+        self.assertEqual(paid[:4], paid[4:])
+        self.assertEqual(len(set(paid)), 4)
+
+    def test_the_blind_itself_never_goes_backwards(self):
+        coordinator = self._table_of(4)
+        self._deal(coordinator)
+        self._deal(coordinator)
+        paying = coordinator._tables[1].blind_player
+
+        self._re_enter(coordinator, 1)
+        self._deal(coordinator)
+
+        self.assertNotEqual(coordinator._tables[1].blind_player, paying)
+
+
+class ShowCardsWindowTests(CoordinatorHarness, TestCase):
+    """When the table is allowed to be shown a card.
+
+    Reported from a real game: picking a card on your own hand to show at the
+    end did nothing — nobody saw it — while the buttons in the action panel
+    worked. Both send the same message; the difference is only when. The picked
+    card is sent the instant the hand ends, and the window opened later, once
+    every table in the round had finished its hand and the bookkeeping was done.
+    A player pressing a button a second afterwards landed inside the window; the
+    automatic one never did.
+    """
+
+    def _finished_hand(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+        for player in coordinator._players_by_user_id.values():
+            player.hole_cards = [Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.HEARTS)]
+        return coordinator
+
+    def test_a_card_can_be_shown_the_moment_the_hand_is_over(self):
+        coordinator = self._finished_hand()
+
+        # Exactly what the browser does: the hand is over on screen, so the card
+        # picked during it goes now.
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+        shown = [payload for _table, event, payload in self.table_events if event == "cards_shown"]
+        self.assertEqual(shown[-1]["cards"], ["A♠"])
+
+    def test_and_it_is_still_shut_while_the_hand_is_running(self):
+        coordinator = self._finished_hand()
+
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [0]))
+
+    def test_showing_once_is_still_all_anybody_gets(self):
+        coordinator = self._finished_hand()
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+        # The cap has to survive the window opening early, or a player could
+        # show a card at a time and hold the deal open.
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [1]))
+
+    def test_a_second_table_finishing_does_not_wipe_what_was_shown(self):
+        """The record of who has shown is reset for a new deal, not by the
+        table next door finishing its hand."""
+        coordinator = self._finished_hand()
+        async_to_sync(coordinator._hand_event)(1, "hand_complete", {"stacks": []})
+        self.assertTrue(async_to_sync(coordinator.show_cards)(100, [0]))
+
+        async_to_sync(coordinator._hand_event)(2, "hand_complete", {"stacks": []})
+
+        self.assertFalse(async_to_sync(coordinator.show_cards)(100, [1]))
 
 
 class ReturningPlayersSitAnywhereTests(TestCase):

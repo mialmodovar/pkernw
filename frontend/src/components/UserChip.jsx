@@ -1,10 +1,8 @@
-import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 
 import Avatar from "./Avatar";
 import useAuthStore from "../store/authStore";
-import EmojiPicker from "./lobby/EmojiPicker";
-import ThemeSettings from "./lobby/ThemeSettings";
+import SettingsPanel from "./lobby/SettingsPanel";
 
 /**
  * Who you are, and the two things about that you might want to change.
@@ -14,49 +12,30 @@ import ThemeSettings from "./lobby/ThemeSettings";
  * lobby to change a card back is a strange thing to have to do mid-tournament,
  * and this is where a player already looks for themselves.
  *
- * One panel at a time, like the profile card, since both drop from the same
- * chip and two at once would overlap.
- *
- * Drawn through a portal rather than in place. Every .panel carries a
- * backdrop-filter, and a backdrop filter makes a stacking context — so a panel
- * opened inside this bar was sealed into it, however high its z-index, and
- * whatever sat below it simply painted over the top. The portal takes it out of
- * that box entirely.
+ * Both buttons open the same window — the same one the lobby's profile card
+ * opens — and differ only in which page of it they land on. Two doors into one
+ * room: what a player can change about themselves must not depend on which of
+ * them they came through, and nothing has to be positioned against this bar.
  */
 export default function UserChip() {
   const user = useAuthStore((s) => s.user);
-  const updateAvatar = useAuthStore((s) => s.updateAvatar);
-  const [panel, setPanel] = useState(null);
-  const [at, setAt] = useState(null);
-  const chip = useRef(null);
+  // Which page the settings are open on, or null for closed.
+  const [page, setPage] = useState(null);
 
-  const toggle = (name) => {
-    if (panel === name) {
-      setPanel(null);
-      return;
-    }
-    const rect = chip.current?.getBoundingClientRect();
-    if (rect) {
-      // Hung off the right edge, where the chip is, and kept on screen.
-      setAt({
-        right: Math.max(8, window.innerWidth - rect.right),
-        top: rect.bottom + 6,
-      });
-    }
-    setPanel(name);
-  };
+  const toggle = (name) => setPage((current) => (current === name ? null : name));
 
   if (!user) return null;
 
   return (
-    <span ref={chip} className="relative flex items-center gap-1 pr-2 mr-1 border-r border-(--color-border)">
+    <span className="relative flex items-center gap-1 pr-2 mr-1 border-r border-(--color-border)">
       <button
         type="button"
-        onClick={() => toggle("avatar")}
-        title="Change your appearance"
-        aria-label="Change your appearance"
-        aria-expanded={panel === "avatar"}
-        className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-white/10 transition-colors"
+        onClick={() => toggle("profile")}
+        title="Your name and picture"
+        aria-label="Your name and picture"
+        aria-expanded={page === "profile"}
+        className="tap-target flex items-center gap-1.5 rounded px-1 py-0.5
+                   hover:bg-white/10 transition-colors"
       >
         <Avatar
           url={user.profile?.avatar_url}
@@ -71,12 +50,12 @@ export default function UserChip() {
       </button>
       <button
         type="button"
-        onClick={() => toggle("settings")}
-        title="Theme settings"
-        aria-label="Theme settings"
-        aria-expanded={panel === "settings"}
-        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
-          panel === "settings" ? "bg-white/10" : "hover:bg-white/10"
+        onClick={() => toggle("theme")}
+        title="Settings"
+        aria-label="Settings"
+        aria-expanded={page === "theme"}
+        className={`tap-target w-5 h-5 flex items-center justify-center rounded transition-colors ${
+          page === "theme" ? "bg-white/10" : "hover:bg-white/10"
         }`}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"
@@ -87,25 +66,8 @@ export default function UserChip() {
         </svg>
       </button>
 
-      {panel && at && createPortal(
-        <>
-          {/* Catches the click that dismisses it, the same way the theme
-              panel's own dropdown does. */}
-          <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
-          {/* A zero-height anchor of the right width, hung where the chip is:
-              both panels position themselves against a relative parent, and
-              this gives them one. */}
-          <div className="fixed z-50 w-60" style={{ right: at.right, top: at.top }}>
-            <div className="relative">
-              {panel === "avatar" && (
-                <EmojiPicker onSelect={updateAvatar} onClose={() => setPanel(null)} />
-              )}
-              {panel === "settings" && <ThemeSettings onClose={() => setPanel(null)} />}
-            </div>
-          </div>
-        </>,
-        document.body,
-      )}
+      {/* One window, whichever button opened it — see SettingsPanel. */}
+      {page && <SettingsPanel page={page} onClose={() => setPage(null)} />}
     </span>
   );
 }

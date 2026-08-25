@@ -12,9 +12,10 @@
 import { send } from "../api/socket";
 import api from "../api/http";
 import useMediaStore from "../store/mediaStore";
-import { remember, stored, toRestore } from "./rejoinMedia";
+import { grantedFromDevices, remember, stored, toRestore } from "./rejoinMedia";
 import {
-  AUDIO_BITRATE, ICE_SERVERS, MEDIA_CONSTRAINTS, bitrateTier, isPolite, permissionMessage,
+  AUDIO_BITRATE, ICE_SERVERS, MEDIA_CONSTRAINTS, bitrateTier, isPolite, mayOpenPeer,
+  permissionMessage, shouldRestartIce,
 } from "./mesh";
 
 let myUserId = null;
@@ -34,6 +35,27 @@ let localStream = null;
 // microphone's promise, added its track again and never asked for video at all.
 const pendingMedia = new Map();
 const peers = new Map();   // userId -> { pc, audioSender, videoSender, ... }
+// Whoever we have hung up on because the table says they are not ours to talk
+// to. They may not think so — the two sides read the same table a moment apart,
+// and during a rebalance they genuinely disagree for a second — and an offer
+// from them would otherwise build a connection that the next reconcile tears
+// straight down again, forever. Answering nothing lets their side give up
+// instead. Wanting them again clears it, so this can never be the reason a
+// connection fails to form.
+const hungUpOn = new Set();
+// How many connections this page has opened, closed and restarted since it
+// loaded. Counters rather than gauges on purpose: a table churning connections
+// looks identical to a healthy one in any snapshot of what is open, and
+// churning connections is what kills a tab. Read by the black box — see
+// errors/blackBox.js — so that a crash has something to be diagnosed from.
+const counts = { created: 0, closed: 0, iceRestarts: 0, refused: 0 };
+// When the recent ones were opened, for the rate limit — see mayOpenPeer.
+let openedAt = [];
+
+/** What the media layer is holding, for the crash recorder. */
+export function mediaVitals() {
+  return { open: peers.size, ...counts };
+}
 
 export function setMyUserId(userId) {
   myUserId = userId;
@@ -74,25 +96,50 @@ export function setTableKey(key) {
 export async function restoreFromReload(key) {
   const saved = stored();
   if (!saved) return false;
-  let granted = false;
-  try {
-    // Both devices, because either could be the one that was on. Not every
-    // browser implements the query; one that does not simply restores nothing,
-    // which is where this started.
-    const names = [];
-    if (saved.cameraOn) names.push("camera");
-    if (saved.micOn) names.push("microphone");
-    const states = await Promise.all(
-      names.map((name) => navigator.permissions.query({ name })),
-    );
-    granted = states.length > 0 && states.every((one) => one.state === "granted");
-  } catch {
-    return false;
-  }
+  const granted = await alreadyGranted(saved);
   const wanted = toRestore(saved, { table: String(key || ""), granted });
   if (!wanted) return false;
   await enable(wanted);
   return true;
+}
+
+/**
+ * Whether the browser already holds the permissions this restore would need.
+ *
+ * Asked two ways. The Permissions API is the direct question, and Firefox and
+ * Safari answer it for the microphone at best — on those, a camera that was on
+ * a second ago was never coming back. The device list answers the same question
+ * everywhere, because only a granted device has a label. Either saying yes is
+ * enough; neither being able to say so leaves the camera off, which is the
+ * conservative half of this feature and stays.
+ */
+async function alreadyGranted(saved) {
+  const names = [];
+  if (saved.cameraOn) names.push("camera");
+  if (saved.micOn) names.push("microphone");
+  if (!names.length) return false;
+
+  try {
+    const states = await Promise.all(
+      names.map((name) => navigator.permissions.query({ name })),
+    );
+    if (states.every((one) => one.state === "granted")) return true;
+    // A definite "no" is a no: the permission was refused or revoked, and the
+    // device list would only tell us about a label left over from before.
+    if (states.some((one) => one.state === "denied")) return false;
+  } catch {
+    // Unimplemented, or refused the question. The device list is the fallback.
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return grantedFromDevices(devices, {
+      camera: Boolean(saved.cameraOn),
+      mic: Boolean(saved.micOn),
+    });
+  } catch {
+    return false;
+  }
 }
 
 function wanted() {
@@ -169,8 +216,16 @@ function stopTracks(tracks) {
   });
 }
 
-/** Stop transmitting entirely and release the devices. */
-export function disable() {
+/**
+ * Stop transmitting entirely and release the devices.
+ *
+ * `remembering` is the difference between switching the camera off and the page
+ * going away with it on, and it is the whole of the reload bug: leaving a table
+ * fires the same teardown a reload does, so the reload wrote "camera off" into
+ * the session a moment before the new page read it back — and every reload came
+ * up dark no matter what had been on.
+ */
+export function disable({ remembering = true } = {}) {
   const store = useMediaStore.getState();
   if (localStream) {
     stopTracks(localStream.getTracks());
@@ -178,17 +233,19 @@ export function disable() {
   }
   peers.forEach((peer) => closePeer(peer));
   peers.clear();
+  hungUpOn.clear();
   store.setLocal({ cameraOn: false, micOn: false, localStream: null });
   store.clearPeers();
   announce({ audio: false, video: false });
   // Turned off on purpose is the one state worth remembering as itself: a
-  // reload must not undo it.
-  remember({ table: tableKey, cameraOn: false, micOn: false });
+  // reload must not undo it. A page being torn down says nothing about what
+  // anybody wanted, so it leaves the note where it is.
+  if (remembering) remember({ table: tableKey, cameraOn: false, micOn: false });
 }
 
 /** Release everything, for leaving the page. */
 export function teardown() {
-  disable();
+  disable({ remembering: false });
   useMediaStore.getState().reset();
 }
 
@@ -211,11 +268,13 @@ export function reconcile(desired) {
     if (!desiredIds.has(userId)) {
       closePeer(peer);
       peers.delete(userId);
+      hungUpOn.add(userId);
       useMediaStore.getState().dropPeer(userId);
     }
   });
 
   desired.forEach((peer) => {
+    hungUpOn.delete(peer.userId);
     // Their name, whether or not they have a seat to read one off — a watcher
     // has none, and the strip along the bottom of the felt needs one.
     useMediaStore.getState().setPeer(peer.userId, {
@@ -229,7 +288,7 @@ export function reconcile(desired) {
     // black rectangle people were seeing while being seen perfectly well
     // themselves. The other side waits for the offer instead.
     if (!peers.has(peer.userId) && !isPolite(myUserId, peer.userId)) {
-      createPeer(peer.userId, { opensTheCall: true });
+      openPeer(peer.userId, { opensTheCall: true });
     }
     useMediaStore.getState().setPeer(peer.userId, { audio: peer.audio, video: peer.video });
   });
@@ -240,14 +299,50 @@ export function reconcile(desired) {
   peers.forEach((peer) => applyBitrate(peer, tier));
 }
 
+/**
+ * Open a connection to somebody, unless the table is opening far too many.
+ *
+ * The rate limit is the backstop under everything else in this file. Each of
+ * these holds an ICE agent, an encoder and a decoder, and a page that opens
+ * them faster than it closes them is a page the browser will eventually kill
+ * outright — no error, no console, nothing to read afterwards. Whatever the
+ * disagreement that causes it, running out of cameras is a better failure than
+ * running out of browser.
+ */
+function openPeer(userId, options) {
+  const verdict = mayOpenPeer(openedAt, Date.now());
+  openedAt = verdict.recent;
+  if (!verdict.allowed) {
+    counts.refused += 1;
+    // Said out loud rather than swallowed: a table quietly opening sixty
+    // connections in five minutes is a bug of ours, and the console line is
+    // how it gets found before the black box has to explain a crash. Once per
+    // spell, not once per attempt — reconcile runs on every table update and
+    // would otherwise fill the console with the same line.
+    if (!useMediaStore.getState().meshPaused) {
+      console.warn("[media] too many connections opened too quickly — holding off");
+    }
+    useMediaStore.getState().setLocal({ meshPaused: true });
+    useMediaStore.getState().setPeer(userId, { status: "failed" });
+    return null;
+  }
+  openedAt = [...verdict.recent, Date.now()];
+  useMediaStore.getState().setLocal({ meshPaused: false });
+  return createPeer(userId, options);
+}
+
 function createPeer(userId, { opensTheCall } = {}) {
   const pc = new RTCPeerConnection({ iceServers });
+  counts.created += 1;
   const peer = {
     pc,
     polite: isPolite(myUserId, userId),
     makingOffer: false,
     ignoreOffer: false,
-    triedIceRestart: false,
+    // How many restarts this pair has spent, and when it last came up — see
+    // shouldRestartIce for why the second one is what forgives the first.
+    iceRestarts: 0,
+    connectedAt: null,
     userId,
   };
   peers.set(userId, peer);
@@ -304,15 +399,22 @@ function createPeer(userId, { opensTheCall } = {}) {
   pc.onconnectionstatechange = () => {
     const state = pc.connectionState;
     if (state === "connected") {
-      peer.triedIceRestart = false;
+      peer.connectedAt = Date.now();
       useMediaStore.getState().setPeer(userId, { status: "connected" });
       return;
     }
     if (state === "failed") {
-      // One restart is worth trying — a route can change mid-game. Beyond that,
-      // with no relay to fall back on, retrying only burns battery.
-      if (!peer.triedIceRestart) {
-        peer.triedIceRestart = true;
+      // A restart is worth trying — a route can change mid-game. But only a
+      // connection that then LASTED buys another one, or a pair that keeps
+      // coming up and dying restarts for the length of the tournament.
+      const verdict = shouldRestartIce({
+        restarts: peer.iceRestarts,
+        connectedFor: peer.connectedAt == null ? null : Date.now() - peer.connectedAt,
+      });
+      peer.iceRestarts = verdict.restarts;
+      peer.connectedAt = null;
+      if (verdict.restart) {
+        counts.iceRestarts += 1;
         try { pc.restartIce(); } catch { /* nothing more to try */ }
         return;
       }
@@ -358,6 +460,7 @@ function setSenderLimit(sender, limits) {
 }
 
 function closePeer(peer) {
+  counts.closed += 1;
   peer.pc.onnegotiationneeded = null;
   peer.pc.onicecandidate = null;
   peer.pc.ontrack = null;
@@ -380,7 +483,13 @@ export async function handleSignal(fromUserId, payload) {
   const { audio, video } = wanted();
   if (!audio && !video) return;  // not taking part, so nothing to answer
 
-  const peer = peers.get(fromUserId) || createPeer(fromUserId);
+  // Somebody we have already hung up on, still calling. Building a connection
+  // for them only to close it on the next reconcile is the loop this exists to
+  // stop — see hungUpOn.
+  if (!peers.has(fromUserId) && hungUpOn.has(fromUserId)) return;
+
+  const peer = peers.get(fromUserId) || openPeer(fromUserId);
+  if (!peer) return;                 // the rate limit is holding connections off
   const { pc } = peer;
 
   try {
@@ -422,6 +531,9 @@ export async function handleSignal(fromUserId, payload) {
 export function reannounce() {
   peers.forEach((peer) => closePeer(peer));
   peers.clear();
+  // The table is about to be described to us afresh; nothing is refused on the
+  // strength of what it looked like before we were cut off.
+  hungUpOn.clear();
   useMediaStore.getState().clearPeers();
 
   const { audio, video } = wanted();

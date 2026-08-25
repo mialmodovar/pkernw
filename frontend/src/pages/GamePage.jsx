@@ -34,6 +34,7 @@ import { InfoIcon, LobbyIcon } from "../components/game/icons";
 import TableVitals from "../components/game/TableVitals";
 import SideBetPanel from "../components/game/SideBetPanel";
 import useWalletStore from "../store/walletStore";
+import ErrorBoundary from "../errors/ErrorBoundary";
 
 // How long the table stays up after a hand ends your tournament — yours or
 // everyone's. The last hand is the one worth looking at, and a result screen
@@ -551,10 +552,19 @@ export default function GamePage() {
           open={infoOpen}
           onClose={() => setInfoOpen(false)}
         />
-        <SideBetPanel mySeat={mySeat} myUserId={user?.id} canCall={watching == null} />
-        <PokerTable mySeat={mySeat} capacity={capacity}
-          statsByName={playerStats}
-          onInspectPlayer={setInspecting} />
+        {/* Callable from the rail too: watching a table you have no cards at
+            is the purest version of what a side bet is for, and the coins are
+            the wallet's rather than the table's. */}
+        <SideBetPanel mySeat={mySeat} myUserId={user?.id} />
+        {/* Its own guard, inside the page's. The felt is the busiest thing on
+            screen — eight seats, eight cameras, chips and cards in flight — and
+            if it ever fails to draw, the buttons below it are what let you play
+            the hand you are already in rather than sit there timing out. */}
+        <ErrorBoundary label="table">
+          <PokerTable mySeat={mySeat} capacity={capacity}
+            statsByName={playerStats}
+            onInspectPlayer={setInspecting} />
+        </ErrorBoundary>
 
         {/* On a desktop these float on the felt, and stay where you put them.
             A phone gets neither: the chat is a sheet and the action panel has a

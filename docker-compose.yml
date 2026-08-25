@@ -28,6 +28,7 @@ services:
       args:
         # Baked into the frontend bundle — see backend/Dockerfile. Changing it
         # needs a rebuild, not just a restart.
+        VITE_GIPHY_API_KEYS: ${VITE_GIPHY_API_KEYS:-}
         VITE_GIPHY_API_KEY: ${VITE_GIPHY_API_KEY:-}
     restart: unless-stopped
     # Keep this at one replica. The tournament engine holds per-tournament state

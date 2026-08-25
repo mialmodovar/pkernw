@@ -9,6 +9,7 @@
  */
 
 import { socketUrl } from "./socketUrl";
+import { noteCrash } from "../errors/crashLog";
 
 const MAX_ATTEMPTS = 8;
 const BASE_DELAY_MS = 1000;
@@ -59,8 +60,27 @@ function open(tournamentId, options) {
   };
 
   socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    listeners.forEach((fn) => fn(data));
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (error) {
+      // A frame we cannot read is one message lost. Tearing the socket down
+      // over it would lose the table.
+      noteCrash(error, "socket message");
+      return;
+    }
+    // One at a time, each in its own try. These listeners are the game store,
+    // the sounds and the camera mesh, and a throw in any of them used to stop
+    // the ones after it from ever seeing the message — so a single bad event
+    // could leave the table drawn from a state that had stopped being updated,
+    // silently, for the rest of the night.
+    listeners.forEach((fn) => {
+      try {
+        fn(data);
+      } catch (error) {
+        noteCrash(error, `socket listener (${data?.type || "unknown"})`);
+      }
+    });
   };
 
   socket.onclose = () => {

@@ -12,6 +12,7 @@ from tournaments import mystery
 from tournaments.seating import pick_free_seat, seat_returning_players
 from tournaments.bounties import BountyConfig, split_knockout
 
+from .button import button_index, next_big_blind
 from .engine.hand import HandEngine, cards_to_list
 from .finishers import DEFAULT_SOUND, pick_finisher
 from .levelclock import seconds_until_level_ends
@@ -52,7 +53,13 @@ class RuntimeTable:
     table_id: Optional[int] = None
     max_seats: int = 9
     players: List[EnginePlayer] = field(default_factory=list)
-    dealer_idx: int = 0
+    # Who paid the big blind last hand, by tournament-player id, and where they
+    # stood in that hand's order — the fallback for when they bust paying it.
+    # Never a seat: seats are handed out again every hand. The button is worked
+    # out from this rather than kept, so that the blinds move one player a hand
+    # whoever arrives in between. See game/button.py.
+    blind_player: Optional[int] = None
+    blind_index: int = 0
     hand_number: int = 0
 
 
@@ -345,12 +352,16 @@ class MultiTableTournamentCoordinator:
                 continue
 
             active_before = self._active_player_count()
+            # A fresh deal, so nobody has shown anything yet. Reset here rather
+            # than after the hands: the window opens per table, the moment that
+            # table's hand ends (see _hand_event), and clearing this afterwards
+            # would wipe the record of a player who had already shown — letting
+            # them show again and hold the deal open a card at a time.
+            self._shown_this_hand = set()
             results = await asyncio.gather(*(self._run_table_hand(table, level) for table in playable_tables))
 
-            # Cards can be shown from the moment the hands are over. What
-            # follows — eliminations, bounties, a database write — takes long
-            # enough that a player clicking straight away was being refused.
-            self._shown_this_hand = set()
+            # Belt and braces for a hand that ends without the engine saying so.
+            # The window is normally already open by now — see _hand_event.
             self._show_open = True
 
             busted: List[EnginePlayer] = []
@@ -571,6 +582,19 @@ class MultiTableTournamentCoordinator:
         """
         await self._broadcast_to_table(table_number, event_type, payload)
 
+        if event_type == "hand_complete":
+            # The table has just been told the hand is over, so from this moment
+            # a player may show. It has to open here rather than after the round:
+            # a card picked during the hand is sent the instant that message
+            # lands, and what came between — the other tables still playing,
+            # eliminations, bounties, a database write — was long enough that
+            # every one of those arrived before the window opened and was
+            # refused. Nobody saw the card, and the player was never told why.
+            self._show_open = True
+            self._show_deadline = max(
+                self._show_deadline, time.monotonic() + self.showdown_seconds,
+            )
+
         if event_type in ("all_in_equity", "showdown"):
             # The cards are face up. Calling a hand you can already read is not
             # calling anything.
@@ -595,7 +619,14 @@ class MultiTableTournamentCoordinator:
             "bets": {},
         }
 
-    async def place_side_bet(self, user_id: int, on_user_id: int, stake=None) -> bool:
+    async def place_side_bet(
+        self,
+        user_id: int,
+        on_user_id: int,
+        stake=None,
+        table_number: Optional[int] = None,
+        name: str = "",
+    ) -> bool:
         """Back somebody to win the hand you are not in.
 
         Once only, and only while the hand is still a question: a bet cannot be
@@ -606,22 +637,34 @@ class MultiTableTournamentCoordinator:
         six; calling heads-up on the river pays two. That is what makes calling
         early worth anything, and it only works if the odds are stamped at the
         moment of the call rather than read again at the end.
+
+        The bettor need not have a seat. Somebody on the rail — watching a
+        table they were knocked out of, or one they never played — is the purest
+        case of what this is for: no cards, no stake in the pot, an opinion
+        about who takes it. They come with `table_number`, since there is no
+        seat to read a table off, and with the `name` the table knows them by,
+        since there is no runtime player holding it either.
         """
-        bettor = self._players_by_user_id.get(user_id)
         pick = self._players_by_user_id.get(on_user_id)
-        if bettor is None or pick is None or bettor is pick:
+        if pick is None or on_user_id == user_id:
             return False
 
-        table_number = bettor._table_number
-        if pick._table_number != table_number:
+        bettor = self._players_by_user_id.get(user_id)
+        # Whose book this is: the table being watched, or the one the bettor is
+        # sitting at. A watcher's own seat, if they have one somewhere, has
+        # nothing to do with the hand they are calling.
+        table = table_number if table_number is not None else getattr(bettor, "_table_number", None)
+        if table is None or pick._table_number != table:
             return False
+        table_number = table
 
         book = self._side_bets.get(table_number)
         if book is None or not book["open"] or user_id in book["bets"]:
             return False
 
-        # You may only bet on a hand you are not in — folded, or never dealt.
-        if user_id in book["dealt_in"] and not bettor.is_folded:
+        # You may only bet on a hand you are not in — folded, never dealt, or
+        # not at this table at all.
+        if user_id in book["dealt_in"] and not (bettor is not None and bettor.is_folded):
             return False
         # And only on somebody who is still in it.
         if on_user_id not in book["dealt_in"] or pick.is_folded:
@@ -641,7 +684,13 @@ class MultiTableTournamentCoordinator:
             if not await self.take_side_bet_stake(user_id, PLAYER_BET.id, wager):
                 return False
 
-        book["bets"][user_id] = {"on_user_id": on_user_id, "stake": wager, "odds": odds}
+        book["bets"][user_id] = {
+            "on_user_id": on_user_id,
+            "stake": wager,
+            "odds": odds,
+            # Only ever read for a bettor with no runtime player to ask.
+            "name": name,
+        }
         await self._broadcast_to_table(
             table_number,
             "side_bet_placed",
@@ -664,7 +713,8 @@ class MultiTableTournamentCoordinator:
         pick = self._players_by_user_id.get(bet["on_user_id"])
         return {
             "user_id": user_id,
-            "name": bettor.name if bettor else "",
+            # A watcher has no runtime player, so the name came in with the bet.
+            "name": bettor.name if bettor else bet.get("name", ""),
             "seat": getattr(bettor, "_seat", None),
             "on_user_id": bet["on_user_id"],
             "on_name": pick.name if pick else "",
@@ -1153,7 +1203,8 @@ class MultiTableTournamentCoordinator:
                 table_id=meta.get("id"),
                 max_seats=meta.get("max_seats", self.players_per_table),
                 players=players,
-                dealer_idx=0 if previous is None else min(previous.dealer_idx, max(0, len(players) - 1)),
+                blind_player=None if previous is None else previous.blind_player,
+                blind_index=0 if previous is None else previous.blind_index,
                 # A brand-new table resumes the tournament's numbering rather
                 # than restarting it: a process restart mid-tournament used to
                 # deal "hand 1" again, so the finish screen — which reads the
@@ -1214,9 +1265,16 @@ class MultiTableTournamentCoordinator:
         if len(players) < 2:
             return [], []
 
+        # Worked out before the hand rather than after it: "the next player
+        # along" is a question only this hand's seating can answer, and by the
+        # time the hand is over the seating has already been handed out again.
+        order = [player._tp_id for player in players]
+        table.blind_player = next_big_blind(order, table.blind_player, table.blind_index)
+        table.blind_index = order.index(table.blind_player)
+
         engine = HandEngine(
             players=players,
-            dealer_pos=table.dealer_idx % len(players),
+            dealer_pos=button_index(len(order), table.blind_index),
             small_blind=level["small_blind"],
             big_blind=level["big_blind"],
             ante=level["ante"],
@@ -1229,7 +1287,6 @@ class MultiTableTournamentCoordinator:
         self._open_side_bets(table)
         result = await engine.run()
         table.hand_number += 1
-        table.dealer_idx = (table.dealer_idx + 1) % max(1, len([player for player in players if player.chips > 0]))
         table.players = players
         return (
             [player for player in result.busted_players if player.chips == 0],

@@ -1,15 +1,15 @@
 import { useState } from "react";
 import Avatar from "../Avatar";
 import useAuthStore from "../../store/authStore";
-import EmojiPicker from "./EmojiPicker";
-import GoogleAccount from "./GoogleAccount";
-import ThemeSettings from "./ThemeSettings";
+import SettingsPanel from "./SettingsPanel";
 
 export default function ProfileCard() {
-  const { user, updateAvatar } = useAuthStore();
+  const { user } = useAuthStore();
 
-  // One panel at a time: both drop out of the same card, and two of them open
-  // at once would overlap.
+  // Which page of the settings is open, or null for closed. The same window the
+  // header's gear opens, on the page this button is about: the two used to be
+  // different panels with different contents, so which settings a player could
+  // find depended on which of them they had found.
   const [openPanel, setOpenPanel] = useState(null);
   const toggle = (panel) => setOpenPanel((current) => (current === panel ? null : panel));
 
@@ -17,8 +17,8 @@ export default function ProfileCard() {
     <div className={`panel rounded-lg p-4 relative shadow-lg shadow-black/40 ${openPanel ? "z-20" : ""}`}>
       <div className="flex items-center gap-3">
         <button
-          onClick={() => toggle("avatar")}
-          title="Change appearance"
+          onClick={() => toggle("profile")}
+          title="Your name and picture"
           className="w-14 h-14 rounded-full overflow-hidden panel-raised hover:border-(--color-accent-hover) transition-colors"
         >
           <Avatar
@@ -37,19 +37,19 @@ export default function ProfileCard() {
           {/* The balance is in the header on every page now, which is where it
               belongs — saying it again here would be saying it twice. */}
           <button
-            onClick={() => toggle("avatar")}
+            onClick={() => toggle("profile")}
             className="text-xs text-(--color-text-muted) hover:text-(--color-silver) transition-colors"
           >
             Change appearance
           </button>
         </div>
         <button
-          onClick={() => toggle("settings")}
-          title="Theme settings"
-          aria-label="Theme settings"
-          aria-expanded={openPanel === "settings"}
+          onClick={() => toggle("theme")}
+          title="Settings"
+          aria-label="Settings"
+          aria-expanded={openPanel === "theme"}
           className={`ml-auto shrink-0 w-8 h-8 flex items-center justify-center rounded panel-raised transition-colors ${
-            openPanel === "settings" ? "border-(--color-accent-hover)" : ""
+            openPanel === "theme" ? "border-(--color-accent-hover)" : ""
           }`}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true"
@@ -60,17 +60,8 @@ export default function ProfileCard() {
           </svg>
         </button>
       </div>
-      {openPanel === "avatar" && (
-        <EmojiPicker onSelect={updateAvatar} onClose={() => setOpenPanel(null)} />
-      )}
-      {openPanel === "settings" && (
-        <>
-          <ThemeSettings onClose={() => setOpenPanel(null)} />
-          {/* Account plumbing rather than appearance, and this is where the
-              account already is: the card with your own name on it. Draws
-              nothing where no Google project is configured. */}
-          <GoogleAccount />
-        </>
+      {openPanel && (
+        <SettingsPanel page={openPanel} onClose={() => setOpenPanel(null)} />
       )}
     </div>
   );

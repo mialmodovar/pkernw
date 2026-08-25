@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
-import { giphyConfigured, gifPreviewUrl, searchGifs } from "../../api/giphy";
+import { GiphyRateLimited, giphyConfigured, gifPreviewUrl, searchGifs } from "../../api/giphy";
 
 /** Long enough that typing a word does not cost a request per letter. */
 const DEBOUNCE_MS = 350;
+
+/** Rounded up: "back in about 0 min" is not a wait anybody believes. */
+function minutesUntil(when) {
+  if (!when) return null;
+  return Math.max(1, Math.ceil((when - Date.now()) / 60000));
+}
 
 /**
  * Pick a GIF. Used both for saying one in chat and for choosing a finisher, so
@@ -15,7 +21,10 @@ const DEBOUNCE_MS = 350;
 export default function GifPicker({ onPick, onClose, title = "Send a GIF" }) {
   const [term, setTerm] = useState("");
   const [gifs, setGifs] = useState([]);
-  const [state, setState] = useState("loading");   // loading | ready | error
+  const [state, setState] = useState("loading");   // loading | ready | error | limited
+  // When the first key comes back, so the wait can be a number rather than
+  // "later" — see api/giphyKeys.js.
+  const [retryAt, setRetryAt] = useState(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -37,7 +46,15 @@ export default function GifPicker({ onPick, onClose, title = "Send a GIF" }) {
       setState("loading");
       searchGifs(term, { signal: controller.signal })
         .then((results) => { setGifs(results); setState("ready"); })
-        .catch((error) => { if (error.name !== "AbortError") setState("error"); });
+        .catch((error) => {
+          if (error.name === "AbortError") return;
+          if (error instanceof GiphyRateLimited) {
+            setRetryAt(error.retryAt);
+            setState("limited");
+            return;
+          }
+          setState("error");
+        });
     }, term ? DEBOUNCE_MS : 0);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [term]);
@@ -65,8 +82,15 @@ export default function GifPicker({ onPick, onClose, title = "Send a GIF" }) {
 
       {!giphyConfigured ? (
         <p className="text-[11px] leading-snug text-(--color-text-muted) py-2">
-          GIFs need a Giphy API key. Set <code>VITE_GIPHY_API_KEY</code> in the
+          GIFs need a Giphy API key. Set <code>VITE_GIPHY_API_KEYS</code> in the
           frontend environment and rebuild.
+        </p>
+      ) : state === "limited" ? (
+        // Every key spent. Said plainly, with the wait, because "try again"
+        // against a rate limit is an invitation to keep pressing.
+        <p className="text-[11px] leading-snug text-(--color-text-muted) py-2">
+          Giphy has had all the searches it allows for now.
+          {minutesUntil(retryAt) != null && ` Back in about ${minutesUntil(retryAt)} min.`}
         </p>
       ) : state === "error" ? (
         <p className="text-[11px] text-(--color-text-muted) py-2">

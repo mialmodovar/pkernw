@@ -1,6 +1,6 @@
 import PlayerFaces from "./PlayerFaces";
 import Icon from "../icons/Icon";
-import { seatedEntries, totalPool } from "../game/prizePool";
+import { rowEntries, totalPool } from "../game/prizePool";
 import { prizeLabel } from "./buyIn";
 import { rebuyOffer } from "./rebuyOffer";
 import { tournamentFacts } from "./tournamentFacts";
@@ -98,18 +98,19 @@ export default function TournamentCard({
   const full = t.player_count >= t.max_players;
   const bountyOn = (t.bounty_mode || "none") !== "none" && (t.bounty_cents || 0) > 0;
 
-  // What is actually at stake, in money. The list payload carries no rebuy
-  // counts, so this is entrants so far — the same basis the old card used, and
-  // a figure that only ever grows.
-  const poolCents = Math.max(0, buyInCents - (bountyOn ? (t.bounty_cents || 0) : 0)) * t.player_count;
+  // What is actually at stake, in money. Buy-ins rather than people, so a
+  // re-entry moves it: the card was reading the seat count and going quiet
+  // about every buy-back after it.
+  const entries = rowEntries(t);
+  const poolCents = Math.max(0, buyInCents - (bountyOn ? (t.bounty_cents || 0) : 0)) * entries;
   // The other half of a knockout night. It is paid out hand by hand rather than
   // by placing, which is why it is not in the pool above — but it is money, and
   // a card that leaves it out says a KO night was worth half what it was.
-  const koPoolCents = bountyOn ? (t.bounty_cents || 0) * t.player_count : 0;
+  const koPoolCents = bountyOn ? (t.bounty_cents || 0) * entries : 0;
   // Everything paid in, which is the number anybody scanning a list is actually
   // after: how big is this. It was only ever available here in halves — "€150
   // places" beside "KO €150" — and never as the one figure people ask for.
-  const pool = totalPool(t, seatedEntries(t));
+  const pool = totalPool(t, entries);
 
   const running = t.status === "running" || t.status === "paused";
   // How long it has been going, or how long it took. Neither can be read off
@@ -132,7 +133,7 @@ export default function TournamentCard({
     // When the pool has a column of its own, saying it again in words is
     // repetition; when it has not, this line is the only place it can be said.
     hasPoolFigure: Boolean(pool),
-    prizeLabel: prizeLabel(t, t.player_count),
+    prizeLabel: prizeLabel(t, entries),
   });
 
   const canJoin = (t.status === "lobby" || t.late_registration_open) && !t.is_joined && !full;

@@ -3,6 +3,7 @@ import useGameStore from "../../store/gameStore";
 import { raiseLabel, turnSlots, waitingSlots } from "./actionSlots";
 import { BUTTON_SIZE } from "./betBarSizing";
 import { betPresets } from "./betPresets";
+import { needsConfirm } from "./confirmAction";
 import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
 import { formatChips } from "./formatChips";
 import ShowCardsBar from "./ShowCardsBar";
@@ -10,7 +11,10 @@ import { timerToneClass, useActionCountdown } from "./useActionCountdown";
 import { useCompactLayout } from "./useCompactLayout";
 
 // Keyboard shortcuts arm on the first press and commit on the second, so a
-// stray keystroke can't fold your hand. The mouse commits immediately.
+// stray keystroke can't fold your hand. The mouse commits immediately too,
+// except on the decisions that put a serious share of a stack in — there it
+// arms the same way, if the player asked for that in Settings. Which decisions
+// those are is confirmAction.js.
 const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 
 // The one control anybody aims at under time pressure, so it is the one that
@@ -38,6 +42,9 @@ const STEPPER = "btn-secondary w-8 shrink-0 rounded text-base font-bold leading-
 
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
+// In the order you would say them, and all four the same size: they are one
+// choice out of four, so none of them is drawn as a bigger control than the
+// rest.
 const PRESELECTS = [
   { key: "fold", label: "Fold", hint: "Fold the moment it reaches you" },
   { key: "check", label: "Check", hint: "Check if you can — a bet behind you hands the decision back" },
@@ -74,39 +81,11 @@ function overSomethingScrollable(target) {
  * lit — and the lit one can be pressed again to take it back, which is the one
  * thing a radio group cannot do and this needs.
  *
- * Two of them are drawn as full-size buttons standing exactly where the buttons
- * they anticipate will stand; see actionSlots.js. The other two are conditional
- * rather than positional and are drawn small, in the line above, which a turn
- * fills with text and never with a button.
+ * All four sit in the line a turn gives to its hint text, which is the one row
+ * of the panel a turn never fills with a button. That is deliberate: a
+ * pre-selection must not stand where the live Fold or Call is about to appear,
+ * or a click already on its way lands on the real thing.
  */
-function PreselectButton({ option, chosen, onChange, className = "" }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={chosen}
-      title={chosen ? `${option.hint} — press again to cancel` : option.hint}
-      onClick={() => onChange(chosen ? null : option.key)}
-      className={`${BTN} border ${className} ${
-        chosen
-          ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))]"
-            + " text-(--color-highlight-ink) border-(--color-highlight-deeper)"
-          : "bg-black/40 text-(--color-text-muted) border-(--color-border)"
-            + " hover:text-(--color-silver) hover:border-(--color-border-strong)"
-      }`}
-    >
-      <span className="flex items-center justify-center gap-1.5">
-        {/* The dot is what says "one of these", before the colour does. */}
-        <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${
-          chosen ? "border-(--color-highlight-ink) bg-(--color-highlight-ink)" : "border-(--color-text-muted)"
-        }`} />
-        {option.label}
-      </span>
-    </button>
-  );
-}
-
-/** The conditional pre-selections, in the line a turn gives to its hint text. */
 function PreselectChips({ value, onChange, keys }) {
   return (
     <>
@@ -214,6 +193,7 @@ export default function ActionPanel({
   const shell = bare ? "" : "panel rounded-lg shadow-lg shadow-black/50";
   const {
     actionOnSeat, actionContext, showBB, level, players, handNumber, holeCards, betSizes,
+    confirmBigBets,
   } = useGameStore();
   const [preselect, setPreselect] = useState(null);
   const [raiseAmount, setRaiseAmount] = useState(0);
@@ -284,6 +264,38 @@ export default function ActionPanel({
     else if (action === "allin") onAction("raise", maxRaise);
     else onAction(action, 0);
   }, [submitted, disabled, onAction, raiseAmount, maxRaise]);
+
+  // What the chips behind this seat are, for measuring a decision against. Read
+  // off the seat rather than off the action context: the context says what may
+  // be bet, and this is what it costs to be wrong.
+  const myStack = useMemo(() => {
+    const mine = players.find((p) => p.seat === mySeat);
+    return { stack: mine?.chips ?? 0, myBet: mine?.bet ?? 0 };
+  }, [players, mySeat]);
+
+  /**
+   * A click on one of the three buttons.
+   *
+   * The keyboard's two-step, given to the mouse, on the decisions that are
+   * worth it: the first click arms the button — it lights with the same ring a
+   * held key gives it, and the line above says what pressing again will do —
+   * and the second commits. Everything else goes in on the first click, as it
+   * always has, because a confirmation on every call is one nobody reads.
+   */
+  const press = useCallback((action) => {
+    if (submitted || disabled) return;
+    const ask = confirmBigBets && needsConfirm({
+      action,
+      amount: raiseAmount,
+      toCall: ctx.to_call || 0,
+      ...myStack,
+    });
+    if (ask && armed !== action) {
+      setArmed(action);
+      return;
+    }
+    commit(action);
+  }, [submitted, disabled, confirmBigBets, raiseAmount, ctx.to_call, myStack, armed, commit]);
 
   useEffect(() => {
     if (!isMyTurn || submitted || disabled) return undefined;
@@ -376,7 +388,7 @@ export default function ActionPanel({
     // Deciding early only makes sense while you still hold cards and somebody
     // is still to act.
     const canDecideEarly = inHand && actionOnSeat !== null;
-    const cells = waitingSlots({ inHand: canDecideEarly });
+    const cells = waitingSlots();
 
     return (
       <PanelShell
@@ -400,28 +412,17 @@ export default function ActionPanel({
             <PreselectChips
               value={preselect}
               onChange={setPreselect}
-              keys={["checkfold", "callany"]}
+              keys={PRESELECTS.map((one) => one.key)}
             />
           </div>
         )}
         clock={null}
-        slots={cells.map((cell) => {
-          if (cell.kind !== "preselect") {
-            // Drawn and empty. The slot has to hold its place — that is the
-            // whole point — and it must not be pressable, so a cursor waiting
-            // over the raise slot has nothing under it to hit.
-            return <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />;
-          }
-          const option = PRESELECTS.find((one) => one.key === cell.preselect);
-          return (
-            <PreselectButton
-              key={cell.slot}
-              option={option}
-              chosen={preselect === option.key}
-              onChange={setPreselect}
-            />
-          );
-        })}
+        // Drawn and empty. The slots have to hold their place — that is the
+        // whole point — and they must not be pressable, so a cursor waiting
+        // over one of them has nothing under it to hit.
+        slots={cells.map((cell) => (
+          <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />
+        ))}
       />
     );
   }
@@ -488,28 +489,28 @@ export default function ActionPanel({
   // slots in the same order as the one you were just looking at.
   const buttons = {
     fold: (
-      <button key="fold" onClick={() => commit("fold")} disabled={locked}
+      <button key="fold" onClick={() => press("fold")} disabled={locked}
         className={`${BTN} bg-[#3a1016] hover:bg-[#4d151d] border border-[rgba(196,178,165,0.2)] text-[#e3cdd1]
                     disabled:opacity-40 disabled:cursor-not-allowed ${armed === "fold" ? ARMED_RING : ""}`}>
         Fold
       </button>
     ),
     check: (
-      <button key="check" onClick={() => commit("check")} disabled={locked}
+      <button key="check" onClick={() => press("check")} disabled={locked}
         className={`${BTN} btn-secondary disabled:opacity-40 disabled:cursor-not-allowed ${
           armed === "check" ? ARMED_RING : ""}`}>
         Check
       </button>
     ),
     call: (
-      <button key="call" onClick={() => commit("call")} disabled={locked}
+      <button key="call" onClick={() => press("call")} disabled={locked}
         className={`${BTN} btn-accent disabled:opacity-40 disabled:cursor-not-allowed ${
           armed === "call" ? ARMED_RING : ""}`}>
         Call {fmt(ctx.to_call)}
       </button>
     ),
     raise: (
-      <button key="raise" onClick={() => commit("raise")} disabled={locked}
+      <button key="raise" onClick={() => press("raise")} disabled={locked}
         className={`${BTN} grid place-items-center bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))] hover:bg-[linear-gradient(135deg,var(--color-highlight-lift),var(--color-highlight-deep))]
                     border border-(--color-highlight-text) text-[#1a1208]
                     disabled:opacity-40 disabled:cursor-not-allowed ${armed === "raise" ? ARMED_RING : ""}`}>
@@ -590,8 +591,10 @@ export default function ActionPanel({
         </>
       ) : null}
       above={armed && (
+        // Either hand finishes what the other started: a button armed by a
+        // click is confirmed by its key, and the other way round.
         <span className="truncate text-[11px] text-(--color-highlight-text)">
-          Press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
+          Click or press {SHORTCUT_HINT[armed]} again to confirm {armedLabel}
         </span>
       )}
       clock={(

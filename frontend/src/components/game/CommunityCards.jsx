@@ -1,4 +1,8 @@
+import { useEffect } from "react";
+
 import useGameStore from "../../store/gameStore";
+import useWalletStore from "../../store/walletStore";
+import Icon from "../icons/Icon";
 import PlayingCard from "./PlayingCard";
 import { useCompactLayout } from "./useCompactLayout";
 
@@ -9,18 +13,24 @@ export default function CommunityCards({ winningCards, shiningCards }) {
   // gives up the size it cannot have here.
   const compact = useCompactLayout();
   const boardSize = compact ? "boardCompact" : "board";
-  // The cards that would have come if the hand had run out. The server has
-  // been dealing these since rabbit hunting was added and nothing ever drew
-  // them, so the setting appeared to do nothing at all.
+  // The cards that would have come if the hand had run out — and only if you
+  // paid the five coins to see them. Until then all this client has is the
+  // offer; the cards are on the server. See backend/game/rabbithunt.py.
   const rabbitCards = useGameStore((s) => s.rabbitCards);
-  // Asked for, never volunteered: see the store.
-  const rabbitRevealed = useGameStore((s) => s.rabbitRevealed);
-  const revealRabbit = useGameStore((s) => s.revealRabbit);
+  const rabbitOffer = useGameStore((s) => s.rabbitOffer);
+  const rabbitBuyers = useGameStore((s) => s.rabbitBuyers);
+  const buyRabbit = useGameStore((s) => s.buyRabbit);
+  // The coins the look cost arrive with the cards, and the header's balance has
+  // to move with them. Handed on here rather than in the store, which must not
+  // reach into the wallet's — see the note on rabbitBalance.
+  const rabbitBalance = useGameStore((s) => s.rabbitBalance);
+  const setBalance = useWalletStore((s) => s.setBalance);
+  useEffect(() => { setBalance(rabbitBalance); }, [rabbitBalance, setBalance]);
   const winners = new Set(winningCards || []);
   // The board half of a hand the hero's own cards made — see handShine.js. The
   // showdown ring takes over from it, and the two never overlap.
   const shining = new Set(shiningCards || []);
-  const hasRabbit = Boolean(rabbitCards?.length);
+  const hasRabbit = Boolean(rabbitCards?.length) || Boolean(rabbitOffer?.count);
   // Two boards, when a table runs it twice or deals a bomb pot. The first of
   // them is `communityCards` and is what a hand has always had; this is only
   // the second, drawn under it and labelled, because a player looking at four
@@ -29,7 +39,8 @@ export default function CommunityCards({ winningCards, shiningCards }) {
   const secondBoard = boards && boards.length > 1 ? boards[1] : null;
   if (!communityCards?.length && !hasRabbit) return null;
   return (
-    <div className={secondBoard ? "flex flex-col items-center gap-1.5" : ""}>
+    <div className={secondBoard || rabbitBuyers.length
+      ? "flex flex-col items-center gap-1.5" : ""}>
     {secondBoard && (
       <span className="text-[9px] uppercase tracking-[0.2em] text-(--color-highlight-text)">
         Board 1
@@ -53,22 +64,29 @@ export default function CommunityCards({ winningCards, shiningCards }) {
 
       {/* What was never dealt, held apart from the real board and faded, so it
           can never be mistaken for a card anybody played. */}
-      {/* The offer, until it is taken. One button rather than the cards,
-          because somebody who just folded the winner may not want to know. */}
-      {hasRabbit && !rabbitRevealed && (
+      {/* The offer, until it is bought. One button rather than the cards:
+          somebody who just folded the winner may not want to know, and the
+          cards are not on this client to show them until they say so. */}
+      {rabbitOffer && !rabbitCards?.length && (
         <button
           type="button"
-          onClick={revealRabbit}
-          title="Show the cards that would have come"
+          onClick={buyRabbit}
+          title={`Pay ${rabbitOffer.price} coins to see the cards that would have come`}
           className="ml-1 px-2 py-1 rounded-md text-xs font-semibold whitespace-nowrap
                      panel-raised text-(--color-text-muted) border border-dashed border-(--color-border)
                      hover:text-(--color-silver) hover:border-(--color-highlight) transition-colors"
         >
           🐇 Rabbit hunt
+          {/* The price on the button rather than in a dialogue: it is five
+              coins, and a confirmation for five coins is worse than the spend. */}
+          <span className="ml-1 inline-flex items-center gap-0.5 text-(--color-highlight-text)">
+            <Icon name="coin" className="w-3 h-3" tone="gold" />
+            {rabbitOffer.price}
+          </span>
         </button>
       )}
 
-      {hasRabbit && rabbitRevealed && (
+      {Boolean(rabbitCards?.length) && (
         <span className="flex items-center gap-1 ml-1 pl-2 border-l border-dashed border-(--color-border)">
           {rabbitCards.map((card) => (
             <span key={`rabbit-${card}`} className="opacity-40 saturate-50">
@@ -83,6 +101,26 @@ export default function CommunityCards({ winningCards, shiningCards }) {
         </span>
       )}
     </div>
+
+    {/* Who could not help themselves, shown to everybody. This is the half of
+        rabbit hunting that a table has and a lone client does not: paying to
+        find out is a tell, and it is a funny one. */}
+    {rabbitBuyers.length > 0 && (
+      <div className="flex items-center justify-center gap-1 flex-wrap">
+        <span className="text-[9px] uppercase tracking-wide text-(--color-text-muted)">
+          🐇 paid to look
+        </span>
+        {rabbitBuyers.map((one) => (
+          <span
+            key={one.user_id}
+            className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold leading-none
+                       bg-black/40 border border-(--color-border) text-(--color-silver)"
+          >
+            {one.name}
+          </span>
+        ))}
+      </div>
+    )}
 
     {/* The second run-out, or the second half of a bomb pot. Half the pot is
         decided here and the other half above, which is the only thing anybody

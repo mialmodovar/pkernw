@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import api from "../api/http";
+import { send } from "../api/socket";
 import { equityShake } from "../components/game/equitySwing";
 import { DEFAULT_POSTFLOP_PCT, DEFAULT_PREFLOP_BB, cleanSizes } from "../components/game/betPresets";
 import { formatBounty } from "../components/game/formatMoney";
@@ -109,20 +110,19 @@ const useGameStore = create((set) => ({
   level: null,
   showdown: null,
   potAwards: null,
+  // What would have come, once it has been paid for — and only for whoever
+  // paid. The server keeps these until then, so there is nothing on this
+  // client to read early: see backend/game/rabbithunt.py.
   rabbitCards: null,
-  // Held back until somebody asks. Knowing what would have come is a choice —
-  // for the player who folded the winner it is the last thing they want on
-  // screen, and it used to appear whether they liked it or not.
-  rabbitRevealed: false,
-  // The log line is written here rather than when the cards arrive: printing
-  // them on arrival put the run-out in the action history for everybody,
-  // which is the whole thing the button was added to stop.
-  revealRabbit: () => set((s) => ({
-    rabbitRevealed: true,
-    messages: s.rabbitCards?.length
-      ? appendLog(s, entry(s, "info", `Rabbit hunt: ${s.rabbitCards.join(" ")}`))
-      : s.messages,
-  })),
+  // That there is something to look at, and what it costs: { count, price }.
+  rabbitOffer: null,
+  // What the wallet held after paying, for whoever draws the coins to pass on.
+  rabbitBalance: null,
+  // Everybody who has paid to look, which the whole table is told. Half of
+  // what rabbit hunting is at a live table is watching somebody give in.
+  rabbitBuyers: [],
+  /** Buy a look. The cards come back on their own message, to you alone. */
+  buyRabbit: () => send({ type: "rabbit_hunt" }),
   winnerSeats: [],   // seats that won the last pot (shown during inter-hand delay)
   allInEquity: null,  // [{seat, equity, cards}, ...] during all-in runout
   // The last card that changed the hand, for the table to shake on. Cleared by
@@ -409,6 +409,12 @@ const useGameStore = create((set) => ({
           // A reload mid-hand gets the calls already made, so the table does
           // not read as though nobody had said anything.
           sideBets: data.side_bets?.bets || [],
+          // A look still on offer between hands, so a reload in the gap comes
+          // back to the same button — and to the same list of who has paid.
+          rabbitOffer: data.rabbit_hunt?.count
+            ? { count: data.rabbit_hunt.count, price: data.rabbit_hunt.price }
+            : s.rabbitOffer,
+          rabbitBuyers: data.rabbit_hunt?.buyers || s.rabbitBuyers,
           // Carried on the snapshot too, so a reload mid-game gets the format
           // and the prize back rather than a table with no stakes on it.
           fast: data.fast ?? s.fast,
@@ -573,7 +579,9 @@ const useGameStore = create((set) => ({
           showdown: null,
           potAwards: null,
           rabbitCards: null,
-          rabbitRevealed: false,
+          rabbitOffer: null,
+          rabbitBuyers: [],
+          rabbitBalance: null,
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
@@ -866,8 +874,41 @@ const useGameStore = create((set) => ({
         break;
 
       case "rabbit_hunt":
-        // Held, not shown, and not written down either — see revealRabbit.
-        set({ rabbitCards: data.cards || [], rabbitRevealed: false });
+        // The offer, not the cards. Nobody is shown anything until they pay,
+        // which is the only thing that makes a look worth paying for — and it
+        // is also what keeps the run-out off the screen of the player who just
+        // folded the winner and would rather not know.
+        set({
+          rabbitOffer: data.count ? { count: data.count, price: data.price } : null,
+          rabbitBuyers: data.buyers || [],
+          rabbitCards: null,
+        });
+        break;
+
+      case "rabbit_hunt_cards":
+        // Yours, because you paid for it. The log line is written here rather
+        // than on arrival of the offer: this is the moment somebody chose to
+        // know, and it is their own log it goes in.
+        //
+        // The balance rides along and is left here for whoever draws it to hand
+        // to the wallet — the same way a settled side bet does. This store must
+        // not reach into that one: authStore already reaches into this one, and
+        // a circle of three stores is a load order nobody can reason about.
+        set((s) => ({
+          rabbitCards: data.cards || [],
+          rabbitBalance: data.balance ?? s.rabbitBalance,
+          messages: appendLog(s, entry(s, "info",
+            `Rabbit hunt: ${(data.cards || []).join(" ")}`)),
+        }));
+        break;
+
+      case "rabbit_hunt_taken":
+        set((s) => ({
+          rabbitBuyers: data.buyers
+            || [...s.rabbitBuyers.filter((one) => one.user_id !== data.user_id), data],
+          messages: appendLog(s, entry(s, "info",
+            `${data.name} paid ${data.price} to see the rabbit`)),
+        }));
         break;
 
       case "player_eliminated":
@@ -1252,7 +1293,7 @@ const useGameStore = create((set) => ({
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,
-      potAwards: null, rabbitCards: null, rabbitRevealed: false, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
+      potAwards: null, rabbitCards: null, rabbitOffer: null, rabbitBuyers: [], winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,

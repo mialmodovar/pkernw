@@ -16,6 +16,7 @@ from .button import button_index, next_big_blind
 from .engine.hand import HandEngine, cards_to_list
 from .finishers import DEFAULT_SOUND, pick_finisher
 from .levelclock import seconds_until_level_ends
+from . import rabbithunt
 from .sidebets import record_for, settle as settle_side_bets, updated_records
 from sidegames.games import PLAYER_BET, clean_stake
 from .engine.player import Player as EnginePlayer
@@ -89,6 +90,9 @@ class MultiTableTournamentCoordinator:
         # coordinator's own tests want.
         take_side_bet_stake: Optional[Callable[[int, str, int], Awaitable[bool]]] = None,
         pay_side_bets: Optional[Callable[[list], Awaitable[dict]]] = None,
+        # Takes the price of a look at the run-out out of a wallet, answering
+        # the balance it left behind, or None when it could not be paid.
+        take_rabbit_fee: Optional[Callable[[int, int], Awaitable[Optional[int]]]] = None,
         level_index: int = 0,
         hands_in_level: int = 0,
         # The highest hand number already on record for this tournament. Hands
@@ -194,6 +198,7 @@ class MultiTableTournamentCoordinator:
         self.persist_hand = persist_hand
         self.take_side_bet_stake = take_side_bet_stake
         self.pay_side_bets = pay_side_bets
+        self.take_rabbit_fee = take_rabbit_fee
 
         self._players_by_id: Dict[int, EnginePlayer] = {}
         self._players_by_user_id: Dict[int, EnginePlayer] = {}
@@ -232,6 +237,10 @@ class MultiTableTournamentCoordinator:
         # live and die with the tournament, since nothing is at stake and a
         # record nobody can lose is not worth a table in the database.
         self._side_bets: Dict[int, dict] = {}
+        # What was left in the deck at each table when its hand ended, and who
+        # has paid to see it. The cards never leave this dictionary except to
+        # the one player who bought them — see rabbithunt.py.
+        self._rabbit: Dict[int, dict] = {}
         self._side_bet_records: Dict[int, dict] = {}
         self.is_paused = False
         self._paused_at: Optional[float] = None
@@ -580,6 +589,19 @@ class MultiTableTournamentCoordinator:
         that sees the whole hand go past, so it is where they open, lock and
         settle.
         """
+        if event_type == "rabbit_hunt":
+            # The one event that is not passed on as it arrives. The engine deals
+            # the cards nobody paid for yet, and sending them to the table would
+            # be giving away the thing that is for sale — so the table is told
+            # only that there is something to see, and what it costs.
+            self._rabbit[table_number] = rabbithunt.open_book(
+                payload.get("cards"), payload.get("would_complete_board"),
+            )
+            await self._broadcast_to_table(
+                table_number, "rabbit_hunt", rabbithunt.offer(self._rabbit[table_number]),
+            )
+            return
+
         await self._broadcast_to_table(table_number, event_type, payload)
 
         if event_type == "hand_complete":
@@ -697,6 +719,52 @@ class MultiTableTournamentCoordinator:
             self._side_bet_payload(user_id, book["bets"][user_id]),
         )
         return True
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Rabbit hunting — the cards nobody paid for yet
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def buy_rabbit_hunt(self, user_id: int, name: str = "") -> bool:
+        """Sell one look at what would have come.
+
+        The cards go to the buyer alone, and the fact of the purchase goes to
+        everybody: watching somebody pay to find out is most of what rabbit
+        hunting is at a live table, and it is the half the old free version
+        could not give anybody.
+        """
+        player = self._players_by_user_id.get(user_id)
+        if player is None:
+            return False
+
+        table_number = player._table_number
+        book = self._rabbit.get(table_number)
+        if not rabbithunt.may_buy(book, user_id):
+            return False
+
+        balance = None
+        if self.take_rabbit_fee is not None:
+            balance = await self.take_rabbit_fee(user_id, rabbithunt.PRICE)
+            if balance is None:
+                return False   # not enough coins, and nothing has been shown
+
+        row = rabbithunt.record(book, user_id, name or player.name, player._seat)
+        # The cards themselves, to the one wallet that paid for them.
+        await self.notify_user(user_id, {
+            "type": "rabbit_hunt_cards",
+            "cards": list(book["cards"]),
+            "would_complete_board": list(book["board"]),
+            "balance": balance,
+        })
+        await self._broadcast_to_table(table_number, "rabbit_hunt_taken", {
+            **row,
+            "price": rabbithunt.PRICE,
+            "buyers": rabbithunt.buyers(book),
+        })
+        return True
+
+    def rabbit_hunt_at(self, table_number: int) -> dict:
+        """The standing offer at a table, for a client that has just arrived."""
+        return rabbithunt.offer(self._rabbit.get(table_number))
 
     def _contender_count(self, table_number: int, book: dict) -> int:
         """How many players are still contesting this pot."""
@@ -898,6 +966,9 @@ class MultiTableTournamentCoordinator:
             # readiness it can see, rather than an empty tally until the next
             # person clicks.
             "side_bets": self.side_bets_at(table.table_number),
+            # Whatever is still on offer between hands, so a reload during the
+            # gap comes back to the same button and the same list of who paid.
+            "rabbit_hunt": self.rabbit_hunt_at(table.table_number),
             "ready_user_ids": sorted(self._ready_user_ids & self._seated_user_ids()),
             "ready_total": len(self._seated_user_ids()),
             # Included so a client joining or reconnecting mid-tournament gets
@@ -1285,6 +1356,9 @@ class MultiTableTournamentCoordinator:
             all_in_or_fold=self.all_in_or_fold,
         )
         self._open_side_bets(table)
+        # A fresh hand has nothing left over in the deck yet, and last hand's
+        # offer must not be buyable once these cards are dealt.
+        self._rabbit.pop(table.table_number, None)
         result = await engine.run()
         table.hand_number += 1
         table.players = players

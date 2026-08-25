@@ -21,7 +21,10 @@ from asgiref.sync import async_to_sync, sync_to_async
 from django.utils import timezone
 
 from accounts.avatars import avatar_url
-from game.consumers import _broadcast_table, _notify_user, _player_channels, _request_action
+from game.consumers import (
+    _broadcast_table, _db_take_rabbit_fee as _take_rabbit_fee, _notify_user, _player_channels,
+    _request_action,
+)
 
 from .bank import stand_up
 from .models import CashHand, CashHandSeat, CashSeat, CashTable
@@ -267,6 +270,8 @@ async def ensure_room(table_id):
         bomb_pot_every=table.bomb_pot_every,
         bomb_pot_bb=table.bomb_pot_bb,
         rabbit_hunting=table.rabbit_hunting,
+        take_rabbit_fee=lambda user_id, price: _take_rabbit_fee(user_id, price),
+        notify_user=lambda user_id, payload: _notify_user(room_id(table_id), user_id, payload),
     )
     # Where the hand count picks up, so a table restarted mid-session does not
     # deal hand one again — and does not deal a bomb pot the moment it comes

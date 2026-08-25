@@ -25,6 +25,7 @@ User = get_user_model()
 from .engine.card import Card, Rank, Suit
 from .levelclock import seconds_until_level_ends
 from .besthand import best_of
+from . import rabbithunt
 from .sidebets import record_for, settle, updated_records
 from .engine.hand import HandEngine
 from .button import button_index, next_big_blind
@@ -124,6 +125,13 @@ class CoordinatorHarness:
                 self.coins[entry["user_id"]] = self.coins.get(entry["user_id"], 0) + entry["returns"]
             return dict(self.coins)
 
+        async def take_rabbit_fee(user_id, price):
+            purse = self.coins.setdefault(user_id, 1000)
+            if purse < price:
+                return None
+            self.coins[user_id] = purse - price
+            return self.coins[user_id]
+
         return MultiTableTournamentCoordinator(
             tournament_id=1,
             players_per_table=players_per_table,
@@ -137,6 +145,7 @@ class CoordinatorHarness:
             persist_player_states=persist_player_states,
             take_side_bet_stake=take_side_bet_stake,
             pay_side_bets=pay_side_bets,
+            take_rabbit_fee=take_rabbit_fee,
             last_hand_number=last_hand_number,
         )
 
@@ -1827,6 +1836,131 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
 
         self.assertTrue(snapshot["side_bets"]["open"])
         self.assertEqual(snapshot["side_bets"]["bets"][0]["user_id"], 100)
+
+
+class RabbitHuntPurchaseTests(CoordinatorHarness, TestCase):
+    """What was never dealt, and what it costs to look at it."""
+
+    def _hand_just_ended(self):
+        coordinator = self._build_coordinator(
+            [self._record(index, table_number=1, seat_at_table=index) for index in range(3)],
+            players_per_table=3,
+        )
+        self._sync_and_rebalance(coordinator)
+        async_to_sync(coordinator._hand_event)(1, "rabbit_hunt", {
+            "cards": ["Ah", "2d"],
+            "would_complete_board": ["Kc", "7s", "9h", "Ah", "2d"],
+        })
+        return coordinator
+
+    def _last(self, event):
+        return [payload for _table, name, payload in self.table_events if name == event][-1]
+
+    def test_the_table_is_told_there_is_something_to_see_and_not_what_it_is(self):
+        # The whole point: cards on the wire are cards nobody would pay for.
+        self._hand_just_ended()
+
+        offer = self._last("rabbit_hunt")
+        self.assertEqual(offer["count"], 2)
+        self.assertEqual(offer["price"], rabbithunt.PRICE)
+        self.assertNotIn("cards", offer)
+
+    def test_paying_shows_the_cards_to_the_one_who_paid(self):
+        coordinator = self._hand_just_ended()
+        before = self.coins.setdefault(100, 1000)
+
+        self.assertTrue(async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana"))
+
+        cards = [
+            payload for user_id, payload in self.notifications
+            if user_id == 100 and payload.get("type") == "rabbit_hunt_cards"
+        ][-1]
+        self.assertEqual(cards["cards"], ["Ah", "2d"])
+        self.assertEqual(cards["would_complete_board"], ["Kc", "7s", "9h", "Ah", "2d"])
+        self.assertEqual(self.coins[100], before - rabbithunt.PRICE)
+        self.assertEqual(cards["balance"], self.coins[100])
+
+    def test_the_table_is_told_who_paid_but_still_not_what_they_saw(self):
+        coordinator = self._hand_just_ended()
+
+        async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana")
+
+        taken = self._last("rabbit_hunt_taken")
+        self.assertEqual(taken["user_id"], 100)
+        self.assertEqual(taken["name"], "Ana")
+        self.assertEqual(taken["price"], rabbithunt.PRICE)
+        self.assertEqual([one["user_id"] for one in taken["buyers"]], [100])
+        self.assertNotIn("cards", taken)
+
+    def test_a_second_look_is_not_charged_for(self):
+        coordinator = self._hand_just_ended()
+        async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana")
+        spent = self.coins[100]
+
+        self.assertFalse(async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana"))
+        self.assertEqual(self.coins[100], spent)
+
+    def test_an_empty_wallet_is_shown_nothing(self):
+        coordinator = self._hand_just_ended()
+        self.coins[100] = 1
+
+        self.assertFalse(async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana"))
+        self.assertEqual(self.coins[100], 1)
+        self.assertFalse([
+            one for one in self.notifications
+            if one[1].get("type") == "rabbit_hunt_cards"
+        ])
+
+    def test_last_hand_is_not_for_sale_once_the_next_one_is_dealt(self):
+        coordinator = self._hand_just_ended()
+        coordinator._rabbit.pop(1, None)   # what dealing the next hand does
+
+        self.assertFalse(async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana"))
+        self.assertEqual(coordinator.rabbit_hunt_at(1)["count"], 0)
+
+    def test_a_client_arriving_in_the_gap_is_handed_the_standing_offer(self):
+        coordinator = self._hand_just_ended()
+        async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana")
+
+        offer = coordinator.rabbit_hunt_at(1)
+
+        self.assertEqual(offer["count"], 2)
+        self.assertEqual([one["name"] for one in offer["buyers"]], ["Ana"])
+
+
+class RabbitHuntBookTests(TestCase):
+    """The book itself, with no table around it."""
+
+    def _book(self):
+        return rabbithunt.open_book(["Ah", "2d"], ["Kc", "7s", "9h", "Ah", "2d"])
+
+    def test_an_offer_says_how_many_and_how_much_and_never_which(self):
+        offer = rabbithunt.offer(self._book())
+
+        self.assertEqual(offer, {"count": 2, "price": rabbithunt.PRICE, "buyers": []})
+
+    def test_an_empty_book_is_nothing_to_sell(self):
+        self.assertEqual(rabbithunt.offer(None)["count"], 0)
+        self.assertEqual(rabbithunt.offer(rabbithunt.open_book([], []))["count"], 0)
+        self.assertFalse(rabbithunt.may_buy(None, 1))
+
+    def test_a_sale_is_recorded_once_and_only_once(self):
+        book = self._book()
+
+        self.assertTrue(rabbithunt.may_buy(book, 7))
+        self.assertEqual(
+            rabbithunt.record(book, 7, "Ana", 3),
+            {"user_id": 7, "name": "Ana", "seat": 3},
+        )
+        self.assertFalse(rabbithunt.may_buy(book, 7))
+        self.assertTrue(rabbithunt.may_buy(book, 8))
+
+    def test_the_buyers_come_back_in_the_order_they_gave_in(self):
+        book = self._book()
+        rabbithunt.record(book, 7, "Ana", 3)
+        rabbithunt.record(book, 8, "Bea", 4)
+
+        self.assertEqual([one["name"] for one in rabbithunt.buyers(book)], ["Ana", "Bea"])
 
 
 class BestHandRankingTests(TestCase):

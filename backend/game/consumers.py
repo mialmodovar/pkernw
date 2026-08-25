@@ -369,6 +369,23 @@ def _db_take_side_bet_stake(user_id, game_id, stake):
 
 
 @database_sync_to_async
+def _db_take_rabbit_fee(user_id, price):
+    """Charge one look at the run-out, answering the balance it left.
+
+    None either way it can fail — no such user, or not enough coins — because
+    the caller's only question is whether it may show the cards.
+    """
+    from django.contrib.auth import get_user_model
+    from sidegames.economy import spend
+
+    user = get_user_model().objects.filter(id=user_id).first()
+    if user is None:
+        return None
+    wallet = spend(user, price, "purchase", memo="rabbit_hunt")
+    return None if wallet is None else wallet.balance
+
+
+@database_sync_to_async
 def _db_pay_side_bets(entries):
     """Pay the winning calls, and report everybody's balance afterwards.
 
@@ -984,6 +1001,13 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                     table_number=self.current_table_number if self.is_spectator else None,
                     name=self.shown_name if self.is_spectator else "",
                 )
+        elif message_type == "rabbit_hunt":
+            # Buying a look at what would have come. What it costs and whether
+            # there is anything left to look at are the coordinator's to judge,
+            # since the cards never left it.
+            coordinator = _tournament_runners.get(self.tournament_id)
+            if coordinator is not None:
+                await coordinator.buy_rabbit_hunt(self.user.id, self.shown_name)
         elif message_type == "chat_message":
             await self._send_chat(data)
         elif message_type == "throw_item":
@@ -1330,6 +1354,7 @@ class TournamentConsumer(AsyncWebsocketConsumer):
             persist_hand=lambda payload: _db_save_hand(self.tournament_id, payload),
             take_side_bet_stake=_db_take_side_bet_stake,
             pay_side_bets=_db_pay_side_bets,
+            take_rabbit_fee=_db_take_rabbit_fee,
             level_index=tournament.current_level_index,
             hands_in_level=tournament.hands_in_level,
             last_hand_number=last_hand_number,

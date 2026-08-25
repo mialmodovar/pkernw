@@ -19,6 +19,7 @@ while somebody was betting into it is a pot that cannot be settled.
 import asyncio
 import time
 
+from game import rabbithunt
 from game.engine.hand import HandEngine
 from game.engine.player import Player
 
@@ -57,6 +58,11 @@ class CashRoom:
         record_hand=None,
         mind_absent=None,
         sit_out=None,
+        # Selling a look at the run-out: one wallet to charge, one socket to
+        # show it to. Absent in a test, where the look is free — see
+        # game/rabbithunt.py.
+        take_rabbit_fee=None,
+        notify_user=None,
         run_it_twice=False,
         bomb_pot_every=0,
         bomb_pot_bb=2,
@@ -76,6 +82,8 @@ class CashRoom:
         self.record_hand = record_hand
         self.mind_absent = mind_absent
         self.sit_out = sit_out
+        self.take_rabbit_fee = take_rabbit_fee
+        self.notify_user = notify_user
         self.run_it_twice = run_it_twice
         self.bomb_pot_every = bomb_pot_every
         self.bomb_pot_bb = bomb_pot_bb
@@ -100,6 +108,9 @@ class CashRoom:
         # on the river after betting the flop is a decision, and a slow one is
         # still a player.
         self._acted = set()
+        # What was left in the deck when the last hand ended, and who has paid
+        # to see it. None between the deal and the end of the hand.
+        self._rabbit = None
 
     # ── the loop ─────────────────────────────────────────────────────────
 
@@ -173,6 +184,8 @@ class CashRoom:
         # player can win one and still be down on the hand.
         started_with = {player._seat: player.chips for player in players}
         self._acted = set()
+        # Last hand's run-out is not for sale once these cards are out.
+        self._rabbit = None
 
         dealer_index = next(
             (index for index, one in enumerate(playing) if one["seat"] == self.button), 0,
@@ -186,7 +199,7 @@ class CashRoom:
             big_blind=self.stake.big_blind,
             ante=0,
             hand_number=self.hand_number,
-            broadcast=self.broadcast,
+            broadcast=self._hand_event,
             request_action=self._ask,
             rabbit_hunting_enabled=self.rabbit_hunting,
             run_it_twice=self.run_it_twice,
@@ -293,6 +306,60 @@ class CashRoom:
 
     # ── what a socket needs ──────────────────────────────────────────────
 
+    async def _hand_event(self, event_type, payload):
+        """Every event the engine emits, on its way out to the table.
+
+        One of them does not go out as it arrives: the cards that would have
+        come are what rabbit hunting sells, so the table is told that there is
+        something to see and what it costs, and the cards stay here. Same
+        interception as the tournament coordinator's, for the same reason.
+        """
+        if event_type == "rabbit_hunt":
+            self._rabbit = rabbithunt.open_book(
+                payload.get("cards"), payload.get("would_complete_board"),
+            )
+            await self.broadcast("rabbit_hunt", rabbithunt.offer(self._rabbit))
+            return
+        await self.broadcast(event_type, payload)
+
+    async def buy_rabbit_hunt(self, user_id, name=""):
+        """Sell one look at what would have come.
+
+        The cards to the buyer, the fact of it to everybody: somebody paying to
+        find out is most of what rabbit hunting is at a table.
+        """
+        if not rabbithunt.may_buy(self._rabbit, user_id):
+            return False
+
+        balance = None
+        if self.take_rabbit_fee is not None:
+            balance = await self.take_rabbit_fee(user_id, rabbithunt.PRICE)
+            if balance is None:
+                return False   # not enough coins, and nothing has been shown
+
+        # The last hand's seat: the offer only exists between hands, so this is
+        # who they were when the cards it is about were dealt.
+        player = self.player_at(user_id)
+        row = rabbithunt.record(
+            self._rabbit,
+            user_id,
+            name or getattr(player, "name", ""),
+            getattr(player, "_seat", None),
+        )
+        if self.notify_user is not None:
+            await self.notify_user(user_id, {
+                "type": "rabbit_hunt_cards",
+                "cards": list(self._rabbit["cards"]),
+                "would_complete_board": list(self._rabbit["board"]),
+                "balance": balance,
+            })
+        await self.broadcast("rabbit_hunt_taken", {
+            **row,
+            "price": rabbithunt.PRICE,
+            "buyers": rabbithunt.buyers(self._rabbit),
+        })
+        return True
+
     def player_at(self, user_id):
         """The runtime player for this user, while a hand is in progress."""
         return next(
@@ -316,6 +383,9 @@ class CashRoom:
                 "small_blind": self.stake.small_blind,
                 "big_blind": self.stake.big_blind,
             },
+            # Whatever is still on offer between hands, so a client arriving in
+            # the gap sees the same button and the same list of who paid.
+            "rabbit_hunt": rabbithunt.offer(self._rabbit),
             "options": {
                 "run_it_twice": self.run_it_twice,
                 "bomb_pot_every": self.bomb_pot_every,

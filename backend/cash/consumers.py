@@ -67,7 +67,15 @@ class CashTableConsumer(AsyncWebsocketConsumer):
         except ValueError:
             return
 
-        if data.get("type") != "player_action":
+        kind = data.get("type")
+        if kind == "rabbit_hunt":
+            # Buying a look at what would have come. The room holds the cards
+            # and the price; the name comes off the seat it was dealt to.
+            room = running_room(self.table_id)
+            if room is not None:
+                await room.buy_rabbit_hunt(self.user.id)
+            return
+        if kind != "player_action":
             return
         queue = _action_queues.get((self.room, self.user.id))
         if queue is not None:

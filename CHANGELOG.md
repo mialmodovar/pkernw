@@ -101,6 +101,15 @@ remembering.
   than the size of the icons in them, nothing behind the window scrolls while it
   is open, and the fields inside it are big enough that iOS stops zooming the
   whole page in when one is tapped.
+- **The raise buttons are set as buttons.** They were a text field per row
+  holding "2, 2.5, 3.5": a format nobody was told, punctuation to get right on a
+  phone keyboard, and a field that silently rewrote what you typed whenever it
+  dropped something it could not read. The settings now show the row as the
+  table will draw it — your three sizes and the all-in that is always there —
+  each with arrows that step it by half a blind or five points of the pot, a
+  cross to drop one, and a plus to add one back. The arrows snap onto the step,
+  so a size somebody typed by hand is kept until they touch one; the sizes still
+  live on the account and still follow you to another machine.
 - **Three themes, all three on screen.** Choosing one was a dropdown: a click, a
   menu, and three items in it. They sit in a row now, each showing the felt it
   lays with the card back that will be on it — the same kind of choice as the

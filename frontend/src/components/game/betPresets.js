@@ -27,6 +27,38 @@ export const DEFAULT_POSTFLOP_PCT = [25, 40, 75];
 // Nobody needs eight buttons and the row has four slots, one of which is all-in.
 export const MAX_SIZES = 3;
 
+/**
+ * What a size may be, and how far one press of a stepper moves it.
+ *
+ * Bounds rather than validation: the settings offer arrows as well as a field,
+ * and an arrow that walks off into a 400bb open or a negative share of the pot
+ * is an arrow nobody can use. Half a blind and five points of the pot are the
+ * steps people actually talk in — nobody opens to 2.37 blinds.
+ */
+export const SIZE_LIMITS = {
+  preflop: { step: 0.5, min: 1, max: 25 },
+  postflop: { step: 5, min: 5, max: 300 },
+};
+
+/**
+ * One press of a stepper.
+ *
+ * Snapped to the step rather than added to whatever was typed: from 2.3, one
+ * press up gives 2.5, not 2.8. Somebody who typed 2.3 on purpose keeps it until
+ * they touch an arrow, and the moment they do they are back on the grid the
+ * rest of the table thinks in.
+ */
+export function nudge(value, delta, { step, min, max }) {
+  // An empty field is nothing, not zero — `Number("")` is 0, which would step
+  // up from a size nobody has and land on the smallest one twice over.
+  const raw = typeof value === "string" ? value.trim() : value;
+  const parsed = raw === "" || raw == null ? NaN : Number(raw);
+  const from = Number.isFinite(parsed) ? parsed : min;
+  const grid = delta > 0 ? Math.floor(from / step) : Math.ceil(from / step);
+  const next = (grid + delta) * step;
+  return Math.round(Math.min(max, Math.max(min, next)) * 10) / 10;
+}
+
 /** A stored list, made safe: numbers only, in order, and no more than three. */
 export function cleanSizes(sizes, fallback) {
   const clean = (sizes || [])

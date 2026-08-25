@@ -22,11 +22,14 @@ const TONES = {
  * a capital letter — the two are the same file on a Mac, and the import
  * resolved to the wrong one.
  *
- * The lifetime is the whole of the feature: a fold clears itself after a few
- * seconds because the player is out of the hand and a seat still saying "Fold"
- * is describing somebody who left; everything else is the state of the betting
- * and stays until the street closes or that player acts again — both of which
- * clear it in the store rather than here.
+ * The lifetime is the whole of the feature: every action stays up until the
+ * street closes or that player acts again, both of which clear it in the store
+ * rather than here. So when the action reaches you, the felt still shows what
+ * everybody in front of you did — folds included, which used to expire on a
+ * timer and read as a street where nobody had acted.
+ *
+ * The timer below is what is left of that: actionHoldMs answers null for
+ * everything today, and this honours it if it ever answers otherwise again.
  */
 export default function SeatActionPill({ seat }) {
   const last = useGameStore((s) => s.lastActions[seat]) || null;

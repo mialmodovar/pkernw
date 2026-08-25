@@ -38,6 +38,9 @@ const STEPPER = "btn-secondary w-8 shrink-0 rounded text-base font-bold leading-
 
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
+// In the order you would say them, and all four the same size: they are one
+// choice out of four, so none of them is drawn as a bigger control than the
+// rest.
 const PRESELECTS = [
   { key: "fold", label: "Fold", hint: "Fold the moment it reaches you" },
   { key: "check", label: "Check", hint: "Check if you can — a bet behind you hands the decision back" },
@@ -74,39 +77,11 @@ function overSomethingScrollable(target) {
  * lit — and the lit one can be pressed again to take it back, which is the one
  * thing a radio group cannot do and this needs.
  *
- * Two of them are drawn as full-size buttons standing exactly where the buttons
- * they anticipate will stand; see actionSlots.js. The other two are conditional
- * rather than positional and are drawn small, in the line above, which a turn
- * fills with text and never with a button.
+ * All four sit in the line a turn gives to its hint text, which is the one row
+ * of the panel a turn never fills with a button. That is deliberate: a
+ * pre-selection must not stand where the live Fold or Call is about to appear,
+ * or a click already on its way lands on the real thing.
  */
-function PreselectButton({ option, chosen, onChange, className = "" }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={chosen}
-      title={chosen ? `${option.hint} — press again to cancel` : option.hint}
-      onClick={() => onChange(chosen ? null : option.key)}
-      className={`${BTN} border ${className} ${
-        chosen
-          ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))]"
-            + " text-(--color-highlight-ink) border-(--color-highlight-deeper)"
-          : "bg-black/40 text-(--color-text-muted) border-(--color-border)"
-            + " hover:text-(--color-silver) hover:border-(--color-border-strong)"
-      }`}
-    >
-      <span className="flex items-center justify-center gap-1.5">
-        {/* The dot is what says "one of these", before the colour does. */}
-        <span className={`w-2.5 h-2.5 rounded-full border shrink-0 ${
-          chosen ? "border-(--color-highlight-ink) bg-(--color-highlight-ink)" : "border-(--color-text-muted)"
-        }`} />
-        {option.label}
-      </span>
-    </button>
-  );
-}
-
-/** The conditional pre-selections, in the line a turn gives to its hint text. */
 function PreselectChips({ value, onChange, keys }) {
   return (
     <>
@@ -376,7 +351,7 @@ export default function ActionPanel({
     // Deciding early only makes sense while you still hold cards and somebody
     // is still to act.
     const canDecideEarly = inHand && actionOnSeat !== null;
-    const cells = waitingSlots({ inHand: canDecideEarly });
+    const cells = waitingSlots();
 
     return (
       <PanelShell
@@ -400,28 +375,17 @@ export default function ActionPanel({
             <PreselectChips
               value={preselect}
               onChange={setPreselect}
-              keys={["checkfold", "callany"]}
+              keys={PRESELECTS.map((one) => one.key)}
             />
           </div>
         )}
         clock={null}
-        slots={cells.map((cell) => {
-          if (cell.kind !== "preselect") {
-            // Drawn and empty. The slot has to hold its place — that is the
-            // whole point — and it must not be pressable, so a cursor waiting
-            // over the raise slot has nothing under it to hit.
-            return <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />;
-          }
-          const option = PRESELECTS.find((one) => one.key === cell.preselect);
-          return (
-            <PreselectButton
-              key={cell.slot}
-              option={option}
-              chosen={preselect === option.key}
-              onChange={setPreselect}
-            />
-          );
-        })}
+        // Drawn and empty. The slots have to hold their place — that is the
+        // whole point — and they must not be pressable, so a cursor waiting
+        // over one of them has nothing under it to hit.
+        slots={cells.map((cell) => (
+          <div key={cell.slot} className={`${BTN} invisible`} aria-hidden="true" />
+        ))}
       />
     );
   }

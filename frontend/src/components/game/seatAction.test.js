@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FOLD_MS, actionHoldMs, actionLabel, actionTone, isWorthShowing,
+  actionHoldMs, actionLabel, actionTone, isWorthShowing,
 } from "./seatAction";
 
 const chips = (n) => n.toLocaleString();
@@ -60,12 +60,10 @@ describe("actionTone", () => {
 });
 
 describe("how long a pill lives", () => {
-  it("clears a fold on a timer, because the fold is over the moment it happens", () => {
-    expect(actionHoldMs({ action: "fold" })).toBe(FOLD_MS);
-  });
-
-  it("leaves everything else up until the betting moves on", () => {
-    for (const action of ["check", "call", "bet", "raise"]) {
+  it("leaves every action up until the betting moves on", () => {
+    // The whole street, folds included: what happened in front of you is what
+    // you are reading the felt for when it comes round to you.
+    for (const action of ["fold", "check", "call", "bet", "raise"]) {
       expect(actionHoldMs({ action }), action).toBe(null);
     }
   });

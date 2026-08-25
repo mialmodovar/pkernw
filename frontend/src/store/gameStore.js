@@ -43,6 +43,9 @@ const writeStoredFlag = (key, value) => {
 // printing seat indices.
 let logSequence = 0;
 const LOG_LIMIT = 200;
+// A table that has just seen a bad beat throws a handful of things at once;
+// anything beyond that is a list that is not being emptied.
+const THROW_LIMIT = 24;
 
 const nameFor = (state, seat) =>
   state.players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
@@ -1069,6 +1072,11 @@ const useGameStore = create((set) => ({
       // landed — the store holds no timers.
       case "item_thrown":
         set((s) => ({
+          // Capped, because this list is emptied by whatever draws it and there
+          // are ways for a throw never to be drawn — one aimed at a seat that
+          // is not on this felt, from a table that rebalanced under it. Those
+          // used to sit in the list for the rest of the night, and the list is
+          // walked on every render of the table.
           throws: [...s.throws, {
             id: s.throwSequence + 1,
             item: data.item,
@@ -1080,7 +1088,7 @@ const useGameStore = create((set) => ({
             // the player it was aimed at gets it on their own screen, and this
             // is how they know it was them.
             toUserId: data.to_user_id,
-          }],
+          }].slice(-THROW_LIMIT),
           throwSequence: s.throwSequence + 1,
         }));
         break;

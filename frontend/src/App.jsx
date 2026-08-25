@@ -22,6 +22,8 @@ import AppHeader from "./components/AppHeader";
 import TableShortcut from "./components/lobby/TableShortcut";
 import GameStartAlert from "./components/GameStartAlert";
 import CashTablePage from "./pages/CashTablePage";
+import ErrorBoundary from "./errors/ErrorBoundary";
+import CrashNotice from "./errors/CrashNotice";
 
 export default function App() {
   const { init, loading, user } = useAuthStore();
@@ -56,7 +58,16 @@ export default function App() {
       {/* Above the pages rather than inside any of them: a header that scrolls
           away with the column it lives in is not a header. */}
       <AppHeader />
+      {/* Only after a tab that was killed at a table, and only once. The reload
+          is the first moment anybody can be told what happened, and the only
+          one where the reading taken before the crash is still to hand. */}
+      <CrashNotice />
       <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* Around the pages rather than around the whole app: a page that throws
+          while it draws used to take the header and everything else with it and
+          leave a white screen — the "crash" most of the reports are about. This
+          catches it, keeps the app on screen and offers the reload. */}
+      <ErrorBoundary label="page">
       <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -81,6 +92,7 @@ export default function App() {
       <Route path="/dev/table" element={<StaffRoute><DevTablePage /></StaffRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
+      </ErrorBoundary>
       </div>
       {/* Outside the routes on purpose: a seat being dealt to is a fact about
           the whole app, not about the page you happen to be reading. It hides

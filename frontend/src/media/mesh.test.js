@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { bitrateTier, desiredPeers, isPolite, meshFailureMessage } from "./mesh";
+import {
+  MAX_ICE_RESTARTS, OPEN_BUDGET, OPEN_WINDOW_MS, STABLE_MS, bitrateTier, desiredPeers, isPolite,
+  mayOpenPeer, meshFailureMessage, shouldRestartIce,
+} from "./mesh";
 
 const player = (overrides) => ({
   user_id: 1, name: "ana", table_number: 1, is_eliminated: false, ...overrides,
@@ -34,10 +37,28 @@ describe("desiredPeers", () => {
     expect(desiredPeers(players, [announced(2)], 1, 1)).toEqual([]);
   });
 
-  it("drops players who busted out", () => {
+  // The crash this whole set exists to prevent. A busted player keeps their
+  // seat, so leaving them out here left the two sides of the pair disagreeing
+  // about whether they should be connected — one hanging up, the other
+  // reconnecting, all evening. Whoever is on the roster is at this table.
+  it("keeps a player who busted and stayed to watch", () => {
     const players = [player({ user_id: 2, is_eliminated: true })];
 
-    expect(desiredPeers(players, [announced(2)], 1, 1)).toEqual([]);
+    expect(desiredPeers(players, [announced(2)], 1, 1).map((one) => one.userId))
+      .toEqual([2]);
+  });
+
+  it("agrees with the busted player about who should be connected", () => {
+    const players = [
+      player({ user_id: 1 }),
+      player({ user_id: 2, name: "bea", is_eliminated: true }),
+    ];
+
+    const mine = desiredPeers(players, [announced(2)], 1, 1).map((one) => one.userId);
+    const theirs = desiredPeers(players, [announced(1)], 2, 1).map((one) => one.userId);
+
+    expect(mine).toEqual([2]);
+    expect(theirs).toEqual([1]);
   });
 
   it("ignores a seat with no id on it, from before the payload had one", () => {
@@ -155,11 +176,20 @@ describe("desiredPeers, with somebody on the rail", () => {
     expect(desiredPeers([...seated, ...elsewhere], roster, 1, 1)).toEqual([]);
   });
 
-  it("still leaves out somebody who has busted", () => {
+  it("treats somebody who has busted as one of the rail", () => {
     const out = [{ user_id: 4, name: "Dee", table_number: 1, is_eliminated: true }];
     const roster = [{ user_id: 4, audio: true, video: true }];
 
-    expect(desiredPeers([...seated, ...out], roster, 1, 1)).toEqual([]);
+    const wanted = desiredPeers([...seated, ...out], roster, 1, 1);
+
+    expect(wanted.map((one) => one.userId)).toEqual([4]);
+    expect(wanted[0].name).toBe("Dee");
+  });
+
+  it("leaves out somebody who busted and left, because the roster has", () => {
+    const out = [{ user_id: 4, name: "Dee", table_number: 1, is_eliminated: true }];
+
+    expect(desiredPeers([...seated, ...out], [], 1, 1)).toEqual([]);
   });
 
   it("still leaves out anybody who has not announced", () => {
@@ -170,5 +200,73 @@ describe("desiredPeers, with somebody on the rail", () => {
     const roster = [{ user_id: 1, audio: true, video: true }];
 
     expect(desiredPeers(seated, roster, 1, 1)).toEqual([]);
+  });
+});
+
+describe("shouldRestartIce", () => {
+  it("tries again when a connection fails", () => {
+    expect(shouldRestartIce({ restarts: 0, connectedFor: null }).restart).toBe(true);
+  });
+
+  it("gives up on a pair that keeps failing", () => {
+    let restarts = 0;
+    for (let attempt = 0; attempt < MAX_ICE_RESTARTS; attempt += 1) {
+      const verdict = shouldRestartIce({ restarts, connectedFor: null });
+      expect(verdict.restart).toBe(true);
+      restarts = verdict.restarts;
+    }
+
+    expect(shouldRestartIce({ restarts, connectedFor: null }).restart).toBe(false);
+  });
+
+  // The loop that killed tabs: the pair really did connect every time, so a
+  // count reset by `connected` alone never reached its limit.
+  it("does not forgive a connection that died again straight away", () => {
+    const verdict = shouldRestartIce({ restarts: MAX_ICE_RESTARTS, connectedFor: 900 });
+
+    expect(verdict.restart).toBe(false);
+  });
+
+  it("forgives a connection that lasted", () => {
+    const verdict = shouldRestartIce({ restarts: MAX_ICE_RESTARTS, connectedFor: STABLE_MS + 1 });
+
+    expect(verdict.restart).toBe(true);
+    expect(verdict.restarts).toBe(1);
+  });
+});
+
+describe("mayOpenPeer", () => {
+  const now = 1_700_000_000_000;
+
+  it("lets a table open the connections it actually needs", () => {
+    // A full table, twice over: everybody's cameras up, a rebalance, up again.
+    const opened = Array.from({ length: 14 }, (_, i) => now - i * 1000);
+
+    expect(mayOpenPeer(opened, now).allowed).toBe(true);
+  });
+
+  it("holds off a page opening them faster than any table needs", () => {
+    const opened = Array.from({ length: OPEN_BUDGET }, (_, i) => now - i * 1000);
+
+    expect(mayOpenPeer(opened, now).allowed).toBe(false);
+  });
+
+  // Temporary by construction: the burst falls out of the window and the table
+  // reconnects on its own. A backstop that needs a reload to clear is a second
+  // outage rather than a guard against the first.
+  it("forgets a burst once it has passed", () => {
+    const opened = Array.from({ length: OPEN_BUDGET }, (_, i) => now - i * 1000);
+    const later = now + OPEN_WINDOW_MS + 1;
+
+    const verdict = mayOpenPeer(opened, later);
+
+    expect(verdict.allowed).toBe(true);
+    expect(verdict.recent).toEqual([]);
+  });
+
+  it("hands back the window rather than a tally that only grows", () => {
+    const opened = [now - OPEN_WINDOW_MS - 5, now - 10];
+
+    expect(mayOpenPeer(opened, now).recent).toEqual([now - 10]);
   });
 });

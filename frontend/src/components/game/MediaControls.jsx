@@ -28,7 +28,7 @@ function ToggleButton({ on, label, icon, onClick }) {
  * table, a microphone you forgot was on leaks more than a bad tell.
  */
 export default function MediaControls() {
-  const { cameraOn, micOn, permissionError, peers, relay } = useMediaStore();
+  const { cameraOn, micOn, permissionError, peers, relay, meshPaused } = useMediaStore();
 
   // Every camera at the table failing is not several accidents, it is one: this
   // network cannot be reached directly, and whether anything can be done about
@@ -58,9 +58,15 @@ export default function MediaControls() {
         <ToggleButton on={micOn} label={micOn ? "Turn microphone off" : "Turn microphone on"}
           icon={"\u{1F3A4}"} onClick={() => toggle({ audio: !micOn })} />
       </div>
-      {(permissionError || meshError) && (
+      {(permissionError || meshPaused || meshError) && (
         <p className="text-[10px] text-[#c76b7a] max-w-[11rem] leading-tight">
-          {permissionError || meshError}
+          {/* The pause is said plainly. It only happens when something in the
+              mesh is misbehaving, and a camera that has gone quiet with no
+              explanation is what sends people looking for a fault in their own
+              webcam. */}
+          {permissionError
+            || (meshPaused ? "Cameras are settling down after too many reconnections." : "")
+            || meshError}
         </p>
       )}
     </div>

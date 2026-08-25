@@ -24,15 +24,31 @@ export function desiredPeers(players, roster, myUserId, myTableNumber) {
   // a seat: somebody watching it is there too, and reading the mesh off the
   // seating plan left them connected to nobody while nobody connected to them.
   //
-  // A seat still decides one thing — whether they are out of the tournament, and
-  // whether they are at this table rather than another one — because that is
-  // what the seat knows and the roster does not.
+  // A seat still decides one thing — whether they are at this table rather than
+  // another one — because that is what the seat knows and the roster does not.
+  //
+  // What it deliberately does NOT decide any more is whether somebody has
+  // busted. It used to, and that is the one thing in here that both sides could
+  // not agree on: a player who busts keeps their seat, marked eliminated, so
+  // everybody still in the tournament dropped them from the mesh — while they,
+  // reading the same table, still wanted everybody. One side hangs up, the other
+  // side sees the connection fail, restarts ICE, connects, and is hung up on
+  // again, for as long as the tournament lasts. Every cycle is a fresh
+  // RTCPeerConnection on every remaining player's machine, a burst of
+  // signalling, and a camera flickering on and off at a seat. An evening of that
+  // is a renderer that runs out of room, which is a tab that dies with nothing
+  // in any log to say why.
+  //
+  // And a busted player who stays to watch is a watcher: the rail is already in
+  // the mesh on purpose, and a seat they no longer play is no reason to make a
+  // one-way mirror of them. One who actually leaves drops off the roster, which
+  // is what takes them out of the mesh.
   return (roster || [])
     .filter((peer) => peer.user_id != null && peer.user_id !== myUserId)
     .filter((peer) => {
       const player = seated.get(peer.user_id);
       if (!player) return true;               // on the rail: the roster is enough
-      return !player.is_eliminated && player.table_number === myTableNumber;
+      return player.table_number === myTableNumber;
     })
     .map((peer) => ({
       userId: peer.user_id,
@@ -126,4 +142,56 @@ export function permissionMessage(error) {
     default:
       return "Could not start the camera or microphone.";
   }
+}
+
+/** Whether a failed connection is worth another ICE restart.
+ *
+ * A route can change mid-game, and one restart puts the picture back. What this
+ * is really guarding against is the other case: a pair that connects, is torn
+ * down, fails, restarts, connects and is torn down again. Resetting the count
+ * on every `connected` made that loop free to run for the length of a
+ * tournament — the connection really did come up each time, so nothing ever
+ * counted as giving up.
+ *
+ * So a restart is only forgiven by a connection that LASTED. Anything that
+ * comes up and dies again inside `STABLE_MS` is the loop, and after a few of
+ * those the pair is left alone: a camera that will not stay up is a picture
+ * missing from one circle, while retrying it forever costs the whole table.
+ */
+export const MAX_ICE_RESTARTS = 3;
+export const STABLE_MS = 30_000;
+
+export function shouldRestartIce({ restarts = 0, connectedFor = null } = {}) {
+  // A connection that held is proof the pair works; the count starts again.
+  if (connectedFor != null && connectedFor >= STABLE_MS) return { restart: true, restarts: 1 };
+  if (restarts >= MAX_ICE_RESTARTS) return { restart: false, restarts };
+  return { restart: true, restarts: restarts + 1 };
+}
+
+/** How many connections a table may honestly need to open, and over how long.
+ *
+ * A full table opens seven. A rebalance closes them and opens seven more. A
+ * night of people arriving, leaving and switching cameras on and off might
+ * reach a couple of dozen. Nothing legitimate reaches sixty in five minutes.
+ *
+ * So sixty in five minutes is not a table being busy — it is two sides of the
+ * mesh disagreeing about who belongs in it, one hanging up and the other
+ * calling back, which is exactly what killed the browser once. The specific
+ * disagreement that caused it is fixed; this is here so that the next one, in
+ * code nobody has written yet, costs a picture instead of the tab.
+ */
+export const OPEN_BUDGET = 60;
+export const OPEN_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * Whether another connection may be opened, given when the recent ones were.
+ *
+ * Returns the trimmed list along with the verdict, so the caller keeps a window
+ * rather than a tally that only ever grows. Refusing is temporary by
+ * construction: once the burst falls out of the window the table opens
+ * connections again without anybody doing anything.
+ */
+export function mayOpenPeer(opened, now) {
+  const recent = opened.filter((at) => now - at < OPEN_WINDOW_MS);
+  return { allowed: recent.length < OPEN_BUDGET, recent };
 }

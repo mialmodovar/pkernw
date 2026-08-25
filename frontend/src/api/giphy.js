@@ -68,8 +68,29 @@ export function gifPreviewUrl(id) {
   return id ? `https://media.giphy.com/media/${encodeURIComponent(id)}/200.gif` : null;
 }
 
-/** The size worth showing in the middle of the table. */
+/** The size worth showing in the middle of the table.
+ *
+ * Giphy's downsized rendition rather than the original, and the reason is
+ * memory rather than bandwidth. An animated GIF is held decoded, frame by
+ * frame, at its own pixel size: a 550-square original is over a megabyte per
+ * frame, which for a clip of any length is tens of megabytes of the browser's
+ * memory to draw something the felt shows at about 350 pixels across. It is
+ * drawn on every screen at the table, several times a night, while eight video
+ * streams are already being decoded beside it — and a browser that is holding
+ * too much is a browser that gets killed.
+ *
+ * Downsized-medium comes back around 480 wide, which is still more than the
+ * felt asks for, at roughly a tenth of the bytes. Not every GIF has one, so
+ * whoever draws it falls back to the original — see FinisherOverlay.
+ */
 export function gifFullUrl(id) {
+  return id
+    ? `https://media.giphy.com/media/${encodeURIComponent(id)}/giphy-downsized-medium.gif`
+    : null;
+}
+
+/** The original, for the few that have no downsized rendition. */
+export function gifOriginalUrl(id) {
   return id ? `https://media.giphy.com/media/${encodeURIComponent(id)}/giphy.gif` : null;
 }
 

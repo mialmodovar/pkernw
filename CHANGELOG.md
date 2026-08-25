@@ -141,6 +141,69 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The table stops dying halfway through a tournament.** A page at a full table
+  with the cameras on would go, with no action to blame, and come back fine on a
+  reload. The cause was a disagreement about who belongs in the camera mesh: a
+  player who busts keeps their seat, marked eliminated, and everybody still in
+  the tournament dropped them from the mesh — while they, watching the same
+  table, still wanted everybody. One side hung up, the other saw the connection
+  fail, restarted it, connected, and was hung up on again, for the rest of the
+  night. Every cycle was a fresh peer connection on every remaining player's
+  machine — each one an ICE agent, an encoder and a decoder — and a browser
+  holding more than it can is a browser the operating system kills outright,
+  which is the crash that was being reported: the tab gone, an error page, no
+  console and nothing in any server log.
+  Whoever is on the table's roster is now in the mesh, busted or not — a player
+  who stayed to watch is on the rail, and the rail has been in the mesh on
+  purpose since watching stopped being a one-way mirror. Somebody who actually
+  leaves drops off the roster, which is what takes them out of it.
+
+  Two guards behind that fix, because it is the shape of failure that matters
+  more than the one instance: a connection we have deliberately hung up on is
+  not rebuilt when the other side calls again, and an ICE restart is only
+  forgiven by a connection that then *lasted*, so a pair that keeps coming up
+  and dying gives up instead of retrying all evening.
+- **A crash now leaves something to read.** The reports were of the browser
+  itself dying — Chrome's error page, the tab gone, a reload the only way back —
+  and that is the one failure that leaves no trace anywhere: the console goes
+  with the process, and nothing about it ever reaches the server. The page now
+  keeps a black box. Every twenty seconds it writes down what it is holding —
+  connections open, connections *ever opened*, video elements, heap — into
+  storage that belongs to the tab rather than to the process, so the reading
+  taken before the crash survives it. A run that never says goodbye is a run
+  that was killed, and the reload afterwards says so and offers the details to
+  copy. The number that names this class of fault is the difference between
+  connections open and connections opened: seven that stay up is a table with
+  cameras on, seven open against four hundred opened is the table eating the
+  browser.
+- **The mesh cannot open connections faster than a table could need them.** A
+  backstop under all of the above, not a fix for anything known: sixty in five
+  minutes is not a busy table, it is two sides disagreeing about who belongs in
+  the mesh, and it now stops rather than continues. Cameras say they are
+  settling and come back on their own once the burst has passed. Whatever
+  disagreement comes next costs a picture instead of the tab.
+- **A knockout GIF costs a tenth of what it did.** The clip in the middle of the
+  felt was fetched at its original size — commonly 550 square, over a megabyte
+  per frame held decoded — to be drawn about 350 pixels across, on every screen
+  at the table, several times a night, alongside eight video streams already
+  being decoded. It now asks for the downsized rendition, and falls back to the
+  original for the few GIFs that have none.
+- **A page that breaks no longer takes the whole app with it.** One component
+  throwing while it drew meant React discarded everything — the felt, the
+  buttons, the header — and left a white screen. A different failure from the
+  browser being killed, and one nothing was guarding against. There is now a
+  boundary around the pages
+  and a second one around the felt itself: a table that fails to draw leaves the
+  action buttons alive, so the hand you are already in can still be played. The
+  screen says what happened, offers the reload, and hands over the details to
+  copy — a crash is written down as it happens and survives the reload, so a
+  report is worth reading instead of "it crashed again". The same net catches
+  what a boundary never sees: a websocket handler, a WebRTC event, a promise
+  nobody awaited.
+- **One bad event no longer silences the table.** Every socket message was
+  delivered to the game store, the sounds and the camera mesh in one pass, so a
+  throw in any of them stopped the ones after it from ever seeing that message —
+  and every message after it. Each listener now gets its own footing.
 - **The hand history calls people what they call themselves.** A replay named
   every player by their login name, ignoring the display name they had set — at
   the one moment their play is being talked about. Rows are still filed under the

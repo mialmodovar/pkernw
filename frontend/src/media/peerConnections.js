@@ -12,7 +12,7 @@
 import { send } from "../api/socket";
 import api from "../api/http";
 import useMediaStore from "../store/mediaStore";
-import { remember, stored, toRestore } from "./rejoinMedia";
+import { grantedFromDevices, remember, stored, toRestore } from "./rejoinMedia";
 import {
   AUDIO_BITRATE, ICE_SERVERS, MEDIA_CONSTRAINTS, bitrateTier, isPolite, mayOpenPeer,
   permissionMessage, shouldRestartIce,
@@ -96,25 +96,50 @@ export function setTableKey(key) {
 export async function restoreFromReload(key) {
   const saved = stored();
   if (!saved) return false;
-  let granted = false;
-  try {
-    // Both devices, because either could be the one that was on. Not every
-    // browser implements the query; one that does not simply restores nothing,
-    // which is where this started.
-    const names = [];
-    if (saved.cameraOn) names.push("camera");
-    if (saved.micOn) names.push("microphone");
-    const states = await Promise.all(
-      names.map((name) => navigator.permissions.query({ name })),
-    );
-    granted = states.length > 0 && states.every((one) => one.state === "granted");
-  } catch {
-    return false;
-  }
+  const granted = await alreadyGranted(saved);
   const wanted = toRestore(saved, { table: String(key || ""), granted });
   if (!wanted) return false;
   await enable(wanted);
   return true;
+}
+
+/**
+ * Whether the browser already holds the permissions this restore would need.
+ *
+ * Asked two ways. The Permissions API is the direct question, and Firefox and
+ * Safari answer it for the microphone at best — on those, a camera that was on
+ * a second ago was never coming back. The device list answers the same question
+ * everywhere, because only a granted device has a label. Either saying yes is
+ * enough; neither being able to say so leaves the camera off, which is the
+ * conservative half of this feature and stays.
+ */
+async function alreadyGranted(saved) {
+  const names = [];
+  if (saved.cameraOn) names.push("camera");
+  if (saved.micOn) names.push("microphone");
+  if (!names.length) return false;
+
+  try {
+    const states = await Promise.all(
+      names.map((name) => navigator.permissions.query({ name })),
+    );
+    if (states.every((one) => one.state === "granted")) return true;
+    // A definite "no" is a no: the permission was refused or revoked, and the
+    // device list would only tell us about a label left over from before.
+    if (states.some((one) => one.state === "denied")) return false;
+  } catch {
+    // Unimplemented, or refused the question. The device list is the fallback.
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return grantedFromDevices(devices, {
+      camera: Boolean(saved.cameraOn),
+      mic: Boolean(saved.micOn),
+    });
+  } catch {
+    return false;
+  }
 }
 
 function wanted() {
@@ -191,8 +216,16 @@ function stopTracks(tracks) {
   });
 }
 
-/** Stop transmitting entirely and release the devices. */
-export function disable() {
+/**
+ * Stop transmitting entirely and release the devices.
+ *
+ * `remembering` is the difference between switching the camera off and the page
+ * going away with it on, and it is the whole of the reload bug: leaving a table
+ * fires the same teardown a reload does, so the reload wrote "camera off" into
+ * the session a moment before the new page read it back — and every reload came
+ * up dark no matter what had been on.
+ */
+export function disable({ remembering = true } = {}) {
   const store = useMediaStore.getState();
   if (localStream) {
     stopTracks(localStream.getTracks());
@@ -205,13 +238,14 @@ export function disable() {
   store.clearPeers();
   announce({ audio: false, video: false });
   // Turned off on purpose is the one state worth remembering as itself: a
-  // reload must not undo it.
-  remember({ table: tableKey, cameraOn: false, micOn: false });
+  // reload must not undo it. A page being torn down says nothing about what
+  // anybody wanted, so it leaves the note where it is.
+  if (remembering) remember({ table: tableKey, cameraOn: false, micOn: false });
 }
 
 /** Release everything, for leaving the page. */
 export function teardown() {
-  disable();
+  disable({ remembering: false });
   useMediaStore.getState().reset();
 }
 

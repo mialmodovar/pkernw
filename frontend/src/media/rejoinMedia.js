@@ -14,7 +14,8 @@
  * And it is only ever acted on when the browser already says the permission is
  * granted. Restoring must not be able to raise a prompt: a page that asks for
  * your camera on load, for a reason you cannot see, is the surprise this whole
- * rule exists to avoid.
+ * rule exists to avoid. Two ways of asking the browser that, because the tidy
+ * one does not exist everywhere — see `grantedFromDevices`.
  */
 
 const KEY = "poker.media.session";
@@ -63,4 +64,24 @@ export function toRestore(saved, { table, granted }) {
   if (!saved.table || saved.table !== table) return null;
   if (!saved.cameraOn && !saved.micOn) return null;
   return { audio: Boolean(saved.micOn), video: Boolean(saved.cameraOn) };
+}
+
+/**
+ * Whether the devices are already granted, read off the device list.
+ *
+ * The Permissions API is the tidy way to ask, and Firefox and Safari do not
+ * implement it for the camera — so on those browsers nothing was ever restored,
+ * which is half of "I reloaded and my camera was gone".
+ *
+ * `enumerateDevices` answers the same question sideways, and does so everywhere:
+ * a browser only fills in the label of a device you have already been granted.
+ * An empty label on every camera means the permission has not been given in
+ * this browser, and asking for it on page load is the thing we will not do.
+ */
+export function grantedFromDevices(devices, { camera = false, mic = false } = {}) {
+  const named = (kind) => (devices || []).some(
+    (device) => device.kind === kind && Boolean(device.label),
+  );
+  if (!camera && !mic) return false;
+  return (!camera || named("videoinput")) && (!mic || named("audioinput"));
 }

@@ -919,9 +919,14 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                         {"seat": runtime_player._seat, "name": runtime_player.name},
                     )
 
-    # What somebody on the rail is allowed to send. Their camera, and nothing
-    # else: no action, no chat, no sitting out, nothing that touches the hand.
-    SPECTATOR_MESSAGES = ("media_signal", "media_presence")
+    # What somebody on the rail is allowed to send. Their camera, and a call on
+    # who takes the pot: neither touches the hand. Nothing else — no action, no
+    # chat, no sitting out.
+    #
+    # The side bet is here because the rail is who the game is for. It rides on
+    # coins from the wallet, never on chips at the table, and a watcher has no
+    # cards to be told apart from an opinion.
+    SPECTATOR_MESSAGES = ("media_signal", "media_presence", "side_bet")
 
     async def receive(self, text_data):
         try:
@@ -969,7 +974,16 @@ class TournamentConsumer(AsyncWebsocketConsumer):
                     on_user_id = int(data.get("on_user_id"))
                 except (TypeError, ValueError):
                     return
-                await coordinator.place_side_bet(self.user.id, on_user_id, data.get("stake"))
+                await coordinator.place_side_bet(
+                    self.user.id,
+                    on_user_id,
+                    data.get("stake"),
+                    # A watcher has no seat to read a table off, so the table
+                    # they are watching is the book their call goes in. A
+                    # seated player's own table is the coordinator's to decide.
+                    table_number=self.current_table_number if self.is_spectator else None,
+                    name=self.shown_name if self.is_spectator else "",
+                )
         elif message_type == "chat_message":
             await self._send_chat(data)
         elif message_type == "throw_item":

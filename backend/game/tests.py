@@ -1782,6 +1782,42 @@ class SideBetRulesTests(CoordinatorHarness, TestCase):
         self.assertFalse(results[0]["correct"])
         self.assertEqual(results[0]["record"], {"right": 0, "called": 1})
 
+    def test_somebody_on_the_rail_can_back_a_hand_they_have_no_seat_in(self):
+        # The report this exists for: a watcher had no seat, so the coordinator
+        # could not find a bettor and dropped every call they made.
+        coordinator = self._hand_in_progress()
+
+        placed = async_to_sync(coordinator.place_side_bet)(
+            999, 101, 50, table_number=1, name="Railbird",
+        )
+
+        self.assertTrue(placed)
+        bet = coordinator.side_bets_at(1)["bets"][0]
+        self.assertEqual(bet["user_id"], 999)
+        self.assertEqual(bet["on_user_id"], 101)
+        # No seat, and the name the table knows them by rather than an empty one.
+        self.assertIsNone(bet["seat"])
+        self.assertEqual(bet["name"], "Railbird")
+
+    def test_a_watcher_is_paid_like_anybody_else_who_called_it_right(self):
+        coordinator = self._hand_in_progress()
+        async_to_sync(coordinator.place_side_bet)(999, 101, 50, table_number=1, name="Railbird")
+
+        async_to_sync(coordinator._hand_event)(1, "pot_awarded", [{"seat": 1, "amount": 60}])
+
+        results = [
+            payload for _table, event, payload in self.table_events
+            if event == "side_bet_results"
+        ][-1]["results"]
+        self.assertEqual([one["user_id"] for one in results], [999])
+        self.assertTrue(results[0]["correct"])
+
+    def test_a_watcher_still_cannot_back_a_hand_at_another_table(self):
+        coordinator = self._hand_in_progress()
+        self.assertFalse(
+            async_to_sync(coordinator.place_side_bet)(999, 101, 50, table_number=2)
+        )
+
     def test_a_reconnecting_client_is_handed_the_open_book(self):
         coordinator = self._hand_in_progress()
         self._fold(coordinator, 100)

@@ -619,7 +619,14 @@ class MultiTableTournamentCoordinator:
             "bets": {},
         }
 
-    async def place_side_bet(self, user_id: int, on_user_id: int, stake=None) -> bool:
+    async def place_side_bet(
+        self,
+        user_id: int,
+        on_user_id: int,
+        stake=None,
+        table_number: Optional[int] = None,
+        name: str = "",
+    ) -> bool:
         """Back somebody to win the hand you are not in.
 
         Once only, and only while the hand is still a question: a bet cannot be
@@ -630,22 +637,34 @@ class MultiTableTournamentCoordinator:
         six; calling heads-up on the river pays two. That is what makes calling
         early worth anything, and it only works if the odds are stamped at the
         moment of the call rather than read again at the end.
+
+        The bettor need not have a seat. Somebody on the rail — watching a
+        table they were knocked out of, or one they never played — is the purest
+        case of what this is for: no cards, no stake in the pot, an opinion
+        about who takes it. They come with `table_number`, since there is no
+        seat to read a table off, and with the `name` the table knows them by,
+        since there is no runtime player holding it either.
         """
-        bettor = self._players_by_user_id.get(user_id)
         pick = self._players_by_user_id.get(on_user_id)
-        if bettor is None or pick is None or bettor is pick:
+        if pick is None or on_user_id == user_id:
             return False
 
-        table_number = bettor._table_number
-        if pick._table_number != table_number:
+        bettor = self._players_by_user_id.get(user_id)
+        # Whose book this is: the table being watched, or the one the bettor is
+        # sitting at. A watcher's own seat, if they have one somewhere, has
+        # nothing to do with the hand they are calling.
+        table = table_number if table_number is not None else getattr(bettor, "_table_number", None)
+        if table is None or pick._table_number != table:
             return False
+        table_number = table
 
         book = self._side_bets.get(table_number)
         if book is None or not book["open"] or user_id in book["bets"]:
             return False
 
-        # You may only bet on a hand you are not in — folded, or never dealt.
-        if user_id in book["dealt_in"] and not bettor.is_folded:
+        # You may only bet on a hand you are not in — folded, never dealt, or
+        # not at this table at all.
+        if user_id in book["dealt_in"] and not (bettor is not None and bettor.is_folded):
             return False
         # And only on somebody who is still in it.
         if on_user_id not in book["dealt_in"] or pick.is_folded:
@@ -665,7 +684,13 @@ class MultiTableTournamentCoordinator:
             if not await self.take_side_bet_stake(user_id, PLAYER_BET.id, wager):
                 return False
 
-        book["bets"][user_id] = {"on_user_id": on_user_id, "stake": wager, "odds": odds}
+        book["bets"][user_id] = {
+            "on_user_id": on_user_id,
+            "stake": wager,
+            "odds": odds,
+            # Only ever read for a bettor with no runtime player to ask.
+            "name": name,
+        }
         await self._broadcast_to_table(
             table_number,
             "side_bet_placed",
@@ -688,7 +713,8 @@ class MultiTableTournamentCoordinator:
         pick = self._players_by_user_id.get(bet["on_user_id"])
         return {
             "user_id": user_id,
-            "name": bettor.name if bettor else "",
+            # A watcher has no runtime player, so the name came in with the bet.
+            "name": bettor.name if bettor else bet.get("name", ""),
             "seat": getattr(bettor, "_seat", None),
             "on_user_id": bet["on_user_id"],
             "on_name": pick.name if pick else "",

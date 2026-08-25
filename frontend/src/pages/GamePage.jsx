@@ -535,7 +535,10 @@ export default function GamePage() {
           open={infoOpen}
           onClose={() => setInfoOpen(false)}
         />
-        <SideBetPanel mySeat={mySeat} myUserId={user?.id} canCall={watching == null} />
+        {/* Callable from the rail too: watching a table you have no cards at
+            is the purest version of what a side bet is for, and the coins are
+            the wallet's rather than the table's. */}
+        <SideBetPanel mySeat={mySeat} myUserId={user?.id} />
         {/* Its own guard, inside the page's. The felt is the busiest thing on
             screen — eight seats, eight cameras, chips and cards in flight — and
             if it ever fails to draw, the buttons below it are what let you play

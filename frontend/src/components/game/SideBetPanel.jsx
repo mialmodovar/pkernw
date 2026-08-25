@@ -21,10 +21,14 @@ const DEFAULT_STAKE = 25;
  * calls went, and otherwise is not there at all. Which of those it is doing is
  * decided in sideBets.js, where it can be tested.
  *
+ * Open to the rail as well as to the folded: somebody watching a table has no
+ * cards at it, which is the same thing the fold makes true, and the coins ride
+ * from the wallet rather than from the table.
+ *
  * Sits in the felt's top-right corner — the spot the tournament info chip used
  * to occupy, and the one part of the table with nothing on it.
  */
-export default function SideBetPanel({ mySeat, myUserId, canCall = true }) {
+export default function SideBetPanel({ mySeat, myUserId }) {
   const players = useGameStore((s) => s.players);
   const bets = useGameStore((s) => s.sideBets);
   const open = useGameStore((s) => s.sideBetsOpen);
@@ -47,7 +51,7 @@ export default function SideBetPanel({ mySeat, myUserId, canCall = true }) {
     if (mine?.balance != null) setBalance(mine.balance);
   }, [results, myUserId, setBalance]);
 
-  const state = sideBetState({ players, mySeat, open, bets, results, myUserId, canCall });
+  const state = sideBetState({ players, mySeat, open, bets, results, myUserId });
   if (!state.mode) return null;
 
   const game = games.find((one) => one.id === "player_bet");

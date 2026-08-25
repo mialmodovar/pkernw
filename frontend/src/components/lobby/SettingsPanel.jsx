@@ -127,6 +127,8 @@ export default function SettingsPanel({ onClose, page }) {
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
+  const confirmBigBets = useGameStore((s) => s.confirmBigBets);
+  const toggleConfirmBigBets = useGameStore((s) => s.toggleConfirmBigBets);
   // Which slot the picker is filling, or null for closed. A number rather than
   // a flag because "add another" and "choose your first" open the same picker.
   const [finisherOpen, setFinisherOpen] = useState(null);
@@ -375,6 +377,24 @@ export default function SettingsPanel({ onClose, page }) {
             <p className="mt-1 text-[11px] text-(--color-text-muted)">
               Your two cards sit face down and lift when you point at them — for
               playing with somebody looking over your shoulder.
+            </p>
+
+            {/* On the account, unlike the one above: this is how somebody
+                plays rather than where they are sitting, and the click it
+                protects costs the same on every machine. */}
+            <label className="mt-3 flex items-center gap-2 text-xs text-(--color-silver) cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmBigBets}
+                onChange={toggleConfirmBigBets}
+                className="w-5 h-5 sm:w-4 sm:h-4 shrink-0"
+              />
+              Ask again before I bet half my stack
+            </label>
+            <p className="mt-1 text-[11px] text-(--color-text-muted)">
+              The button lights up on the first click and goes in on the second,
+              the way the keyboard already works — only for the decisions that
+              put in half of what you have behind, or all of it.
             </p>
 
             <BetSizeSettings />

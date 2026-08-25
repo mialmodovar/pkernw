@@ -776,6 +776,16 @@ class TablePreferencesTests(APITestCase):
 		me = self.client.get(reverse("me")).data
 		self.assertEqual(me["profile"]["preferences"]["show_bb"], False)
 
+	def test_the_bet_confirmation_is_kept_on_the_account_too(self):
+		"""So the guard against a misclick follows the player, not the browser."""
+		response = self.client.patch(
+			reverse("update_preferences"), {"confirm_big_bets": False}, format="json",
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		me = self.client.get(reverse("me")).data
+		self.assertIs(me["profile"]["preferences"]["confirm_big_bets"], False)
+
 	def test_a_preference_this_client_does_not_know_about_survives_being_edited(self):
 		"""Merged rather than replaced.
 

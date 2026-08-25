@@ -94,15 +94,17 @@ remembering.
   jump, arrows to step, and a swipe across the panel to turn — a swipe that has
   to be a good deal more sideways than downward, since this is a tall panel
   people drag up and down.
-- **The settings are a sheet on a phone.** Full width along the bottom edge,
-  where the thumb holding the phone already is, rather than a card capped at
-  22rem floating at the top of the screen: the old shape wasted the width it
-  had, which left every swatch inside it smaller than a fingertip. The close
-  button, the arrows and the buttons on a finisher row are now the size of a
-  thumb rather than the size of the icons in them, nothing behind the sheet
-  scrolls while it is open, it clears the home indicator, and the fields inside
-  it are big enough that iOS stops zooming the whole page in when one is
-  tapped.
+- **The settings fit a phone.** The window runs the full width of a small
+  screen rather than sitting in a card capped at 22rem, which is what left every
+  swatch inside it smaller than a fingertip. The close button, the tabs, the
+  arrows and the buttons on a finisher row are now the size of a thumb rather
+  than the size of the icons in them, nothing behind the window scrolls while it
+  is open, and the fields inside it are big enough that iOS stops zooming the
+  whole page in when one is tapped.
+- **Three themes, all three on screen.** Choosing one was a dropdown: a click, a
+  menu, and three items in it. They sit in a row now, each showing the felt it
+  lays with the card back that will be on it — the same kind of choice as the
+  accent swatches underneath, made the same way.
 - **Stats, one kind of game at a time.** A Spin n Go is three-handed for five
   minutes and a tournament is nine-handed for an evening; a VPIP averaged across
   both describes neither, and neither does an in-the-money rate. The stats panel

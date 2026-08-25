@@ -7,15 +7,17 @@ import { clampPage, swipeStep } from "./swipe";
 /**
  * The shell every settings panel opens in.
  *
- * On anything with room it is a window: centred, never taller than the screen,
- * scrolling inside itself. That much was already true of the appearance
- * settings and is why they stopped falling off the bottom of short screens.
+ * A window, on every size of screen: centred, never taller than the screen,
+ * scrolling inside itself. That is why it stopped falling off the bottom of
+ * short ones.
  *
- * On a phone it is a sheet instead — full width, along the bottom edge, with a
- * handle at the top of it. Not decoration: a centred card capped at 22rem on a
- * 6-inch screen wastes the width it has, which makes every swatch inside it
- * smaller than a fingertip, and it puts the whole panel at the top of the
- * screen while the thumb holding the phone is at the bottom.
+ * Centred rather than sitting on the bottom edge. It was a sheet on phones for
+ * a while, on the argument that the bottom is where the thumb already is — but
+ * a panel anchored to an edge of a page that is not itself scrolling reads as
+ * something half-open, and this is a window rather than a drawer. What the
+ * sheet was really fixing was the width: a card capped at 22rem on a 6-inch
+ * screen wastes what it has and leaves every swatch smaller than a fingertip.
+ * So it keeps the full width and gives up the edge.
  *
  * Given `pages`, it also stops being one long scroll. Everything a player can
  * change about how they look was a single column nine hundred pixels deep, so
@@ -110,7 +112,7 @@ export default function SettingsWindow({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -121,21 +123,15 @@ export default function SettingsWindow({
         ref={scroller}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        className="settings-window relative w-full sm:max-w-md max-h-[92dvh] sm:max-h-[88dvh]
-                   overflow-y-auto overscroll-contain p-3
-                   panel-raised panel-solid shadow-xl shadow-black/50 animate-fade-in
-                   rounded-t-2xl sm:rounded-lg"
+        className="settings-window relative w-full sm:max-w-md max-h-[88dvh]
+                   overflow-y-auto overscroll-contain p-3 rounded-lg
+                   panel-raised panel-solid shadow-xl shadow-black/50 animate-fade-in"
       >
         {/* Stays put while the rest scrolls under it: the way out of a panel,
             and the way between its pages, should not be something you have to
             scroll back up to find. */}
         <div className="sticky -top-3 z-30 -mx-3 -mt-3 mb-2 px-3 pt-3 pb-1.5
                         panel-solid border-b border-(--color-border)">
-          {/* The handle. It does not drag — it says which edge this came from,
-              which is the whole grammar of a sheet. Phones only; a centred
-              window is not attached to an edge and would be lying. */}
-          <div aria-hidden="true"
-            className="sm:hidden mx-auto mb-2 h-1 w-9 rounded-full bg-white/25" />
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-(--color-text-muted)">
               {title}
@@ -163,13 +159,15 @@ export default function SettingsWindow({
                 onClick={() => goTo(page - 1)}
                 label={pages[page - 1]?.label}
               />
-              {/* Scrolls rather than wraps or shrinks: five tabs squeezed onto
-                  a phone are five labels nobody can read or hit. */}
+              {/* Scrolls rather than wraps or shrinks: six tabs squeezed onto a
+                  phone are six labels nobody can read or hit. Which is also why
+                  they are this size — small enough to fit was small enough to
+                  miss. */}
               <div
                 ref={tabStrip}
                 role="tablist"
                 aria-label={`${title} sections`}
-                className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar"
+                className="flex-1 flex items-center gap-1 py-0.5 overflow-x-auto no-scrollbar"
               >
                 {pages.map((one, index) => (
                   <button
@@ -178,7 +176,7 @@ export default function SettingsWindow({
                     role="tab"
                     aria-selected={index === page}
                     onClick={() => goTo(index)}
-                    className={`shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-semibold
+                    className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold
                                 transition-colors ${
                       index === page
                         ? "bg-(--color-accent-soft) text-(--color-silver)"

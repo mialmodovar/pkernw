@@ -311,24 +311,17 @@ button:disabled {
   }
 }
 
-/* A settings panel is a window on a laptop and a sheet on a phone — see
-   components/SettingsWindow.jsx. These are the two things the utilities cannot
-   say for it. */
+/* The one thing the utilities cannot say for the settings window — see
+   components/SettingsWindow.jsx. */
 @media (max-width: 639px) {
   /* iOS zooms the whole page in when a control smaller than 16px is focused,
      and then leaves it zoomed. Every select and text field in here is 12px,
-     which is right for the layout and wrong for the phone; the sheet is wide
-     enough to carry them at full size instead. */
+     which is right for the layout and wrong for the phone; the window runs the
+     full width of a phone screen and can carry them at full size instead. */
   .settings-window input:not([type="color"]):not([type="checkbox"]):not([type="range"]),
   .settings-window select,
   .settings-window textarea {
     font-size: 16px;
-  }
-
-  /* The sheet ends at the bottom edge of the screen, which on a phone with a
-     home indicator is under the home indicator. */
-  .settings-window {
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
 

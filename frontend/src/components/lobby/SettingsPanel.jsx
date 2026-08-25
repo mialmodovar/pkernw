@@ -66,13 +66,13 @@ function DeckSample({ card, deck }) {
   );
 }
 
-function PresetPreview({ preset, pattern, cardBack = null }) {
+function PresetPreview({ preset, pattern, cardBack = null, className = "w-10 h-7" }) {
   // Resolved rather than declared, so the dot shows the accent after the
   // readability correction — the colour that will actually be on screen.
   const tokens = resolveTokens({ preset, pattern, cardBack });
   return (
     <span
-      className="w-10 h-7 rounded relative overflow-hidden shrink-0 border border-black/40"
+      className={`rounded relative overflow-hidden shrink-0 border border-black/40 ${className}`}
       style={{ background: tokens["--felt-bg"] }}
     >
       <span
@@ -127,7 +127,6 @@ export default function SettingsPanel({ onClose, page }) {
   // The one setting here that stays in this browser rather than on the account.
   const hideHand = useGameStore((s) => s.hideHand);
   const toggleHideHand = useGameStore((s) => s.toggleHideHand);
-  const [listOpen, setListOpen] = useState(false);
   // Which slot the picker is filling, or null for closed. A number rather than
   // a flag because "add another" and "choose your first" open the same picker.
   const [finisherOpen, setFinisherOpen] = useState(null);
@@ -156,14 +155,8 @@ export default function SettingsPanel({ onClose, page }) {
   // than the whole panel underneath it. The window binds the key; this decides
   // what one press means.
   const back = () => {
-    if (listOpen) setListOpen(false);
-    else if (finisherOpen !== null) setFinisherOpen(null);
+    if (finisherOpen !== null) setFinisherOpen(null);
     else onClose();
-  };
-
-  const choosePreset = (name) => {
-    update({ preset: name });
-    setListOpen(false);
   };
 
   // One thing at a time, in the order somebody goes looking for it. All of this
@@ -184,60 +177,39 @@ export default function SettingsPanel({ onClose, page }) {
       label: "Theme",
       content: (
         <>
-          <div className="relative">
-            <button
-              onClick={() => setListOpen((v) => !v)}
-              aria-haspopup="listbox"
-              aria-expanded={listOpen}
-              className="w-full flex items-center gap-2 p-1.5 rounded panel-raised panel-solid text-left"
-            >
-              <PresetPreview preset={preset} pattern={pattern} cardBack={cardBack} />
-              <span className="text-sm text-(--color-silver) flex-1 truncate">
-                {PRESETS[preset].label}
-              </span>
-              <svg viewBox="0 0 24 24" aria-hidden="true"
-                className={`w-3.5 h-3.5 mr-1 shrink-0 text-(--color-text-muted) transition-transform ${
-                  listOpen ? "rotate-180" : ""
-                }`}
-                fill="none" stroke="currentColor" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round">
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </button>
-
-            {listOpen && (
-              <>
-                {/* Catches the click that dismisses the list. Cheaper and more
-                    reliable than a document listener that has to not fire on the
-                    same click that opened it. */}
-                <div className="fixed inset-0 z-10" onClick={() => setListOpen(false)} />
-                <div
-                  role="listbox"
-                  className="absolute left-0 right-0 top-full z-20 mt-1 p-1 space-y-1 rounded panel-raised panel-solid shadow-xl shadow-black/50 animate-fade-in"
+          {/* Three of them, so all three are on screen. A dropdown is for a
+              list too long to show, and this one was three items behind a click
+              and a menu that had to be positioned, dismissed and kept inside a
+              panel that scrolls. Laid out like the accents below it, which is
+              the same kind of choice made the same way. */}
+          <SectionLabel>Theme</SectionLabel>
+          <div className="grid grid-cols-3 gap-1.5">
+            {PRESET_NAMES.map((name) => {
+              const active = name === preset;
+              return (
+                <button
+                  key={name}
+                  onClick={() => update({ preset: name })}
+                  aria-pressed={active}
+                  title={PRESETS[name].label}
+                  className={`flex flex-col items-center gap-1 rounded-lg p-1.5 border
+                              transition-colors ${
+                    active
+                      ? "border-(--color-highlight-text) bg-black/40"
+                      : "border-(--color-border) hover:border-(--color-border-strong)"
+                  }`}
                 >
-                  {PRESET_NAMES.map((name) => {
-                    const active = name === preset;
-                    return (
-                      <button
-                        key={name}
-                        role="option"
-                        aria-selected={active}
-                        onClick={() => choosePreset(name)}
-                        className={`w-full flex items-center gap-2 p-1.5 rounded text-left transition-colors ${
-                          active ? "bg-(--color-accent-soft)" : "hover:bg-white/5"
-                        }`}
-                      >
-                        <PresetPreview preset={name} pattern={pattern} />
-                        <span className="text-sm text-(--color-silver) flex-1 truncate">
-                          {PRESETS[name].label}
-                        </span>
-                        {active && <Icon name="check" className="w-3.5 h-3.5 text-(--color-silver) mr-1" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+                  {/* The felt this theme lays, with the card back that will be
+                      lying on it — the real values rather than three dots. */}
+                  <PresetPreview preset={name} pattern={pattern}
+                    cardBack={active ? cardBack : null} className="w-full h-9" />
+                  <span className="text-[11px] font-semibold leading-tight text-center
+                                   text-(--color-silver)">
+                    {PRESETS[name].label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="mt-3 pt-3 border-t border-(--color-border)">

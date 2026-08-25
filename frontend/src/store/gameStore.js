@@ -118,6 +118,10 @@ const useGameStore = create((set) => ({
   rabbitOffer: null,
   // What the wallet held after paying, for whoever draws the coins to pass on.
   rabbitBalance: null,
+  // Why the last look was refused, for the button to say so. Cleared by
+  // whatever draws it, like the other one-shot answers.
+  rabbitRefused: null,
+  clearRabbitRefused: () => set({ rabbitRefused: null }),
   // Everybody who has paid to look, which the whole table is told. Half of
   // what rabbit hunting is at a live table is watching somebody give in.
   rabbitBuyers: [],
@@ -582,6 +586,7 @@ const useGameStore = create((set) => ({
           rabbitOffer: null,
           rabbitBuyers: [],
           rabbitBalance: null,
+          rabbitRefused: null,
           winnerSeats: [],
           allInEquity: null,
           countdown: null,
@@ -900,6 +905,12 @@ const useGameStore = create((set) => ({
           messages: appendLog(s, entry(s, "info",
             `Rabbit hunt: ${(data.cards || []).join(" ")}`)),
         }));
+        break;
+
+      case "rabbit_hunt_refused":
+        // The one refusal worth drawing: an empty wallet. Held as a flag rather
+        // than a message so the button itself can say it, where the press was.
+        set({ rabbitRefused: data.reason || "no" });
         break;
 
       case "rabbit_hunt_taken":
@@ -1293,7 +1304,8 @@ const useGameStore = create((set) => ({
       dealerSeat: null, sbSeat: null, bbSeat: null,
       actionContext: null, actionStartedAt: null, pausedSince: null,
       level: null, levelClockAt: null, showdown: null,
-      potAwards: null, rabbitCards: null, rabbitOffer: null, rabbitBuyers: [], winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
+      potAwards: null, rabbitCards: null, rabbitOffer: null, rabbitBuyers: [],
+      rabbitRefused: null, winnerSeats: [], allInEquity: null, countdown: null, isPaused: false,
       standings: null, lastElimination: null, messages: [], chat: [], chatSequence: 0,
       currentTableNumber: null, currentTableId: null, tableCount: 0, tableSummaries: [],
       tableAssignmentNotice: null,

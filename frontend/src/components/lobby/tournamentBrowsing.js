@@ -38,7 +38,13 @@ export function tournamentPriority(tournament) {
 }
 
 export const FILTERS = [
-  { key: "all", label: "All", match: (t) => t.status !== "finished" },
+  // Everything, finished included. It used to mean "everything except the
+  // past", which is not what the word says and hid the result of last night
+  // from anybody who had not thought to press Finished. What keeps a list of
+  // fifty played nights from burying the two that matter is not the filter —
+  // it is the order and the separation below: live and coming first, then the
+  // past, under its own heading and drawn quieter.
+  { key: "all", label: "All", match: () => true },
   { key: "open", label: "Open", match: (t) => t.status === "lobby" && !t.is_joined },
   { key: "late", label: "Late reg", match: (t) => Boolean(t.late_registration_open) },
   { key: "mine", label: "Mine", match: (t) => Boolean(t.is_joined) && t.status !== "finished" },
@@ -78,6 +84,11 @@ export function sortTournaments(tournaments) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Whether this tournament is something that already happened. */
+export function isPast(tournament) {
+  return tournament.status === "finished";
+}
+
 /** Midnight local time, as a number — the key a day groups on. */
 function startOfDay(time) {
   const date = new Date(time);
@@ -112,10 +123,16 @@ export function groupByDay(tournaments, now = Date.now()) {
 
   for (const tournament of sortTournaments(tournaments)) {
     const when = tournamentWhen(tournament);
-    const key = when == null ? "none" : String(startOfDay(when));
+    // A day, and whether it is over: a night that finished this afternoon must
+    // not share a heading with one that starts this evening, or the past is
+    // sitting in among the things you can still do something about. `past` is
+    // what the list draws quieter — see TournamentBrowser.
+    const past = isPast(tournament);
+    const day = when == null ? "none" : String(startOfDay(when));
+    const key = past ? `past:${day}` : day;
     let group = byKey.get(key);
     if (!group) {
-      group = { key, label: dayLabel(when, now), tournaments: [] };
+      group = { key, label: dayLabel(when, now), past, tournaments: [] };
       byKey.set(key, group);
       groups.push(group);
     }

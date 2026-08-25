@@ -85,7 +85,13 @@ def ask(user, other):
     """
     row = row_between(user, other)
     if row is None:
-        return Friendship.objects.create(requester=user, addressee=other)
+        asked = Friendship.objects.create(requester=user, addressee=other)
+        # Rung rather than left to be found: a request nobody notices is the
+        # whole feature failing quietly. See accounts/inbox.py.
+        from .inbox import tell_about_friend_request
+
+        tell_about_friend_request(asked)
+        return asked
     if row.status == Friendship.ACCEPTED:
         return row
     if row.addressee == user:

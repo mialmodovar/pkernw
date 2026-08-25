@@ -1911,6 +1911,22 @@ class RabbitHuntPurchaseTests(CoordinatorHarness, TestCase):
             if one[1].get("type") == "rabbit_hunt_cards"
         ])
 
+    def test_an_empty_wallet_is_told_why_rather_than_ignored(self):
+        # A button that does nothing at all reads as broken, which is worse than
+        # the refusal it actually is.
+        coordinator = self._hand_just_ended()
+        self.coins[100] = 1
+
+        async_to_sync(coordinator.buy_rabbit_hunt)(100, "Ana")
+
+        refusals = [
+            payload for user_id, payload in self.notifications
+            if user_id == 100 and payload.get("type") == "rabbit_hunt_refused"
+        ]
+        self.assertEqual(len(refusals), 1)
+        self.assertEqual(refusals[0]["reason"], "coins")
+        self.assertEqual(refusals[0]["price"], rabbithunt.PRICE)
+
     def test_last_hand_is_not_for_sale_once_the_next_one_is_dealt(self):
         coordinator = self._hand_just_ended()
         coordinator._rabbit.pop(1, None)   # what dealing the next hand does

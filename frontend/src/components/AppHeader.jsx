@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import UserChip from "./UserChip";
 import OnlineChip from "./OnlineChip";
+import InboxBell from "./InboxBell";
 import useAuthStore from "../store/authStore";
 import useWalletStore from "../store/walletStore";
 import Icon from "./icons/Icon";
@@ -93,6 +94,11 @@ export default function AppHeader() {
             the answer people want it for is "is it worth sitting down", and
             they ask it from wherever they are. */}
         <OnlineChip />
+
+        {/* What is waiting for you. Beside the count of who is about, because
+            the two answer the same question from different ends: is there
+            anything here for me right now. */}
+        <InboxBell />
 
         {/* Coins, beside the name, on every page — the number you check before
             deciding whether you can afford to sit down. And now the only place

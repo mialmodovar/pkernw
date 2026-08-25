@@ -168,35 +168,91 @@ def standings(season):
 
 
 def club_standings(club):
-    """Every season the club has ever run, added up.
+    """Every night the club has ever run, added up.
 
     A season table answers "who is winning right now"; this answers "who is the
     best player in this club", which is a different question and the one people
-    argue about. Each season contributes points scored under its own rules —
-    that is what those rules were for — so a club that changed its scoring is
-    still summing things people actually played for.
-    """
-    from .models import Season
+    argue about.
 
-    totals = {}
-    for season in Season.objects.filter(league__club=club).select_related("league"):
-        for row in standings(season):
-            running = totals.setdefault(row["username"], {
-                "username": row["username"],
-                "display_name": row["display_name"],
-                "points": 0,
-                "played": 0,
-                "wins": 0,
-                "cashes": 0,
-                "knockouts": 0,
-                "net_cents": 0,
-                "seasons": 0,
-            })
-            for field in ("points", "played", "wins", "cashes", "knockouts", "net_cents"):
-                running[field] += row[field]
-            running["seasons"] += 1
+    Every night, and that is the point of it: this used to add up the seasons,
+    so a club's own table only knew about games somebody had thought to attach
+    to a league. Most home games are not a league — they are Thursday — and
+    those nights were played at the club, counted for nothing, and left the
+    table saying a club with fifty nights behind it had never played.
+
+    A night in a season is still scored under that season's rules, because that
+    is what those rules were for. A night with no season is scored under the
+    default scheme, which is the one a league starts with — so the two kinds of
+    night are comparable rather than one of them being worth more for having
+    paperwork.
+    """
+    from accounts.naming import shown_name
+    from tournaments.models import LedgerEntry, TournamentPlayer
+
+    seats = (
+        TournamentPlayer.objects
+        .filter(tournament__club=club, tournament__status="finished")
+        .select_related("user", "user__profile", "tournament", "tournament__season")
+    )
+    # One query for the money rather than one per night. Both halves of it: what
+    # a player took out of the club and what they put in.
+    ledger = (
+        LedgerEntry.objects
+        .filter(tournament__club=club)
+        .values_list("user_id", "prize_cents", "stake_cents")
+    )
+    net = {}
+    for user_id, prize, stake in ledger:
+        net[user_id] = net.get(user_id, 0) + (prize or 0) - (stake or 0)
+
+    # Cached per season, since a club with one league has one scheme and this
+    # would otherwise normalise it once per seat.
+    schemes = {}
+
+    rows = {}
+    seasons_seen = {}
+    for seat in seats:
+        season = seat.tournament.season
+        key = season.id if season else None
+        if key not in schemes:
+            schemes[key] = normalize_scheme(season.scoring if season else None)
+
+        row = rows.setdefault(seat.user_id, {
+            "username": seat.user.username,
+            "display_name": shown_name(
+                seat.user.username,
+                getattr(getattr(seat.user, "profile", None), "display_name", ""),
+            ),
+            "points": 0,
+            "played": 0,
+            "wins": 0,
+            "cashes": 0,
+            "knockouts": 0,
+            "net_cents": 0,
+            "seasons": 0,
+        })
+        row["played"] += 1
+        row["points"] += points_for(
+            {"finish_position": seat.finish_position, "knockouts": seat.knockouts},
+            schemes[key],
+        )
+        row["knockouts"] += seat.knockouts or 0
+        if seat.finish_position == 1:
+            row["wins"] += 1
+        paid = len(seat.tournament.payout_structure or [])
+        if seat.finish_position and paid and seat.finish_position <= paid:
+            row["cashes"] += 1
+        if season is not None:
+            seasons_seen.setdefault(seat.user_id, set()).add(season.id)
+
+    for user_id, row in rows.items():
+        row["net_cents"] = net.get(user_id, 0)
+        # Seasons played, which is what it always meant: a night outside a
+        # league is a night, not a season, and counting it as one would make
+        # this column say a club runs more leagues than it does.
+        row["seasons"] = len(seasons_seen.get(user_id, ()))
 
     return sorted(
-        totals.values(),
+        rows.values(),
         key=lambda row: (-row["points"], -row["wins"], -row["knockouts"], row["username"]),
     )

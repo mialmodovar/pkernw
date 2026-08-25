@@ -7,6 +7,7 @@ from .views import (
     recover_password, reset_recovery_code,
 )
 from .friends import friends, unfriend
+from .inbox import inbox
 from .stats import my_stats, player_profile
 from .watching import online_now, search_players
 
@@ -35,6 +36,8 @@ urlpatterns = [
     path("online/", online_now, name="online-now"),
     # Friends, which is what watching became: agreed rather than private, and
     # the same list on both sides. See accounts/friends.py.
+    # What is waiting for you, for the bell in the header.
+    path("inbox/", inbox, name="inbox"),
     path("friends/", friends, name="friends"),
     path("friends/<str:username>/", unfriend, name="unfriend"),
     path("players/<str:username>/", player_profile, name="player-profile"),

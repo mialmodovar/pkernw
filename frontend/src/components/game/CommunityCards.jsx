@@ -24,6 +24,15 @@ export default function CommunityCards({ winningCards, shiningCards }) {
   // to move with them. Handed on here rather than in the store, which must not
   // reach into the wallet's — see the note on rabbitBalance.
   const rabbitBalance = useGameStore((s) => s.rabbitBalance);
+  // Why the last press bought nothing. Said on the button for a few seconds and
+  // then forgotten: it is an answer to a press, not a state of the table.
+  const rabbitRefused = useGameStore((s) => s.rabbitRefused);
+  const clearRabbitRefused = useGameStore((s) => s.clearRabbitRefused);
+  useEffect(() => {
+    if (!rabbitRefused) return undefined;
+    const timer = setTimeout(clearRabbitRefused, 3000);
+    return () => clearTimeout(timer);
+  }, [rabbitRefused, clearRabbitRefused]);
   const setBalance = useWalletStore((s) => s.setBalance);
   useEffect(() => { setBalance(rabbitBalance); }, [rabbitBalance, setBalance]);
   const winners = new Set(winningCards || []);
@@ -76,13 +85,15 @@ export default function CommunityCards({ winningCards, shiningCards }) {
                      panel-raised text-(--color-text-muted) border border-dashed border-(--color-border)
                      hover:text-(--color-silver) hover:border-(--color-highlight) transition-colors"
         >
-          🐇 Rabbit hunt
+          {rabbitRefused === "coins" ? "🐇 Not enough coins" : "🐇 Rabbit hunt"}
           {/* The price on the button rather than in a dialogue: it is five
               coins, and a confirmation for five coins is worse than the spend. */}
-          <span className="ml-1 inline-flex items-center gap-0.5 text-(--color-highlight-text)">
-            <Icon name="coin" className="w-3 h-3" tone="gold" />
-            {rabbitOffer.price}
-          </span>
+          {!rabbitRefused && (
+            <span className="ml-1 inline-flex items-center gap-0.5 text-(--color-highlight-text)">
+              <Icon name="coin" className="w-3 h-3" tone="gold" />
+              {rabbitOffer.price}
+            </span>
+          )}
         </button>
       )}
 

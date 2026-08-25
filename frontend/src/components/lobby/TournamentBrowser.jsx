@@ -4,7 +4,7 @@ import TournamentCard from "./TournamentCard";
 import { FILTERS, filterTournaments, groupByDay } from "./tournamentBrowsing";
 
 const EMPTY = {
-  all: "Nothing running or coming up.",
+  all: "No tournaments yet.",
   open: "No tournament is taking registrations right now.",
   late: "Nothing is open for late registration.",
   mine: "You are not registered for anything.",
@@ -83,12 +83,25 @@ export default function TournamentBrowser({
         </p>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 -mr-1">
-          {groups.map((group) => (
-            <div key={group.key} className="space-y-1.5">
+          {groups.map((group, index) => (
+            <div key={group.key} className={`space-y-1.5 ${group.past ? "opacity-75" : ""}`}>
               {/* Sticks to the top of the scroller, so you always know which
                   day you are looking at part way down a long list. */}
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)
-                             sticky top-0 py-1 bg-[var(--color-surface-sunken)] backdrop-blur-sm z-10 rounded">
+              {/* The first day that is over gets said out loud, once: below this
+                  line is history, and everything above it is a game somebody
+                  can still join, play or be waiting for. */}
+              {group.past && !groups.slice(0, index).some((one) => one.past) && (
+                <p className="flex items-center gap-2 pt-2 text-[10px] uppercase tracking-[0.2em]
+                              text-(--color-text-muted)">
+                  <span className="flex-1 h-px bg-(--color-border)" />
+                  Played
+                  <span className="flex-1 h-px bg-(--color-border)" />
+                </p>
+              )}
+              <h3 className={`text-[11px] font-semibold uppercase tracking-wide
+                             sticky top-0 py-1 bg-[var(--color-surface-sunken)] backdrop-blur-sm z-10 rounded ${
+                group.past ? "text-(--color-text-muted) opacity-70" : "text-(--color-text-muted)"
+              }`}>
                 {group.label}
               </h3>
               {group.tournaments.map((tournament) => (

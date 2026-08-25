@@ -74,9 +74,13 @@ describe("filterTournaments", () => {
     make({ name: "done", status: "finished" }),
   ];
 
-  it("hides finished tournaments from the default view", () => {
+  it("shows everything under All, the past included", () => {
+    // It used to hide the finished ones, which is not what the word says — and
+    // it hid last night's result from anybody who had not found the Finished
+    // chip. What keeps the past from burying the present is the order and the
+    // separation, not the filter.
     expect(filterTournaments(list, "all").map((t) => t.name))
-      .toEqual(["open one", "mine", "late one"]);
+      .toEqual(["open one", "mine", "late one", "done"]);
   });
 
   it("shows only what each filter is for", () => {
@@ -96,7 +100,38 @@ describe("filterTournaments", () => {
   });
 
   it("falls back to showing something when handed a filter it does not know", () => {
-    expect(filterTournaments(list, "nonsense").length).toBe(3);
+    expect(filterTournaments(list, "nonsense").length).toBe(4);
+  });
+});
+
+describe("keeping the past out of the way", () => {
+  it("never puts a finished night under the same heading as a live one", () => {
+    // Both happened today: without the split they shared a day group, and the
+    // thing you can still join sat next to the thing that is over.
+    const groups = groupByDay([
+      make({ name: "tonight", scheduled_start_at: new Date(NOW + HOUR).toISOString() }),
+      make({ name: "this afternoon", status: "finished" }),
+    ], NOW);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].past).toBe(false);
+    expect(groups[0].tournaments.map((t) => t.name)).toEqual(["tonight"]);
+    expect(groups[1].past).toBe(true);
+    expect(groups[1].tournaments.map((t) => t.name)).toEqual(["this afternoon"]);
+  });
+
+  it("puts every past group after every live one", () => {
+    const groups = groupByDay([
+      make({ name: "old", status: "finished", created_at: new Date(NOW - 48 * HOUR).toISOString() }),
+      make({ name: "soon", scheduled_start_at: new Date(NOW + 48 * HOUR).toISOString() }),
+      make({ name: "yesterday", status: "finished", created_at: new Date(NOW - 24 * HOUR).toISOString() }),
+    ], NOW);
+
+    expect(groups.map((one) => one.past)).toEqual([false, true, true]);
+    // Newest first among the played ones: you want last night, not the first
+    // night anybody ever played.
+    expect(groups.slice(1).flatMap((one) => one.tournaments.map((t) => t.name)))
+      .toEqual(["yesterday", "old"]);
   });
 });
 

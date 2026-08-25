@@ -481,6 +481,59 @@ class ClubRecordTests(APITestCase):
 
 		self.assertEqual(response.data["rows"][0]["seasons"], 2)
 
+	def test_the_leaderboard_counts_a_night_that_belonged_to_no_league(self):
+		"""Most home games are not a league — they are Thursday.
+
+		Those nights were played at the club and counted for nothing, which left
+		a club with fifty nights behind it saying nobody had ever played.
+		"""
+		self._night("Thursday", None, owner=1, rival=2)
+
+		rows = {
+			row["username"]: row
+			for row in self.client.get(reverse("club-leaderboard", args=[self.club.slug])).data["rows"]
+		}
+
+		self.assertEqual(rows["r_owner"]["played"], 1)
+		self.assertEqual(rows["r_owner"]["wins"], 1)
+		self.assertGreater(rows["r_owner"]["points"], rows["r_rival"]["points"])
+		# A night is not a season, whatever it counted towards.
+		self.assertEqual(rows["r_owner"]["seasons"], 0)
+
+	def test_league_nights_and_loose_nights_add_up_together(self):
+		self._night("League night", self.season, owner=1, rival=2)
+		self._night("Thursday", None, rival=1, owner=2)
+
+		rows = {
+			row["username"]: row
+			for row in self.client.get(reverse("club-leaderboard", args=[self.club.slug])).data["rows"]
+		}
+
+		self.assertEqual(rows["r_owner"]["played"], 2)
+		self.assertEqual(rows["r_rival"]["played"], 2)
+		self.assertEqual(rows["r_owner"]["wins"], 1)
+		self.assertEqual(rows["r_rival"]["wins"], 1)
+		self.assertEqual(rows["r_owner"]["seasons"], 1)
+
+	def test_the_league_table_still_only_knows_about_its_own_nights(self):
+		"""The other half of the change: a season is still a season."""
+		self._night("League night", self.season, owner=1)
+		self._night("Thursday", None, owner=1, rival=2)
+
+		table = self.client.get(reverse("league-standings", args=[self.league.id])).data
+
+		rows = {row["username"]: row for row in table["rows"]}
+		self.assertEqual(rows["r_owner"]["played"], 1)
+		# The loose night's other player is not on the league table at all.
+		self.assertNotIn("r_rival", rows)
+
+	def test_an_unfinished_night_counts_for_nobody(self):
+		self._night("Still playing", None, status_value="running", owner=None, rival=None)
+
+		self.assertEqual(
+			self.client.get(reverse("club-leaderboard", args=[self.club.slug])).data["rows"], [],
+		)
+
 	def test_a_club_with_nothing_played_has_an_empty_table(self):
 		response = self.client.get(reverse("club-leaderboard", args=[self.club.slug]))
 

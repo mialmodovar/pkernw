@@ -335,7 +335,15 @@ class CashRoom:
         if self.take_rabbit_fee is not None:
             balance = await self.take_rabbit_fee(user_id, rabbithunt.PRICE)
             if balance is None:
-                return False   # not enough coins, and nothing has been shown
+                # Said rather than swallowed, for the same reason as at a
+                # tournament table: silence reads as a broken button.
+                if self.notify_user is not None:
+                    await self.notify_user(user_id, {
+                        "type": "rabbit_hunt_refused",
+                        "reason": "coins",
+                        "price": rabbithunt.PRICE,
+                    })
+                return False
 
         # The last hand's seat: the offer only exists between hands, so this is
         # who they were when the cards it is about were dealt.

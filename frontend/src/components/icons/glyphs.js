@@ -232,6 +232,23 @@ export const GLYPHS = {
     ],
   },
 
+  /* The bell: what is waiting for you. A hand bell rather than the rounded
+     notification bell every app draws — this one hangs in the header beside a
+     coin and a playing card, and the clubhouse version is the one that belongs
+     there. The clapper is the ornament, so a bell with nothing in it still
+     reads as a bell. */
+  bell: {
+    label: "Notifications",
+    paths: [
+      {
+        d: "M12 3.8a5.6 5.6 0 0 1 5.6 5.6c0 3.4.9 5 1.9 6.1H4.5c1-1.1 1.9-2.7 1.9-6.1A5.6 5.6 0 0 1 12 3.8z",
+        kind: "line",
+      },
+      { d: "M12 2.2v1.6", kind: "line" },
+      { d: "M10.2 17.5h3.6a1.8 1.8 0 0 1-3.6 0z", kind: "accent" },
+    ],
+  },
+
   /* Calotes: who owes whom, which is a ledger and has always been one. */
   ledger: {
     label: "Calotes",

@@ -1,5 +1,6 @@
 import base64
 from datetime import timedelta
+from unittest.mock import patch
 
 from asgiref.sync import async_to_sync, sync_to_async
 from channels.testing import WebsocketCommunicator
@@ -187,6 +188,38 @@ class FriendsTests(APITestCase):
 		self.assertEqual(Friendship.objects.count(), 1)
 		self.client.force_authenticate(self.me)
 		self.assertEqual(self._names(self.client.get(reverse("friends")).data, "friends"), ["rival"])
+
+	def test_being_asked_rings_the_other_side_and_sits_in_their_bell(self):
+		"""The whole point of an agreed friendship over a private list: they are
+		told, and told somewhere they will see it without going looking."""
+		with patch("accounts.inbox.notify_user") as rung:
+			self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+
+		self.assertTrue(rung.called)
+		told_user_id, payload = rung.call_args[0]
+		self.assertEqual(told_user_id, self.them.id)
+		self.assertEqual(payload["kind"], "friend_request")
+		self.assertEqual(payload["id"], f"friend_request:{self.me.id}")
+
+		self.client.force_authenticate(self.them)
+		items = self.client.get(reverse("inbox")).data["items"]
+		self.assertEqual([one["kind"] for one in items], ["friend_request"])
+		self.assertEqual(items[0]["from"]["username"], "watcher")
+
+	def test_the_bell_empties_when_the_ask_is_answered(self):
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+		self.client.force_authenticate(self.them)
+
+		self.client.post(reverse("friends"), {"username": "watcher"}, format="json")
+
+		# Nothing to do about it any more, so nothing left to be told about.
+		self.assertEqual(self.client.get(reverse("inbox")).data["items"], [])
+
+	def test_a_bell_is_nobody_elses(self):
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+
+		# The asker has nothing waiting: they are the one who did the asking.
+		self.assertEqual(self.client.get(reverse("inbox")).data["items"], [])
 
 	def test_asking_twice_changes_nothing_and_is_not_an_error(self):
 		self.client.post(reverse("friends"), {"username": "rival"}, format="json")

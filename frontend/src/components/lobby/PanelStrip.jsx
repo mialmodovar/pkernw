@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import Avatar from "../Avatar";
 import Icon from "../icons/Icon";
@@ -10,7 +11,7 @@ import ProfileCard from "./ProfileCard";
 import RecoveryCodePanel from "./RecoveryCodePanel";
 import StatsPanel from "./StatsPanel";
 import FriendsPanel from "./FriendsPanel";
-import { SIDE_PANELS, toggleOpen } from "./sidePanels";
+import { SIDE_PANELS, isPanel, toggleOpen } from "./sidePanels";
 
 /**
  * The sidebar, for a screen that has no side.
@@ -27,6 +28,13 @@ import { SIDE_PANELS, toggleOpen } from "./sidePanels";
 export default function PanelStrip({ onClubsLoaded }) {
   const [open, setOpen] = useState(null);
   const user = useAuthStore((s) => s.user);
+  // Somebody sent here to answer something — the bell links to the panel the
+  // answer is in — arrives with it named in the address. On a wide screen every
+  // panel is already open and this does nothing; on a phone it is the
+  // difference between landing on the answer and landing near it.
+  const [params] = useSearchParams();
+  const asked = params.get("panel");
+  useEffect(() => { if (asked && isPanel(asked)) setOpen(asked); }, [asked]);
 
   // ClubPanel is what tells the page which clubs this player organises, and
   // the New game buttons depend on the answer. So it is mounted whether or not

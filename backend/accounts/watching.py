@@ -1,8 +1,10 @@
-"""Keeping an eye on other players.
+"""Where everybody is: online, and at which table.
 
-One-directional and unannounced — see the Watch model. This is the list, the
-two ways to change it, and nothing else: what a watched player has actually
-been doing is answered by the profile endpoint next door in stats.py.
+This was the watch list — a private list of faces and the two ways to change
+it — and the list itself has become friends.py. What stayed is the half nothing
+else could answer: who is actually in the app, what they are sitting in, and the
+search box you find somebody through. Both are read by the friends panel, the
+profile card and the header count, so they live apart from any one of them.
 """
 
 from django.contrib.auth import get_user_model
@@ -14,9 +16,8 @@ from rest_framework.response import Response
 from game.consumers import connected_user_ids
 from tournaments.models import TournamentPlayer
 
-from .avatars import avatar_url
-from .naming import shown_name
-from .models import AvatarImage, Profile, Watch
+from .models import Profile
+from .people import people_payload
 from .presence import online_user_ids
 
 User = get_user_model()
@@ -83,58 +84,6 @@ def presence(user_ids):
     }
 
 
-@api_view(["GET", "POST"])
-@permission_classes([permissions.IsAuthenticated])
-def watching(request):
-    if request.method == "POST":
-        username = str(request.data.get("username") or "").strip()
-        if not username:
-            return Response({"error": "Who?"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            target = User.objects.get(username__iexact=username)
-        except User.DoesNotExist:
-            return Response({"error": f"No player called {username}."}, status=status.HTTP_404_NOT_FOUND)
-        if target == request.user:
-            return Response(
-                {"error": "You already know how you are doing."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        Watch.objects.get_or_create(watcher=request.user, watched=target)
-
-    watched_users = [watch.watched for watch in request.user.watching.select_related("watched")]
-    user_ids = [user.id for user in watched_users]
-    profiles = {
-        row[0]: row[1:]
-        for row in Profile.objects.filter(user__in=watched_users)
-        .values_list("user_id", "avatar_emoji", "display_name", "avatar_border")
-    }
-    stamps = dict(
-        AvatarImage.objects.filter(user_id__in=user_ids).values_list("user_id", "updated_at")
-    )
-    # Whether they are there and what they are playing — a watch list that
-    # cannot tell you somebody is at a table is only half of one.
-    here = presence(user_ids)
-
-    return Response([
-        {
-            "username": user.username,
-            "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
-            "avatar_emoji": (profiles.get(user.id) or ("", "", ""))[0] or "\U0001F0CF",
-            "avatar_border": (profiles.get(user.id) or ("", "", ""))[2] or "",
-            "avatar_url": avatar_url(user.id, stamps.get(user.id)),
-            **here[user.id],
-        }
-        for user in watched_users
-    ])
-
-
-@api_view(["DELETE"])
-@permission_classes([permissions.IsAuthenticated])
-def unwatch(request, username):
-    request.user.watching.filter(watched__username__iexact=username).delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
 # Enough to pick somebody out of, few enough that the list stays a list. A
 # search that returns forty names is a directory, and nobody reads one.
 SEARCH_LIMIT = 8
@@ -147,18 +96,24 @@ SEARCH_MIN = 2
 def search_players(request):
     """Players whose name starts with, or contains, what has been typed.
 
-    For the box that suggests people to watch. Matched on both names somebody
-    has — what they signed up as and what they go by — because the person
-    looking knows one of them and not necessarily which.
+    For the box you find a friend through. Matched on both names somebody has —
+    what they signed up as and what they go by — because the person looking
+    knows one of them and not necessarily which.
 
-    Yourself and the people you already watch are left out: neither is somebody
-    you can usefully be offered.
+    Yourself and anybody there is already a friendship with, agreed or still
+    asked, are left out: none of them is somebody you can usefully be offered.
     """
     query = str(request.query_params.get("q") or "").strip()
     if len(query) < SEARCH_MIN:
         return Response([])
 
-    already = set(request.user.watching.values_list("watched_id", flat=True))
+    from .friends import Friendship
+
+    already = set()
+    for requester, addressee in Friendship.objects.filter(
+        Q(requester=request.user) | Q(addressee=request.user),
+    ).values_list("requester_id", "addressee_id"):
+        already.add(addressee if requester == request.user.id else requester)
     already.add(request.user.id)
 
     named = set(
@@ -173,30 +128,15 @@ def search_players(request):
         .order_by("username")[:SEARCH_LIMIT * 3]
     )
 
-    profiles = {
-        row[0]: row[1:]
-        for row in Profile.objects.filter(user__in=matches)
-        .values_list("user_id", "avatar_emoji", "display_name", "avatar_border")
-    }
-    stamps = dict(
-        AvatarImage.objects.filter(user__in=matches).values_list("user_id", "updated_at")
-    )
+    cards = people_payload(matches)
 
     def rank(user):
-        display = (profiles.get(user.id) or ("", ""))[1] or ""
-        starts = user.username.lower().startswith(query.lower()) or display.lower().startswith(query.lower())
+        display = cards[user.id]["display_name"].lower()
+        typed = query.lower()
+        starts = user.username.lower().startswith(typed) or display.startswith(typed)
         return (0 if starts else 1, user.username.lower())
 
-    return Response([
-        {
-            "username": user.username,
-            "display_name": shown_name(user.username, (profiles.get(user.id) or ("", ""))[1]),
-            "avatar_emoji": (profiles.get(user.id) or ("", "", ""))[0] or "\U0001F0CF",
-            "avatar_border": (profiles.get(user.id) or ("", "", ""))[2] or "",
-            "avatar_url": avatar_url(user.id, stamps.get(user.id)),
-        }
-        for user in sorted(matches, key=rank)[:SEARCH_LIMIT]
-    ])
+    return Response([cards[user.id] for user in sorted(matches, key=rank)[:SEARCH_LIMIT]])
 
 
 @api_view(["GET"])

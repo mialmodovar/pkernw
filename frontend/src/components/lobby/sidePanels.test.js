@@ -39,7 +39,7 @@ describe("toggleOpen", () => {
 
 describe("isPanel", () => {
   it("knows its own", () => {
-    expect(isPanel("watching")).toBe(true);
+    expect(isPanel("friends")).toBe(true);
     expect(isPanel("coins")).toBe(false);
     expect(isPanel(null)).toBe(false);
   });

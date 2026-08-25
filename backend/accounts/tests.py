@@ -21,7 +21,7 @@ from . import presence
 from .avatars import AVATAR_MAX_BYTES
 from .consumers import PresenceConsumer
 from .notify import notify_user
-from .models import AvatarImage, Profile
+from .models import AvatarImage, Friendship, Profile
 
 User = get_user_model()
 
@@ -141,88 +141,124 @@ class FinisherGifTests(APITestCase):
 		self.assertEqual(self.user.profile.theme["finishers"], [{"gif_id": "same11", "sound": "none"}])
 
 
-class WatchingTests(APITestCase):
-	"""Keeping an eye on other players."""
+class FriendsTests(APITestCase):
+	"""Asking, agreeing, and the list both sides get."""
 
 	def setUp(self):
 		self.me = User.objects.create_user(username="watcher", password="secret123")
 		self.them = User.objects.create_user(username="rival", password="secret123")
 		self.client.force_authenticate(self.me)
 
-	def test_watching_somebody_puts_them_on_the_list(self):
-		response = self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+	def _befriend(self):
+		"""Both sides having agreed, without going round the houses to say so."""
+		Friendship.objects.create(
+			requester=self.me, addressee=self.them, status="accepted",
+			accepted_at=timezone.now(),
+		)
+
+	def _names(self, data, key):
+		return [row["username"] for row in data[key]]
+
+	def test_asking_somebody_puts_them_in_the_asked_list_and_not_in_friends(self):
+		response = self.client.post(reverse("friends"), {"username": "rival"}, format="json")
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual([row["username"] for row in response.data], ["rival"])
+		self.assertEqual(self._names(response.data, "outgoing"), ["rival"])
+		self.assertEqual(self._names(response.data, "friends"), [])
 
-	def test_watching_twice_does_not_list_them_twice(self):
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
-		response = self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+	def test_the_other_side_is_told_they_have_been_asked(self):
+		"""The whole of what watching could not do: they know."""
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+		self.client.force_authenticate(self.them)
 
-		self.assertEqual(len(response.data), 1)
+		data = self.client.get(reverse("friends")).data
+
+		self.assertEqual(self._names(data, "incoming"), ["watcher"])
+
+	def test_asking_back_is_the_yes(self):
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+		self.client.force_authenticate(self.them)
+
+		data = self.client.post(reverse("friends"), {"username": "watcher"}, format="json").data
+
+		self.assertEqual(self._names(data, "friends"), ["watcher"])
+		self.assertEqual(data["incoming"], [])
+		# And it is one friendship, read from both ends rather than stored twice.
+		self.assertEqual(Friendship.objects.count(), 1)
+		self.client.force_authenticate(self.me)
+		self.assertEqual(self._names(self.client.get(reverse("friends")).data, "friends"), ["rival"])
+
+	def test_asking_twice_changes_nothing_and_is_not_an_error(self):
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+		response = self.client.post(reverse("friends"), {"username": "rival"}, format="json")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(len(response.data["outgoing"]), 1)
 
 	def test_the_name_does_not_have_to_be_typed_exactly(self):
-		response = self.client.post(reverse("watching"), {"username": "RIVAL"}, format="json")
+		response = self.client.post(reverse("friends"), {"username": "RIVAL"}, format="json")
 
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
-		self.assertEqual(len(response.data), 1)
+		self.assertEqual(len(response.data["outgoing"]), 1)
 
-	def test_watching_yourself_is_refused(self):
-		response = self.client.post(reverse("watching"), {"username": "watcher"}, format="json")
+	def test_asking_yourself_is_refused(self):
+		response = self.client.post(reverse("friends"), {"username": "watcher"}, format="json")
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-	def test_watching_somebody_who_does_not_exist_says_so(self):
-		response = self.client.post(reverse("watching"), {"username": "nobody"}, format="json")
+	def test_asking_somebody_who_does_not_exist_says_so(self):
+		response = self.client.post(reverse("friends"), {"username": "nobody"}, format="json")
 
 		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-	def test_a_watch_can_be_dropped(self):
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+	def test_a_friendship_can_be_ended_from_either_side(self):
+		self._befriend()
 
-		response = self.client.delete(reverse("unwatch", args=["rival"]))
+		self.client.force_authenticate(self.them)
+		response = self.client.delete(reverse("unfriend", args=["watcher"]))
 
 		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-		self.assertEqual(self.client.get(reverse("watching")).data, [])
+		self.assertEqual(Friendship.objects.count(), 0)
+		self.client.force_authenticate(self.me)
+		self.assertEqual(self.client.get(reverse("friends")).data["friends"], [])
 
-	def test_a_watch_list_is_nobody_elses_business(self):
-		"""Watching is one-directional and unannounced: the watched player has
-		no idea, and sees their own list rather than anybody's."""
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
-		self.client.force_authenticate(self.them)
+	def test_an_ask_can_be_taken_back_and_turned_down_the_same_way(self):
+		self.client.post(reverse("friends"), {"username": "rival"}, format="json")
 
-		self.assertEqual(self.client.get(reverse("watching")).data, [])
+		self.client.delete(reverse("unfriend", args=["rival"]))
+
+		self.assertEqual(Friendship.objects.count(), 0)
 
 	def test_the_row_says_when_somebody_is_at_a_table(self):
 		from tournaments.models import Tournament, TournamentPlayer
 
 		tournament = Tournament.objects.create(host=self.them, name="Live", status="running")
 		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		response = self.client.get(reverse("watching"))
+		response = self.client.get(reverse("friends"))
 
-		self.assertTrue(response.data[0]["playing_now"])
+		self.assertTrue(response.data["friends"][0]["playing_now"])
 
 	def test_somebody_sitting_in_a_lobby_is_not_playing_yet(self):
 		from tournaments.models import Tournament, TournamentPlayer
 
 		tournament = Tournament.objects.create(host=self.them, name="Later", status="lobby")
 		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		response = self.client.get(reverse("watching"))
+		response = self.client.get(reverse("friends"))
 
-		self.assertFalse(response.data[0]["playing_now"])
+		self.assertFalse(response.data["friends"][0]["playing_now"])
 
 	def test_the_row_names_the_tournament_so_you_can_go_and_watch_it(self):
 		from tournaments.models import Tournament, TournamentPlayer
 
 		tournament = Tournament.objects.create(host=self.them, name="Friday KO", status="running")
 		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 
 		self.assertEqual(row["tournament"]["id"], tournament.id)
 		self.assertEqual(row["tournament"]["name"], "Friday KO")
@@ -236,9 +272,9 @@ class WatchingTests(APITestCase):
 			tournament=tournament, user=self.them, seat=0, chips=0,
 			is_eliminated=True, finish_position=6,
 		)
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 
 		self.assertFalse(row["playing_now"])
 		self.assertIsNone(row["tournament"])
@@ -251,14 +287,14 @@ class WatchingTests(APITestCase):
 
 		tournament = Tournament.objects.create(host=self.them, name="Live", status="running")
 		TournamentPlayer.objects.create(tournament=tournament, user=self.them, seat=0, chips=1000)
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		self.assertFalse(self.client.get(reverse("watching")).data[0]["online"])
+		self.assertFalse(self.client.get(reverse("friends")).data["friends"][0]["online"])
 
 		consumers._player_channels[(tournament.id, self.them.id)] = "channel!1"
 		self.addCleanup(consumers._player_channels.pop, (tournament.id, self.them.id), None)
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 		self.assertTrue(row["online"])
 		self.assertTrue(row["playing_now"])
 
@@ -266,38 +302,155 @@ class WatchingTests(APITestCase):
 		"""Online used to mean "sitting at a table with a socket open", so
 		somebody reading the lobby with the app in front of them showed as
 		offline to everybody watching them."""
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
-		self.assertFalse(self.client.get(reverse("watching")).data[0]["online"])
+		self._befriend()
+		self.assertFalse(self.client.get(reverse("friends")).data["friends"][0]["online"])
 
 		presence.arrived(self.them.id)
 		self.addCleanup(presence.left, self.them.id)
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 		self.assertTrue(row["online"])
 		# At no table, so no ring and nowhere to go and watch them.
 		self.assertFalse(row["playing_now"])
 
 	def test_closing_one_of_two_tabs_does_not_take_you_offline(self):
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 		presence.arrived(self.them.id)
 		presence.arrived(self.them.id)
 		self.addCleanup(presence.left, self.them.id)
 
 		presence.left(self.them.id)
 
-		self.assertTrue(self.client.get(reverse("watching")).data[0]["online"])
+		self.assertTrue(self.client.get(reverse("friends")).data["friends"][0]["online"])
 
 	def test_the_row_carries_an_uploaded_avatar_when_there_is_one(self):
-		self.client.post(reverse("watching"), {"username": "rival"}, format="json")
+		self._befriend()
 
-		self.assertIsNone(self.client.get(reverse("watching")).data[0]["avatar_url"])
+		self.assertIsNone(self.client.get(reverse("friends")).data["friends"][0]["avatar_url"])
 
 		AvatarImage.objects.create(user=self.them, data=ONE_PIXEL_PNG, content_type="image/png")
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 		self.assertIn(f"/api/auth/avatar/{self.them.id}/", row["avatar_url"])
 		# The emoji stays underneath it, as the fallback.
 		self.assertEqual(row["avatar_emoji"], "🃏")
+
+
+class FriendsBattleTests(APITestCase):
+	"""The argument between two friends, settled by the nights they both played."""
+
+	def setUp(self):
+		self.me = User.objects.create_user(username="me", password="secret123")
+		self.them = User.objects.create_user(username="them", password="secret123")
+		self.client.force_authenticate(self.me)
+
+	def _befriend(self):
+		Friendship.objects.create(
+			requester=self.me, addressee=self.them, status="accepted",
+			accepted_at=timezone.now(),
+		)
+
+	def _night(self, name, mine, theirs, *, my_rebuys=0, their_knockouts=0):
+		tournament = Tournament.objects.create(host=self.me, name=name, status="finished")
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.me, seat=0, chips=0,
+			finish_position=mine, rebuy_count=my_rebuys,
+		)
+		TournamentPlayer.objects.create(
+			tournament=tournament, user=self.them, seat=1, chips=0,
+			finish_position=theirs, knockouts=their_knockouts,
+		)
+		return tournament
+
+	def _battle(self):
+		return self.client.get(reverse("player-profile", args=["them"])).data["battle"]
+
+	def test_there_is_no_battle_with_somebody_who_is_not_a_friend(self):
+		self._night("Tuesday", 1, 2)
+
+		self.assertIsNone(self._battle())
+
+	def test_it_counts_the_nights_they_both_played_and_nothing_else(self):
+		self._befriend()
+		self._night("Together", 1, 2)
+		# One of them playing alone is not a night out.
+		alone = Tournament.objects.create(host=self.me, name="Alone", status="finished")
+		TournamentPlayer.objects.create(
+			tournament=alone, user=self.me, seat=0, chips=0, finish_position=1,
+		)
+
+		battle = self._battle()
+
+		self.assertEqual(battle["nights"], 1)
+		self.assertEqual([one["name"] for one in battle["recent"]], ["Together"])
+
+	def test_finishing_higher_more_often_wins_that_row(self):
+		self._befriend()
+		self._night("One", 1, 5)
+		self._night("Two", 2, 6)
+		self._night("Three", 9, 3)
+
+		rows = {one["key"]: one for one in self._battle()["rows"]}
+
+		self.assertEqual(rows["finishes"]["mine"], 2)
+		self.assertEqual(rows["finishes"]["theirs"], 1)
+		self.assertEqual(rows["finishes"]["winner"], "me")
+
+	def test_the_rows_nobody_wants_to_top_are_won_by_the_smaller_number(self):
+		self._befriend()
+		self._night("One", 4, 1, my_rebuys=3)
+
+		rows = {one["key"]: one for one in self._battle()["rows"]}
+
+		self.assertEqual(rows["rebuys"]["mine"], 3)
+		self.assertEqual(rows["rebuys"]["theirs"], 0)
+		# Buying back in three times does not win you the rebuy row.
+		self.assertEqual(rows["rebuys"]["winner"], "them")
+		# And a best finish is the lowest number, not the highest.
+		self.assertEqual(rows["best"]["winner"], "them")
+
+	def test_scalps_are_counted_over_the_shared_nights(self):
+		self._befriend()
+		self._night("One", 2, 1, their_knockouts=4)
+
+		rows = {one["key"]: one for one in self._battle()["rows"]}
+
+		self.assertEqual(rows["knockouts"]["theirs"], 4)
+		self.assertEqual(rows["knockouts"]["winner"], "them")
+
+	def test_the_headline_is_rows_won_each(self):
+		self._befriend()
+		self._night("One", 1, 4)
+
+		battle = self._battle()
+
+		self.assertEqual(battle["score"]["leader"], "me")
+		self.assertEqual(
+			battle["score"]["mine"] + battle["score"]["theirs"]
+			+ sum(1 for one in battle["rows"] if one["winner"] == "tie"),
+			len(battle["rows"]),
+		)
+
+	def test_two_friends_who_have_never_played_together_have_a_blank_battle(self):
+		self._befriend()
+
+		battle = self._battle()
+
+		self.assertEqual(battle["nights"], 0)
+		self.assertEqual(battle["score"]["leader"], "tie")
+		self.assertIsNone(battle["last_played"])
+
+	def test_a_night_still_being_played_is_not_a_night_anybody_won(self):
+		self._befriend()
+		self._night("Running", None, None)
+
+		battle = self._battle()
+
+		self.assertEqual(battle["nights"], 1)
+		self.assertEqual(battle["decided"], 0)
+		rows = {one["key"]: one for one in battle["rows"]}
+		self.assertEqual(rows["finishes"]["mine"], 0)
+		self.assertEqual(rows["finishes"]["theirs"], 0)
 
 
 class DisplayNameTests(APITestCase):
@@ -362,14 +515,17 @@ class DisplayNameTests(APITestCase):
 	def test_it_has_a_ceiling(self):
 		self.assertEqual(self._set("x" * 25).status_code, status.HTTP_400_BAD_REQUEST)
 
-	def test_the_watch_list_and_the_profile_both_read_it(self):
+	def test_the_friends_list_and_the_profile_both_read_it(self):
 		rival = User.objects.create_user(username="rui", password="secret123")
 		Profile.objects.update_or_create(user=rival, defaults={"display_name": "The Rock"})
-		self.client.post(reverse("watching"), {"username": "rui"}, format="json")
+		Friendship.objects.create(
+			requester=self.user, addressee=rival, status="accepted",
+			accepted_at=timezone.now(),
+		)
 
-		row = self.client.get(reverse("watching")).data[0]
+		row = self.client.get(reverse("friends")).data["friends"][0]
 		self.assertEqual(row["display_name"], "The Rock")
-		# Still filed under the login name, which is what unwatching uses.
+		# Still filed under the login name, which is what unfriending uses.
 		self.assertEqual(row["username"], "rui")
 
 		card = self.client.get(reverse("player-profile", args=["rui"])).data
@@ -419,12 +575,17 @@ class PlayerProfileTests(APITestCase):
 		# Newest first: the one you want is the one you just played.
 		self.assertEqual(response.data["recent"][0]["name"], "Night 6")
 
-	def test_a_profile_says_whether_you_are_watching_them(self):
-		self.assertFalse(self.client.get(reverse("player-profile", args=["subject"])).data["is_watched"])
+	def test_a_profile_says_what_the_two_of_you_are_to_each_other(self):
+		def standing():
+			return self.client.get(reverse("player-profile", args=["subject"])).data["friendship"]
 
-		self.client.post(reverse("watching"), {"username": "subject"}, format="json")
+		self.assertEqual(standing(), "none")
 
-		self.assertTrue(self.client.get(reverse("player-profile", args=["subject"])).data["is_watched"])
+		self.client.post(reverse("friends"), {"username": "subject"}, format="json")
+		self.assertEqual(standing(), "asked")
+
+		Friendship.objects.update(status="accepted", accepted_at=timezone.now())
+		self.assertEqual(standing(), "friends")
 
 	def test_a_profile_says_where_they_are_right_now(self):
 		from game import consumers
@@ -1013,8 +1174,8 @@ class PlayerSearchTests(APITestCase):
 	def test_it_never_suggests_you_to_yourself(self):
 		self.assertNotIn("searcher", self._search("search"))
 
-	def test_it_stops_suggesting_somebody_you_already_watch(self):
-		self.client.post(reverse("watching"), {"username": "ana"}, format="json")
+	def test_it_stops_suggesting_somebody_you_have_already_asked(self):
+		self.client.post(reverse("friends"), {"username": "ana"}, format="json")
 
 		self.assertNotIn("ana", self._search("ana"))
 

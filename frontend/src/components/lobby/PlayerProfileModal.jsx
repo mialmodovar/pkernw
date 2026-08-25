@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import Avatar from "../Avatar";
 import api from "../../api/http";
 import { GROUPS, THIN_SAMPLE } from "../game/playerRead";
+import { cellValue, headline, worthShowing } from "./friendsBattle";
 
 const euros = (cents) => `${(cents / 100).toFixed(2)}€`;
 
@@ -115,6 +116,64 @@ function GameStats({ stats }) {
   );
 }
 
+/**
+ * Friends Battle: the only statistic anybody at a home game argues about.
+ *
+ * Only what happened on the nights both of you actually played, which is what
+ * makes it an argument rather than two CVs side by side. None of it is a serious
+ * measure of anybody's poker — the honest numbers are underneath — and the
+ * rebuy row is deliberately one you want to lose.
+ *
+ * Rows nobody is on the board in are dropped rather than drawn as two zeroes:
+ * a new friendship should look new, not broken.
+ */
+function FriendsBattle({ battle, them }) {
+  const rows = (battle.rows || []).filter(worthShowing);
+  return (
+    <div className="mt-4">
+      <h3 className="text-[10px] uppercase tracking-wide text-(--color-text-muted) mb-1">
+        Friends battle
+      </h3>
+      <div className="panel-raised rounded-lg overflow-hidden">
+        <p className="px-3 py-2 text-xs font-semibold text-(--color-silver)
+                      border-b border-(--color-border)">
+          {headline(battle, them)}
+        </p>
+
+        {rows.length === 0 ? (
+          <p className="px-3 py-2 text-[11px] text-(--color-text-muted)">
+            {battle.nights
+              ? "Nothing to separate you yet."
+              : "Play a tournament together and this fills in."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-(--color-border)">
+            {rows.map((row) => (
+              <li key={row.key} className="px-3 py-1.5 flex items-center gap-2 text-xs">
+                {/* Yours on the left, theirs on the right, and the winning side
+                    lit. Which way round is the whole readability of this. */}
+                <span className={`w-14 text-right tabular-nums font-semibold ${
+                  row.winner === "me" ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+                }`}>
+                  {cellValue(row.key, row.mine)}
+                </span>
+                <span className="flex-1 min-w-0 text-center text-(--color-silver)" title={row.note}>
+                  {row.label}
+                </span>
+                <span className={`w-14 tabular-nums font-semibold ${
+                  row.winner === "them" ? "text-(--color-highlight-text)" : "text-(--color-text-muted)"
+                }`}>
+                  {cellValue(row.key, row.theirs)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Stat({ label, value }) {
   return (
     <div className="panel-raised rounded-md px-3 py-2 text-center">
@@ -136,7 +195,7 @@ function Stat({ label, value }) {
  * full-screen overlay rendered in there was sealed into a box the size of the
  * panel and the league card below simply painted over it.
  */
-export default function PlayerProfileModal({ username, onClose, onWatchChange }) {
+export default function PlayerProfileModal({ username, onClose, onFriendshipChange }) {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -155,16 +214,29 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const toggleWatch = async () => {
+  /**
+   * The one button, in its four states.
+   *
+   * "Add" asks. "Yes" is the same call — pressing add on somebody who has
+   * already asked you can only mean yes, and the server reads it that way.
+   * "Asked" and "Friends" both undo, which is the same row going away either
+   * way: taking back an ask and unfriending are not different operations, they
+   * just look different from where you are standing.
+   */
+  const change = async () => {
     setBusy(true);
     try {
-      if (profile.is_watched) {
-        await api.delete(`/auth/watching/${encodeURIComponent(username)}/`);
+      if (standing === "friends" || standing === "asked") {
+        await api.delete(`/auth/friends/${encodeURIComponent(username)}/`);
       } else {
-        await api.post("/auth/watching/", { username });
+        await api.post("/auth/friends/", { username });
       }
-      setProfile((current) => ({ ...current, is_watched: !current.is_watched }));
-      onWatchChange?.();
+      // Re-read rather than guess: saying yes to an ask makes you friends,
+      // which is not the state a flipped flag would have landed on. It also
+      // brings the battle with it, which only exists between friends.
+      const { data } = await api.get(`/auth/players/${encodeURIComponent(username)}/`);
+      setProfile(data);
+      onFriendshipChange?.();
     } catch {
       setError("That did not save.");
     } finally {
@@ -173,6 +245,15 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
   };
 
   const stats = profile?.stats;
+  const standing = profile?.friendship || "none";
+  // What the button says in each of the four states, and whether pressing it
+  // gives something up. See accounts/friends.py for where the words come from.
+  const FRIEND_BUTTON = {
+    none: { label: "Add", quiet: false },
+    asked: { label: "Asked", quiet: true },
+    asked_you: { label: "Yes", quiet: false },
+    friends: { label: "Friends", quiet: true },
+  }[standing];
 
   return createPortal(
     <div
@@ -225,16 +306,27 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
                   </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={toggleWatch}
-                disabled={busy}
-                className={`shrink-0 px-3 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
-                  profile.is_watched ? "btn-secondary" : "btn-accent"
-                }`}
-              >
-                {profile.is_watched ? "Watching" : "Watch"}
-              </button>
+              {/* Nothing at all on your own card: the app knows which of these
+                  is you, and an "Add" button on yourself is a joke that only
+                  lands once. */}
+              {FRIEND_BUTTON && (
+                <button
+                  type="button"
+                  onClick={change}
+                  disabled={busy}
+                  title={{
+                    none: `Ask ${profile.display_name || username} to be friends`,
+                    asked: "Asked — press to take it back",
+                    asked_you: `${profile.display_name || username} asked you`,
+                    friends: "Friends — press to end it",
+                  }[standing]}
+                  className={`shrink-0 px-3 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
+                    FRIEND_BUTTON.quiet ? "btn-secondary" : "btn-accent"
+                  }`}
+                >
+                  {FRIEND_BUTTON.label}
+                </button>
+              )}
             </div>
 
             {/* The offer only exists while there is somewhere to go. On the
@@ -248,6 +340,10 @@ export default function PlayerProfileModal({ username, onClose, onWatchChange })
               >
                 Go to {profile.tournament.name}
               </Link>
+            )}
+
+            {profile.battle && (
+              <FriendsBattle battle={profile.battle} them={profile.display_name || username} />
             )}
 
             <div className="grid grid-cols-2 gap-2 mt-4">

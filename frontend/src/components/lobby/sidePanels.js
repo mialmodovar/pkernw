@@ -24,7 +24,7 @@ export const SIDE_PANELS = [
   { key: "missions", label: "Missions", icon: "check" },
   { key: "stats", label: "Stats", icon: "stats" },
   { key: "calotes", label: "Calotes", icon: "ledger" },
-  { key: "watching", label: "Watching", icon: "eye" },
+  { key: "friends", label: "Friends", icon: "eye" },
   { key: "clubs", label: "Clubs", icon: "clubs" },
   // Not in the row the way the others are: it is drawn as your own face, which
   // is both the icon and the thing it opens.

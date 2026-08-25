@@ -9,7 +9,7 @@ import MissionPanel from "./MissionPanel";
 import ProfileCard from "./ProfileCard";
 import RecoveryCodePanel from "./RecoveryCodePanel";
 import StatsPanel from "./StatsPanel";
-import WatchPanel from "./WatchPanel";
+import FriendsPanel from "./FriendsPanel";
 import { SIDE_PANELS, toggleOpen } from "./sidePanels";
 
 /**
@@ -36,7 +36,7 @@ export default function PanelStrip({ onClubsLoaded }) {
     missions: <MissionPanel />,
     stats: <StatsPanel />,
     calotes: <CalotesPanel />,
-    watching: <WatchPanel />,
+    friends: <FriendsPanel />,
     profile: <ProfileCard />,
   }[open] || null;
 

@@ -132,7 +132,7 @@ class Command(BaseCommand):
     def _kept(self):
         from django.contrib.auth import get_user_model
 
-        from accounts.models import AvatarImage, Profile, Watch
+        from accounts.models import AvatarImage, Friendship, Profile
         from clubs.models import Club, League, Membership, Season
         from sidegames.models import Unlock, Wallet
 
@@ -140,7 +140,7 @@ class Command(BaseCommand):
             "accounts": get_user_model().objects.count(),
             "profiles": Profile.objects.count(),
             "avatars": AvatarImage.objects.count(),
-            "watch entries": Watch.objects.count(),
+            "friendships": Friendship.objects.count(),
             "clubs": Club.objects.count(),
             "memberships": Membership.objects.count(),
             "leagues": League.objects.count(),

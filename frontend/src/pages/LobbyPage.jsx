@@ -20,7 +20,7 @@ import ClubPanel from "../components/lobby/ClubPanel";
 import CalotesPanel from "../components/lobby/CalotesPanel";
 import MissionPanel from "../components/lobby/MissionPanel";
 import PanelStrip from "../components/lobby/PanelStrip";
-import WatchPanel from "../components/lobby/WatchPanel";
+import FriendsPanel from "../components/lobby/FriendsPanel";
 
 
 /**
@@ -226,7 +226,7 @@ export default function LobbyPage() {
         <RecoveryCodePanel />
         <StatsPanel />
         <CalotesPanel />
-        <WatchPanel />
+        <FriendsPanel />
         <ClubPanel onClubsLoaded={onClubsLoaded} />
       </aside>
 

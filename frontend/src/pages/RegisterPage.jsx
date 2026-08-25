@@ -5,7 +5,7 @@ import GoogleButton from "../components/auth/GoogleButton";
 import ClubsStep from "../components/onboarding/ClubsStep";
 import ModesStep from "../components/onboarding/ModesStep";
 import RecoveryCodeStep from "../components/onboarding/RecoveryCodeStep";
-import WatchStep from "../components/onboarding/WatchStep";
+import FriendsStep from "../components/onboarding/FriendsStep";
 import { STEPS, nextStep, progress, stepTitle } from "../components/onboarding/steps";
 import useAuthStore from "../store/authStore";
 import useGameStore from "../store/gameStore";
@@ -74,7 +74,7 @@ function StackUnits({ showBB, onPick }) {
  * Signing up, and the four things that make the app worth opening again.
  *
  * It used to be a username, a password and a table colour, which left somebody
- * standing in an empty lobby with no club, nobody to watch and no idea that two
+ * standing in an empty lobby with no club, no friends and no idea that two
  * of the three game modes existed. Everything after the account is skippable
  * and takes about a minute.
  */
@@ -227,7 +227,7 @@ export default function RegisterPage() {
 
         {step === "recovery" && <RecoveryCodeStep code={recoveryCode} onDone={advance} />}
         {step === "clubs" && <ClubsStep onDone={advance} onSkip={advance} />}
-        {step === "watch" && <WatchStep onDone={advance} onSkip={advance} />}
+        {step === "friends" && <FriendsStep onDone={advance} onSkip={advance} />}
         {step === "modes" && <ModesStep onDone={advance} />}
       </div>
     </div>

@@ -6,8 +6,9 @@ from .views import (
     update_display_name, update_preferences, update_theme,
     recover_password, reset_recovery_code,
 )
+from .friends import friends, unfriend
 from .stats import my_stats, player_profile
-from .watching import online_now, search_players, unwatch, watching
+from .watching import online_now, search_players
 
 urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
@@ -32,7 +33,9 @@ urlpatterns = [
     path("players/search/", search_players, name="search_players"),
     path("me/stats/", my_stats, name="my_stats"),
     path("online/", online_now, name="online-now"),
-    path("watching/", watching, name="watching"),
-    path("watching/<str:username>/", unwatch, name="unwatch"),
+    # Friends, which is what watching became: agreed rather than private, and
+    # the same list on both sides. See accounts/friends.py.
+    path("friends/", friends, name="friends"),
+    path("friends/<str:username>/", unfriend, name="unfriend"),
     path("players/<str:username>/", player_profile, name="player-profile"),
 ]

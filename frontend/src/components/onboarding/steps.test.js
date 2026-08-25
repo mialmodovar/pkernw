@@ -12,8 +12,8 @@ describe("the walk", () => {
   it("goes forwards, one step at a time", () => {
     expect(nextStep("account")).toBe("recovery");
     expect(nextStep("recovery")).toBe("clubs");
-    expect(nextStep("clubs")).toBe("watch");
-    expect(nextStep("watch")).toBe("modes");
+    expect(nextStep("clubs")).toBe("friends");
+    expect(nextStep("friends")).toBe("modes");
   });
 
   it("ends", () => {
@@ -41,7 +41,7 @@ describe("progress", () => {
 describe("canSkip", () => {
   it("lets somebody past the sociable steps", () => {
     expect(canSkip("clubs")).toBe(true);
-    expect(canSkip("watch")).toBe(true);
+    expect(canSkip("friends")).toBe(true);
   });
 
   it("does not offer to skip making the account", () => {

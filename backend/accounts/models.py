@@ -75,29 +75,46 @@ class Profile(models.Model):
         return f"{self.user.username}'s profile"
 
 
-class Watch(models.Model):
-    """One player keeping an eye on another.
+class Friendship(models.Model):
+    """Two players who play together, and the asking that got them there.
 
-    Deliberately one-directional and unannounced: watching somebody is a note
-    to yourself about whose results you care about, not a request they have to
-    accept or a thing they are told about. The only person who ever sees your
-    list is you.
+    This replaces watching, which was one-directional and unannounced: a note to
+    yourself about whose results you cared about. That was the right shape for a
+    list of faces and the wrong one for everything anybody actually wanted from
+    it — you could not see whether they had you on their list, and there was
+    nothing between you to compare. A friendship is agreed, so both sides know,
+    and both sides get the same list.
+
+    One row per pair, in the direction it was asked in, which is the whole of
+    the model: `requester` asked, `addressee` was asked, and the status says
+    whether they have said yes. Nothing is stored twice, so nothing can
+    disagree with itself — and every read has to look for the pair in both
+    directions, which is what accounts/friends.py is for.
     """
 
-    watcher = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="watching",
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    STATUSES = [(PENDING, "Asked"), (ACCEPTED, "Friends")]
+
+    requester = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="friendships_sent",
     )
-    watched = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="watchers",
+    addressee = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="friendships_received",
     )
+    status = models.CharField(max_length=8, choices=STATUSES, default=PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
+    # When they said yes. Null while it is still an ask, which is also how
+    # "friends since" is answered without a second field.
+    accepted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        unique_together = [("watcher", "watched")]
+        unique_together = [("requester", "addressee")]
         ordering = ["created_at"]
 
     def __str__(self):
-        return f"{self.watcher.username} watches {self.watched.username}"
+        joiner = "is friends with" if self.status == self.ACCEPTED else "asked"
+        return f"{self.requester.username} {joiner} {self.addressee.username}"
 
 
 class AvatarImage(models.Model):

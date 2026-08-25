@@ -6,12 +6,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from game.besthand import best_of
+
+from .battle import between
 from game.hand_stats import compute_player_stats
 from game.models import Hand, HandAction
 from tournaments.models import LedgerEntry, TournamentPlayer
 
 from .avatars import avatar_url
 from .naming import shown_name
+from .friends import are_friends, standing
 from .models import AvatarImage, Profile
 from .watching import presence
 
@@ -242,11 +245,17 @@ def player_profile(request, username):
         "avatar_emoji": profile.avatar_emoji,
         "avatar_border": profile.avatar_border,
         "avatar_url": avatar_url(user.id, stamp),
-        "is_watched": request.user.watching.filter(watched=user).exists(),
+        # What you are to each other, in the one word the button needs: none,
+        # asked, asked_you, friends, self. See accounts/friends.py.
+        "friendship": standing(request.user, user),
         # Where they are right now, so the card can offer to take you there
         # rather than only say how they did last month.
         **presence([user.id])[user.id],
         "clubs": shared_clubs(request.user, user),
         "stats": player_summary(user),
         "recent": recent_results(user),
+        # Only between friends, and not because the numbers are secret — they
+        # are all on this card already. It is that the battle is a thing you
+        # have with somebody, and having one with a stranger is not a feature.
+        "battle": between(request.user, user) if are_friends(request.user, user) else None,
     })

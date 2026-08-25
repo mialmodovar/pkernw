@@ -13,16 +13,19 @@ const MIN_QUERY = 2;
 /**
  * Finding the people you actually play with.
  *
- * The watch list is how you know somebody is online and at a table, which is
- * the difference between a lobby that looks empty and one with your friends in
- * it. Until now the only way to add anybody was to know how to spell their
- * login name exactly; this suggests as you type, and matches the name they go
- * by as well as the one they signed up with.
+ * Your friends are how you know somebody is online and at a table, which is the
+ * difference between a lobby that looks empty and one with your friends in it.
+ * This suggests as you type, and matches the name they go by as well as the one
+ * they signed up with — the only way to add anybody used to be knowing how to
+ * spell their login name exactly.
+ *
+ * What it sends is an ask rather than a done deal: on the other side somebody
+ * has to say yes, which is what makes the list mean anything.
  */
-export default function WatchStep({ onDone, onSkip }) {
+export default function FriendsStep({ onDone, onSkip }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [watching, setWatching] = useState([]);
+  const [asked, setAsked] = useState([]);
   const [searching, setSearching] = useState(false);
   const timer = useRef(null);
 
@@ -44,22 +47,22 @@ export default function WatchStep({ onDone, onSkip }) {
     return () => clearTimeout(timer.current);
   }, [query]);
 
-  const follow = async (player) => {
-    setWatching((current) => [...current, player.username]);
+  const ask = async (player) => {
+    setAsked((current) => [...current, player.username]);
     setResults((current) => current.filter((one) => one.username !== player.username));
     try {
-      await api.post("/auth/watching/", { username: player.username });
+      await api.post("/auth/friends/", { username: player.username });
     } catch {
-      // Put them back rather than claiming a follow that did not happen.
-      setWatching((current) => current.filter((name) => name !== player.username));
+      // Take them back off rather than claiming an ask that never went.
+      setAsked((current) => current.filter((name) => name !== player.username));
     }
   };
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-(--color-text-muted) leading-snug">
-        Follow the people you play with and the lobby will tell you when they are online and
-        which table they are at.
+        Ask the people you play with to be friends. The lobby tells you when they are
+        online and which table they are at, and their card keeps score between you.
       </p>
 
       <input
@@ -78,7 +81,7 @@ export default function WatchStep({ onDone, onSkip }) {
           <button
             key={player.username}
             type="button"
-            onClick={() => follow(player)}
+            onClick={() => ask(player)}
             className="w-full panel-raised rounded-lg px-3 py-2 flex items-center gap-2 text-left
                        hover:border-(--color-border-strong) transition-colors"
           >
@@ -93,14 +96,14 @@ export default function WatchStep({ onDone, onSkip }) {
             <span className="min-w-0 flex-1 text-sm text-(--color-silver) truncate">
               {player.display_name}
             </span>
-            <span className="text-xs text-(--color-highlight-text) shrink-0">Follow</span>
+            <span className="text-xs text-(--color-highlight-text) shrink-0">Ask</span>
           </button>
         ))}
       </div>
 
-      {watching.length > 0 && (
+      {asked.length > 0 && (
         <p className="text-xs text-(--color-highlight-text)">
-          Following {watching.length} player{watching.length === 1 ? "" : "s"}: {watching.join(", ")}
+          Asked {asked.length} player{asked.length === 1 ? "" : "s"}: {asked.join(", ")}
         </p>
       )}
 

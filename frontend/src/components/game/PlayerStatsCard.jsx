@@ -5,31 +5,49 @@ import Avatar from "../Avatar";
 import playerProfile, { PROFILE_MIN_HANDS } from "./playerProfile";
 import { GROUPS, THIN_SAMPLE } from "./playerRead";
 
+// What the friend button says in each state, and whether pressing it gives
+// something up. The same four states the lobby's card draws — see
+// accounts/friends.py — kept here as a table rather than as three ternaries.
+const FRIEND_BUTTON = {
+  none: { label: "Add", quiet: false, verb: "Ask" },
+  asked: { label: "Asked", quiet: true, verb: "Asked" },
+  asked_you: { label: "Yes", quiet: false, verb: "Say yes to" },
+  friends: { label: "Friends", quiet: true, verb: "Friends with" },
+};
+
 /**
- * Keep an eye on this player from the lobby afterwards.
+ * Ask this player to be friends, from the table.
  *
- * This is where you meet people worth remembering, so this is where marking
- * one belongs — the lobby's watch panel can add by name, but only if you can
- * remember the name.
+ * This is where you meet people worth remembering, so this is where asking
+ * belongs — the lobby's panel can add by name, but only if you can remember the
+ * name. Pressing it on somebody who has already asked you is the yes, exactly
+ * as it is in the lobby: one button, four states, no menu.
  */
-function WatchToggle({ username, isMe, initial, onChange }) {
-  const [watched, setWatched] = useState(initial);
+function FriendButton({ username, isMe, initial, onChange }) {
+  const [standing, setStanding] = useState(initial);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { setWatched(initial); }, [initial]);
+  useEffect(() => { setStanding(initial); }, [initial]);
 
-  if (isMe || watched === null || watched === undefined) return null;
+  if (isMe || !standing || standing === "self") return null;
 
-  const toggle = async () => {
+  const state = FRIEND_BUTTON[standing];
+  if (!state) return null;
+
+  const change = async () => {
     setBusy(true);
     try {
-      if (watched) {
-        await api.delete(`/auth/watching/${encodeURIComponent(username)}/`);
+      if (standing === "friends" || standing === "asked") {
+        await api.delete(`/auth/friends/${encodeURIComponent(username)}/`);
+        setStanding("none");
+        onChange?.("none");
       } else {
-        await api.post("/auth/watching/", { username });
+        // Saying yes to their ask makes you friends; asking first only asks.
+        const next = standing === "asked_you" ? "friends" : "asked";
+        await api.post("/auth/friends/", { username });
+        setStanding(next);
+        onChange?.(next);
       }
-      setWatched(!watched);
-      onChange?.(!watched);
     } catch {
       // Nothing lost: the button still says what the server last told us.
     } finally {
@@ -40,14 +58,14 @@ function WatchToggle({ username, isMe, initial, onChange }) {
   return (
     <button
       type="button"
-      onClick={toggle}
+      onClick={change}
       disabled={busy}
-      title={watched ? `Stop watching ${username}` : `Follow ${username} from home`}
+      title={`${state.verb} ${username}`}
       className={`px-2 py-1 rounded text-xs font-semibold transition-colors disabled:opacity-50 ${
-        watched ? "btn-secondary" : "btn-accent"
+        state.quiet ? "btn-secondary" : "btn-accent"
       }`}
     >
-      {watched ? "Watching" : "Watch"}
+      {state.label}
     </button>
   );
 }
@@ -187,11 +205,11 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
               </div>
             )}
           </div>
-          <WatchToggle
+          <FriendButton
             username={player.username}
             isMe={isMe}
-            initial={away?.is_watched}
-            onChange={(next) => setAway((current) => ({ ...current, is_watched: next }))}
+            initial={away?.friendship}
+            onChange={(next) => setAway((current) => ({ ...current, friendship: next }))}
           />
           <button onClick={onClose}
             className="btn-secondary px-2 py-1 rounded text-xs font-semibold transition-colors">

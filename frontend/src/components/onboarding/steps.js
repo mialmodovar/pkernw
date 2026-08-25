@@ -25,7 +25,7 @@ export const STEPS = [
     skippable: false,
   },
   { key: "clubs", title: "Join a club", skippable: true },
-  { key: "watch", title: "Follow some players", skippable: true },
+  { key: "friends", title: "Find your friends", skippable: true },
   { key: "modes", title: "What you can play", skippable: false },
 ];
 

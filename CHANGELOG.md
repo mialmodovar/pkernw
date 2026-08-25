@@ -81,6 +81,28 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **One settings window, in pages.** The gear in the header and the gear on the
+  lobby's profile card opened two different panels: the card's had the Google
+  connection on the end of it and the header's did not, so which settings a
+  player could find depended on which button they had found. They are now the
+  same window — your name and picture, theme, cards, the table, finishers, the
+  account — and the button only chooses which page it opens on.
+
+  Paged rather than scrolled, because there is the better part of a thousand
+  pixels of it: the finishers sat four screens below the fold on a phone, so
+  reaching them meant scrolling back past every decision already made. Tabs to
+  jump, arrows to step, and a swipe across the panel to turn — a swipe that has
+  to be a good deal more sideways than downward, since this is a tall panel
+  people drag up and down.
+- **The settings are a sheet on a phone.** Full width along the bottom edge,
+  where the thumb holding the phone already is, rather than a card capped at
+  22rem floating at the top of the screen: the old shape wasted the width it
+  had, which left every swatch inside it smaller than a fingertip. The close
+  button, the arrows and the buttons on a finisher row are now the size of a
+  thumb rather than the size of the icons in them, nothing behind the sheet
+  scrolls while it is open, it clears the home indicator, and the fields inside
+  it are big enough that iOS stops zooming the whole page in when one is
+  tapped.
 - **Stats, one kind of game at a time.** A Spin n Go is three-handed for five
   minutes and a tournament is nine-handed for an evening; a VPIP averaged across
   both describes neither, and neither does an in-the-money rate. The stats panel

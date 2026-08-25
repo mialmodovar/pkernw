@@ -11,6 +11,17 @@ import {
   chatLine, communityCards, equityEntries, parseCardList, showdownEntries,
 } from "../dev/mockTable";
 
+// What this table is called, where a real one has a tournament id. A table
+// needs one for the same reason a real one does: it is what the browser files
+// this tab's hand and its camera under.
+const SANDBOX_TABLE_ID = "sandbox";
+
+// What the server charges for a look at the run-out. Duplicated from
+// game/rabbithunt.py the way every other number in here is: the sandbox has no
+// server to ask, and a price that reads differently would be the sandbox lying
+// about the one thing this button is.
+const RABBIT_PRICE = 5;
+
 /** The layout sandbox: the real game page, fed by knobs instead of a server.
  *
  * The whole point is that this renders `GamePage` itself rather than a copy of
@@ -36,6 +47,11 @@ export default function DevTablePage() {
   // mount effect would open a websocket to a tournament that does not exist.
   useEffect(() => {
     setActive(true);
+    // The table's own identity, which the real page stamps on the store when it
+    // connects (see GamePage). Without it the sandbox was a table with no id,
+    // and everything keyed on one behaved differently here than it does in a
+    // game — the hand this table remembers, and the camera a reload puts back.
+    useGameStore.getState().reset(SANDBOX_TABLE_ID);
     return () => {
       setActive(false);
       stopFakeCameras();
@@ -74,7 +90,12 @@ export default function DevTablePage() {
     // starting the next hand, which would also wipe the board we are looking at.
     useGameStore.setState({
       showdown: null, potAwards: null, winnerSeats: [],
-      allInEquity: null, rabbitCards: null,
+      allInEquity: null,
+      // Every field the rabbit hunt has, or the offer from the last knob change
+      // outlives the hand it belonged to. Named in full rather than by the one
+      // that used to be here: what a look costs and who paid for it are state
+      // too. See game/rabbithunt.py.
+      rabbitCards: null, rabbitOffer: null, rabbitBuyers: [], rabbitBalance: null,
       standings: null, lastElimination: null,
       ...(sameAction ? {} : { actionContext: null }),
     });
@@ -101,6 +122,13 @@ export default function DevTablePage() {
         player_count: index === 0 ? players.filter((p) => !p.is_eliminated).length : 6,
       })),
       is_paused: config.paused,
+      // The folded players' game, which a real table opens with the deal and
+      // shuts the moment the cards are face up. Without this the side-bet card
+      // never appeared here at all — and it sits in the top-right corner of the
+      // felt, which is a corner you cannot tune if it is never drawn. Whether
+      // it shows is then the hero's own state, exactly as at a table: fold the
+      // hero with the seat knobs and the card appears.
+      side_bets: { open: config.reveal === "none", bets: [] },
     });
 
     handleEvent({ type: "hand_strength", text: config.handStrength });
@@ -132,6 +160,19 @@ export default function DevTablePage() {
       }
     } else if (config.reveal === "allin") {
       handleEvent({ type: "all_in_equity", data: equityEntries(players, config.street) });
+    }
+
+    // A hand that ends before the river leaves cards in the deck, and the table
+    // is offered a look at them — which is the one thing that happens after a
+    // pot is pushed and had no way of showing up here. Same event the engine
+    // sends, so the sandbox draws the same button at the same price.
+    if (config.reveal === "winner" && config.street !== "river") {
+      handleEvent({
+        type: "rabbit_hunt",
+        count: 5 - communityCards(config.street).length,
+        price: RABBIT_PRICE,
+        buyers: [],
+      });
     }
 
     if (config.finished) {

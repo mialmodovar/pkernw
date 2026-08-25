@@ -35,6 +35,9 @@ export default function useTableMedia(enabled = true) {
   // turning it back on was two clicks and a dialogue the browser had already
   // been through. Only within the same tab, only at the same table, and only
   // where the permission is already granted — see rejoinMedia.js.
+  //
+  // The key is the table's own id, and a page that never set one used to leave
+  // it empty — which reads as "no table" and restores nothing at all, silently.
   const tableKey = useGameStore((state) => state.tournamentId);
   const restored = useRef(false);
   useEffect(() => {

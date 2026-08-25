@@ -105,10 +105,18 @@ export default function GamePage() {
 
   // Cameras and microphones, kept in step with the table. Entirely separate
   // from the game: it reads the table, never writes to it.
+  //
   // On while watching too. A spectator's camera is the other half of being able
   // to see the table's: watching without being seen is a one-way mirror, and the
   // server now lets the rail into the mesh — see game/consumers.py.
-  useTableMedia(!sandbox);
+  //
+  // On in the sandbox as well, which it was not: the sandbox exists to be this
+  // page, and a page whose camera behaves differently there is a page the
+  // sandbox cannot be used to test. It was how the reload restore looked broken
+  // when it was only absent — see media/rejoinMedia.js. Nothing reaches a
+  // server either way: the sandbox has no roster, so no peer is ever opened,
+  // and every announcement goes into its send interceptor.
+  useTableMedia();
 
   useEffect(() => {
     // Not until the address has been turned into a tournament: the socket is

@@ -92,6 +92,12 @@ export default function ClubPage() {
   const [openingGame, setOpeningGame] = useState(false);
   const [openingCash, setOpeningCash] = useState(false);
   const [editingLeague, setEditingLeague] = useState(false);
+  // Which of the two tables the page is showing. Never both: two
+  // leaderboards side by side is two answers to one question, and a
+  // reader has to work out which one they were asking before they can
+  // read either. The season table is the one people come for, so it is
+  // what the page opens on.
+  const [board, setBoard] = useState("season");
 
   const loadClub = useCallback(async () => {
     try {
@@ -314,6 +320,26 @@ export default function ClubPage() {
         />
       )}
 
+      {/* The one axis above everything below it: leagues and their seasons, or
+          the club's own all-time table. */}
+      <div className="flex items-center gap-1.5">
+        {[["season", "Leagues"], ["club", "Club"]].map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setBoard(value)}
+            aria-pressed={board === value}
+            className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+              board === value
+                ? "bg-(--color-accent) text-(--color-accent-text) border-(--color-border-strong)"
+                : "panel-raised text-(--color-text-muted) border-(--color-border) hover:text-(--color-silver)"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {board === "season" && (
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-1.5">
           {/* Shelved leagues stay visible to whoever runs the club, or shelving
@@ -440,10 +466,12 @@ export default function ClubPage() {
           </>
         )}
       </section>
+      )}
 
-      {/* All time, across every league and season. The season table above
-          answers who is winning now; this answers who is the best player in
-          the club, which is the argument people actually have. */}
+      {/* All time, across every league and season. The season table answers who
+          is winning now; this answers who is the best player in the club, which
+          is the argument people actually have. One or the other, never both. */}
+      {board === "club" && (
       <section className="space-y-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">
           Club leaderboard
@@ -453,6 +481,7 @@ export default function ClubPage() {
           empty="Nothing to rank yet — it builds as the club plays."
         />
       </section>
+      )}
 
       <section className="space-y-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)">

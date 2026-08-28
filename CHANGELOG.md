@@ -17,6 +17,11 @@ remembering.
   between people that it writes down and never touches, and a game against the
   house for those would be the app taking money, which it does not do.
 
+  Any two cards of the same value split, which is the rule every casino plays:
+  a king and a queen are two tens, and two tens is a pair whatever is printed on
+  them. Each hand of a split is then played out on its own — hit it, stand it,
+  double it — before the dealer turns over.
+
   The bet is built out of chips — 5, 25 and 100 — because the amount is the
   decision and a chip is a decision you can make with your thumb without looking
   away from the felt. Cards land one at a time, chips drop onto the pile, a hand

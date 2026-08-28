@@ -898,9 +898,26 @@ class BlackjackActionTests(TestCase):
         hands = [blackjack.new_hand(["Kd", "Kh"], 25)]
         self.assertTrue(blackjack.actions_for(hands, 0, 0)["split"])
 
-    def test_a_king_and_a_queen_cannot(self):
-        # Twenty either way, but not a pair. Equal rank, not equal value.
-        hands = [blackjack.new_hand(["Kd", "Qh"], 25)]
+    def test_a_king_and_a_queen_can_too(self):
+        # Two tens is a pair, whatever is printed on them — the rule every
+        # casino plays. Breaking a twenty is a bad play and it is the player's
+        # to make.
+        for pair in (["Kd", "Qh"], ["Kd", "Th"], ["Jc", "Qs"]):
+            with self.subTest(pair=pair):
+                hands = [blackjack.new_hand(pair, 25)]
+                self.assertTrue(blackjack.actions_for(hands, 0, 0)["split"])
+
+    def test_two_aces_are_a_pair_and_an_ace_and_a_ten_are_not(self):
+        # Every ace counts as eleven, so they match each other and nothing else.
+        self.assertTrue(
+            blackjack.actions_for([blackjack.new_hand(["As", "Ah"], 25)], 0, 0)["split"],
+        )
+        self.assertFalse(
+            blackjack.actions_for([blackjack.new_hand(["As", "Kh"], 25)], 0, 0)["split"],
+        )
+
+    def test_unequal_values_do_not_split(self):
+        hands = [blackjack.new_hand(["9d", "8h"], 25)]
         self.assertFalse(blackjack.actions_for(hands, 0, 0)["split"])
 
     def test_any_two_cards_can_be_doubled(self):
@@ -1202,11 +1219,24 @@ class BlackjackRoundTests(TestCase):
         self.assertEqual(round_.net, 50)
         self.assertEqual(self._balance(), SIGNUP_COINS + 50)
 
-    def test_only_an_equal_rank_splits(self):
-        self._deal(("Kd", "Qs"), ("Ts", "7h"))
+    def test_only_an_equal_value_splits(self):
+        # Nine and eight is seventeen and nothing like a pair. A king and a
+        # queen would go through here; see the `can` tests above.
+        self._deal(("9d", "8s"), ("Ts", "7h"))
 
         self.assertEqual(blackjackbank.split(self.user), "You cannot split that hand.")
         self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+
+    def test_two_pictures_split_into_two_hands(self):
+        self._deal(("Kd", "Qs"), ("Ts", "7h"), "9c", "8h")
+
+        round_ = blackjackbank.split(self.user)
+
+        self.assertNotIsInstance(round_, str)
+        self.assertEqual(len(round_.hands), 2)
+        self.assertEqual([hand["cards"][0] for hand in round_.hands], ["Kd", "Qs"])
+        # A second stake left the wallet with the second hand.
+        self.assertEqual(self._balance(), SIGNUP_COINS - 50)
 
     def test_a_split_hand_cannot_be_split_again(self):
         self._deal(("8s", "8d"), ("Ts", "7h"), "8c", "Kh")
@@ -1466,7 +1496,9 @@ class BlackjackApiTests(APITestCase):
         self.assertEqual(second.data["balance"], SIGNUP_COINS - 25)
 
     def test_an_action_the_rules_do_not_allow_is_refused(self):
-        with self._fixed(("Kd", "Qs"), ("9h", "7c")):
+        # Nine and seven: not a pair by rank or by value, so Split is the one
+        # action the rules refuse on it.
+        with self._fixed(("9d", "7s"), ("9h", "7c")):
             self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
 
         response = self.client.post(reverse("blackjack-split"))

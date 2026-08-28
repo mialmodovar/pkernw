@@ -29,8 +29,11 @@ saves the house something:
   the player's favour on every odd stake is a faucet nobody meant to open.
 * Doubling takes exactly one card, and the hand is then over whatever it came
   to. That is what makes it a double and not a licence to keep drawing.
-* Splitting is allowed on equal RANK only. K+Q is twenty either way, but it is
-  not a pair, and a house that lets you split it is giving away the difference.
+* Splitting is allowed on equal VALUE, which is the rule every casino plays.
+  K+Q splits, and so does K+T: they are two tens, and two tens is a pair as far
+  as this game is concerned, whatever is printed on them. Breaking a twenty is
+  nearly always a bad play — but it is the player's bad play to make, and a
+  house that refuses it is refusing a bet in its own favour.
 * No re-splitting — two hands is the maximum — and split aces get one card each
   and are done. Both of those are limits on the same thing: an ace is the best
   card in the deck and the split is the cheapest way to get more of them.
@@ -294,12 +297,18 @@ def actions_for(hands, index: int, active) -> dict:
         "hit": True,
         "stand": True,
         "double": untouched,
-        # Equal rank, and no re-splitting: with two hands already in play there
-        # is no room for a third, whichever of them is holding the pair.
+        # Equal value rather than equal rank, which is the rule every casino
+        # plays: a king and a queen are two tens, and two tens is a pair here
+        # whatever is printed on them. Aces come through this as a pair too —
+        # card_value calls every one of them eleven, and eleven only ever
+        # matches another ace.
+        #
+        # No re-splitting: with two hands already in play there is no room for a
+        # third, whichever of them is holding the pair.
         "split": (
             untouched
             and len(hands) < MAX_HANDS
-            and card_rank(cards[0]) == card_rank(cards[1])
+            and card_value(cards[0]) == card_value(cards[1])
         ),
     }
 

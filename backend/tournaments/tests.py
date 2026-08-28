@@ -4305,9 +4305,37 @@ class FastFormatRulesTests(TestCase):
 				self.assertLessEqual(fmt.seats, 9)
 				self.assertLessEqual(len(fmt.payouts), fmt.seats)
 				self.assertTrue(fmt.stakes)
-				# Two buy-ins each, and the cheaper one first so the tier cards
-				# read in the order anybody would climb them.
+				# Cheapest first, so the tier rows read in the order anybody
+				# would climb them, and no rung twice.
 				self.assertEqual(list(fmt.stakes), sorted(fmt.stakes))
+				self.assertEqual(len(set(fmt.stakes)), len(fmt.stakes))
+				# Every price is a rung of the one ladder. A format with a
+				# buy-in of its own would be a price nobody recognises from
+				# anywhere else in the app.
+				self.assertTrue(set(fmt.stakes) <= set(fastgames.STAKE_LADDER))
+
+	def test_the_ladder_is_one_ladder(self):
+		"""Every rung, and the Spin n Go's own copy of it, agree."""
+		from tournaments import fastgames, spingo
+
+		# The ladder is defined in spingo.py, because fastgames imports it and
+		# not the other way round. If the two ever part company, the format
+		# with the widest range of buy-ins is the one that goes quietly wrong.
+		self.assertEqual(tuple(spingo.STAKES), fastgames.STAKE_LADDER)
+		# Roughly doubling, cheapest first: the step from one rung to the next
+		# is the same decision at the bottom of the ladder as at the top.
+		self.assertEqual(list(fastgames.STAKE_LADDER), sorted(fastgames.STAKE_LADDER))
+		for lower, upper in zip(fastgames.STAKE_LADDER, fastgames.STAKE_LADDER[1:]):
+			self.assertGreaterEqual(upper, lower * 2)
+			self.assertLessEqual(upper, lower * 3)
+		# Enough of them that the lobby is a choice rather than a coin toss —
+		# which is the whole reason these are rows and not two cards.
+		self.assertGreaterEqual(len(fastgames.STAKE_LADDER), 5)
+		# Playable on a day's coins, and the dearest within a week of them.
+		from sidegames.economy import DAILY_COINS, SIGNUP_COINS
+
+		self.assertLessEqual(fastgames.STAKE_LADDER[0], DAILY_COINS // 10)
+		self.assertLessEqual(fastgames.STAKE_LADDER[-1], SIGNUP_COINS + DAILY_COINS * 7)
 
 	def test_the_formats_are_turbos_and_start_shallow(self):
 		from tournaments import fastgames
@@ -4479,21 +4507,31 @@ class SitNGoTests(APITestCase):
 		))
 		self.assertEqual(seats, [2, 6])
 
-	def test_each_format_offers_two_buy_ins(self):
+	def test_each_format_offers_its_rungs_of_the_ladder(self):
+		from tournaments.fastgames import FORMATS
+
 		self.client.force_authenticate(self.players["a"])
 		lobby = self.client.get(reverse("fast-lobby")).data
 
 		by_key = {one["key"]: one for one in lobby["formats"]}
 		self.assertEqual(sorted(by_key), ["allinfold", "hu", "sixmax", "spingo"])
-		for key, expected in (("hu", [10, 50]), ("sixmax", [25, 100]), ("spingo", [25, 50])):
+		for key, fmt in FORMATS.items():
 			with self.subTest(format=key):
-				self.assertEqual([tier["stake"] for tier in by_key[key]["tiers"]], expected)
+				# Every buy-in the format declares is a tier on the lobby, in the
+				# order it declares them — cheapest first, which is the order the
+				# rows are read in.
+				self.assertEqual(
+					[tier["stake"] for tier in by_key[key]["tiers"]], list(fmt.stakes),
+				)
+				# A ladder rather than a pair: the thing this lobby is for is
+				# choosing between prices.
+				self.assertGreaterEqual(len(by_key[key]["tiers"]), 5)
 
 	def test_a_sit_n_go_tier_says_what_it_pays_rather_than_drawing_for_it(self):
 		self.client.force_authenticate(self.players["a"])
 		lobby = self.client.get(reverse("fast-lobby")).data
 		sixmax = next(one for one in lobby["formats"] if one["key"] == "sixmax")
-		tier = sixmax["tiers"][0]
+		tier = next(one for one in sixmax["tiers"] if one["stake"] == 25)
 
 		self.assertFalse(sixmax["draws_multiplier"])
 		self.assertNotIn("odds", tier)
@@ -4501,8 +4539,11 @@ class SitNGoTests(APITestCase):
 		self.assertEqual([row["coins"] for row in tier["payouts"]], [97, 52])
 
 	def test_a_stake_from_another_format_is_refused(self):
-		# 100 is a six-max buy-in, not a heads-up one.
-		response = self._sit("a", "hu", 100)
+		# Every format now runs most of the same ladder, so the stake that tells
+		# them apart is the one only some of them reach down to: 5 is a Spin n Go
+		# and a Heads Up, and a six-handed game of it would pay its winner
+		# nineteen coins.
+		response = self._sit("a", "sixmax", 5)
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertFalse(Tournament.objects.exists())
@@ -6532,7 +6573,10 @@ class AllInOrFoldFormatTests(APITestCase):
 		self.assertEqual(fmt.seats, 4)
 		self.assertEqual(fmt.big_blinds, 15)
 		self.assertTrue(fmt.all_in_or_fold)
-		self.assertEqual(len(fmt.stakes), 2)
+		# The middle of the ladder. Its buy-in is four bounties rather than a
+		# pot, so the dearest rung belongs to the formats that play for one.
+		self.assertEqual(fmt.stakes[0], 10)
+		self.assertLess(fmt.stakes[-1], FORMATS["spingo"].stakes[-1])
 
 	def test_four_players_fill_it_and_it_deals(self):
 		for name in ("aif_a", "aif_b", "aif_c"):
@@ -6646,13 +6690,13 @@ class AllInOrFoldFormatTests(APITestCase):
 		self.assertFalse(can_manage_tournament(self.players["aif_a"], game))
 		self.assertFalse(can_manage_tournament(boss, game))
 
-	def test_the_lobby_offers_two_tiers_of_it(self):
+	def test_the_lobby_offers_the_middle_of_the_ladder(self):
 		self.client.force_authenticate(self.players["aif_a"])
 
 		lobby = self.client.get(reverse("fast-lobby")).data
 		fmt = next(one for one in lobby["formats"] if one["key"] == "allinfold")
 
-		self.assertEqual(len(fmt["tiers"]), 2)
+		self.assertEqual([tier["stake"] for tier in fmt["tiers"]], [10, 25, 50, 100, 250])
 		self.assertEqual(fmt["seats"], 4)
 		self.assertEqual(fmt["big_blinds"], 15)
 

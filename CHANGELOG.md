@@ -9,6 +9,21 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A ladder to climb in the instant games.** Every one of them offered exactly
+  two prices, and neither was the one a lot of players wanted: a Spin n Go cost
+  25 or 50 coins, which is a quarter of a new player's whole balance at the
+  bottom and nowhere to go at the top. There are seven rungs now — 5, 10, 25,
+  50, 100, 250 and 500 — shared across the formats rather than picked per
+  format, so a price means the same thing wherever it is seen. Spin n Go and
+  Heads Up run the whole ladder; 6-Max and All In or Fold start at 10, because
+  a 5 split six ways pays its winner nineteen coins and the same 5 divided into
+  four bounties is not a game anybody would remember playing. All In or Fold
+  stops one rung short of the top, its buy-in being four bounties rather than a
+  pot.
+
+  Five coins is the point of the bottom rung: the daily claim is 200, so a bad
+  run no longer ends an evening. Five hundred is the point of the top one — it
+  is where a Spin n Go's hundred-times draw is forty thousand coins.
 - **Your game is starting, wherever you are.** A seat at an instant game is no
   longer exclusive — you can be queued at three tiers while playing a fourth
   game — and the only thing telling you one of them had filled was the lobby
@@ -81,6 +96,15 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The instant-game lobby is a list rather than a wall of cards.** Two buy-ins
+  fit as two cards; seven do not, and a phone got a card per screen. Each tier
+  is a row now — what it costs, what it pays, how full it is, and the way in,
+  in that order, which is the order the question is actually asked in. The
+  prize table and the odds ladder sit behind a caret on the row that owns them,
+  because they are read once and then never again. Every row fits a 320px
+  screen without wrapping: the seat count spelled out and the faces of the
+  people already waiting stand down as the screen narrows, and the seat pips —
+  the part worth watching while you wait — never do.
 - **One settings window, in pages.** The gear in the header and the gear on the
   lobby's profile card opened two different panels: the card's had the Google
   connection on the end of it and the header's did not, so which settings a

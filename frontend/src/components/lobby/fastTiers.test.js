@@ -120,7 +120,7 @@ describe("tierAction", () => {
     const queued = { id: 7, status: "lobby", seats: 2, seats_needed: 3 };
     expect(tierAction(tier, { queued, balance: 500 })).toMatchObject({
       kind: "unregister",
-      label: "Unregister",
+      label: "Leave",
       enabled: true,
       note: "You are seated · waiting for 1 more",
       game: queued,

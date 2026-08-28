@@ -1,5 +1,5 @@
 /**
- * What a tier card says, and whether its button does anything.
+ * What a tier row says, and whether its button does anything.
  *
  * Pure, and tested, for the usual reason: "can I sit here" has four answers —
  * you are already in one, you cannot afford it, this one is filling up, or yes —
@@ -72,7 +72,11 @@ export function tierAction(tier, { queued = null, balance = null } = {}) {
     const needed = queued.seats_needed || tier.seats_needed || 0;
     return {
       kind: "unregister",
-      label: "Unregister",
+      // "Leave", not "Unregister": it is the word the row underneath uses for
+      // giving up a seat at a game of yours that is waiting, and the two
+      // buttons do the same thing to the same kind of seat. It also fits the
+      // column the row gives it, which "Unregister" did not.
+      label: "Leave",
       enabled: true,
       note: `You are seated \u00b7 waiting for ${Math.max(0, needed - seated)} more`,
       game: queued,
@@ -97,17 +101,17 @@ export function myGameAction(game) {
 }
 
 /**
- * What you are playing for, in the one line a card has room for.
+ * What you are playing for, in the one line a row has room for.
  *
  * This used to be behind a "Prizes" button, which meant the only number on the
- * card was what it cost — a card that says what it takes and not what it pays.
- * The button is still there for the whole table; this is the headline.
+ * row was what it cost — a row that says what it takes and not what it pays.
+ * The whole table is still a caret away; this is the headline.
  *
- * Returns {label, value}, so a card can lay the two out rather than parse a
+ * Returns {label, value}, so a row can lay the two out rather than parse a
  * sentence back apart.
  */
 export function prizeSummary(tier, format) {
-  // Figures only. The chip is drawn beside them by the card — it is one icon
+  // Figures only. The chip is drawn beside them by the row — it is one icon
   // for the whole line rather than one per number, which is what the emoji
   // version turned into: "🪙 97 · 🪙 52".
   const coins = (amount) => Number(amount || 0).toLocaleString();
@@ -164,7 +168,7 @@ export function prizeRows(tier) {
 }
 
 /**
- * Whether any row of this tier shares its prize, so the card knows whether the
+ * Whether any row of this tier shares its prize, so the panel knows whether the
  * ladder needs a line explaining itself.
  */
 export function hasSharedPrizes(tier) {

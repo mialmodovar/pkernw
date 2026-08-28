@@ -72,6 +72,28 @@ class FastFormat:
 # across all three means a player who has played one knows the pace of the rest.
 LEVEL_MINUTES = 2
 
+# Every buy-in any instant format offers, cheapest first.
+#
+# One ladder rather than a set per format, for the reason the cash stakes are
+# one ladder: a player who knows what a 50 costs knows it everywhere, and a
+# lobby of one-off prices is a lobby where nobody meets anybody. The rungs
+# roughly double, so the step from one to the next is always the same decision
+# rather than a bigger one at the top than at the bottom.
+#
+# The bottom is set by the daily handout: five coins is a game somebody with
+# nothing but today's claim can play twenty of, which is what keeps a bad run
+# from ending an evening. The top is set by the Spin n Go, because five hundred
+# is where the hundred-times draw is fifty thousand coins — enough to be worth
+# sitting for and not so much that one hand rewrites the economy.
+STAKE_LADDER = (5, 10, 25, 50, 100, 250, 500)
+
+# Where a format joins the ladder. Nothing starts below the rung where its own
+# prize is still worth collecting: a six-handed 5 pays its winner nineteen
+# coins, which is not a game anybody would remember playing, and a four-handed
+# All In or Fold divides that same 5 into four bounties of five. The two-and
+# three-seat formats have no such floor, so they get the whole thing.
+LADDER_FROM_10 = STAKE_LADDER[1:]
+
 FORMATS = {
     "spingo": FastFormat(
         key="spingo",
@@ -99,7 +121,9 @@ FORMATS = {
               "every two minutes — there is nowhere to hide and no reason to wait.",
         tournament_format="sitngo",
         seats=2,
-        stakes=(10, 50),
+        # The whole ladder. Two seats and one prize is the simplest thing here,
+        # so it is the one that should be available at every price.
+        stakes=STAKE_LADDER,
         # Twenty-five blinds: enough to play a hand out, short enough that the
         # whole thing is decided inside ten minutes.
         starting_chips=1000,
@@ -130,7 +154,9 @@ FORMATS = {
               "that still plays like a tournament.",
         tournament_format="sitngo",
         seats=6,
-        stakes=(25, 100),
+        # From 10 up: see LADDER_FROM_10. A 5 split between six players pays
+        # the winner nineteen coins for ten minutes' work.
+        stakes=LADDER_FROM_10,
         starting_chips=1500,
         blinds=(
             (25, 50, 0),
@@ -167,7 +193,11 @@ FORMATS = {
         # Fifteen big blinds at the opening 50/100, like a Spin n Go: shallow
         # enough that the first hand is already a decision.
         starting_chips=1500,
-        stakes=(25, 100),
+        # From 10 up, and stopping one rung short of the top: the buy-in here
+        # is not a prize pool but four bounties, so a rung is worth a quarter of
+        # what the same rung is worth in a format that pays places, and the very
+        # top of the ladder belongs to the games that play for the whole pot.
+        stakes=LADDER_FROM_10[:-1],
         blinds=(
             (50, 100, 0),
             (75, 150, 0),

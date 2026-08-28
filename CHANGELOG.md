@@ -9,6 +9,23 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A euro tournament says so before it takes your seat.** Almost everything in
+  this app is played for coins, which are the app's own currency and cost
+  nobody anything. A tournament played for money looked exactly like the rest —
+  the same Join button, the same one press — and the only thing telling them
+  apart was a small figure with a € on it, which a player scanning a list has no
+  reason to read differently from a figure with a chip on it. Joining one now
+  asks first: the buy-in, large and on its own; how much of it is the bounty
+  rather than the places, where there is one; and the sentence that actually
+  matters, which is that the app does not take the money, hold it, or pay it
+  out — it writes down what was agreed, and Calotes shows at the end what you
+  are owed and what you owe. Somebody who joined believing their twenty euros
+  were with the app had misunderstood the whole thing, and this is the last
+  moment anybody can tell them.
+
+  It asks at both doors — the lobby card and the tournament's own page — because
+  a confirmation only one of the two ways in has is not a confirmation. Coin
+  games are untouched: one press, as they always were.
 - **A ladder to climb in the instant games.** Every one of them offered exactly
   two prices, and neither was the one a lot of players wanted: a Spin n Go cost
   25 or 50 coins, which is a quarter of a new player's whole balance at the

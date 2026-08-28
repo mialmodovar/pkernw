@@ -7,6 +7,8 @@ import TournamentBrowser from "../components/lobby/TournamentBrowser";
 import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import CashBrowser from "../components/lobby/CashBrowser";
 import NewCashTableModal from "../components/lobby/NewCashTableModal";
+import RealMoneyModal from "../components/lobby/RealMoneyModal";
+import { isRealMoney } from "../components/lobby/buyIn";
 import Icon from "../components/icons/Icon";
 import {
   LOBBY_TABS, openTabs, readStoredTab, storedKey, writeStoredTab,
@@ -102,6 +104,11 @@ export default function LobbyPage() {
   // merely play at would offer rooms the server will refuse.
   const [myClubs, setMyClubs] = useState([]);
   const [openingCash, setOpeningCash] = useState(false);
+  // The euro tournament somebody has pressed Join on and not yet agreed to,
+  // and whether the agreeing is under way. Held here rather than in the card:
+  // the dialog is one per lobby, not one per row.
+  const [confirming, setConfirming] = useState(null);
+  const [joining, setJoining] = useState(false);
   // Where you were last. Read once, when the page mounts: coming home from a
   // table should land you back in the room you play in, and for anybody who
   // plays one format that is every single time they leave a game.
@@ -166,9 +173,15 @@ export default function LobbyPage() {
     return () => clearInterval(id);
   }, [fetchLobbyData, awaitingStart]);
 
-  const onJoin = async (id) => {
+  // Taking a seat. A coin game is one press, as it always was; a euro one asks
+  // first — see RealMoneyModal, and isRealMoney, which is the whole test.
+  const join = async (id) => {
     await useLobbyStore.getState().joinTournament(id);
     navigate(`/tournament/${id}`);
+  };
+  const onJoin = async (tournament) => {
+    if (isRealMoney(tournament)) return setConfirming(tournament);
+    return join(tournament.id);
   };
   const onOpen = (id) => navigate(`/tournament/${id}`);
   const onOpenTable = (id) => navigate(`/tournament/${id}/play`);
@@ -344,6 +357,26 @@ export default function LobbyPage() {
               </button>
             ))}
           </div>
+        )}
+
+        {confirming && (
+          <RealMoneyModal
+            tournament={confirming}
+            busy={joining}
+            onClose={() => setConfirming(null)}
+            onConfirm={async () => {
+              setJoining(true);
+              try {
+                await join(confirming.id);
+              } finally {
+                // Cleared whatever happened: a join that failed leaves the
+                // player in the lobby rather than behind a dialog they cannot
+                // press their way out of.
+                setJoining(false);
+                setConfirming(null);
+              }
+            }}
+          />
         )}
 
         {openingCash && (

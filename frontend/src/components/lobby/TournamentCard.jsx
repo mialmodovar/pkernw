@@ -313,7 +313,9 @@ export default function TournamentCard({
           </button>
         )}
         {canJoin && (
-          <button onClick={() => onJoin(t.id)}
+          // The whole row rather than its id: joining a euro tournament asks
+          // first, and what it asks about is the buy-in.
+          <button onClick={() => onJoin(t)}
             className="btn-accent px-3 py-1 rounded text-xs font-semibold transition-colors">
             Join
           </button>

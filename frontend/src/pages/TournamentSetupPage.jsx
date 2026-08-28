@@ -7,7 +7,8 @@ import useAuthStore from "../store/authStore";
 import { claimEntryRedirect } from "../components/lobby/autoOpenTable";
 import { entryCount, payoutLabel, placingPoolCents, totalPool } from "../components/game/prizePool";
 import { formatEuros } from "../components/game/formatMoney";
-import { buyInLabel, formatCoins, isSpinGo } from "../components/lobby/buyIn";
+import { buyInLabel, formatCoins, isRealMoney, isSpinGo } from "../components/lobby/buyIn";
+import RealMoneyModal from "../components/lobby/RealMoneyModal";
 import { rebuyLabel, rebuyOffer } from "../components/lobby/rebuyOffer";
 import ShareTournamentButton from "../components/lobby/ShareTournamentButton";
 import { tournamentVitals, vitalsSummary } from "../components/lobby/tournamentVitals";
@@ -152,6 +153,10 @@ export default function TournamentSetupPage() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
   const [pickedTable, setPickedTable] = useState(null);
+  // Whether the euro buy-in is waiting to be agreed to, and whether agreeing
+  // is under way. See RealMoneyModal.
+  const [confirming, setConfirming] = useState(false);
+  const [joining, setJoining] = useState(false);
   const lastStatus = useRef(null);
   // Ticks between the three-second polls, so the deadline moves like a clock.
   const lateRegSeconds = useCountdown(tournament?.late_registration_seconds_left ?? null);
@@ -201,8 +206,15 @@ export default function TournamentSetupPage() {
   const scheduledStart = tournament.scheduled_start_at ? new Date(tournament.scheduled_start_at) : null;
   const scheduledStartPending = scheduledStart && scheduledStart > new Date();
 
-  const handleJoin = async () => {
+  const join = async () => {
     try { await api.post(`/tournaments/${id}/join/`); load(); } catch (e) { setError(e.response?.data?.error || "Error"); }
+  };
+  // The same rule as the lobby's: a coin game is one press, a euro one is
+  // asked about first. This page is the other door into the same seat, and a
+  // confirmation only one of the two doors has is not a confirmation.
+  const handleJoin = async () => {
+    if (isRealMoney(tournament)) return setConfirming(true);
+    return join();
   };
 
   // The other half of Join, which this page never had: a seat you took can be
@@ -288,6 +300,26 @@ export default function TournamentSetupPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
+      {confirming && (
+        <RealMoneyModal
+          tournament={tournament}
+          busy={joining}
+          onClose={() => setConfirming(false)}
+          onConfirm={async () => {
+            setJoining(true);
+            try {
+              await join();
+            } finally {
+              // Closed whatever happened: join() reports its own failure into
+              // the page's error line, and a dialog left standing over it
+              // would be hiding the reason.
+              setJoining(false);
+              setConfirming(false);
+            }
+          }}
+        />
+      )}
+
       {/* Banner — name, state and the headline numbers, as a tournament lobby leads */}
       <header className="panel rounded-lg px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">

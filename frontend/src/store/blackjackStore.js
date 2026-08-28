@@ -28,6 +28,10 @@ const BLACKJACK = `${COINS}/blackjack`;
 
 const useBlackjackStore = create((set, get) => ({
   round: null,
+  // The last ten finished hands, newest first, as the strip under the table
+  // draws them. Carried on every reply — see the views — so it is never stale
+  // and never costs a request of its own.
+  history: [],
   // Which action is in flight, as its name, so the button that was pressed can
   // say so while the others simply go quiet. A single boolean would grey out
   // the whole row and lose which one is happening.
@@ -49,6 +53,7 @@ const useBlackjackStore = create((set, get) => ({
     set({
       round,
       error: "",
+      ...(data?.history ? { history: data.history } : {}),
       ...(justSettled ? { settledAt: get().settledAt + 1 } : {}),
     });
     return round;

@@ -30,6 +30,13 @@ remembering.
   so the wait is a fiction, and it is the fiction the game is made of — a dealer
   on 16 reaching for one more card is the reason anybody watches.
 
+  Under the table, the last ten hands as a row of marks — W, L, P, and BJ for a
+  blackjack, which gets its own because it paid 3:2 and is the row anybody wants
+  to point at. Read as a shape before it is read as text. A round is judged by
+  what it did to the wallet rather than by its hands, so a split where one won
+  and one lost shows as a push: it moved nothing, and saying otherwise would
+  disagree with the balance printed above it.
+
   The deck lives on the server and the hole card reaches the client as "??"
   until the round is over. So does the round itself, which is what lets the same
   hand be picked up in either of the two places it can be played, and what stops

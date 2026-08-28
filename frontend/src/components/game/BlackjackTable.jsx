@@ -7,8 +7,8 @@ import useBlackjackStore from "../../store/blackjackStore";
 import useWalletStore from "../../store/walletStore";
 import { playBlackjack, playBust, playCard, playChips, playPush, playWin } from "./sounds";
 import {
-  actionButtons, bettingState, chipsFor, dealerLine, handLabel, handTotal, outcomeLine,
-  roundSummary,
+  actionButtons, bettingState, chipsFor, dealerLine, handLabel, handTotal, historyMark,
+  outcomeLine, roundSummary,
 } from "./blackjack";
 
 // How long the dealer waits between turning over each of their own cards.
@@ -40,7 +40,7 @@ const DEALER_BEAT_MS = 520;
  * make the drawing worth watching.
  */
 export default function BlackjackTable({ compact = false, onClose = null }) {
-  const { round, busy, error, settledAt, resume, deal, act, clear } = useBlackjackStore();
+  const { round, history, busy, error, settledAt, resume, deal, act, clear } = useBlackjackStore();
   const balance = useWalletStore((s) => s.balance);
   const fetchWallet = useWalletStore((s) => s.fetchWallet);
   const games = useWalletStore((s) => s.games);
@@ -123,6 +123,8 @@ export default function BlackjackTable({ compact = false, onClose = null }) {
           </p>
         )}
 
+        <HistoryStrip rows={history} compact={compact} />
+
         {onClose && (
           <button
             type="button"
@@ -133,6 +135,54 @@ export default function BlackjackTable({ compact = false, onClose = null }) {
             Back to the table
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The last ten hands, as a row of marks.
+ *
+ * The one thing a table like this owes a player that the felt cannot tell them:
+ * how the session is going. A letter each, newest on the left, because the hand
+ * you just played is the one you are looking for — and read as a shape before
+ * it is read as text, which is why the colours carry it and the letters only
+ * confirm.
+ *
+ * Nothing at all before the first hand. An empty strip with ten grey slots
+ * would be a promise the table has not kept yet.
+ */
+function HistoryStrip({ rows = [], compact }) {
+  if (!rows.length) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)
+                       shrink-0">
+        Last {rows.length}
+      </span>
+      <div className="flex gap-1 min-w-0">
+        {rows.map((row) => {
+          const mark = historyMark(row);
+          return (
+            <span
+              key={row.id}
+              title={mark.title}
+              className={`grid place-items-center rounded font-bold shrink-0 ${
+                compact ? "w-5 h-5 text-[9px]" : "w-6 h-6 text-[10px]"
+              } ${
+                mark.tone === "blackjack"
+                  ? "bg-(--color-highlight) text-(--color-highlight-ink)"
+                  : mark.tone === "win"
+                  ? "border border-(--color-highlight-text) text-(--color-highlight-text)"
+                  : mark.tone === "lose"
+                  ? "border border-[#c76b7a] text-[#c76b7a]"
+                  : "border border-(--color-border-strong) text-(--color-text-muted)"
+              }`}
+            >
+              {mark.label}
+            </span>
+          );
+        })}
       </div>
     </div>
   );

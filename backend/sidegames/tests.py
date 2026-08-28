@@ -1405,6 +1405,72 @@ class BlackjackApiTests(APITestCase):
         cards = _stacked(player, dealer, *rest)
         return mock.patch.object(blackjack, "fresh_deck", lambda rng=None: list(cards))
 
+    def test_the_last_ten_hands_come_back_with_every_answer(self):
+        """The strip under the table: what each of the last hands came to."""
+        # A blackjack, a plain win, a loss and a push, in that order.
+        with self._fixed(("As", "Kd"), ("9h", "7c")):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+        with self._fixed(("Ts", "9d"), ("9h", "7c"), "Kc"):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+            self.client.post(reverse("blackjack-stand"))
+        with self._fixed(("Ts", "6d"), ("Th", "9c")):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+            self.client.post(reverse("blackjack-stand"))
+        with self._fixed(("Ts", "9d"), ("Th", "9c")):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+            response = self.client.post(reverse("blackjack-stand"))
+
+        # Newest first, so the hand just played is the one at the front.
+        self.assertEqual(
+            [row["result"] for row in response.data["history"]],
+            ["push", "lose", "win", "blackjack"],
+        )
+        # And what each of them moved, which is what the strip is really about.
+        self.assertEqual([row["net"] for row in response.data["history"]], [0, -25, 25, 37])
+
+    def test_the_strip_is_there_before_a_hand_is_dealt(self):
+        """Somebody who closed the tab comes back to their own last ten."""
+        with self._fixed(("Ts", "9d"), ("9h", "7c"), "Kc"):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+            self.client.post(reverse("blackjack-stand"))
+
+        response = self.client.get(reverse("blackjack-round"))
+
+        self.assertIsNone(response.data["round"])
+        self.assertEqual([row["result"] for row in response.data["history"]], ["win"])
+
+    def test_the_strip_stops_at_ten(self):
+        for _ in range(12):
+            with self._fixed(("Ts", "9d"), ("Th", "9c")):
+                self.client.post(reverse("blackjack-deal"), {"stake": 5}, format="json")
+                response = self.client.post(reverse("blackjack-stand"))
+
+        self.assertEqual(len(response.data["history"]), 10)
+
+    def test_the_strip_reads_the_wallet_rather_than_the_hands(self):
+        """A split where one hand won and one lost moved nothing: that is a push.
+
+        Tested on the rule itself rather than through a stacked deck, because
+        the deck would have to be arranged to produce it and the arrangement is
+        not the thing under test. Calling a round a win because half of it won
+        would put a row on the strip that disagrees with the balance above it.
+        """
+        from .blackjack_views import _result_of
+        from .models import BlackjackRound
+
+        def round_with(outcomes, net):
+            return BlackjackRound(
+                user=self.user, stake=25, net=net,
+                hands=[{"outcome": outcome} for outcome in outcomes],
+            )
+
+        self.assertEqual(_result_of(round_with(["win", "lose"], 0)), "push")
+        self.assertEqual(_result_of(round_with(["win", "win"], 50)), "win")
+        self.assertEqual(_result_of(round_with(["win", "lose"], -25)), "lose")
+        # A natural is impossible after a split, so it is never one of several —
+        # and it is its own answer whatever the figure beside it.
+        self.assertEqual(_result_of(round_with(["blackjack"], 37)), "blackjack")
+
     def test_a_stranger_gets_nothing(self):
         self.client.force_authenticate(None)
         self.assertEqual(

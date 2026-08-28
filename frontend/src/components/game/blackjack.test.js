@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHIPS, actionButtons, activeHand, bettingState, canAfford, canCoverSecondStake, chipsFor,
-  dealerLine, handLabel, handTotal, isHiddenCard, outcomeLine, roundSummary, stakeLimits,
-  drawerVisible,
+  dealerLine, drawerVisible, handLabel, handTotal, historyMark, isHiddenCard, outcomeLine,
+  roundSummary, stakeLimits,
 } from "./blackjack";
 
 const game = { id: "blackjack", min_stake: 5, max_stake: 500 };
@@ -536,5 +536,38 @@ describe("drawerVisible", () => {
   it("is shut by default, whatever it is asked with", () => {
     expect(drawerVisible()).toBe(false);
     expect(drawerVisible({})).toBe(false);
+  });
+});
+
+describe("historyMark", () => {
+  it("gives a blackjack its own mark rather than counting it as a win", () => {
+    // It paid 3:2 and it is the best thing that happens here; flattening it
+    // into a W hides the only rows anybody wants to point at.
+    expect(historyMark({ result: "blackjack", net: 37 }))
+      .toMatchObject({ label: "BJ", tone: "blackjack", title: "Blackjack · +37" });
+  });
+
+  it("says what each of the other three came to", () => {
+    expect(historyMark({ result: "win", net: 50 }))
+      .toMatchObject({ label: "W", tone: "win", title: "Won · +50" });
+    expect(historyMark({ result: "lose", net: -25 }))
+      .toMatchObject({ label: "L", tone: "lose", title: "Lost · -25" });
+  });
+
+  it("leaves a push without a figure, having moved nothing", () => {
+    // "Push · 0" reads as a number somebody should care about.
+    expect(historyMark({ result: "push", net: 0 }))
+      .toMatchObject({ label: "P", tone: "push", title: "Push" });
+  });
+
+  it("puts the thousands separator in, like every other figure here", () => {
+    expect(historyMark({ result: "win", net: 1500 }).title).toBe("Won · +1,500");
+  });
+
+  it("falls back to a push for a row it does not recognise", () => {
+    // A result the server grows later should draw as something rather than
+    // crash the strip under a table somebody is playing at.
+    expect(historyMark({ result: "surrendered", net: 0 }).label).toBe("P");
+    expect(historyMark(undefined).label).toBe("P");
   });
 });

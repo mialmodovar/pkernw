@@ -28,7 +28,14 @@ import random
 
 # The tiers on the lobby. Fixed in code rather than created by staff — nobody
 # hosts a Spin n Go, so there is nobody to set its stake.
-STAKES = (25, 50)
+#
+# The whole ladder, because the Spin n Go is the format with the least to lose
+# by being cheap and the most to gain by being expensive: five coins is a game
+# you can play on a bad day, and five hundred is one where the hundred-times is
+# fifty thousand. It is fastgames.STAKE_LADDER, and a test pins that it is —
+# the ladder lives here because this module is imported by that one and not the
+# other way round.
+STAKES = (5, 10, 25, 50, 100, 250, 500)
 
 # Fifteen big blinds at the opening 50/100. Short enough that the format is
 # decided by the cards it deals rather than by the clock.

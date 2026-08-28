@@ -33,6 +33,7 @@ import { useCompactLayout } from "../components/game/useCompactLayout";
 import { InfoIcon, LobbyIcon } from "../components/game/icons";
 import TableVitals from "../components/game/TableVitals";
 import SideBetPanel from "../components/game/SideBetPanel";
+import BlackjackDrawer from "../components/game/BlackjackDrawer";
 import useWalletStore from "../store/walletStore";
 import ErrorBoundary from "../errors/ErrorBoundary";
 
@@ -268,6 +269,10 @@ export default function GamePage() {
   // Find "my" seat
   const mySeat = players.find((p) => p.username === user?.username)?.seat ?? null;
   const isMyTurn = mySeat !== null && actionOnSeat === mySeat;
+  // Whether the blackjack drawer is up over the felt. Held here rather than in
+  // the panel that opens it, because it has to be closed by something the panel
+  // knows nothing about: your turn coming round again.
+  const [blackjackOpen, setBlackjackOpen] = useState(false);
   useTurnAlert(isMyTurn, soundEnabled);
   useTimeoutAlert(isMyTurn, soundEnabled);
   useTableSounds(soundEnabled);
@@ -563,7 +568,21 @@ export default function GamePage() {
         {/* Callable from the rail too: watching a table you have no cards at
             is the purest version of what a side bet is for, and the coins are
             the wallet's rather than the table's. */}
-        <SideBetPanel mySeat={mySeat} myUserId={user?.id} />
+        <SideBetPanel
+          mySeat={mySeat}
+          myUserId={user?.id}
+          blackjackOpen={blackjackOpen}
+          onOpenBlackjack={() => setBlackjackOpen(true)}
+        />
+        {/* Something to play while you are out of the hand. It closes itself
+            the instant the table needs you — see BlackjackDrawer, where that
+            rule is the whole reason it is safe to offer this at a money
+            table. */}
+        <BlackjackDrawer
+          open={blackjackOpen}
+          isMyTurn={isMyTurn}
+          onClose={() => setBlackjackOpen(false)}
+        />
         {/* Its own guard, inside the page's. The felt is the busiest thing on
             screen — eight seats, eight cameras, chips and cards in flight — and
             if it ever fails to draw, the buttons below it are what let you play

@@ -1,6 +1,9 @@
+import json
 from datetime import datetime, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -9,6 +12,7 @@ from rest_framework.test import APITestCase
 
 from game.throwables import unlock_key
 
+from . import blackjack, blackjackbank
 from .economy import (
     DAILY_COINS,
     SIGNUP_COINS,
@@ -19,8 +23,8 @@ from .economy import (
     spend,
     wallet_for,
 )
-from .games import PLAYER_BET, clean_stake, game_for
-from .models import CoinLedger, MissionClaim, Unlock, Wallet
+from .games import BLACKJACK, PLAYER_BET, clean_stake, game_for
+from .models import BlackjackRound, CoinLedger, MissionClaim, Unlock, Wallet
 from .shop import buy_throwable, catalogue, owns_throwable
 
 User = get_user_model()
@@ -44,7 +48,11 @@ class SideGameRulesTests(TestCase):
         self.assertEqual(clean_stake(PLAYER_BET, "75"), 75)
 
     def test_a_game_nobody_has_written_yet_is_simply_absent(self):
-        self.assertIsNone(game_for("blackjack"))
+        # This used to name blackjack, which has since been written. The point
+        # of the test is the lookup rather than the example, so it names
+        # something nobody has built instead.
+        self.assertIsNone(game_for("roulette"))
+        self.assertIsNone(game_for(""))
 
 
 class WalletTests(TestCase):
@@ -163,7 +171,12 @@ class CoinApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["balance"], SIGNUP_COINS)
         self.assertTrue(response.data["can_claim"])
-        self.assertEqual([game["id"] for game in response.data["games"]], ["player_bet"])
+        # Both of them, so a client never has to carry its own copy of a stake
+        # limit. Order is the order they are declared in, which is the order
+        # they were written.
+        self.assertEqual(
+            [game["id"] for game in response.data["games"]], ["player_bet", "blackjack"],
+        )
 
     def test_claiming_twice_is_a_refusal_rather_than_a_second_payment(self):
         self.assertEqual(self.client.post(reverse("coin-claim")).status_code, status.HTTP_200_OK)
@@ -713,3 +726,812 @@ class CashMissionTests(TestCase):
         for key in ("daily_cash", "weekly_cash"):
             with self.subTest(mission=key):
                 self.assertEqual(BY_KEY[key]["counts"], "cash_hands")
+
+
+# ---------------------------------------------------------------------------
+# Blackjack.
+#
+# The rules first, on their own, because that is where a bug costs somebody
+# coins: an ace counted as eleven when it had to be one, a blackjack paid after
+# a split, a dealer that hit a soft seventeen. Then the round, which is those
+# rules against a wallet, and finally the endpoints, which are the round with a
+# client on the other end that is not to be trusted about any of it.
+# ---------------------------------------------------------------------------
+
+def _stacked(player, dealer, *rest):
+    """The whole 52, arranged so that a deal comes out exactly like this.
+
+    In dealing order — player, dealer's up card, player, dealer's hole card —
+    and then whatever `rest` says, which is every card drawn after the deal in
+    the order it is drawn. The remainder of the deck follows in an order nobody
+    should depend on: a test that needs a particular card must name it.
+    """
+    top = [player[0], dealer[0], player[1], dealer[1], *rest]
+    assert len(set(top)) == len(top), "a stacked deck named the same card twice"
+    return top + [
+        rank + suit
+        for rank in blackjack.RANKS for suit in blackjack.SUITS
+        if rank + suit not in top
+    ]
+
+
+class _Stacker:
+    """A generator that arranges instead of shuffling.
+
+    fresh_deck takes its rng as an argument for exactly this — see spingo, where
+    the multiplier draw does the same thing. Nothing is patched and no module
+    state is reached into; the test simply says what the deck is.
+    """
+
+    def __init__(self, cards):
+        self.cards = list(cards)
+
+    def shuffle(self, deck):
+        deck[:] = self.cards
+
+
+class BlackjackArithmeticTests(TestCase):
+    """Hand values, and the ace that changes its mind."""
+
+    def test_an_ace_and_a_picture_is_a_soft_twenty_one(self):
+        self.assertEqual(blackjack.hand_value(["As", "Kd"]), (21, True))
+
+    def test_two_aces_are_twelve_and_not_twenty_two(self):
+        # The one everybody gets wrong first: only one of them can be eleven.
+        self.assertEqual(blackjack.hand_value(["As", "Ah"]), (12, True))
+
+    def test_two_aces_and_a_nine_are_twenty_one(self):
+        self.assertEqual(blackjack.hand_value(["As", "Ah", "9c"]), (21, True))
+
+    def test_three_aces_and_an_eight_are_twenty_one(self):
+        self.assertEqual(blackjack.hand_value(["As", "Ah", "Ad", "8c"]), (21, True))
+
+    def test_an_ace_flips_from_eleven_to_one_when_the_next_card_lands(self):
+        self.assertEqual(blackjack.hand_value(["As", "6d"]), (17, True))
+        # The same ace, now worth one, and the hand is a hard seventeen rather
+        # than a bust.
+        self.assertEqual(blackjack.hand_value(["As", "6d", "Kc"]), (17, False))
+
+    def test_the_last_ace_is_demoted_too_when_it_has_to_be(self):
+        self.assertEqual(blackjack.hand_value(["As", "Ah", "9c", "Ad"]), (12, False))
+
+    def test_an_ace_is_never_demoted_further_than_it_has_to_be(self):
+        # 11 + 1 + 5 is seventeen and soft; demoting the second ace as well
+        # would quietly cost the player ten.
+        self.assertEqual(blackjack.hand_value(["As", "Ah", "5c"]), (17, True))
+
+    def test_a_hand_with_no_ace_in_it_is_never_soft(self):
+        self.assertEqual(blackjack.hand_value(["Ts", "9d"]), (19, False))
+
+    def test_a_hand_can_go_over_twenty_one_with_an_ace_in_it(self):
+        self.assertTrue(blackjack.is_bust(["Ts", "9d", "Ac", "5h"]))
+
+    def test_an_ace_saves_a_hand_that_would_otherwise_be_bust(self):
+        self.assertFalse(blackjack.is_bust(["As", "9d", "5c"]))
+        self.assertEqual(blackjack.hand_value(["As", "9d", "5c"]), (15, False))
+
+    def test_a_picture_is_ten_and_a_ten_is_ten(self):
+        for card in ("Ts", "Jh", "Qd", "Kc"):
+            with self.subTest(card=card):
+                self.assertEqual(blackjack.card_value(card), 10)
+
+
+class BlackjackNaturalTests(TestCase):
+    """What counts as a blackjack, and what it pays."""
+
+    def test_an_ace_and_a_ten_card_on_the_first_two_is_a_blackjack(self):
+        self.assertTrue(blackjack.is_blackjack(["As", "Th"]))
+        self.assertTrue(blackjack.is_blackjack(["Kd", "Ac"]))
+
+    def test_twenty_one_out_of_three_cards_is_not_one(self):
+        self.assertFalse(blackjack.is_blackjack(["7s", "7h", "7d"]))
+
+    def test_twenty_one_out_of_a_split_is_not_one_either(self):
+        # The rule that pays for itself: an ace split into two ten-cards is two
+        # twenty-ones, and paying 3:2 on both would be paying for hands nobody
+        # was dealt.
+        self.assertFalse(blackjack.is_blackjack(["As", "Th"], from_split=True))
+        self.assertFalse(blackjack.is_natural(blackjack.new_hand(["As", "Th"], 25, from_split=True)))
+
+    def test_a_blackjack_pays_three_for_two_on_top_of_the_stake(self):
+        self.assertEqual(blackjack.returns_for("blackjack", 25), 62)
+        self.assertEqual(blackjack.returns_for("blackjack", 100), 250)
+
+    def test_an_odd_stake_rounds_down_rather_than_up(self):
+        # 5 pays 7.5, and the house keeps the halfpenny — see BLACKJACK_PAYS.
+        self.assertEqual(blackjack.returns_for("blackjack", 5), 12)
+
+    def test_an_ordinary_win_pays_even_money(self):
+        self.assertEqual(blackjack.returns_for("win", 25), 50)
+
+    def test_a_push_returns_the_stake_exactly(self):
+        self.assertEqual(blackjack.returns_for("push", 25), 25)
+
+    def test_a_loss_returns_nothing_at_all(self):
+        self.assertEqual(blackjack.returns_for("lose", 25), 0)
+
+
+class BlackjackDealerTests(TestCase):
+    """The dealer has no choices. These are them."""
+
+    def test_the_dealer_stands_on_a_soft_seventeen(self):
+        self.assertFalse(blackjack.dealer_should_hit(["Ah", "6d"]))
+
+    def test_the_dealer_hits_a_hard_sixteen(self):
+        self.assertTrue(blackjack.dealer_should_hit(["Ts", "6d"]))
+
+    def test_the_dealer_hits_a_soft_sixteen(self):
+        self.assertTrue(blackjack.dealer_should_hit(["Ah", "5d"]))
+
+    def test_the_dealer_stands_on_a_hard_seventeen_too(self):
+        self.assertFalse(blackjack.dealer_should_hit(["Ts", "7d"]))
+
+    def test_the_dealer_draws_until_the_policy_stops_it(self):
+        deck = ["5c", "Kd"]
+        cards = ["6h", "6s"]
+
+        blackjack.play_dealer(cards, deck)
+
+        self.assertEqual(cards, ["6h", "6s", "5c"])
+        # Stopped at seventeen and left the king where it was.
+        self.assertEqual(deck, ["Kd"])
+
+    def test_the_dealer_does_not_draw_against_a_table_of_busts(self):
+        bust = blackjack.new_hand(["Ts", "9d", "5c"], 25)
+        self.assertFalse(blackjack.dealer_must_play([bust]))
+
+    def test_the_dealer_does_not_draw_against_a_natural(self):
+        self.assertFalse(blackjack.dealer_must_play([blackjack.new_hand(["As", "Kd"], 25)]))
+
+    def test_the_dealer_draws_when_one_of_two_hands_is_still_alive(self):
+        hands = [
+            blackjack.new_hand(["Ts", "9d", "5c"], 25),
+            blackjack.new_hand(["9h", "8s"], 25),
+        ]
+        self.assertTrue(blackjack.dealer_must_play(hands))
+
+
+class BlackjackActionTests(TestCase):
+    """The `can` object: the server's word on what is legal."""
+
+    def test_a_pair_of_kings_can_be_split(self):
+        hands = [blackjack.new_hand(["Kd", "Kh"], 25)]
+        self.assertTrue(blackjack.actions_for(hands, 0, 0)["split"])
+
+    def test_a_king_and_a_queen_cannot(self):
+        # Twenty either way, but not a pair. Equal rank, not equal value.
+        hands = [blackjack.new_hand(["Kd", "Qh"], 25)]
+        self.assertFalse(blackjack.actions_for(hands, 0, 0)["split"])
+
+    def test_any_two_cards_can_be_doubled(self):
+        hands = [blackjack.new_hand(["9d", "3h"], 25)]
+        self.assertTrue(blackjack.actions_for(hands, 0, 0)["double"])
+
+    def test_a_hand_that_has_been_hit_can_no_longer_double_or_split(self):
+        hands = [blackjack.new_hand(["8d", "8h", "2c"], 25)]
+        can = blackjack.actions_for(hands, 0, 0)
+
+        self.assertTrue(can["hit"])
+        self.assertTrue(can["stand"])
+        self.assertFalse(can["double"])
+        self.assertFalse(can["split"])
+
+    def test_two_hands_are_the_most_there_will_ever_be(self):
+        hands = [
+            blackjack.new_hand(["8d", "8h"], 25, from_split=True),
+            blackjack.new_hand(["8c", "8s"], 25, from_split=True),
+        ]
+        self.assertFalse(blackjack.actions_for(hands, 0, 0)["split"])
+
+    def test_a_hand_that_is_not_the_active_one_can_do_nothing(self):
+        hands = [
+            blackjack.new_hand(["8d", "3h"], 25, from_split=True),
+            blackjack.new_hand(["8c", "3s"], 25, from_split=True),
+        ]
+        self.assertEqual(blackjack.actions_for(hands, 1, 0), blackjack.NO_ACTIONS)
+
+    def test_a_finished_hand_can_do_nothing(self):
+        hand = blackjack.new_hand(["Kd", "9h"], 25)
+        hand["status"] = blackjack.STOOD
+        self.assertEqual(blackjack.actions_for([hand], 0, 0), blackjack.NO_ACTIONS)
+
+    def test_a_hand_that_reaches_twenty_one_has_nothing_left_to_decide(self):
+        self.assertEqual(blackjack.status_after_card(["7s", "9d", "5c"]), blackjack.STOOD)
+        self.assertEqual(blackjack.status_after_card(["7s", "9d", "6c"]), blackjack.BUST)
+        self.assertEqual(blackjack.status_after_card(["7s", "9d", "2c"]), blackjack.PLAYING)
+
+    def test_a_doubled_hand_is_over_whatever_it_came_to(self):
+        self.assertEqual(
+            blackjack.status_after_card(["5s", "6d", "2c"], one_card_only=True),
+            blackjack.STOOD,
+        )
+
+
+class BlackjackSettlementTests(TestCase):
+    """Who won, and what comes back."""
+
+    def _hand(self, cards, stake=25, from_split=False):
+        return blackjack.new_hand(cards, stake, from_split=from_split)
+
+    def test_a_bust_hand_loses_even_when_the_dealer_busts_too(self):
+        """The whole house edge, in one clause: the player acts first, and a
+        hand that busted is lost before the dealer has turned a card."""
+        result = blackjack.settle([self._hand(["Ts", "9d", "5c"])], ["Kd", "8h", "9s"])
+
+        self.assertEqual(result[0]["outcome"], "lose")
+        self.assertEqual(result[0]["returned"], 0)
+
+    def test_a_dealer_blackjack_beats_a_player_twenty_one(self):
+        result = blackjack.settle([self._hand(["7s", "7h", "7d"])], ["Ad", "Kh"])
+
+        self.assertEqual(result[0]["outcome"], "lose")
+
+    def test_two_blackjacks_push(self):
+        result = blackjack.settle([self._hand(["As", "Kc"])], ["Ad", "Kh"])
+
+        self.assertEqual(result[0]["outcome"], "push")
+        self.assertEqual(result[0]["returned"], 25)
+
+    def test_a_blackjack_against_an_ordinary_dealer_hand_pays_three_for_two(self):
+        result = blackjack.settle([self._hand(["As", "Kc"])], ["Td", "9h"])
+
+        self.assertEqual(result[0]["outcome"], "blackjack")
+        self.assertEqual(result[0]["returned"], 62)
+
+    def test_twenty_one_after_a_split_is_paid_as_an_ordinary_win(self):
+        result = blackjack.settle([self._hand(["As", "Kc"], from_split=True)], ["Td", "9h"])
+
+        self.assertEqual(result[0]["outcome"], "win")
+        self.assertEqual(result[0]["returned"], 50)
+
+    def test_the_higher_hand_wins(self):
+        self.assertEqual(
+            blackjack.settle([self._hand(["Ts", "9d"])], ["Td", "8h"])[0]["outcome"], "win",
+        )
+
+    def test_an_equal_hand_pushes_and_gets_the_stake_back(self):
+        result = blackjack.settle([self._hand(["Ts", "9d"])], ["Td", "9h"])
+
+        self.assertEqual(result[0]["outcome"], "push")
+        self.assertEqual(result[0]["returned"], 25)
+
+    def test_a_dealer_bust_pays_every_hand_still_standing(self):
+        hands = [self._hand(["Ts", "4d"]), self._hand(["9h", "9s"])]
+
+        result = blackjack.settle(hands, ["Td", "8h", "9c"])
+
+        self.assertEqual([one["outcome"] for one in result], ["win", "win"])
+
+    def test_a_doubled_hand_wins_and_loses_the_doubled_figure(self):
+        won = blackjack.settle([self._hand(["5s", "6d", "Th"], stake=50)], ["Td", "8h"])
+        self.assertEqual(won[0]["returned"], 100)
+
+
+class BlackjackRoundTests(TestCase):
+    """The rules against a wallet: what a round costs and what it pays."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="bj_hero", password="secret123")
+        wallet_for(self.user)
+
+    def _deal(self, player, dealer, *rest, stake=25):
+        return blackjackbank.deal(
+            self.user, stake, rng=_Stacker(_stacked(player, dealer, *rest)),
+        )
+
+    def _balance(self):
+        return wallet_for(self.user).balance
+
+    # -- the wallet, end to end -------------------------------------------
+
+    def test_a_win_takes_the_stake_and_pays_two(self):
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+
+        round_ = blackjackbank.stand(self.user)
+
+        self.assertEqual(round_.hands[0]["outcome"], "win")
+        self.assertEqual(round_.net, 25)
+        self.assertEqual(self._balance(), SIGNUP_COINS + 25)
+
+    def test_a_loss_takes_the_stake_and_pays_nothing(self):
+        self._deal(("9s", "9d"), ("Ts", "9h"))
+
+        round_ = blackjackbank.stand(self.user)
+
+        self.assertEqual(round_.hands[0]["outcome"], "lose")
+        self.assertEqual(round_.hands[0]["returned"], 0)
+        self.assertEqual(round_.net, -25)
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+
+    def test_a_push_leaves_the_wallet_exactly_where_it_started(self):
+        self._deal(("9s", "9d"), ("Ts", "8h"))
+
+        round_ = blackjackbank.stand(self.user)
+
+        self.assertEqual(round_.hands[0]["outcome"], "push")
+        self.assertEqual(round_.net, 0)
+        self.assertEqual(self._balance(), SIGNUP_COINS)
+
+    def test_a_blackjack_pays_three_for_two_and_ends_the_round_on_the_deal(self):
+        round_ = self._deal(("As", "Kd"), ("9s", "7h"))
+
+        self.assertEqual(round_.status, "finished")
+        self.assertIsNone(round_.active)
+        self.assertEqual(round_.hands[0]["status"], "blackjack")
+        self.assertEqual(round_.hands[0]["outcome"], "blackjack")
+        self.assertEqual(round_.net, 37)
+        self.assertEqual(self._balance(), SIGNUP_COINS + 37)
+        # And the dealer was not asked to draw for a hand that was already paid.
+        self.assertEqual(round_.dealer, ["9s", "7h"])
+
+    def test_a_dealer_blackjack_ends_the_round_before_the_player_can_act(self):
+        """The peek. Without it a player doubles or splits into a hand that was
+        lost before they touched it, and pays a second stake for the privilege."""
+        round_ = self._deal(("9s", "9d"), ("Ah", "Kc"))
+
+        self.assertEqual(round_.status, "finished")
+        self.assertEqual(round_.hands[0]["outcome"], "lose")
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+        self.assertEqual(blackjackbank.hit(self.user), "There is no round to play.")
+
+    def test_two_blackjacks_push_on_the_deal(self):
+        round_ = self._deal(("As", "Kd"), ("Ah", "Kc"))
+
+        self.assertEqual(round_.hands[0]["outcome"], "push")
+        self.assertEqual(self._balance(), SIGNUP_COINS)
+
+    # -- hitting ------------------------------------------------------------
+
+    def test_a_hit_takes_one_card_off_the_top_of_the_deck(self):
+        self._deal(("2s", "3d"), ("Ts", "7h"), "4c")
+
+        round_ = blackjackbank.hit(self.user)
+
+        self.assertEqual(round_.hands[0]["cards"], ["2s", "3d", "4c"])
+        self.assertEqual(round_.hands[0]["status"], "playing")
+        self.assertEqual(round_.status, "playing")
+        # 52 less the four dealt and the one hit.
+        self.assertEqual(len(round_.deck), 47)
+
+    def test_hitting_into_a_bust_ends_the_round_and_the_dealer_stays_put(self):
+        self._deal(("Ts", "6d"), ("9s", "7h"), "Kc")
+
+        round_ = blackjackbank.hit(self.user)
+
+        self.assertEqual(round_.hands[0]["status"], "bust")
+        self.assertEqual(round_.hands[0]["outcome"], "lose")
+        self.assertEqual(round_.status, "finished")
+        self.assertEqual(round_.dealer, ["9s", "7h"])
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+
+    def test_hitting_into_twenty_one_stands_the_hand_rather_than_offering_more(self):
+        self._deal(("Ts", "6d"), ("9s", "7h"), "5c", "Kh")
+
+        round_ = blackjackbank.hit(self.user)
+
+        self.assertEqual(round_.hands[0]["status"], "stood")
+        # And the round went straight to the dealer, who drew to a bust.
+        self.assertEqual(round_.dealer, ["9s", "7h", "Kh"])
+        self.assertEqual(round_.hands[0]["outcome"], "win")
+        self.assertEqual(self._balance(), SIGNUP_COINS + 25)
+
+    def test_a_finished_hand_cannot_be_hit(self):
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        blackjackbank.stand(self.user)
+
+        self.assertEqual(blackjackbank.hit(self.user), "There is no round to play.")
+        self.assertEqual(blackjackbank.stand(self.user), "There is no round to play.")
+
+    # -- doubling -----------------------------------------------------------
+
+    def test_a_double_takes_a_second_stake_and_exactly_one_card(self):
+        self._deal(("5s", "6d"), ("9s", "7h"), "Th", "2c")
+
+        round_ = blackjackbank.double(self.user)
+
+        hand = round_.hands[0]
+        self.assertTrue(hand["doubled"])
+        self.assertEqual(hand["stake"], 50)
+        self.assertEqual(hand["cards"], ["5s", "6d", "Th"])
+        self.assertEqual(hand["status"], "stood")
+        # Dealer drew to eighteen against a twenty-one.
+        self.assertEqual(round_.dealer, ["9s", "7h", "2c"])
+        self.assertEqual(hand["returned"], 100)
+        self.assertEqual(round_.net, 50)
+        self.assertEqual(self._balance(), SIGNUP_COINS + 50)
+
+    def test_a_double_that_busts_loses_both_stakes(self):
+        self._deal(("Ts", "6d"), ("9s", "7h"), "Kc")
+
+        round_ = blackjackbank.double(self.user)
+
+        self.assertEqual(round_.hands[0]["status"], "bust")
+        self.assertEqual(round_.net, -50)
+        self.assertEqual(self._balance(), SIGNUP_COINS - 50)
+
+    def test_a_doubled_hand_stands_even_on_a_twelve(self):
+        # That is what doubling buys: one card, whatever it is.
+        self._deal(("5s", "6d"), ("9s", "7h"), "Ac", "5h")
+
+        round_ = blackjackbank.double(self.user)
+
+        self.assertEqual(blackjack.hand_value(round_.hands[0]["cards"]), (12, False))
+        self.assertEqual(round_.hands[0]["status"], "stood")
+
+    def test_a_double_cannot_be_afforded_out_of_an_empty_wallet(self):
+        spend(self.user, SIGNUP_COINS - 25, "stake")
+        self._deal(("5s", "6d"), ("9s", "7h"), "Th")
+
+        self.assertEqual(blackjackbank.double(self.user), "Not enough coins to double.")
+        self.assertEqual(self._balance(), 0)
+        # And the hand is untouched: no card was dealt for a stake nobody paid.
+        self.assertEqual(blackjackbank.open_round(self.user).hands[0]["cards"], ["5s", "6d"])
+
+    def test_a_hand_that_has_been_hit_cannot_be_doubled(self):
+        self._deal(("2s", "3d"), ("Ts", "7h"), "4c")
+        blackjackbank.hit(self.user)
+
+        self.assertEqual(blackjackbank.double(self.user), "You cannot double that hand.")
+
+    # -- splitting ----------------------------------------------------------
+
+    def test_a_pair_splits_into_two_hands_each_with_its_own_stake(self):
+        self._deal(("8s", "8d"), ("Ts", "7h"), "Kc", "Kh")
+
+        round_ = blackjackbank.split(self.user)
+
+        self.assertEqual([hand["cards"] for hand in round_.hands], [["8s", "Kc"], ["8d", "Kh"]])
+        self.assertEqual([hand["stake"] for hand in round_.hands], [25, 25])
+        self.assertTrue(all(hand["from_split"] for hand in round_.hands))
+        self.assertEqual(round_.active, 0)
+        # Two stakes off the wallet, one per hand.
+        self.assertEqual(self._balance(), SIGNUP_COINS - 50)
+
+    def test_both_split_hands_are_played_and_settled_in_turn(self):
+        self._deal(("8s", "8d"), ("Ts", "7h"), "Kc", "Kh")
+        blackjackbank.split(self.user)
+
+        after_first = blackjackbank.stand(self.user)
+        self.assertEqual(after_first.active, 1)
+        self.assertEqual(after_first.status, "playing")
+
+        round_ = blackjackbank.stand(self.user)
+
+        self.assertEqual([hand["outcome"] for hand in round_.hands], ["win", "win"])
+        self.assertEqual(round_.net, 50)
+        self.assertEqual(self._balance(), SIGNUP_COINS + 50)
+
+    def test_only_an_equal_rank_splits(self):
+        self._deal(("Kd", "Qs"), ("Ts", "7h"))
+
+        self.assertEqual(blackjackbank.split(self.user), "You cannot split that hand.")
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+
+    def test_a_split_hand_cannot_be_split_again(self):
+        self._deal(("8s", "8d"), ("Ts", "7h"), "8c", "Kh")
+        blackjackbank.split(self.user)
+
+        # The first hand is a pair of eights all over again, and the answer is
+        # still no: two hands is the maximum.
+        self.assertEqual(blackjackbank.split(self.user), "You cannot split that hand.")
+        self.assertEqual(self._balance(), SIGNUP_COINS - 50)
+
+    def test_split_aces_take_one_card_each_and_cannot_be_hit(self):
+        self._deal(("As", "Ah"), ("9s", "7h"), "Kc", "Kd", "3h")
+
+        round_ = blackjackbank.split(self.user)
+
+        self.assertEqual([hand["cards"] for hand in round_.hands], [["As", "Kc"], ["Ah", "Kd"]])
+        self.assertEqual([hand["status"] for hand in round_.hands], ["stood", "stood"])
+        # Both hands were done at once, so the round went to the dealer without
+        # ever offering a button.
+        self.assertEqual(round_.status, "finished")
+        self.assertEqual(blackjackbank.hit(self.user), "There is no round to play.")
+
+    def test_twenty_one_from_split_aces_is_a_win_and_not_a_blackjack(self):
+        self._deal(("As", "Ah"), ("9s", "7h"), "Kc", "Kd", "3h")
+
+        round_ = blackjackbank.split(self.user)
+
+        self.assertEqual([hand["outcome"] for hand in round_.hands], ["win", "win"])
+        # 50 back on each rather than 62: see is_blackjack.
+        self.assertEqual([hand["returned"] for hand in round_.hands], [50, 50])
+        self.assertEqual(round_.net, 50)
+
+    def test_a_split_at_the_table_maximum_costs_two_maximums(self):
+        grant(self.user, 500, "payout")
+        self._deal(("8s", "8d"), ("Ts", "7h"), "Kc", "Kh", stake=500)
+        self.assertEqual(self._balance(), 500)
+
+        blackjackbank.split(self.user)
+
+        self.assertEqual(self._balance(), 0)
+
+    def test_a_split_that_cannot_be_paid_for_is_refused(self):
+        self._deal(("8s", "8d"), ("Ts", "7h"), "Kc", "Kh", stake=500)
+        self.assertEqual(self._balance(), 0)
+
+        self.assertEqual(blackjackbank.split(self.user), "Not enough coins to split.")
+        # One hand, untouched, and no cards drawn for it.
+        self.assertEqual(len(blackjackbank.open_round(self.user).hands), 1)
+
+    # -- the guards ---------------------------------------------------------
+
+    def test_a_stake_outside_the_limits_is_refused(self):
+        self.assertIn("between", blackjackbank.deal(self.user, 1000))
+        self.assertIn("between", blackjackbank.deal(self.user, 1))
+        self.assertIn("between", blackjackbank.deal(self.user, "lots"))
+        self.assertEqual(self._balance(), SIGNUP_COINS)
+        self.assertFalse(BlackjackRound.objects.exists())
+
+    def test_a_deal_nobody_can_pay_for_is_refused_and_writes_nothing(self):
+        spend(self.user, SIGNUP_COINS, "stake")
+
+        self.assertEqual(blackjackbank.deal(self.user, 25), "Not enough coins.")
+        self.assertEqual(self._balance(), 0)
+        self.assertFalse(BlackjackRound.objects.exists())
+
+    def test_a_second_round_cannot_be_dealt_while_one_is_open(self):
+        first = self._deal(("9s", "9d"), ("Ts", "7h"))
+
+        self.assertEqual(
+            blackjackbank.deal(self.user, 25), "Finish the round you are already playing.",
+        )
+        self.assertEqual(BlackjackRound.objects.count(), 1)
+        # And nothing was charged for the refusal.
+        self.assertEqual(self._balance(), SIGNUP_COINS - 25)
+        self.assertEqual(blackjackbank.open_round(self.user).id, first.id)
+
+    def test_the_database_itself_refuses_a_second_open_round(self):
+        """The check inside deal() is the polite answer. This is the guard: two
+        taps arriving together both look first and both find nothing open, and
+        select_for_update cannot lock a row neither of them has written yet — so
+        what decides is the constraint on the table."""
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                BlackjackRound.objects.create(user=self.user, stake=25, status="playing")
+
+    def test_the_constraint_counts_only_the_unfinished_ones(self):
+        # A player who has played all evening has a table full of finished
+        # rounds, and none of them may stand in the way of the next deal.
+        for _ in range(3):
+            BlackjackRound.objects.create(user=self.user, stake=25, status="finished")
+
+        self.assertNotIsInstance(self._deal(("9s", "9d"), ("Ts", "7h")), str)
+
+    def test_a_finished_round_does_not_block_the_next_one(self):
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        blackjackbank.stand(self.user)
+
+        second = self._deal(("2s", "3d"), ("Ts", "7h"))
+
+        self.assertNotIsInstance(second, str)
+        self.assertEqual(BlackjackRound.objects.count(), 2)
+
+    def test_nobody_can_act_on_somebody_else_s_round(self):
+        """There is no round id on the wire at all — every endpoint acts on the
+        caller's own open round — so this is the shape of the protection rather
+        than a check that could be forgotten."""
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        stranger = User.objects.create_user(username="bj_stranger", password="secret123")
+        wallet_for(stranger)
+
+        self.assertEqual(blackjackbank.hit(stranger), "There is no round to play.")
+        self.assertEqual(blackjackbank.stand(stranger), "There is no round to play.")
+        self.assertEqual(len(blackjackbank.open_round(self.user).hands[0]["cards"]), 2)
+        self.assertEqual(wallet_for(stranger).balance, SIGNUP_COINS)
+
+    def test_settling_twice_does_not_mint_coins(self):
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        round_ = blackjackbank.stand(self.user)
+        after = self._balance()
+
+        # The row lock makes this unreachable in practice; the memo is what
+        # would catch it if it ever were. See coinbank.settle_tournament_coins.
+        self.assertEqual(blackjackbank._pay(round_), 0)
+        self.assertEqual(self._balance(), after)
+        self.assertEqual(
+            CoinLedger.objects.filter(
+                user=self.user, reason="payout", memo=f"blackjack:{round_.id}",
+            ).count(),
+            1,
+        )
+
+    def test_every_coin_move_is_memoed_with_the_round_it_belongs_to(self):
+        self._deal(("5s", "6d"), ("9s", "7h"), "Th", "2c")
+        round_ = blackjackbank.double(self.user)
+
+        rows = CoinLedger.objects.filter(user=self.user, memo=f"blackjack:{round_.id}")
+
+        self.assertEqual(sorted(row.amount for row in rows), [-25, -25, 100])
+        self.assertEqual(
+            sorted(row.reason for row in rows), ["payout", "stake", "stake"],
+        )
+
+    def test_the_ledger_and_the_net_agree_about_what_happened(self):
+        self._deal(("9s", "9d"), ("Ts", "7h"))
+        round_ = blackjackbank.stand(self.user)
+
+        moved = sum(
+            row.amount for row in
+            CoinLedger.objects.filter(user=self.user, memo=f"blackjack:{round_.id}")
+        )
+        self.assertEqual(moved, round_.net)
+
+
+class BlackjackApiTests(APITestCase):
+    """The endpoints, and what they refuse to say."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="bj_api", password="secret123")
+        self.client.force_authenticate(self.user)
+        wallet_for(self.user)
+
+    def _fixed(self, player, dealer, *rest):
+        """Pin the deck for one request, from outside the round machinery."""
+        cards = _stacked(player, dealer, *rest)
+        return mock.patch.object(blackjack, "fresh_deck", lambda rng=None: list(cards))
+
+    def test_a_stranger_gets_nothing(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(
+            self.client.get(reverse("blackjack-round")).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_no_round_is_an_answer_rather_than_an_error(self):
+        response = self.client.get(reverse("blackjack-round"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["round"])
+        self.assertEqual(response.data["balance"], SIGNUP_COINS)
+
+    def test_a_deal_comes_back_in_the_shape_the_contract_promises(self):
+        with self._fixed(("9s", "2h"), ("Kd", "7c")):
+            response = self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        round_ = response.data["round"]
+        self.assertEqual(response.data["balance"], SIGNUP_COINS - 25)
+        self.assertEqual(round_["stake"], 25)
+        self.assertEqual(round_["status"], "playing")
+        self.assertEqual(round_["active"], 0)
+        self.assertEqual(round_["net"], 0)
+
+        hand = round_["hands"][0]
+        self.assertEqual(hand["cards"], ["9s", "2h"])
+        self.assertEqual((hand["total"], hand["soft"]), (11, False))
+        self.assertEqual(hand["stake"], 25)
+        self.assertFalse(hand["doubled"])
+        self.assertFalse(hand["from_split"])
+        self.assertEqual(hand["status"], "playing")
+        self.assertIsNone(hand["outcome"])
+        self.assertEqual(hand["returned"], 0)
+        self.assertEqual(
+            hand["can"], {"hit": True, "stand": True, "double": True, "split": False},
+        )
+
+    def test_the_hole_card_and_the_deck_never_reach_the_client(self):
+        """The one thing this game must not do. The dealer's second card and
+        every undealt card stay on the server until the round is over."""
+        with self._fixed(("9s", "2h"), ("Kd", "7c"), "5d"):
+            response = self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        dealer = response.data["round"]["dealer"]
+        self.assertEqual(dealer["cards"], ["Kd", "??"])
+        # The total is of what is face up. Sending the true total would give the
+        # hole card away by subtraction.
+        self.assertEqual(dealer["total"], 10)
+        self.assertFalse(dealer["soft"])
+        self.assertFalse(dealer["blackjack"])
+
+        wire = json.dumps(response.data)
+        self.assertNotIn("7c", wire)
+        self.assertNotIn("5d", wire)
+        self.assertNotIn("deck", wire)
+
+    def test_the_hole_card_is_shown_once_the_round_is_over(self):
+        with self._fixed(("9s", "2h"), ("Kd", "7c"), "8s"):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        response = self.client.post(reverse("blackjack-stand"))
+
+        self.assertEqual(response.data["round"]["dealer"]["cards"], ["Kd", "7c"])
+        self.assertEqual(response.data["round"]["dealer"]["total"], 17)
+        self.assertIsNone(response.data["round"]["active"])
+        self.assertEqual(response.data["round"]["hands"][0]["outcome"], "lose")
+        self.assertEqual(response.data["balance"], SIGNUP_COINS - 25)
+
+    def test_a_finished_round_is_not_handed_back_on_the_next_load(self):
+        with self._fixed(("9s", "2h"), ("Kd", "7c")):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+        self.client.post(reverse("blackjack-stand"))
+
+        self.assertIsNone(self.client.get(reverse("blackjack-round")).data["round"])
+
+    def test_a_second_deal_is_refused_and_hands_back_the_round_in_play(self):
+        with self._fixed(("9s", "2h"), ("Kd", "7c")):
+            first = self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        second = self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", second.data)
+        # The refusal still draws the table, because the reason for it is that
+        # there is already a table.
+        self.assertEqual(second.data["round"]["id"], first.data["round"]["id"])
+        self.assertEqual(second.data["balance"], SIGNUP_COINS - 25)
+
+    def test_an_action_the_rules_do_not_allow_is_refused(self):
+        with self._fixed(("Kd", "Qs"), ("9h", "7c")):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        response = self.client.post(reverse("blackjack-split"))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"], "You cannot split that hand.")
+        self.assertEqual(response.data["balance"], SIGNUP_COINS - 25)
+        self.assertEqual(len(response.data["round"]["hands"]), 1)
+
+    def test_an_action_with_no_round_behind_it_is_refused(self):
+        response = self.client.post(reverse("blackjack-hit"))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(response.data["round"])
+
+    def test_a_stake_off_the_table_is_refused_before_anything_is_charged(self):
+        response = self.client.post(reverse("blackjack-deal"), {"stake": 5000}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["balance"], SIGNUP_COINS)
+        self.assertIsNone(response.data["round"])
+
+    def test_a_double_nobody_can_afford_is_not_offered(self):
+        """`can` is the whole truth about what will be accepted, so a double
+        the wallet cannot cover is false rather than a button that refuses."""
+        spend(self.user, SIGNUP_COINS - 25, "stake")
+        with self._fixed(("5s", "6d"), ("9h", "7c")):
+            response = self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        self.assertEqual(response.data["balance"], 0)
+        self.assertFalse(response.data["round"]["hands"][0]["can"]["double"])
+        self.assertTrue(response.data["round"]["hands"][0]["can"]["hit"])
+
+    def test_a_split_is_played_one_hand_at_a_time_over_the_wire(self):
+        with self._fixed(("8s", "8d"), ("Ts", "7h"), "Kc", "Kh"):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        split = self.client.post(reverse("blackjack-split"))
+
+        self.assertEqual(split.status_code, status.HTTP_200_OK)
+        self.assertEqual(split.data["balance"], SIGNUP_COINS - 50)
+        self.assertEqual(split.data["round"]["active"], 0)
+        self.assertEqual(len(split.data["round"]["hands"]), 2)
+        # Only the hand being played is offered anything.
+        self.assertTrue(split.data["round"]["hands"][0]["can"]["stand"])
+        self.assertEqual(split.data["round"]["hands"][1]["can"], blackjack.NO_ACTIONS)
+        # And neither of them may be split again.
+        self.assertFalse(split.data["round"]["hands"][0]["can"]["split"])
+
+        first = self.client.post(reverse("blackjack-stand"))
+        self.assertEqual(first.data["round"]["active"], 1)
+
+        second = self.client.post(reverse("blackjack-stand"))
+        self.assertEqual(second.data["round"]["net"], 50)
+        self.assertEqual(second.data["balance"], SIGNUP_COINS + 50)
+
+    def test_a_double_submitted_hit_deals_one_card_rather_than_two(self):
+        with self._fixed(("2s", "3d"), ("Ts", "7h"), "4c", "5h", "6d"):
+            self.client.post(reverse("blackjack-deal"), {"stake": 25}, format="json")
+
+        one = self.client.post(reverse("blackjack-hit"))
+        # The second request reads the round as the first one left it, which is
+        # the point of the row lock: it hits the three-card hand rather than the
+        # two-card hand the client still had on screen.
+        two = self.client.post(reverse("blackjack-hit"))
+
+        self.assertEqual(one.data["round"]["hands"][0]["cards"], ["2s", "3d", "4c"])
+        self.assertEqual(two.data["round"]["hands"][0]["cards"], ["2s", "3d", "4c", "5h"])

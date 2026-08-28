@@ -105,3 +105,72 @@ class MissionClaim(models.Model):
 
     def __str__(self):
         return f"{self.user.username} {self.mission} {self.period} (+{self.coins})"
+
+
+class BlackjackRound(models.Model):
+    """One round of blackjack, deck and all, on a single row.
+
+    The deck is here, on the server, and it is the reason this is a row rather
+    than something held in the client between requests. A blackjack round is a
+    conversation — deal, hit, hit, stand — and every turn of it needs to know
+    what the next card is without the player being able to find out. Shuffling
+    fresh on each request would deal a different next card every time; sending
+    the deck to the client and taking it back would be asking the player not to
+    look. So the undealt cards live here, are never serialised into a response
+    (see blackjack_views.round_payload, which builds the payload field by field
+    for exactly this reason), and die with the round.
+
+    The cards themselves are JSON rather than tables of their own, like
+    Tournament.payout_structure next door: a round is written and read whole,
+    nothing ever queries for "every hand containing an ace", and three more
+    tables would buy nothing but joins. What the shapes are:
+
+      deck    ["9s", "Kd", ...]   the undealt remainder, dealt from the front
+      dealer  ["Kd", "7h"]        both cards, always; the hiding is done on the
+                                  way out, never by leaving one unrecorded
+      hands   [{cards, stake, doubled, from_split, status, outcome, returned}]
+
+    `net` is stored rather than summed on demand because it is the one number
+    the player actually reads — "+37" — and a finished round must go on saying
+    the same thing tomorrow even if the payout arithmetic is ever changed.
+    """
+
+    STATUSES = [("playing", "In play"), ("finished", "Finished")]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="blackjack_rounds",
+    )
+    # The opening stake, per hand. A split hand and a doubled hand both carry
+    # their own figure inside `hands`; this is what the round was sat down for.
+    stake = models.IntegerField(default=0)
+    deck = models.JSONField(default=list, blank=True)
+    dealer = models.JSONField(default=list, blank=True)
+    hands = models.JSONField(default=list, blank=True)
+    # Which hand is being played. Null once the round is over, which is also how
+    # the client knows to stop offering buttons.
+    active = models.IntegerField(null=True, blank=True, default=0)
+    status = models.CharField(max_length=10, choices=STATUSES, default="playing")
+    # What the wallet moved by across the whole round: everything returned, less
+    # everything staked, doubles and splits included.
+    net = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            # One unfinished round per player, enforced by the database rather
+            # than by looking first. Looking first is no guard at all here: two
+            # taps on Deal arriving together both find nothing open, and
+            # select_for_update cannot lock a row that neither of them has
+            # written yet. Same reasoning as MissionClaim above — the constraint
+            # decides, and the transaction rolls the loser back.
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(status="playing"),
+                name="one_open_blackjack_round",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} blackjack #{self.id} ({self.status})"

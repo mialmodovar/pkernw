@@ -253,6 +253,61 @@ export function playDeal(players = 2) {
   });
 }
 
+/** One card off the shoe, for a game dealt a card at a time.
+ *
+ *  playDeal above is a whole table being dealt at once and lasts a second and a
+ *  half; a blackjack hit is one card landing, and using the table's sound for
+ *  it would be a rattle of eighteen cards for a single hit. */
+export function playCard() {
+  play((ctx, now) => {
+    noise(ctx, { start: now, duration: 0.05, peak: 0.09, frequency: 2600, Q: 0.9 });
+    noise(ctx, { start: now + 0.012, duration: 0.035, peak: 0.035, frequency: 700, Q: 0.6 });
+  });
+}
+
+/** A hand won: two notes up, and no more than that.
+ *
+ *  Short on purpose. This fires several times a minute in a game somebody is
+ *  playing between hands of poker, and a fanfare that is a delight the first
+ *  time is a reason to mute the tab by the tenth. */
+export function playWin() {
+  play((ctx, now) => {
+    tone(ctx, { freq: 660, start: now, duration: 0.12, peak: 0.09, type: "triangle" });
+    tone(ctx, { freq: 990, start: now + 0.09, duration: 0.18, peak: 0.08, type: "triangle" });
+  });
+}
+
+/** A blackjack: the same shape, one note higher and with the chips behind it.
+ *
+ *  It is the best thing that happens in this game and it pays three to two, so
+ *  it is allowed to be the one sound here with a third note in it. */
+export function playBlackjack() {
+  play((ctx, now) => {
+    [660, 990, 1320].forEach((freq, index) => {
+      tone(ctx, { freq, start: now + index * 0.075, duration: 0.2, peak: 0.085, type: "triangle" });
+    });
+    [0.16, 0.215].forEach((offset) => {
+      noise(ctx, { start: now + offset, duration: 0.07, peak: 0.16, frequency: 2600, Q: 0.9 });
+    });
+  });
+}
+
+/** Going over: a note that falls away, which is the whole feeling of it. */
+export function playBust() {
+  play((ctx, now) => {
+    tone(ctx, { freq: 320, start: now, duration: 0.3, peak: 0.1, type: "sawtooth", endFreq: 110 });
+    noise(ctx, { start: now, duration: 0.1, peak: 0.09, frequency: 400, Q: 0.7 });
+  });
+}
+
+/** A push: nothing happened. One flat note, no direction to it, because the
+ *  hand is over and the coins are exactly where they were. */
+export function playPush() {
+  play((ctx, now) => {
+    tone(ctx, { freq: 440, start: now, duration: 0.16, peak: 0.07, type: "sine" });
+  });
+}
+
 /** Something leaving your hand: air, and not much of it. */
 export function playThrow() {
   play((ctx, now) => {

@@ -986,3 +986,100 @@ button:disabled {
 .animate-fold-out {
   animation: fold-out 0.4s ease-in forwards;
 }
+
+/* ---------------------------------------------------------------------------
+   Blackjack.
+
+   The one game in this app played against nobody, which is exactly why it has
+   to move: a poker table has five other people supplying the drama, and a game
+   against a dealer has only what the screen does. These are short — this is
+   played in the gaps between hands of poker, and an animation you have to wait
+   out is one you resent by the tenth hand.                                   */
+
+/* A card off the shoe: in from the top right, landing flat with a little
+   settle. The stagger is per card and set inline, because a hand is dealt one
+   card at a time and they must not all land at once. */
+@keyframes bj-deal {
+  0%   { transform: translate(52px, -46px) rotate(14deg) scale(0.92); opacity: 0; }
+  70%  { transform: translate(0, 0) rotate(-2deg) scale(1.02); opacity: 1; }
+  100% { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+}
+
+.animate-bj-deal {
+  animation: bj-deal 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The hole card turning over. Squashed through the middle rather than a true
+   3D flip: the card is drawn by the same component the poker table uses, and
+   giving it a backface would mean two of them stacked. */
+@keyframes bj-flip {
+  0%   { transform: scaleX(1); }
+  50%  { transform: scaleX(0.06); }
+  100% { transform: scaleX(1); }
+}
+
+.animate-bj-flip {
+  animation: bj-flip 380ms ease-in-out both;
+}
+
+/* A chip going onto the bet. Drops from the player's side and bounces once,
+   which is what a chip does on felt. */
+@keyframes bj-chip {
+  0%   { transform: translateY(26px) scale(0.8); opacity: 0; }
+  60%  { transform: translateY(-4px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.animate-bj-chip {
+  animation: bj-chip 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* A hand that won: gold from underneath, twice, then gone. Not the jackpot
+   pulse the mystery bounty uses — that one runs three times and is meant to be
+   seen from across the room. This is a nod. */
+@keyframes bj-win {
+  0%, 100% { box-shadow: 0 0 0 rgb(var(--highlight-rgb) / 0); }
+  50%      { box-shadow: 0 0 26px 4px rgb(var(--highlight-rgb) / 0.5); }
+}
+
+.animate-bj-win {
+  animation: bj-win 700ms ease-in-out 2;
+}
+
+/* Going over. A short shake, the way a losing hand gets pushed away — no
+   colour change, because the label above it already says Bust and a red wash
+   over cards makes them harder to read at the moment you want to check them. */
+@keyframes bj-bust {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-5px); }
+  45%      { transform: translateX(4px); }
+  70%      { transform: translateX(-2px); }
+}
+
+.animate-bj-bust {
+  animation: bj-bust 340ms ease-in-out both;
+}
+
+/* What the hand paid, rising out of it. The only place a number moves in this
+   game, so it is the thing the eye goes to when the round settles. */
+@keyframes bj-payout {
+  0%   { transform: translateY(6px) scale(0.85); opacity: 0; }
+  35%  { transform: translateY(-2px) scale(1.1); opacity: 1; }
+  100% { transform: translateY(-10px) scale(1); opacity: 1; }
+}
+
+.animate-bj-payout {
+  animation: bj-payout 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* All of it is decoration over a game somebody is reading numbers off. With
+   motion reduced the cards and chips still arrive, they just stop travelling
+   to get there — and the shake, which is the one that would be unpleasant,
+   stops entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-bj-deal,
+  .animate-bj-chip,
+  .animate-bj-payout { animation: fade-in 0.12s ease-out both; }
+  .animate-bj-flip { animation: fade-in 0.12s ease-out both; }
+  .animate-bj-bust { animation: none; }
+}

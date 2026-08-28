@@ -6,6 +6,7 @@ import useGameStore from "../../store/gameStore";
 import useWalletStore from "../../store/walletStore";
 import Avatar from "../Avatar";
 import { recordLabel, sideBetState, stakeChoices } from "./sideBets";
+import useBlackjackStore from "../../store/blackjackStore";
 
 const DEFAULT_STAKE = 25;
 
@@ -28,7 +29,7 @@ const DEFAULT_STAKE = 25;
  * Sits in the felt's top-right corner — the spot the tournament info chip used
  * to occupy, and the one part of the table with nothing on it.
  */
-export default function SideBetPanel({ mySeat, myUserId }) {
+export default function SideBetPanel({ mySeat, myUserId, onOpenBlackjack = null, blackjackOpen = false }) {
   const players = useGameStore((s) => s.players);
   const bets = useGameStore((s) => s.sideBets);
   const open = useGameStore((s) => s.sideBetsOpen);
@@ -50,6 +51,11 @@ export default function SideBetPanel({ mySeat, myUserId }) {
     const mine = (results || []).find((one) => one.user_id === myUserId);
     if (mine?.balance != null) setBalance(mine.balance);
   }, [results, myUserId, setBalance]);
+
+  // A blackjack hand of yours that is still open. Worth saying on the button:
+  // the drawer shuts itself the moment the table needs you, and somebody who
+  // was mid-hand when that happened has no other way of knowing it is waiting.
+  const bjRound = useBlackjackStore((s) => s.round);
 
   const state = sideBetState({ players, mySeat, open, bets, results, myUserId });
   if (!state.mode) return null;
@@ -169,6 +175,34 @@ export default function SideBetPanel({ mySeat, myUserId }) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* The other thing there is to do while you are out of the hand. A side
+          bet is over when this hand is; blackjack is yours and lasts as long as
+          you want it to.
+
+          Under the side bet rather than beside it, because the bet is about the
+          hand in front of you and this is not about it at all. */}
+      {onOpenBlackjack && (
+        <button
+          type="button"
+          onClick={onOpenBlackjack}
+          aria-pressed={blackjackOpen}
+          title="Play a hand of blackjack while you wait"
+          className="w-full flex items-center gap-1.5 px-2.5 py-1.5 border-t
+                     border-(--color-border) text-[10px] font-semibold uppercase
+                     tracking-wide text-(--color-text-muted) hover:text-(--color-silver)
+                     transition-colors"
+        >
+          <Icon name="casino" className="w-3.5 h-3.5" tone="gold" />
+          Blackjack
+          {bjRound && (
+            <span className="ml-auto normal-case tracking-normal font-bold
+                             text-(--color-highlight-text)">
+              {bjRound.status === "finished" ? "settled" : "in play"}
+            </span>
+          )}
+        </button>
       )}
     </div>
   );

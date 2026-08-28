@@ -1,9 +1,10 @@
 """The side games, and what a wager on one is worth.
 
 A side game is something you play *at* the table without playing the hand:
-calling who wins the pot you folded out of, and blackjack against the dealer
-later. They have nothing in common mechanically, so what is shared is exactly
-this — an id, what a stake may be, and how a winning wager pays.
+calling who wins the pot you folded out of, and blackjack against the dealer.
+They have nothing in common mechanically — one is settled by somebody else's
+showdown and the other is a conversation with a deck — so what is shared is
+exactly this: an id, what a stake may be, and how a winning wager pays.
 
 Everything here is pure. A game is a description plus an arithmetic rule, and
 neither needs a database to be right.
@@ -46,7 +47,37 @@ PLAYER_BET = SideGame(
     payout=_player_bet_payout,
 )
 
-GAMES = {game.id: game for game in (PLAYER_BET,)}
+
+def _blackjack_payout(stake: int, _odds: int = 0) -> int:
+    """A blackjack hand that beats the dealer pays even money.
+
+    The other three outcomes cannot be expressed in this signature and are not
+    meant to be: a natural pays 3:2 and a push pays the stake back, and which of
+    them a hand got depends on the cards rather than on anything knowable when
+    the wager is placed. blackjack.returns_for is where a hand is actually paid.
+
+    This is here because a SideGame is a promise about a stake — what the
+    limits are and what an ordinary win is worth — and blackjack keeps that
+    promise like everything else on the shelf. The wallet endpoint serves the
+    limits from here so no client carries its own copy of 5 and 500.
+    """
+    return stake * 2
+
+
+BLACKJACK = SideGame(
+    id="blackjack",
+    name="Blackjack",
+    blurb="Beat the dealer to twenty-one. Blackjack pays 3:2, dealer stands on soft 17.",
+    min_stake=5,
+    max_stake=500,
+    payout=_blackjack_payout,
+)
+
+# The same ceiling as the player bet, deliberately, even though a split and a
+# double can each take another stake off the wallet: 500 is the most a player
+# can decide to risk in one action, and what they then choose to risk on top of
+# it is a decision they make with the cards in front of them.
+GAMES = {game.id: game for game in (PLAYER_BET, BLACKJACK)}
 
 
 def game_for(game_id: str) -> Optional[SideGame]:

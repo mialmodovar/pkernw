@@ -8,6 +8,7 @@ import FastGameBrowser from "../components/lobby/FastGameBrowser";
 import CashBrowser from "../components/lobby/CashBrowser";
 import NewCashTableModal from "../components/lobby/NewCashTableModal";
 import RealMoneyModal from "../components/lobby/RealMoneyModal";
+import CasinoRoom from "../components/lobby/CasinoRoom";
 import { isRealMoney } from "../components/lobby/buyIn";
 import Icon from "../components/icons/Icon";
 import {
@@ -387,7 +388,9 @@ export default function LobbyPage() {
           />
         )}
 
-        {activeRoom.cash ? (
+        {activeRoom.casino ? (
+          <CasinoRoom />
+        ) : activeRoom.cash ? (
           <CashBrowser />
         ) : activeRoom.formats ? (
           <FastGameBrowser

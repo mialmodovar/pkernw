@@ -9,6 +9,37 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A casino, and blackjack in it.** A third tab beside Tournaments and Cash,
+  and the first game in this app played against nobody: twenty-one against the
+  dealer, in coins, alone. Single deck, dealer stands on soft 17, blackjack pays
+  3:2, double on any two and split any pair — no re-splitting, and split aces
+  get one card each. Coins only and always: the euros in this app are debts
+  between people that it writes down and never touches, and a game against the
+  house for those would be the app taking money, which it does not do.
+
+  The bet is built out of chips — 5, 25 and 100 — because the amount is the
+  decision and a chip is a decision you can make with your thumb without looking
+  away from the felt. Cards land one at a time, chips drop onto the pile, a hand
+  that wins glows and one that busts shakes. The dealer's own cards are held
+  back and let out on a beat: the server settles the whole round in one reply,
+  so the wait is a fiction, and it is the fiction the game is made of — a dealer
+  on 16 reaching for one more card is the reason anybody watches.
+
+  The deck lives on the server and the hole card reaches the client as "??"
+  until the round is over. So does the round itself, which is what lets the same
+  hand be picked up in either of the two places it can be played, and what stops
+  closing the tab being a way out of a hand you have coins on.
+
+- **Blackjack at the poker table, for the hand you folded out of.** The side-bet
+  panel — which already appears exactly when you have nothing to do — now also
+  opens a hand of blackjack over the felt. It is the same round as the Casino
+  tab, so one can be started in the lobby and finished at a table.
+
+  It takes itself off the screen the moment the table needs you. No
+  confirmation and nothing to dismiss: poker is the game and blackjack is the
+  waiting, and a card game covering the buttons at a money table is how somebody
+  times out of a hand they had chips in. Nothing is lost by it closing, because
+  the hand is on the server and is still there when you fold again.
 - **A euro tournament says so before it takes your seat.** Almost everything in
   this app is played for coins, which are the app's own currency and cost
   nobody anything. A tournament played for money looked exactly like the rest —

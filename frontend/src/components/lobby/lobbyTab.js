@@ -24,8 +24,9 @@ export const TAB_KEY = "poker.lobbyTab";
  * and the kinds of tournament inside the tournament one.
  *
  * `formats` is which of the instant formats a room shows. Null on the scheduled
- * tab, which is the one place games are arranged rather than sat down at, and
- * on cash, which draws its own browser entirely.
+ * tab, which is the one place games are arranged rather than sat down at, on
+ * cash, which draws its own browser entirely, and on the casino, which is not
+ * poker at all.
  */
 export const LOBBY_TABS = [
   {
@@ -47,6 +48,23 @@ export const LOBBY_TABS = [
     // is nothing to divide it into: the stakes are the rooms, and the browser
     // draws them.
     rooms: [{ key: "cash", label: "Cash", icon: "coin", formats: null, cash: true }],
+  },
+  {
+    key: "casino",
+    label: "Casino",
+    icon: "casino",
+    // The third thing this app is, and the only one that is not poker: a game
+    // against the house, alone, in coins. It gets a tab of its own rather than
+    // a room inside the tournaments, because the tournaments tab is kinds of
+    // tournament and this is not one — and because the thing that makes it
+    // worth having is that it is somewhere to go while you wait, which means it
+    // has to be findable in one press from anywhere.
+    //
+    // Coins only, always. The euros in this app are debts between people that
+    // it writes down and never touches; a game played against the house for
+    // them would be the app taking money, which it does not do and must not
+    // start doing.
+    rooms: [{ key: "blackjack", label: "Blackjack", icon: "casino", formats: null, casino: "blackjack" }],
   },
 ];
 

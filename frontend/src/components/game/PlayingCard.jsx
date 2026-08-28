@@ -48,6 +48,18 @@ const SIZE = {
     corner: "text-[0.83rem]",
     cornerPip: "w-[0.7rem] h-[0.7rem]",
   },
+  // Blackjack. A hand is two cards and rarely more than four, and they are the
+  // whole of what there is to look at — where a poker board is five cards
+  // competing with eight seats and their cameras for the same felt. So they are
+  // drawn about twice the size, and they keep the corner index, which the board
+  // sizes have to drop for want of room.
+  hand: {
+    box: "w-[clamp(3rem,13cqw,4.6rem)] h-[clamp(4.2rem,18cqw,6.4rem)]",
+    rank: "text-[clamp(1.6rem,7cqw,2.4rem)]",
+    pip: "w-[clamp(1.3rem,5.6cqw,1.9rem)] h-[clamp(1.3rem,5.6cqw,1.9rem)]",
+    corner: "text-[clamp(0.6rem,2.5cqw,0.85rem)]",
+    cornerPip: "w-[clamp(0.5rem,2.1cqw,0.72rem)] h-[clamp(0.5rem,2.1cqw,0.72rem)]",
+  },
   seat: {
     box: "w-[clamp(1.52rem,4.97cqw,3.31rem)] h-[clamp(2.14rem,7.04cqw,4.69rem)]",
     rank: "text-[1.45rem]",

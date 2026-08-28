@@ -60,6 +60,43 @@ export function prizeLabel(tournament, entries) {
   return null;
 }
 
+/**
+ * Whether this is played for actual money.
+ *
+ * The one question worth asking before a seat is taken, and it has exactly one
+ * answer: a euro buy-in. Coins are the app's own currency and cost nobody
+ * anything real; euros are an agreement between people that this app writes
+ * down and never touches.
+ */
+export function isRealMoney(tournament) {
+  return (tournament?.buy_in_cents || 0) > 0;
+}
+
+/**
+ * What taking a seat here commits you to, for the dialog that asks.
+ *
+ * `cost` is the whole buy-in — the bounty is a slice of it rather than a
+ * surcharge on it (see TournamentCard, which subtracts one from the other to
+ * size the prize pool), so a dialog that added them would be asking somebody to
+ * agree to twice what they owe.
+ *
+ * `bounty` is that slice, named only when there is one: at a knockout night
+ * most of what you are paying for is not the places, and somebody deciding
+ * whether to sit should know which game they are buying into.
+ */
+export function realMoneyEntry(tournament) {
+  const cents = tournament?.buy_in_cents || 0;
+  const bounty = (tournament?.bounty_mode || "none") !== "none"
+    ? (tournament?.bounty_cents || 0)
+    : 0;
+  return {
+    cost: formatEurosPlain(cents),
+    // Bounded by the buy-in: a bounty larger than the entry is a misconfigured
+    // tournament, and the dialog should not repeat the mistake back as a fact.
+    bounty: bounty > 0 ? formatEurosPlain(Math.min(bounty, cents)) : null,
+  };
+}
+
 /** Whether this row is a Spin n Go, wherever that changes what is drawn. */
 export function isSpinGo(tournament) {
   return tournament?.format === "spingo";

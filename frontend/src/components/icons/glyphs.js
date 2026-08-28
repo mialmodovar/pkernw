@@ -128,6 +128,34 @@ export const GLYPHS = {
     ],
   },
 
+  /* The casino. Two cards fanned in one hand, which is the one picture that
+     says "a game of cards" without saying which game — and it has to, because
+     the tab holds the games nobody plays against anybody.
+
+     A fan rather than the pair the Sit n Go icon draws: those are two hands
+     facing each other across a table, these are two cards held by the same
+     person, and the difference between the drawings is the difference between
+     the two rooms. The pip is on the front card, the way it would be on the
+     only corner a fanned hand lets you see. */
+  casino: {
+    label: "Casino",
+    paths: [
+      // Behind, tilted the other way — the card you can only see the edge of.
+      {
+        d: "M7.3 5.6h5.6a1.3 1.3 0 0 1 1.3 1.3v7.8a1.3 1.3 0 0 1-1.3 1.3H7.3a1.3 1.3 0 0 1-1.3-1.3V6.9a1.3 1.3 0 0 1 1.3-1.3z",
+        kind: "line",
+        transform: "rotate(-20 10.1 10.8)",
+      },
+      // In front, and the one with the corner showing.
+      {
+        d: "M10.1 7.4h5.6a1.3 1.3 0 0 1 1.3 1.3v7.8a1.3 1.3 0 0 1-1.3 1.3h-5.6a1.3 1.3 0 0 1-1.3-1.3V8.7a1.3 1.3 0 0 1 1.3-1.3z",
+        kind: "line",
+        transform: "rotate(14 12.9 12.6)",
+      },
+      { d: "M12.9 11.2l1.3 1.6-1.3 1.6-1.3-1.6z", kind: "accent", transform: "rotate(14 12.9 12.6)" },
+    ],
+  },
+
   /* Sit n Go: two hands facing each other across the table, which is what a
      heads-up game looks like from above. Crossed sabres were the obvious
      drawing and the wrong one — at sixteen pixels they are an X, and the app

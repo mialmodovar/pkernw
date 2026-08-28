@@ -27,10 +27,20 @@ describe("tabToOpen", () => {
 });
 
 describe("the two levels", () => {
-  it("is tournaments and cash, and the kinds of tournament are inside one of them", () => {
-    expect(LOBBY_TABS.map((one) => one.key)).toEqual(["tournaments", "cash"]);
+  it("is the three things this app is, and the kinds of tournament are inside one", () => {
+    expect(LOBBY_TABS.map((one) => one.key)).toEqual(["tournaments", "cash", "casino"]);
     expect(LOBBY_TABS[0].rooms.map((one) => one.key))
       .toEqual(["scheduled", "spingo", "sitngo", "allinfold"]);
+  });
+
+  it("opens the casino on blackjack, and it is not a poker room", () => {
+    const { tab, room } = openTabs("casino:blackjack");
+    expect(tab.key).toBe("casino");
+    expect(room.casino).toBe("blackjack");
+    // The two things that tell the lobby which browser to draw. A casino room
+    // that answered to either of these would be drawn as poker.
+    expect(room.formats).toBe(null);
+    expect(room.cash).toBeUndefined();
   });
 
   it("opens exactly where somebody left off", () => {

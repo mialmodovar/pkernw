@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { buyInLabel, coinCount, formatCoins, isSpinGo, prizeLabel } from "./buyIn";
+import {
+  buyInLabel, coinCount, formatCoins, isRealMoney, isSpinGo, prizeLabel, realMoneyEntry,
+} from "./buyIn";
 
 describe("buyInLabel", () => {
   it("prints a euro buy-in as euros", () => {
@@ -66,5 +68,42 @@ describe("the coin figure", () => {
     for (const text of [formatCoins(50), buyInLabel({ buy_in_coins: 50 }), prizeLabel({ buy_in_coins: 50 }, 4)]) {
       expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
     }
+  });
+});
+
+describe("isRealMoney", () => {
+  it("is the euro buy-in and nothing else", () => {
+    expect(isRealMoney({ buy_in_cents: 2000 })).toBe(true);
+    // Coins are the app's own currency and cost nobody anything real, however
+    // many of them a game takes.
+    expect(isRealMoney({ buy_in_coins: 500 })).toBe(false);
+    expect(isRealMoney({ buy_in_cents: 0, buy_in_coins: 0 })).toBe(false);
+  });
+
+  it("survives a tournament that has not loaded", () => {
+    expect(isRealMoney(undefined)).toBe(false);
+    expect(isRealMoney(null)).toBe(false);
+  });
+});
+
+describe("realMoneyEntry", () => {
+  it("asks for the buy-in, not the buy-in plus its own bounty", () => {
+    // The bounty is a slice of the 20, so agreeing to this costs 20 — a dialog
+    // that added them would be asking for twice what is owed.
+    expect(realMoneyEntry({ buy_in_cents: 2000, bounty_mode: "fixed", bounty_cents: 500 }))
+      .toEqual({ cost: "20.00€", bounty: "5.00€" });
+  });
+
+  it("leaves the bounty out where the night has none", () => {
+    expect(realMoneyEntry({ buy_in_cents: 2000 })).toEqual({ cost: "20.00€", bounty: null });
+    expect(realMoneyEntry({ buy_in_cents: 2000, bounty_mode: "none", bounty_cents: 500 }))
+      .toEqual({ cost: "20.00€", bounty: null });
+  });
+
+  it("does not repeat a misconfigured bounty back as a fact", () => {
+    // A bounty bigger than the entry is a broken tournament. The dialog says
+    // the whole buy-in went on heads rather than a figure that cannot be true.
+    expect(realMoneyEntry({ buy_in_cents: 1000, bounty_mode: "mystery", bounty_cents: 9999 }))
+      .toEqual({ cost: "10.00€", bounty: "10.00€" });
   });
 });

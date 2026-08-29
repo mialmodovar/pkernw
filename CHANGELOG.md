@@ -9,6 +9,31 @@ remembering.
 ## Unreleased
 
 ### Added
+- **The blackjack table is shared.** Eight seats, one dealer, one shoe: you take
+  a chair and the cards that come out are the cards everybody else at the table
+  is looking at, settled against the same dealer hand. What makes it worth
+  having is not the blackjack, which is identical — it is that somebody else
+  busting is something you watched happen.
+
+  Everybody acts at the same time rather than in seat order. That is a real
+  departure from a casino floor and it is the decision that makes the table
+  playable at all: seat order means one player looking at their phone freezes
+  seven other people, and the cure for that is a per-seat clock nobody enjoys.
+  One window, everyone in it, and a seat that has not acted when it closes is
+  stood on what it has. A seat that does not bet for three windows is given up,
+  because eight chairs is few enough that holding one you are not playing is
+  taking it from somebody who would.
+
+  There is no worker behind it. The phase and the moment it ends are stored, and
+  every request works out what phase the table should be in and walks it forward
+  before answering — so a table nobody is looking at is idle rather than late,
+  and the next person to open it does the walking and pays out everything that
+  was owed. The client polls once a second, which is what the countdown needs
+  and less machinery than a socket for a screen that changes that slowly.
+
+  The solo game is unchanged and still what the poker table's drawer opens. A
+  twelve-second betting window you cannot join halfway is no use in the thirty
+  seconds between poker hands; that is what the solo game is for.
 - **A casino, and blackjack in it.** A third tab beside Tournaments and Cash,
   and the first game in this app played against nobody: twenty-one against the
   dealer, in coins, alone. Single deck, dealer stands on soft 17, blackjack pays

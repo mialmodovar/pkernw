@@ -1633,3 +1633,227 @@ class BlackjackApiTests(APITestCase):
 
         self.assertEqual(one.data["round"]["hands"][0]["cards"], ["2s", "3d", "4c"])
         self.assertEqual(two.data["round"]["hands"][0]["cards"], ["2s", "3d", "4c", "5h"])
+
+
+class BlackjackTableRulesTests(TestCase):
+    """The clock, with no database near it."""
+
+    def test_a_window_that_has_run_out_has_no_time_left_rather_than_negative(self):
+        from .blackjacktable import seconds_left
+
+        now = timezone.now()
+        self.assertAlmostEqual(seconds_left(now + timedelta(seconds=5), now), 5.0, places=1)
+        # A window closed a minute ago is not "minus sixty seconds to go": the
+        # client prints this, and a countdown that goes negative is a bug
+        # somebody screenshots.
+        self.assertEqual(seconds_left(now - timedelta(seconds=60), now), 0.0)
+
+    def test_betting_only_becomes_playing_when_a_round_was_actually_dealt(self):
+        from .blackjacktable import BETTING, PLAYING, SETTLING, phase_after
+
+        # Nobody bet, so there is nothing to play: the window comes round again.
+        self.assertEqual(phase_after(BETTING, dealt=False), BETTING)
+        self.assertEqual(phase_after(BETTING, dealt=True), PLAYING)
+        self.assertEqual(phase_after(PLAYING, dealt=True), SETTLING)
+        self.assertEqual(phase_after(SETTLING, dealt=True), BETTING)
+
+
+class BlackjackTableApiTests(APITestCase):
+    """Eight seats, one dealer, and the money that moves between them."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.ana = User.objects.create_user(username="bj_ana", password="x")
+        self.bea = User.objects.create_user(username="bj_bea", password="x")
+        self.client.force_authenticate(self.ana)
+
+    def _as(self, user):
+        self.client.force_authenticate(user)
+
+    def _balance(self, user):
+        from .economy import wallet_for
+
+        return wallet_for(user).balance
+
+    def _table(self):
+        from .blackjacktable import public_table
+
+        return public_table()
+
+    def _run_out(self):
+        """Close whatever window is open, without waiting for the clock."""
+        table = self._table()
+        table.phase_ends_at = timezone.now() - timedelta(seconds=1)
+        table.save(update_fields=["phase_ends_at"])
+
+    def test_the_table_is_eight_seats_whether_or_not_anybody_is_in_them(self):
+        response = self.client.get(reverse("blackjack-table"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        seats = response.data["table"]["seats"]
+        self.assertEqual([seat["seat"] for seat in seats], list(range(8)))
+        self.assertTrue(all(seat["player"] is None for seat in seats))
+        self.assertIsNone(response.data["table"]["my_seat"])
+
+    def test_a_seat_somebody_is_in_cannot_be_taken_by_anybody_else(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 3}, format="json")
+
+        self._as(self.bea)
+        response = self.client.post(reverse("blackjack-table-sit"), {"seat": 3}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # The refusal still draws the table, and it draws ana in the chair.
+        self.assertEqual(response.data["table"]["seats"][3]["player"]["username"], "bj_ana")
+        self.assertIsNone(response.data["table"]["my_seat"])
+
+    def test_one_player_holds_one_seat(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        response = self.client.post(reverse("blackjack-table-sit"), {"seat": 1}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["table"]["my_seat"], 0)
+
+    def test_a_bet_needs_a_seat_and_a_bet_within_the_limits(self):
+        response = self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        for amount in (1, 5000):
+            with self.subTest(amount=amount):
+                refused = self.client.post(
+                    reverse("blackjack-table-bet"), {"amount": amount}, format="json",
+                )
+                self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._balance(self.ana), SIGNUP_COINS)
+
+    def test_a_bet_is_taken_once_and_not_topped_up(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+
+        self.assertEqual(self._balance(self.ana), SIGNUP_COINS - 25)
+
+        second = self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._balance(self.ana), SIGNUP_COINS - 25)
+
+    def test_nobody_betting_rolls_the_window_over_rather_than_dealing(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self._run_out()
+
+        response = self.client.get(reverse("blackjack-table"))
+
+        self.assertEqual(response.data["table"]["phase"], "betting")
+        self.assertEqual(response.data["table"]["round"], 0)
+        self.assertGreater(response.data["table"]["ends_in"], 0)
+
+    def _deal_a_round(self):
+        """Both players seated and bet, and the betting window closed."""
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+        self._as(self.bea)
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 4}, format="json")
+        self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+        self._run_out()
+        return self.client.get(reverse("blackjack-table")).data["table"]
+
+    def test_everybody_is_dealt_against_the_same_dealer_hand(self):
+        table = self._deal_a_round()
+
+        self.assertEqual(table["phase"], "playing")
+        self.assertEqual(table["round"], 1)
+        played = [seat for seat in table["seats"] if seat["player"]]
+        self.assertEqual(len(played), 2)
+        for seat in played:
+            self.assertEqual(len(seat["hands"]), 1)
+            self.assertEqual(len(seat["hands"][0]["cards"]), 2)
+        # One dealer, one hole card, and the whole table settles against it.
+        self.assertEqual(len(table["dealer"]["cards"]), 2)
+        self.assertEqual(table["dealer"]["cards"][1], "??")
+
+    def test_the_shoe_and_the_hole_card_stay_on_the_server(self):
+        table = self._deal_a_round()
+
+        self.assertNotIn("deck", table)
+        self.assertEqual(table["dealer"]["cards"][1], "??")
+        # The total is of the up card alone. Sending the true one beside a
+        # hidden card gives the hole card away by subtraction.
+        real = self._table()
+        up_only, _ = blackjack.hand_value(real.dealer[:1])
+        self.assertEqual(table["dealer"]["total"], up_only)
+        self.assertFalse(table["dealer"]["blackjack"])
+
+    def test_only_your_own_seat_is_ever_offered_a_button(self):
+        table = self._deal_a_round()   # authenticated as bea, in seat 4
+
+        mine = next(seat for seat in table["seats"] if seat["seat"] == 4)
+        theirs = next(seat for seat in table["seats"] if seat["seat"] == 0)
+        self.assertTrue(any(mine["hands"][0]["can"].values()))
+        self.assertFalse(any(theirs["hands"][0]["can"].values()))
+
+    def test_a_seat_that_never_acts_is_stood_and_still_settles(self):
+        self._deal_a_round()
+        # Neither player touches a button; the playing window simply runs out.
+        self._run_out()
+
+        table = self.client.get(reverse("blackjack-table")).data["table"]
+
+        self.assertEqual(table["phase"], "settling")
+        for seat in [one for one in table["seats"] if one["player"]]:
+            self.assertIsNotNone(seat["hands"][0]["outcome"])
+        # And the dealer is face up now that there is nothing left to decide.
+        self.assertNotIn("??", table["dealer"]["cards"])
+
+    def test_a_round_pays_out_once_however_many_times_it_is_walked(self):
+        self._deal_a_round()
+        self._run_out()
+        self.client.get(reverse("blackjack-table"))
+        after_first = self._balance(self.bea)
+
+        for _ in range(3):
+            self.client.get(reverse("blackjack-table"))
+
+        self.assertEqual(self._balance(self.bea), after_first)
+
+    def test_acting_only_ever_touches_your_own_hand(self):
+        self._deal_a_round()
+        self._as(self.ana)
+        before = len(self.client.get(reverse("blackjack-table"))
+                     .data["table"]["seats"][4]["hands"][0]["cards"])
+
+        # There is no seat on the wire at all: acting is always on your own
+        # seat, which is the shape of the protection rather than a check.
+        self.client.post(reverse("blackjack-table-act"), {"action": "hit"}, format="json")
+
+        after = self.client.get(reverse("blackjack-table")).data["table"]
+        self.assertEqual(len(after["seats"][4]["hands"][0]["cards"]), before)
+        self.assertEqual(len(after["seats"][0]["hands"][0]["cards"]), 3)
+
+    def test_a_stranger_gets_nothing_from_the_table(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(
+            self.client.get(reverse("blackjack-table")).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_leaving_frees_the_chair(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 2}, format="json")
+        response = self.client.post(reverse("blackjack-table-leave"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["table"]["my_seat"])
+        self.assertIsNone(response.data["table"]["seats"][2]["player"])
+
+    def test_a_table_left_alone_for_hours_lands_somewhere_coherent(self):
+        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
+        table = self._table()
+        table.phase_ends_at = timezone.now() - timedelta(hours=3)
+        table.save(update_fields=["phase_ends_at"])
+
+        data = self.client.get(reverse("blackjack-table")).data["table"]
+
+        # Whatever it walked through, it is in a real phase with a real clock.
+        self.assertIn(data["phase"], ("betting", "playing", "settling"))
+        self.assertGreater(data["ends_in"], 0)
+        self.assertLessEqual(data["ends_in"], 20)

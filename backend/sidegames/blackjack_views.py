@@ -25,6 +25,7 @@ from rest_framework.response import Response
 
 from . import blackjack, blackjackbank
 from .economy import wallet_for
+from .models import BlackjackRound
 
 
 def _dealer_payload(round_, playing: bool) -> dict:
@@ -99,6 +100,53 @@ def round_payload(round_, balance: int):
     }
 
 
+# How many hands back the strip under the table remembers. Ten is a session's
+# worth at the pace this is played and it is what fits across a phone.
+HISTORY_LENGTH = 10
+
+
+def _result_of(round_) -> str:
+    """One word for how a finished round went, for the strip of last ten.
+
+    Read off the wallet rather than off the hands, because that is the question
+    the strip answers — did that hand cost me anything. A split where one hand
+    won and the other lost the same stake moved nothing, and calling it a win
+    because one of its halves won would make the row disagree with the balance
+    above it.
+
+    Blackjack comes first and is its own answer: it is a win that paid 3:2, and
+    a strip that showed it as an ordinary win would hide the best thing that
+    happens in this game. A natural is impossible after a split, so there is
+    never more than one of them in a round.
+    """
+    if any(hand.get("outcome") == blackjack.BLACKJACK for hand in round_.hands or []):
+        return blackjack.BLACKJACK
+    if round_.net > 0:
+        return blackjack.WIN
+    if round_.net < 0:
+        return blackjack.LOSE
+    return blackjack.PUSH
+
+
+def _history_payload(user) -> list:
+    """The last ten finished rounds, newest first.
+
+    Served on every reply rather than from an endpoint of its own: every one of
+    these six requests can finish a round, and a strip that had to be fetched
+    separately would be a second request after each hand to say what the first
+    one already knew.
+    """
+    rounds = (
+        BlackjackRound.objects
+        .filter(user=user, status=blackjack.FINISHED)
+        .order_by("-finished_at", "-id")[:HISTORY_LENGTH]
+    )
+    return [
+        {"id": one.id, "result": _result_of(one), "net": one.net, "stake": one.stake}
+        for one in rounds
+    ]
+
+
 def _respond(user, result):
     """One answer shape for all six endpoints.
 
@@ -114,10 +162,15 @@ def _respond(user, result):
                 "error": result,
                 "round": round_payload(blackjackbank.open_round(user), balance),
                 "balance": balance,
+                "history": _history_payload(user),
             },
             status=400,
         )
-    return Response({"round": round_payload(result, balance), "balance": balance})
+    return Response({
+        "round": round_payload(result, balance),
+        "balance": balance,
+        "history": _history_payload(user),
+    })
 
 
 @api_view(["GET"])
@@ -133,6 +186,9 @@ def blackjack_round(request):
     return Response({
         "round": round_payload(blackjackbank.open_round(request.user), balance),
         "balance": balance,
+        # Arriving at the table with the last ten already on it, so a player who
+        # closed the tab mid-session does not come back to an empty strip.
+        "history": _history_payload(request.user),
     })
 
 

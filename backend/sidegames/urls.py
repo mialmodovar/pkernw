@@ -1,5 +1,12 @@
 from django.urls import path
 
+from .blackjacktable_views import (
+    blackjack_table,
+    blackjack_table_act,
+    blackjack_table_bet,
+    blackjack_table_leave,
+    blackjack_table_sit,
+)
 from .blackjack_views import (
     blackjack_deal,
     blackjack_double,
@@ -27,4 +34,11 @@ urlpatterns = [
     path("blackjack/stand/", blackjack_stand, name="blackjack-stand"),
     path("blackjack/double/", blackjack_double, name="blackjack-double"),
     path("blackjack/split/", blackjack_split, name="blackjack-split"),
+    # The shared table. Under the same prefix as the solo game because it is
+    # the same game and the same coins; the segment is what tells them apart.
+    path("blackjack/table/", blackjack_table, name="blackjack-table"),
+    path("blackjack/table/sit/", blackjack_table_sit, name="blackjack-table-sit"),
+    path("blackjack/table/leave/", blackjack_table_leave, name="blackjack-table-leave"),
+    path("blackjack/table/bet/", blackjack_table_bet, name="blackjack-table-bet"),
+    path("blackjack/table/act/", blackjack_table_act, name="blackjack-table-act"),
 ]

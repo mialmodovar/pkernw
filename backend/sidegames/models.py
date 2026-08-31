@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Wallet(models.Model):
@@ -174,3 +175,123 @@ class BlackjackRound(models.Model):
 
     def __str__(self):
         return f"{self.user.username} blackjack #{self.id} ({self.status})"
+
+
+class BlackjackTable(models.Model):
+    """The shared table: one row, one clock, one deck, eight seats.
+
+    A solo round is a conversation between one player and a deck, and it can
+    live on a row that only moves when that player presses something. A shared
+    table cannot: eight people are watching the same cards, and the thing they
+    are all waiting for — the betting window closing, the dealer turning over —
+    has to happen whether or not any particular one of them is looking.
+
+    The obvious way to do that is a worker that ticks. This does not have one.
+    The phase and the moment it ends are both stored here, and every request
+    works out from `phase_ends_at` what phase the table *should* be in and walks
+    it forward before answering — see blackjacktable.advance. A table nobody is
+    looking at is not late, it is simply idle: the next person to open it does
+    the walking, possibly through several phases at once, and everything that
+    was owed gets paid at that moment rather than never.
+
+    That is also why the deck is here rather than on the seats. There is one
+    deck for the whole table and one dealer hand for the whole table, which is
+    the entire point of the exercise — every seat settles against the same two
+    cards, and a seat that kept its own deck would be eight solo games sitting
+    near each other. As on BlackjackRound next door, the undealt remainder never
+    leaves the server: blackjacktable_views builds the payload field by field so
+    that the hole card and the rest of the shoe cannot ride out on a response.
+
+    `key` exists so this is a table rather than the table. Only "main" is served
+    today, but a second row is a second table with its own clock, and every memo
+    written for money carries the table id for exactly that reason.
+    """
+
+    BETTING = "betting"
+    PLAYING = "playing"
+    SETTLING = "settling"
+    PHASES = [(BETTING, "Betting"), (PLAYING, "Playing"), (SETTLING, "Settling")]
+
+    key = models.CharField(max_length=32, unique=True, default="main")
+    phase = models.CharField(max_length=10, choices=PHASES, default=BETTING)
+    # When the current window closes. Stored rather than derived from a start
+    # time and a duration, because the durations differ per phase and because a
+    # window that was restarted early — see advance — has no start worth keeping.
+    #
+    # It defaults to *now*, which means a table that has just been created is
+    # already expired and the first request to touch it opens a proper betting
+    # window. One less special case than a nullable column that every reader
+    # would have to test for.
+    phase_ends_at = models.DateTimeField(default=timezone.now)
+    # Rounds dealt, ever. The client needs it to tell one round's cards from the
+    # next's — two consecutive hands of twenty against a dealer twenty look
+    # identical otherwise — and the money memos are filed under it.
+    round_number = models.IntegerField(default=0)
+    deck = models.JSONField(default=list, blank=True)
+    # Both dealer cards, always, from the moment they are dealt. The hiding is
+    # done on the way out and never by leaving a card unrecorded, so that the
+    # dealer's hand is one thing rather than one thing plus a promise.
+    dealer = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"blackjack table {self.key} ({self.phase} #{self.round_number})"
+
+
+class BlackjackSeat(models.Model):
+    """One player's place at the shared table, and what they have on it.
+
+    A row exists only while somebody is sitting in the seat: leaving deletes it,
+    and the eight slots a client draws are made up from the rows that are there.
+    That makes the two unique constraints below the whole of the seating rule,
+    and they are constraints rather than checks because both of the things they
+    forbid are races. Two people press seat 3 in the same tenth of a second, and
+    the loser must be told the seat has gone rather than quietly sharing it.
+
+    `hands` is a list because a split makes two of them, and it is exactly the
+    solo game's shape — see BlackjackRound — so that blackjack.settle can be
+    handed every hand at the table at once and settle all of them against the
+    one dealer hand. There is no `active` column: hands are played in order and
+    only ever leave "playing" for good, so the hand being played is the first
+    one still playing and is worked out rather than stored, which is one fewer
+    number that can disagree with the cards.
+
+    `idle_rounds` is how a seat somebody has walked away from comes free again.
+    Eight seats is few enough that holding one you are not playing is taking it
+    from somebody who would.
+    """
+
+    table = models.ForeignKey(BlackjackTable, on_delete=models.CASCADE, related_name="seats")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="blackjack_seats",
+    )
+    seat = models.IntegerField()
+    # The opening stake for this round, and zero between rounds. A doubled or
+    # split hand carries its own larger figure inside `hands`; this is what the
+    # seat sat down for, which is what the other seven players get to see.
+    bet = models.IntegerField(default=0)
+    hands = models.JSONField(default=list, blank=True)
+    # What this round moved this seat's wallet by, once it has been settled.
+    # Stored rather than summed on demand for the same reason BlackjackRound.net
+    # is: it is the number the player actually reads.
+    net = models.IntegerField(default=0)
+    # Betting windows in a row that closed without a bet from this seat.
+    idle_rounds = models.IntegerField(default=0)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["seat"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["table", "seat"], name="one_player_per_blackjack_seat",
+            ),
+            # One seat each. Without it a player could sit twice and play two
+            # hands against the dealer for the price of one seat's attention,
+            # which is a different game from the one on offer.
+            models.UniqueConstraint(
+                fields=["table", "user"], name="one_blackjack_seat_per_player",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} in seat {self.seat}"

@@ -363,6 +363,35 @@ export function dealerLine(round, revealed = true) {
 }
 
 /**
+ * One hand of the last ten, as a mark on the strip.
+ *
+ * A letter rather than a word: ten of them have to fit across a phone, and the
+ * strip is read as a shape — three reds in a row — before any of it is read as
+ * text. The full story goes in the tooltip, where there is room for it.
+ *
+ * Blackjack gets its own mark rather than counting as a win. It paid 3:2 and it
+ * is the best thing that happens in this game; a strip that flattened it into a
+ * W would be hiding the only rows anybody wants to point at.
+ */
+export function historyMark(row) {
+  const net = Number(row?.net) || 0;
+  const figure = net > 0 ? `+${coins(net)}` : net < 0 ? `-${coins(Math.abs(net))}` : null;
+  const MARKS = {
+    blackjack: { label: "BJ", tone: "blackjack", word: "Blackjack" },
+    win: { label: "W", tone: "win", word: "Won" },
+    lose: { label: "L", tone: "lose", word: "Lost" },
+    push: { label: "P", tone: "push", word: "Push" },
+  };
+  const mark = MARKS[row?.result] || MARKS.push;
+  return {
+    ...mark,
+    // "Won · +50", or just "Push": a hand that moved nothing has no figure to
+    // give, and "Push · 0" reads as a number somebody should care about.
+    title: figure ? `${mark.word} \u00b7 ${figure}` : mark.word,
+  };
+}
+
+/**
  * Whether the blackjack drawer should be on screen over a poker table.
  *
  * The one rule in this feature that can cost somebody real money, so it is a

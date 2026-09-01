@@ -52,7 +52,13 @@ export default function SitDownModal({ table, balance, busy, error, onSit, onClo
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
       onClick={onClose}>
-      <div className="panel rounded-xl w-full max-w-md shadow-2xl shadow-black/70"
+      {/* Capped and scrollable. A centred flex item taller than the viewport
+          overflows a `fixed inset-0` box equally at top and bottom, and that
+          box does not scroll — so on a short screen (a phone in landscape, or
+          a small window) the buy-in this dialog exists to confirm was simply
+          off the bottom with no way to reach it. */}
+      <div className="panel rounded-xl w-full max-w-md shadow-2xl shadow-black/70
+                      max-h-[88dvh] overflow-y-auto overscroll-contain"
         onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 px-4 py-3
                         border-b border-(--color-border)">

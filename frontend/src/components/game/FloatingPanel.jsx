@@ -53,8 +53,12 @@ const CORNERS = [
   { id: "br", className: "bottom-0 right-0 cursor-nwse-resize" },
 ];
 
+// `tap-target` because this panel is not desktop-only: useCompactLayout flips
+// at 767px, so every tablet between there and 1024 gets the draggable version
+// of the chat with these 20px controls on it. The class only draws its wider
+// box where there is no pointer to aim with — see index.css.
 const ICON_BTN =
-  "shrink-0 w-5 h-5 flex items-center justify-center rounded text-[10px] leading-none " +
+  "shrink-0 w-5 h-5 tap-target flex items-center justify-center rounded text-[10px] leading-none " +
   "text-(--color-text-muted) hover:text-(--color-silver) hover:bg-white/10 transition-colors";
 
 export default function FloatingPanel({
@@ -290,7 +294,7 @@ export default function FloatingPanel({
           onPointerCancel={endGesture}
           role="separator"
           aria-label={`Resize ${title}`}
-          className={`absolute w-4 h-4 touch-none ${corner.className}`}
+          className={`absolute w-6 h-6 touch-none ${corner.className}`}
         />
       ))}
     </div>

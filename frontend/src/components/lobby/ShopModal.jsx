@@ -46,7 +46,7 @@ export default function ShopModal({ onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="panel rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl shadow-black/70"
+        className="panel rounded-xl w-full max-w-md max-h-[85dvh] flex flex-col shadow-2xl shadow-black/70"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-(--color-border)">

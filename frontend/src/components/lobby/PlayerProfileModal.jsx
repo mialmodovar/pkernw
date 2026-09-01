@@ -262,7 +262,7 @@ export default function PlayerProfileModal({ username, onClose, onFriendshipChan
     >
       <div
         className="panel panel-solid rounded-xl w-full max-w-sm p-4 shadow-2xl shadow-black/60
-                   max-h-[85vh] overflow-y-auto"
+                   max-h-[85dvh] overflow-y-auto"
         onClick={(event) => event.stopPropagation()}
       >
         {error && <p className="text-sm text-(--color-accent-link)">{error}</p>}

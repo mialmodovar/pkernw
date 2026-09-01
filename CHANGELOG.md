@@ -283,6 +283,40 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **Your chips sit in front of you again.** On a phone a bet was drawn about
+  halfway to the pot rather than in front of the player who made it. Nine-handed
+  that put your own chips very nearly as far from your face as from the two
+  players either side of you — 115 points from yours, 129 from theirs — which is
+  why a bet on a phone so often looked like somebody else's.
+
+  Two causes, and the second is the one that made it strange rather than merely
+  far. `BET_INSET` was a share of the frame's HEIGHT with no phone variant: a
+  quarter of a tall narrow table is 115 to 180 points, while clearing your own
+  seat needs about 50, so on a phone the intended rule never once decided
+  anything and a "never cross the middle" backstop decided everything instead.
+  And a seat the board had crowded out was "parked" beside its owner by a rule
+  that moved it sideways and inward at the same time — which, three seats round
+  from the bottom, set the chips down 30 points from the NEXT player's face and
+  57 from their owner's.
+
+  Underneath both: the felt was being measured against a frame 26 to 60 per cent
+  taller than any a phone can produce, so every constant tuned against it was
+  tuned against a table that does not exist.
+
+  Now every seat works out how far it can go from four ceilings — clear of my
+  own box, off the board, never past the middle, and never nearer somebody
+  else's face than my own — and takes the smallest. The last of those is what
+  made the parking rule unnecessary: there is nowhere good to shove chips when
+  the felt is full, so they stop short instead. The roomier seats are then held
+  back to keep the ring even, so a row of bets reads as one kind of thing rather
+  than four. Where a phone genuinely cannot give a seat clear felt — nine-handed
+  the seats overlap each other before a single chip is drawn — the chips lie
+  over their owner's own cards, and are now drawn behind the seat rather than
+  across it.
+
+  Bets also fly the right way now. The throw animation started on the pot side
+  and settled outward, so every bet at the table was thrown from the pot to the
+  player instead of from the player to the pot.
 - **The table stops dying halfway through a tournament.** A page at a full table
   with the cameras on would go, with no action to blame, and come back fine on a
   reload. The cause was a disagreement about who belongs in the camera mesh: a

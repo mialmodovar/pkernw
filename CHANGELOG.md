@@ -328,70 +328,18 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
-- **The action panel fits on a tablet.** Between about 768 and 1600 points wide
-  the three buttons that decide a hand were being squeezed to nothing: at 1024
-  they were roughly twenty points each, and at 1280 — an ordinary laptop —
-  "Call 12,400" was already cut in half. Two rules disagreeing. The panel's
-  width is capped at half the felt less a seat, which is a share of the WINDOW,
-  so it only ever reached the width it asks for on a monitor 1600 points across.
-  Meanwhile the panel switched to its two-column layout on the window as well,
-  at exactly the size where that cap had made it narrowest. The cap now has a
-  floor under it, and the layout asks the panel how wide IT is rather than
-  asking the window — which is the same argument the type on those buttons has
-  used all along.
-
-  On a phone, nothing in the betting bar was big enough to hit: the commit
-  buttons stood about 38 points tall, the little plus and minus beside the
-  slider 32 by 26, and the slider itself 24. All of them are 44 now, which is
-  the smallest a thumb can be relied on to find, and the slider is drawn with a
-  knob you can see. Everywhere else these keep the sizes they had.
-
-  Also on a phone: text fields no longer zoom the page in and leave it there.
-  That rule existed but only covered the settings window — never the chat field
-  or the raise field, which are the two on the critical path, so typing one
-  message between hands left the felt magnified with the buttons off the edge.
-  The bar below the felt now clears the home indicator, which needed one missing
-  attribute on the viewport tag; the banners across the top can wrap instead of
-  pushing their own button off the screen; the three icon buttons above the
-  felt have names for a screen reader and a hit area for a finger; the lobby's
-  three tabs fit a 360-point screen; the buy-in and new-table dialogs can be
-  scrolled on a short screen instead of putting their confirm button out of
-  reach; and the instant-game rows give the prize back the width two fixed
-  columns were taking.
-- **Your chips sit in front of you again.** On a phone a bet was drawn about
-  halfway to the pot rather than in front of the player who made it. Nine-handed
-  that put your own chips very nearly as far from your face as from the two
-  players either side of you — 115 points from yours, 129 from theirs — which is
-  why a bet on a phone so often looked like somebody else's.
-
-  Two causes, and the second is the one that made it strange rather than merely
-  far. `BET_INSET` was a share of the frame's HEIGHT with no phone variant: a
-  quarter of a tall narrow table is 115 to 180 points, while clearing your own
-  seat needs about 50, so on a phone the intended rule never once decided
-  anything and a "never cross the middle" backstop decided everything instead.
-  And a seat the board had crowded out was "parked" beside its owner by a rule
-  that moved it sideways and inward at the same time — which, three seats round
-  from the bottom, set the chips down 30 points from the NEXT player's face and
-  57 from their owner's.
-
-  Underneath both: the felt was being measured against a frame 26 to 60 per cent
-  taller than any a phone can produce, so every constant tuned against it was
-  tuned against a table that does not exist.
-
-  Now every seat works out how far it can go from four ceilings — clear of my
-  own box, off the board, never past the middle, and never nearer somebody
-  else's face than my own — and takes the smallest. The last of those is what
-  made the parking rule unnecessary: there is nowhere good to shove chips when
-  the felt is full, so they stop short instead. The roomier seats are then held
-  back to keep the ring even, so a row of bets reads as one kind of thing rather
-  than four. Where a phone genuinely cannot give a seat clear felt — nine-handed
-  the seats overlap each other before a single chip is drawn — the chips lie
-  over their owner's own cards, and are now drawn behind the seat rather than
-  across it.
-
-  Bets also fly the right way now. The throw animation started on the pot side
-  and settled outward, so every bet at the table was thrown from the pot to the
-  player instead of from the player to the pot.
+- **A few things on a phone that were out of reach.** The lobby's three tabs no
+  longer push each other off a 360-point screen — there are three of them now
+  where the layout was written for two, so they are allowed to shrink and let
+  the icon carry the name. The buy-in dialog and the new-cash-table dialog can
+  be scrolled on a short screen: both were centred boxes with no height limit
+  inside a frame that does not scroll, so on a phone in landscape the confirm
+  button was simply below the bottom of the screen with no way to reach it.
+  Four more dialogs measure themselves against the visible screen rather than
+  the theoretical one, which is the difference a browser's own toolbars make.
+  And an instant-game row gives the prize back the width two fixed columns were
+  taking, which on a phone had left the number you read the row for with about
+  sixty points to fit in.
 - **The table stops dying halfway through a tournament.** A page at a full table
   with the cameras on would go, with no action to blame, and come back fine on a
   reload. The cause was a disagreement about who belongs in the camera mesh: a

@@ -113,13 +113,6 @@ body {
   background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--app-glow), transparent),
     var(--app-bg);
   min-height: 100vh;
-  /* The other half of viewport-fit=cover, which index.html sets so that
-     .pb-safe can see the home indicator. Covering the viewport also means the
-     page runs under the notch, and in landscape on a notched phone the notch is
-     down one SIDE — so the felt's left rail, or a seat sitting on it, would go
-     behind it. Zero on every phone held upright and on every desktop. */
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
 }
 
 /* Note the backdrop-filter: it makes every .panel a stacking context. Anything
@@ -262,14 +255,8 @@ button:disabled {
    148,600" was cut off by thirty pixels. Sized against the panel, a button and
    the words on it grow and shrink together, which is the only relationship
    between them that can hold. */
-/* The betting bar measures itself, so the buttons on it can be sized against
-   the room they actually have rather than against the window — see
-   betBarSizing.js, which sizes the type in cqw for exactly this reason.
-   Named, because the layout now asks the same question the type does
-   (`@[40rem]/panel:`) and an unnamed container cannot be addressed. */
 .bet-bar {
   container-type: inline-size;
-  container-name: panel;
 }
 
 /* The table area measures itself, so the felt can be told to fit inside it. */
@@ -324,27 +311,16 @@ button:disabled {
   }
 }
 
-/* iOS zooms the whole page in when a control smaller than 16px is focused, and
-   then leaves it zoomed. This was written for the settings window, where every
-   select and text field is 12px, which is right for the layout and wrong for
-   the phone. But the settings window was never where it hurt: there are two
-   dozen other input sites under 16px, and the two on the critical path are the
-   table chat field and the raise field. Typing one message between hands left
-   the felt magnified with the action panel off the right-hand edge, and there
-   is no gesture that puts it back before the next deal. So the rule belongs to
-   the app rather than to a list of windows.
-
-   To 767px rather than 639px, which is where the phone layout ends — see
-   useCompactLayout — because a 600px-wide phone browser zooms exactly like a
-   400px one.
-
-   Colour wells, boxes, radios and sliders are left out: they carry no text for
-   a font size to apply to, and on a range input the font size is what the
-   browser measures the thumb against. */
-@media (max-width: 767px) {
-  input:not([type="color"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select,
-  textarea {
+/* The one thing the utilities cannot say for the settings window — see
+   components/SettingsWindow.jsx. */
+@media (max-width: 639px) {
+  /* iOS zooms the whole page in when a control smaller than 16px is focused,
+     and then leaves it zoomed. Every select and text field in here is 12px,
+     which is right for the layout and wrong for the phone; the window runs the
+     full width of a phone screen and can carry them at full size instead. */
+  .settings-window input:not([type="color"]):not([type="checkbox"]):not([type="range"]),
+  .settings-window select,
+  .settings-window textarea {
     font-size: 16px;
   }
 }
@@ -361,60 +337,6 @@ button:disabled {
     content: "";
     position: absolute;
     inset: -0.5rem;
-  }
-}
-
-/* The raise slider, on the screen where it is dragged with a thumb rather than
-   pointed at with a cursor.
-
-   The native control is a four-pixel rail with a sixteen-pixel knob on it. That
-   is aimable with a mouse and hopeless with a finger, and this is the control
-   that decides how much money goes in. The input's own box is made 44px tall in
-   ActionPanel — a range input drags from anywhere inside its box, so that alone
-   is the touch target — and this draws a knob big enough to see where it is.
-
-   Turning appearance off is what it costs: the filled half of the track goes
-   with it, along with the accent-color theming above, so the rail is drawn flat
-   and the knob carries the colour. Only on the phone, and only in the betting
-   bar, because everywhere else the small native control is the right one. */
-@media (max-width: 767px) {
-  .bet-bar input[type="range"] {
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent;
-  }
-
-  .bet-bar input[type="range"]::-webkit-slider-runnable-track {
-    height: 0.375rem;
-    border-radius: 999px;
-    background: var(--color-border-strong);
-  }
-
-  .bet-bar input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 1.75rem;
-    height: 1.75rem;
-    /* Half the difference between the two, so the knob sits on the rail rather
-       than hanging off the top of it. */
-    margin-top: -0.6875rem;
-    border-radius: 999px;
-    background: var(--color-highlight-bright);
-    border: 1px solid var(--color-highlight-deeper);
-  }
-
-  .bet-bar input[type="range"]::-moz-range-track {
-    height: 0.375rem;
-    border-radius: 999px;
-    background: var(--color-border-strong);
-  }
-
-  .bet-bar input[type="range"]::-moz-range-thumb {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 999px;
-    background: var(--color-highlight-bright);
-    border: 1px solid var(--color-highlight-deeper);
   }
 }
 

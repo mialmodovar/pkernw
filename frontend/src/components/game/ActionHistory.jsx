@@ -13,11 +13,7 @@ export default function ActionHistory({ onReview }) {
     <button
       onClick={onReview}
       title="Replay the last few completed hands"
-      // Below md the label is gone and the glyph is aria-hidden, which left the
-      // button with no accessible name at all — and a title says nothing to a
-      // finger. `tap-target` widens the hit area without moving the ink.
-      aria-label="Hand history"
-      className="btn-secondary tap-target shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
+      className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
                  rounded text-xs font-semibold transition-colors"
     >
       <HistoryIcon />

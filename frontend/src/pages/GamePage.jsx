@@ -14,7 +14,6 @@ import StartCountdown from "../components/game/StartCountdown";
 import RebuyPrompt from "../components/game/RebuyPrompt";
 import useSandboxStore from "../dev/sandboxStore";
 import PokerTable from "../components/game/PokerTable";
-import { PANEL_WIDTH_FLOOR } from "../components/game/betBarSizing";
 import ActionPanel from "../components/game/ActionPanel";
 import BlindLevelBar, { DisplayToggles } from "../components/game/BlindLevelBar";
 import ActionHistory from "../components/game/ActionHistory";
@@ -386,7 +385,7 @@ export default function GamePage() {
           one, which is most of the time. */}
       {!sandbox && <TableTabs currentId={Number(id)} />}
       {watching != null && (
-        <div className="px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-3 border-b
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
           <span>Watching table {currentTableNumber ?? watching} — you are not in this hand.</span>
           {/* The one control the rail gets. Being seen is a choice like it is
@@ -403,7 +402,7 @@ export default function GamePage() {
       {/* The tournament is over and the table is only still up so the last hand
           can be seen. Say so, and let anyone who has seen enough move on. */}
       {standings && !standingsReady && (
-        <div className="px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-3 border-b
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-(--color-highlight-dim) border-(--color-highlight-edge) text-(--color-highlight-pale)">
           <span>That's the tournament — final hand.</span>
           <button
@@ -415,7 +414,7 @@ export default function GamePage() {
         </div>
       )}
       {myEliminationFinish && spectating && (
-        <div className="px-4 py-2 text-sm flex flex-wrap items-center justify-center gap-3 border-b
+        <div className="px-4 py-2 text-sm flex items-center justify-center gap-3 border-b
                         bg-[#3a1016] border-[rgba(196,178,165,0.25)] text-[#e3cdd1]">
           <span>You are out — spectating.</span>
           <button
@@ -500,9 +499,7 @@ export default function GamePage() {
             onClick={() => setInfoOpen((was) => !was)}
             title="Blinds, payouts, stacks and knockouts"
             aria-expanded={infoOpen}
-            // See ActionHistory: below md there is no label and no name.
-            aria-label="Table info"
-            className={`shrink-0 tap-target flex items-center gap-1.5 ml-1 md:ml-2 px-2 md:px-3 py-1 rounded
+            className={`shrink-0 flex items-center gap-1.5 ml-1 md:ml-2 px-2 md:px-3 py-1 rounded
                         text-xs font-semibold transition-colors ${infoOpen ? "btn-accent" : "btn-secondary"}`}
           >
             <InfoIcon />
@@ -513,8 +510,7 @@ export default function GamePage() {
             <button
               onClick={() => navigate(`/tournament/${id}`)}
               title="This tournament's lobby"
-              aria-label="Tournament lobby"
-              className="btn-secondary tap-target shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
+              className="btn-secondary shrink-0 flex items-center gap-1.5 px-2 md:px-3 py-1
                          rounded text-xs font-semibold transition-colors"
             >
               <LobbyIcon />
@@ -637,16 +633,8 @@ export default function GamePage() {
               // Half the felt less the widest a seat gets, so the panel stops
               // where the hero's own box begins. It used to be allowed the
               // whole width and took the seat below it with it.
-              //
-              // With a floor under it now. That cap is a share of the VIEWPORT,
-              // so it gave the panel 256px at 768 and 384px at 1024 and only
-              // reached the 42rem the panel asks for on a 1600px monitor — a
-              // laptop was cutting "Call 12,400" in half. Below the floor the
-              // panel is allowed to reach a little way over the seat under it,
-              // which is a much smaller sin than a button that will not say
-              // what it does. See PANEL_WIDTH_FLOOR.
-              <div className={`absolute bottom-2 right-2 z-20 w-max
-                              ${PANEL_WIDTH_FLOOR} scale-95 origin-bottom-right`}>
+              <div className="absolute bottom-2 right-2 z-20 w-max
+                              max-w-[calc(50%-8rem)] scale-95 origin-bottom-right">
                 {actionPanel()}
               </div>
             )}

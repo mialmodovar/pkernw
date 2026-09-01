@@ -11,10 +11,15 @@ const SHOWN = 6;
  * are the people you play with, which is the actual question anybody scanning a
  * lobby is asking. Same faces as the watch panel, so a player looks the same
  * wherever they turn up.
+ *
+ * `max` is how many get drawn before the rest become "+N". Six is right where
+ * the faces have a row to themselves; a lobby row on a phone shares its middle
+ * column with a club chip and two tag chips and can afford three, and three
+ * faces plus "+20" still answers the question the count alone cannot.
  */
-export default function PlayerFaces({ players = [], size = "w-6 h-6" }) {
+export default function PlayerFaces({ players = [], size = "w-6 h-6", max = SHOWN }) {
   if (players.length === 0) return null;
-  const shown = players.slice(0, SHOWN);
+  const shown = players.slice(0, Math.max(1, max));
   const rest = players.length - shown.length;
 
   return (

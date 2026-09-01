@@ -181,6 +181,30 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **A tournament row you can read at a glance.** The line under a tournament's
+  name had grown to eleven facts joined by dots, inside a paragraph marked
+  `truncate` — which means it never wrapped, whatever the comment above it
+  claimed. It was cut off. A running club knockout produced about 394 points of
+  text into the 332 a phone has, and the part that fell off the end was
+  `late reg 8:20`: the one fact on the card you could still act on. The name
+  itself was down to about 130 points, so anything longer than twenty characters
+  was clipped as well, and the row broke into three ragged lines about 125
+  points tall — four tournaments to a screen.
+
+  It is a grid now, two rows and three columns, and the answer to "when" has a
+  fixed rail of its own on the left where nothing can push it off: a countdown
+  before it starts, how long it has been running, or your finishing place once
+  it is over. The name gets the whole middle column. Money is one right-hand
+  column without the little headings. What is left of the facts became at most
+  a handful of chips, capped in code rather than by luck — so no future fact can
+  quietly break the row again — and the ones that were noise are gone: the table
+  size, how many places pay, a registration count the faces beside it already
+  gave, and the host, whose name the search box still matches.
+
+  Finished tournaments get their own shape rather than paying for a status pill
+  and a buy-in price for a game nobody can enter. And a day is no longer able to
+  head two sections at once: a night that finished this afternoon and one that
+  starts this evening used to produce two sticky headings both reading "Today".
 - **The lobby's icons say what they open.** On a phone the panels above the
   games collapse to a row of buttons, which is the right shape — but they were
   six bare glyphs, and four of them were drawn for something else. Missions was

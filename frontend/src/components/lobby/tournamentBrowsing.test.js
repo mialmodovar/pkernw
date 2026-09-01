@@ -167,6 +167,36 @@ describe("groupByDay", () => {
     expect(groups.map((g) => g.label)).toEqual(["Yesterday", "Today", "Tomorrow"]);
   });
 
+  it("does not head two sections of the same day with the same word", () => {
+    // A night that finished this afternoon and one that starts this evening are
+    // two groups, and both headings are sticky. Both said "Today", one above
+    // the other with a list in between — so scrolling down the past you were
+    // reading history under a heading that read like the future.
+    const groups = groupByDay([
+      make({ name: "tonight", scheduled_start_at: new Date(NOW + 6 * HOUR).toISOString() }),
+      make({ name: "this afternoon", status: "finished",
+        created_at: new Date(NOW - 2 * HOUR).toISOString() }),
+    ], NOW);
+
+    expect(groups.map((one) => one.past)).toEqual([false, true]);
+    expect(groups[0].label).toBe("Today");
+    expect(groups[1].label).not.toBe(groups[0].label);
+    // And it still says which day, because that is what a day heading is for.
+    expect(groups[1].label).toContain("Today");
+  });
+
+  it("marks every past heading, not only the first one", () => {
+    // The divider that used to do this was drawn once, above the first past
+    // group, and scrolled away; the headings under it stayed.
+    const groups = groupByDay([
+      make({ name: "today", status: "finished", created_at: new Date(NOW - 2 * HOUR).toISOString() }),
+      make({ name: "yesterday", status: "finished",
+        created_at: new Date(NOW - 26 * HOUR).toISOString() }),
+    ], NOW);
+
+    expect(groups.map((one) => one.label)).toEqual(["Today · played", "Yesterday · played"]);
+  });
+
   it("keeps same-day tournaments in one group", () => {
     const early = make({ name: "early", scheduled_start_at: new Date(NOW + 2 * HOUR).toISOString() });
     const later = make({ name: "later", scheduled_start_at: new Date(NOW + 5 * HOUR).toISOString() });

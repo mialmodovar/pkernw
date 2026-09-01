@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import Avatar from "../Avatar";
+import Icon from "../icons/Icon";
 import api from "../../api/http";
 import PlayerProfileModal from "./PlayerProfileModal";
 
@@ -140,7 +141,11 @@ export default function FriendsPanel() {
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+        {/* The same two figures the phone's strip puts on the button that
+            opens this. It used to be an eye, which is the app's mark for
+            watching a table you are not sat at. */}
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+          <Icon name="friends" className="w-4 h-4" tone="gold" />
           Friends
         </h2>
         <button

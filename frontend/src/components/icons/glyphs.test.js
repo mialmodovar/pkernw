@@ -60,6 +60,34 @@ describe("the icon set", () => {
     expect(lines).toHaveLength(9);
   });
 
+  it("draws the lobby strip's panels instead of borrowing a near-miss", () => {
+    // The strip used to point Missions at `check` and Friends at `eye`. Both
+    // of those are correctly named for what they are — a tick and a spectator
+    // seat — which is exactly why neither could be the picture of a panel.
+    expect(ICON_NAMES).toContain("missions");
+    expect(ICON_NAMES).toContain("friends");
+    expect(GLYPHS.check.label).toBe("Yes");
+    expect(GLYPHS.eye.label).toBe("Watching");
+  });
+
+  it("keeps the mission list off the ledger's page", () => {
+    // Two lists of ruled lines, one inch apart in the same row of icons. They
+    // are allowed to rhyme; they are not allowed to share a stroke.
+    const ledger = new Set(GLYPHS.ledger.paths.map((path) => path.d));
+    expect(GLYPHS.missions.paths.length).toBeGreaterThan(1);
+    for (const path of GLYPHS.missions.paths) {
+      expect(ledger.has(path.d), path.d).toBe(false);
+    }
+  });
+
+  it("puts the second friend behind the first", () => {
+    // Head and shoulders each, and the back pair in the lighter tone: at
+    // twenty pixels two figures at one stroke weight are a single blot.
+    const kinds = GLYPHS.friends.paths.map((path) => path.kind);
+    expect(kinds.filter((kind) => kind === "line")).toHaveLength(2);
+    expect(kinds.filter((kind) => kind === "accent")).toHaveLength(2);
+  });
+
   it("answers to a name it knows and nothing else", () => {
     expect(glyph("coin")).toBe(GLYPHS.coin);
     expect(glyph("nonesuch")).toBe(null);

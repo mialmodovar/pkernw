@@ -289,6 +289,47 @@ export const GLYPHS = {
     ],
   },
 
+  /* Missions: a list with two things struck off it and one still open.
+
+     It rhymes with the ledger above on purpose — both are lines of writing —
+     but the ledger has a bound spine down its left edge and this has ticks
+     where the spine would be, which is the whole of the difference at twenty
+     pixels. What it replaces was worse than a near-miss: the strip pointed the
+     mission board at `check`, a bare tick labelled "Yes". A tick says the thing
+     is settled, and the point of the mission board is that there is money in it
+     nobody has collected. */
+  missions: {
+    label: "Missions",
+    paths: [
+      { d: "M3.8 6.9l1.5 1.5L8 4.9", kind: "line" },
+      { d: "M10.6 6.6h9", kind: "accent" },
+      { d: "M3.8 12.3l1.5 1.5L8 10.3", kind: "line" },
+      { d: "M10.6 12h9", kind: "accent" },
+      // The one still to do: an empty box rather than a third tick, so the
+      // glyph says "unfinished" and not "all done".
+      { d: "M3.9 15.9h3.6v3.6H3.9z", kind: "line" },
+      { d: "M10.6 17.7h6.4", kind: "accent" },
+    ],
+  },
+
+  /* Friends: two people, the second one standing behind the first.
+
+     The back figure is drawn in the accent tone so it recedes — two heads at
+     the same stroke weight are one smudge at twenty pixels, which is how this
+     drawing usually goes wrong. It exists because the friends panel and the
+     bell's friend-request row were both borrowing `eye`, a glyph that is
+     labelled "Watching" and means a table you are not seated at, so one picture
+     was doing duty as both a person and a spectator seat. */
+  friends: {
+    label: "Friends",
+    paths: [
+      { d: "M10 12.6a3.3 3.3 0 1 1 0-6.6 3.3 3.3 0 0 1 0 6.6z", kind: "line" },
+      { d: "M3.6 19.8c0-3.4 2.9-5.6 6.4-5.6s6.4 2.2 6.4 5.6z", kind: "line" },
+      { d: "M17.3 11.4a2.7 2.7 0 1 1 0-5.4 2.7 2.7 0 0 1 0 5.4z", kind: "accent" },
+      { d: "M18 13.6c2.6 0.8 4.4 2.8 4.4 6.2", kind: "accent" },
+    ],
+  },
+
   stats: {
     label: "Stats",
     paths: [

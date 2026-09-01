@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import Icon from "../icons/Icon";
 import api from "../../api/http";
 
 /**
@@ -38,7 +39,13 @@ export default function ClubPanel({ onClubsLoaded }) {
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">Clubs</h2>
+        {/* The suit, the same one the phone's strip draws on the button that
+            opens this — and the same one the header's Clubs button carries, so
+            the two ways in at least look like one place. */}
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+          <Icon name="clubs" className="w-4 h-4" tone="gold" />
+          Clubs
+        </h2>
         <button
           type="button"
           onClick={() => navigate("/clubs")}

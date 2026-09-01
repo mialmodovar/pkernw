@@ -136,6 +136,10 @@ export default function StatsPanel() {
             aria-hidden="true">
             ▶
           </span>
+          {/* The same drawing the phone's strip puts on the button that opens
+              this, so the icon and the word are learned together — and so the
+              wide layout's column of panels has something to scan by. */}
+          <Icon name="stats" className="w-4 h-4" tone="gold" />
           Stats
         </button>
         {/* Which game these are about. Averaging a five-minute three-hander in

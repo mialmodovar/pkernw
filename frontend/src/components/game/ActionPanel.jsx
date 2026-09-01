@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import useGameStore from "../../store/gameStore";
 import { raiseLabel, turnSlots, waitingSlots } from "./actionSlots";
-import {
-  BUTTON_SIZE, PANEL_LEFT_BLOCK, PANEL_LEFT_TEXT, PANEL_ROW,
-} from "./betBarSizing";
+import { BUTTON_SIZE } from "./betBarSizing";
 import { betPresets } from "./betPresets";
 import { needsConfirm } from "./confirmAction";
 import { nextAmount, notchChips, takeNotches, wheelTravel } from "./wheelBet";
@@ -35,21 +33,12 @@ const SHORTCUT_HINT = { fold: "F", check: "C", call: "C", raise: "R" };
 // window, is betBarSizing.js — where there is a test on it, because the failure
 // it guards against only appears on a screen bigger than the one anybody
 // develops on.
-// The 44px floor is the phone's, and only the phone's: the padding above
-// resolves to about 37px there, which is under every touch-target guideline
-// there is — for the three controls that decide a hand, with a clock running.
-// On a wide table the padding already carries it past 44 and a min-height
-// would only stop the row growing with the type.
-const BTN = "w-full min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors "
-  + "touch-manipulation min-h-11 md:min-h-0 flex items-center justify-center "
+const BTN = "w-full min-w-0 rounded-lg font-semibold whitespace-nowrap transition-colors touch-manipulation "
   + BUTTON_SIZE;
 const ARMED_RING = "ring-2 ring-offset-1 ring-offset-black/40 ring-(--color-highlight-bright)";
 // Kept on every size now: in a column the slider is short, and a short
 // slider is a poor way to move one chip at a time.
-// Square and thumb-sized on a phone, where 32x26 was a target you missed more
-// often than you hit — and missing the one beside the slider moves the raise.
-const STEPPER = "btn-secondary shrink-0 rounded text-base font-bold leading-none "
-  + "touch-manipulation w-11 h-11 md:w-8 md:h-auto md:py-1";
+const STEPPER = "btn-secondary w-8 shrink-0 rounded text-base font-bold leading-none py-1 touch-manipulation";
 
 // What you can commit to before the action reaches you. Each one names the
 // condition it survives: anything else voids it and hands the decision back.
@@ -111,7 +100,7 @@ function PreselectChips({ value, onChange, keys }) {
             aria-checked={chosen}
             title={chosen ? `${option.hint} — press again to cancel` : option.hint}
             onClick={() => onChange(chosen ? null : option.key)}
-            className={`px-2.5 py-1.5 md:py-0.5 rounded-full border text-[11px] font-semibold leading-tight
+            className={`px-2 py-0.5 rounded-full border text-[11px] font-semibold leading-tight
                         transition-colors select-none whitespace-nowrap ${
               chosen
                 ? "bg-[linear-gradient(135deg,var(--color-highlight-bright),var(--color-highlight-deeper))]"
@@ -156,19 +145,14 @@ function PanelShell({ shell, timerBar, left, above, clock, slots }) {
           while you wait so the rows below it do not shift up. */}
       <div className="h-1.5 bg-black/50 w-full">{timerBar}</div>
 
-      {/* One column until the PANEL is wide enough for two, which is not the
-          same question as whether the window is — see PANEL_ROW. This used to
-          flip at `lg`, the window at 1024px, which is precisely where GamePage's
-          placement cap made the panel narrowest: two columns inside 384px left
-          about twenty pixels a button. */}
-      <div className={`${PANEL_ROW} ${
+      <div className={`flex flex-col lg:flex-row lg:items-stretch lg:gap-3 ${
         compact ? "p-1.5 gap-1" : "p-2 gap-2"
       }`}>
         {/* The sizing block's place. While you wait it holds what is happening
             and the offer to show a card — anything but a button that commits,
             because at a turn this is where the raise presets are. */}
-        <div className={`flex flex-col justify-center min-w-0 ${PANEL_LEFT_BLOCK} ${
-          compact ? "gap-1" : "gap-1.5 min-h-[4.75rem]"}`}>
+        <div className={`flex flex-col justify-center min-w-0 lg:w-[14.5rem] lg:shrink-0
+                         lg:min-h-[4.75rem] ${compact ? "gap-1" : "gap-1.5 min-h-[4.75rem]"}`}>
           {left}
         </div>
 
@@ -411,7 +395,7 @@ export default function ActionPanel({
         shell={shell}
         left={(
           <>
-            <span className={`text-xs text-center ${PANEL_LEFT_TEXT} text-(--color-text-muted)`}>
+            <span className="text-xs text-center lg:text-left text-(--color-text-muted)">
               {actionOnSeat !== null
                 ? `Waiting for ${waitingOn?.name ?? `seat ${actionOnSeat}`}...`
                 : "Waiting for next hand..."}
@@ -600,10 +584,7 @@ export default function ActionPanel({
               step={sliderStep}
               value={fromChips(raiseAmount)}
               onChange={(e) => setRaiseFromControl(e.target.value)}
-              // A range input drags from anywhere inside its box, so the box IS the touch
-              // target — 44px of it on a phone. The knob drawn on that rail is
-              // index.css's, under the same media query.
-              className="flex-1 min-w-0 h-11 md:h-auto accent-(--color-highlight-bright) cursor-pointer touch-manipulation"
+              className="flex-1 min-w-0 h-6 md:h-auto accent-(--color-highlight-bright) cursor-pointer touch-manipulation"
             />
             <button type="button" onClick={() => nudge(1)} aria-label="Raise more" className={STEPPER}>+</button>
           </div>

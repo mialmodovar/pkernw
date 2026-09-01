@@ -154,7 +154,7 @@ export default function PlayerStatsCard({ player, stats, onClose, isMe = false }
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="panel rounded-xl w-full max-w-sm p-4 shadow-2xl shadow-black/70 max-h-[85dvh] overflow-y-auto"
+      <div className="panel rounded-xl w-full max-w-sm p-4 shadow-2xl shadow-black/70 max-h-[85vh] overflow-y-auto"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2">
           <Avatar

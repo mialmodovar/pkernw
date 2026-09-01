@@ -32,13 +32,7 @@ export default function TableVitals({ tournament }) {
   if (!rows.length) return null;
 
   return (
-    // From lg rather than md. At exactly 768px this used to switch on at the
-    // same moment the Info / Hand history / Lobby buttons grew their labels and
-    // their padding, which is the one width where the strip has the least room
-    // — four vitals plus three labelled buttons overflowed the row. By 1024px
-    // there is space for both.
-    <span className="hidden lg:flex items-center gap-1.5 min-w-0 overflow-hidden
-                     text-xs text-(--color-text-muted)">
+    <span className="hidden md:flex items-center gap-1.5 min-w-0 text-xs text-(--color-text-muted)">
       {rows.map((row) => (
         <span key={row.key} className="whitespace-nowrap">
           <span className="text-(--color-text-muted)">· </span>

@@ -30,7 +30,7 @@ export default function HandReview({ tournamentId, onClose }) {
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center px-4">
-      <div className="panel rounded-xl w-full max-w-md max-h-[80dvh] flex flex-col shadow-2xl shadow-black/70">
+      <div className="panel rounded-xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl shadow-black/70">
         <div className="flex items-center justify-between px-4 py-3 border-b border-(--color-border)">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-(--color-silver)">
             Recent hands

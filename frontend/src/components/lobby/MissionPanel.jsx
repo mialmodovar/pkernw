@@ -27,7 +27,15 @@ export default function MissionPanel() {
   const [open, setOpen] = useState(false);
   const waiting = claimableCount(missions);
 
-  useEffect(() => { fetchMissions(); }, [fetchMissions]);
+  // Still asked for on every mount — the board goes stale while somebody is off
+  // playing — but not on top of a request that is already out. On a wide screen
+  // PanelStrip is hidden rather than unmounted and asks for the same board on
+  // the same commit; `loading` is set before the request leaves, so whichever
+  // of the two runs first gets it. Read from the store rather than from this
+  // render, which is where both of them see false.
+  useEffect(() => {
+    if (!useMissionStore.getState().loading) fetchMissions();
+  }, [fetchMissions]);
 
   // Opens itself the first time there is money in it, and does not close
   // itself again — somebody who shut it meant to shut it.
@@ -43,7 +51,8 @@ export default function MissionPanel() {
     return (
       <div className="panel rounded-lg p-4 shadow-lg shadow-black/40">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-(--color-silver)">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-(--color-silver)">
+            <Icon name="missions" className="w-4 h-4" tone="gold" />
             Missions
           </h2>
           <button
@@ -76,6 +85,10 @@ export default function MissionPanel() {
             aria-hidden="true">
             ▶
           </span>
+          {/* The same drawing that is on the button that opened this on a
+              phone. The picture and the word get learned together, or the
+              picture never gets learned at all. */}
+          <Icon name="missions" className="w-4 h-4" tone="gold" />
           Missions
         </button>
 

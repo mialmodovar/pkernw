@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+
+import Icon from "../icons/Icon";
 import api from "../../api/http";
 
 const euros = (cents) => `${(Math.abs(cents) / 100).toFixed(2)}€`;
@@ -76,7 +78,14 @@ export default function CalotesPanel() {
   return (
     <div className="panel rounded-lg p-4 space-y-3 shadow-lg shadow-black/40">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold text-(--color-silver) uppercase tracking-wide">Calotes</h2>
+        {/* The ledger, the same one the phone's strip draws on the button that
+            opens this. A book at 20px could be notes or rules or history, so
+            the word underneath it in the strip and the icon beside the word
+            here are the two halves of saying which. */}
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-(--color-silver) uppercase tracking-wide">
+          <Icon name="ledger" className="w-4 h-4" tone="gold" />
+          Calotes
+        </h2>
         <span className={`text-lg font-bold tabular-nums ${positive ? "text-emerald-400" : "text-(--color-accent)"}`}>
           {positive ? "+" : "−"}{euros(balance)}
         </span>

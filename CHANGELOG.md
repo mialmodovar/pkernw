@@ -181,6 +181,27 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The lobby's icons say what they open.** On a phone the panels above the
+  games collapse to a row of buttons, which is the right shape — but they were
+  six bare glyphs, and four of them were drawn for something else. Missions was
+  a bare tick, named "Yes" in the icon set. Friends was an eye, named "Watching",
+  and the same eye stood for a friend request in the header bell, so one picture
+  meant both "a person" and "a table you are not seated at". Calotes was a book.
+  Clubs was the card suit, already sitting in the header a couple of inches away.
+
+  Each button now prints its own name under its icon. The note in the code
+  saying six labels could not fit was simply wrong: a phone gives each button
+  about 55 points and the longest word needs 42 — it had been tried BESIDE a
+  20-point icon, which needs 68, rather than under one. Missions and Friends
+  get glyphs drawn for them, and the eye goes back to meaning only spectating.
+
+  Two of them carry what is waiting: a number on Missions for coins you have not
+  collected, a dot on Friends for somebody who has asked. The mission board was
+  never even fetched on a phone before — the panel that asks for it only mounts
+  when opened, so the one panel with money in it was the one a phone could not
+  advertise. Each open panel now carries its own icon in its heading, so the
+  picture and the word are learned together, and the profile card finally says
+  "You" at the top of itself.
 - **The instant-game lobby is a list rather than a wall of cards.** Two buy-ins
   fit as two cards; seven do not, and a phone got a card per screen. Each tier
   is a row now — what it costs, what it pays, how full it is, and the way in,

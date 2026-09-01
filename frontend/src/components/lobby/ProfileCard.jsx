@@ -15,6 +15,27 @@ export default function ProfileCard() {
 
   return (
     <div className={`panel rounded-lg p-4 relative shadow-lg shadow-black/40 ${openPanel ? "z-20" : ""}`}>
+      {/* The only panel here that never said what it was. Every other one has a
+          heading, and on a phone the heading is how you know the button you
+          pressed was the button you meant — this one opened with a name and a
+          gear and left you to work it out. The avatar is repeated small beside
+          the word for the same reason the other headings carry their icon: the
+          strip's button for this panel is your own face, and this is where you
+          find out that is what it was. */}
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-(--color-silver)">
+        {/* No `name`, and hidden: Avatar turns a name into alt text, and the
+            heading of this panel is "You", not "So-and-so's avatar You". */}
+        <span aria-hidden="true" className="w-4 h-4 rounded-full overflow-hidden block shrink-0">
+          <Avatar
+            url={user?.profile?.avatar_url}
+            emoji={user?.profile?.avatar_emoji}
+            border={user?.profile?.avatar_border}
+            className="w-full h-full"
+            emojiClassName="text-[0.55rem]"
+          />
+        </span>
+        You
+      </h2>
       <div className="flex items-center gap-3">
         <button
           onClick={() => toggle("profile")}

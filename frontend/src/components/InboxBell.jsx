@@ -26,7 +26,13 @@ import useInboxStore from "../store/inboxStore";
  * opening the bell stops it glowing, and the item itself stays until the thing
  * is actually done. See store/inboxStore.js.
  */
-const KIND_ICON = { friend_request: "eye", tournament_invite: "trophy" };
+/* The fallback picture for an item whose sender has no avatar. A friend request
+   used to draw `eye`, which is the glyph for watching a table you are not sat
+   at — so the same drawing meant "a person" here and "a spectator seat"
+   everywhere else, and the lobby strip was using it for the Friends panel on
+   top of that. `friends` is drawn for people; `eye` is back to meaning one
+   thing. */
+const KIND_ICON = { friend_request: "friends", tournament_invite: "trophy" };
 
 export default function InboxBell() {
   const user = useAuthStore((s) => s.user);

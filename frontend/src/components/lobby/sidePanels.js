@@ -19,12 +19,21 @@
  * you open, so it comes before the rest. Coins are deliberately absent — they
  * are on the header of every page, and a panel repeating a number two inches
  * below it is a panel nobody reads.
+ *
+ * The label is not decoration. On a phone the strip prints it under the icon,
+ * so this list is the one place each panel is named and the word on the button
+ * cannot drift from the word in the heading it opens.
+ *
+ * Every icon here is drawn for the panel it opens. Missions and Friends spent a
+ * while pointing at `check` and `eye`, which are a tick labelled "Yes" and a
+ * spectator seat labelled "Watching" — near enough to pick in a hurry, and both
+ * saying something the panel does not mean.
  */
 export const SIDE_PANELS = [
-  { key: "missions", label: "Missions", icon: "check" },
+  { key: "missions", label: "Missions", icon: "missions" },
   { key: "stats", label: "Stats", icon: "stats" },
   { key: "calotes", label: "Calotes", icon: "ledger" },
-  { key: "friends", label: "Friends", icon: "eye" },
+  { key: "friends", label: "Friends", icon: "friends" },
   { key: "clubs", label: "Clubs", icon: "clubs" },
   // Not in the row the way the others are: it is drawn as your own face, which
   // is both the icon and the thing it opens.

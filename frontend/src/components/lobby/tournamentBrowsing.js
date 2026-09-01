@@ -116,6 +116,12 @@ export function dayLabel(time, now = Date.now()) {
  * Order comes from the sort, not from the calendar: a running game you are in
  * stays at the top even if it began yesterday. Days appear in the order their
  * first tournament does, so the grouping never reorders anything.
+ *
+ * A day that has both — a night that finished this afternoon and one that
+ * starts this evening — is two groups, and they used to be two sticky headings
+ * both reading "Today", one above the other with a list in between. The label
+ * has to carry the difference, because the heading is the only thing on screen
+ * once you have scrolled past the row that made the group.
  */
 export function groupByDay(tournaments, now = Date.now()) {
   const groups = [];
@@ -128,11 +134,12 @@ export function groupByDay(tournaments, now = Date.now()) {
     // sitting in among the things you can still do something about. `past` is
     // what the list draws quieter — see TournamentBrowser.
     const past = isPast(tournament);
-    const day = when == null ? "none" : String(startOfDay(when));
-    const key = past ? `past:${day}` : day;
+    const dayKey = when == null ? "none" : String(startOfDay(when));
+    const key = past ? `past:${dayKey}` : dayKey;
     let group = byKey.get(key);
     if (!group) {
-      group = { key, label: dayLabel(when, now), past, tournaments: [] };
+      const day = dayLabel(when, now);
+      group = { key, label: past ? `${day} · played` : day, past, tournaments: [] };
       byKey.set(key, group);
       groups.push(group);
     }

@@ -250,10 +250,13 @@ export default function LobbyPage() {
               are a way of switching what the page is showing, and they were
               set in the size of a page title — which read as three competing
               headings with no page underneath any of them. */}
-          {/* Full width on a phone, where two tabs fit side by side with room
-              to spare — it was only ever scrolling because the New tournament
-              button was on the same line pushing it off the screen. A control
-              you have to drag to see the other half of is not a control. */}
+          {/* Full width on a phone. There are three of these now, not the two
+              the comment here used to assume — Tournaments, Cash games and
+              Casino — and at 360-390px three labels no longer fit. So they are
+              allowed to shrink and clip rather than push each other off the
+              row: the icon carries the identity when a word runs out of space,
+              and a control you have to drag to see the other half of is not a
+              control. */}
           <div
             className="flex items-center gap-0.5 p-0.5 rounded-lg panel-raised
                        w-full sm:w-auto"
@@ -267,8 +270,8 @@ export default function LobbyPage() {
                 role="tab"
                 aria-selected={tab === one.key}
                 onClick={() => go(one.key)}
-                className={`flex flex-1 sm:flex-none items-center justify-center gap-1.5
-                            px-3 py-1.5 rounded-md text-sm font-semibold
+                className={`flex flex-1 sm:flex-none min-w-0 items-center justify-center gap-1.5
+                            px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-semibold
                             whitespace-nowrap transition-colors ${
                   tab === one.key
                     ? "bg-(--color-accent) text-(--color-accent-text)"
@@ -279,10 +282,10 @@ export default function LobbyPage() {
                     room you are in without relying on the fill alone. */}
                 <Icon
                   name={one.icon}
-                  className="w-4 h-4"
+                  className="w-4 h-4 shrink-0"
                   tone={tab === one.key ? "gold" : "mono"}
                 />
-                {one.label}
+                <span className="truncate">{one.label}</span>
               </button>
             ))}
           </div>

@@ -186,9 +186,11 @@ function TierRow({
     >
       <div className="flex items-center gap-3 px-3 py-2.5">
         {/* What it costs. The widest thing on the ladder is 500, so the column
-            is fixed and the prices line up down it. */}
-        <span className="w-20 shrink-0 flex items-center gap-1.5 text-lg font-bold
-                         text-(--color-silver) tabular-nums">
+            is fixed and the prices line up down it — narrower on a phone, where
+            80px of it plus a 104px action column left the prize, which is the
+            reason anybody reads the row, about sixty pixels to truncate in. */}
+        <span className="w-14 sm:w-20 shrink-0 flex items-center gap-1.5 text-base sm:text-lg
+                         font-bold text-(--color-silver) tabular-nums">
           <Icon name="coin" className="w-4 h-4 shrink-0" tone="gold" />
           {tier.stake}
         </span>
@@ -230,7 +232,7 @@ function TierRow({
           )}
         </span>
 
-        <span className="w-[6.5rem] shrink-0 flex items-center justify-end gap-1">
+        <span className="w-auto sm:w-[6.5rem] shrink-0 flex items-center justify-end gap-1">
           <button
             type="button"
             disabled={!action.enabled || busy}

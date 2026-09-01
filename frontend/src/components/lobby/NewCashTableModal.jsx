@@ -55,8 +55,11 @@ export default function NewCashTableModal({
   return createPortal(
     <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
       onClick={onClose}>
+      {/* Capped and scrollable — see SitDownModal. This is the taller of the
+          two and the one most likely to run off a short screen. */}
       <form onSubmit={submit} onClick={(event) => event.stopPropagation()}
-        className="panel rounded-xl w-full max-w-md shadow-2xl shadow-black/70">
+        className="panel rounded-xl w-full max-w-md shadow-2xl shadow-black/70
+                   max-h-[88dvh] overflow-y-auto overscroll-contain">
         <div className="flex items-start justify-between gap-3 px-4 py-3
                         border-b border-(--color-border)">
           <div className="min-w-0">

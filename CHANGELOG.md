@@ -328,6 +328,36 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The action panel fits on a tablet.** Between about 768 and 1600 points wide
+  the three buttons that decide a hand were being squeezed to nothing: at 1024
+  they were roughly twenty points each, and at 1280 — an ordinary laptop —
+  "Call 12,400" was already cut in half. Two rules disagreeing. The panel's
+  width is capped at half the felt less a seat, which is a share of the WINDOW,
+  so it only ever reached the width it asks for on a monitor 1600 points across.
+  Meanwhile the panel switched to its two-column layout on the window as well,
+  at exactly the size where that cap had made it narrowest. The cap now has a
+  floor under it, and the layout asks the panel how wide IT is rather than
+  asking the window — which is the same argument the type on those buttons has
+  used all along.
+
+  On a phone, nothing in the betting bar was big enough to hit: the commit
+  buttons stood about 38 points tall, the little plus and minus beside the
+  slider 32 by 26, and the slider itself 24. All of them are 44 now, which is
+  the smallest a thumb can be relied on to find, and the slider is drawn with a
+  knob you can see. Everywhere else these keep the sizes they had.
+
+  Also on a phone: text fields no longer zoom the page in and leave it there.
+  That rule existed but only covered the settings window — never the chat field
+  or the raise field, which are the two on the critical path, so typing one
+  message between hands left the felt magnified with the buttons off the edge.
+  The bar below the felt now clears the home indicator, which needed one missing
+  attribute on the viewport tag; the banners across the top can wrap instead of
+  pushing their own button off the screen; the three icon buttons above the
+  felt have names for a screen reader and a hit area for a finger; the lobby's
+  three tabs fit a 360-point screen; the buy-in and new-table dialogs can be
+  scrolled on a short screen instead of putting their confirm button out of
+  reach; and the instant-game rows give the prize back the width two fixed
+  columns were taking.
 - **Your chips sit in front of you again.** On a phone a bet was drawn about
   halfway to the pot rather than in front of the player who made it. Nine-handed
   that put your own chips very nearly as far from your face as from the two

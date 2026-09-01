@@ -346,8 +346,14 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
             // player's nameplate reads as a rendering fault. The same for your
             // own seat with a quick panel open beside it: the panel hangs out
             // to the side, straight into whoever is sitting there.
+            // Lifted over the bets on a phone, where the two overlap: the chips
+            // sit at z-0 there and a seat has to cover its own, or a crowded
+            // side seat's pill lands across the cards it was bet on. Left at
+            // z-auto on a wide table so that layer order is untouched.
             className={`absolute -translate-x-1/2 -translate-y-1/2 ${
-              (p && seatBubbles[p.user_id]) || (isMe && seatPanelOpen) ? "z-30" : ""
+              (p && seatBubbles[p.user_id]) || (isMe && seatPanelOpen)
+                ? "z-30"
+                : (compact ? "z-10" : "")
             }`}
             style={{ top: pos.top, left: pos.left }}>
             {p ? (
@@ -408,25 +414,40 @@ export default function PokerTable({ mySeat, capacity, statsByName, onInspectPla
         const pos = betPosition(visualIdx, slots, geometry, frameSize, pointAt, compact);
         return (
           <div key={`bet-${seat}`}
-            className="absolute z-10 flex items-center gap-0.5 whitespace-nowrap"
+            // Under the seats on a phone rather than over them. There is not
+            // enough felt on a narrow screen to give a side seat chips that
+            // clear both the board and its own cards, so the compromise is that
+            // they may lie over their owner — and chips that cover the cards
+            // they were bet on are worse than chips tucked behind them. On a
+            // wide table there is room for both and nothing overlaps anyway.
+            className={`absolute flex items-center gap-0.5 whitespace-nowrap ${
+              compact ? "z-0" : "z-10"
+            }`}
             style={{
               top: pos.top,
               left: pos.left,
               // Centred for a seat at the top or bottom, where there is nothing
               // to the side of it; hung off the point for a seat on the side,
-              // so it always grows towards the pot and never back over its
-              // owner. A seat directly above or below lands at -50%, which is
-              // where it always was.
+              // so its mass stays on its owner's half of the felt and only the
+              // anchor itself comes near the board. That is also the only
+              // reason a side seat has any room at all on a phone — the anchor
+              // may go right up to the edge of the cards, because nothing is
+              // hanging off that side of it. A seat directly above or below
+              // lands at -50%, which is where it always was.
               transform: `translate(${-50 + 50 * (pos.towardsPot ?? 0)}%, -50%)`,
             }}>
             <PositionMarker isDealer={isDealer} isSB={isSB} isBB={isBB} />
             {p.bet > 0 && (
               <span
                 key={`${p.seat}-${p.is_all_in ? "allin" : "bet"}`}
-                // Which way its owner is: the pill is hung towards the pot, so
-                // the chips push in from behind it. A seat at the top or bottom
-                // has no sideways component and simply comes up off the felt.
-                style={{ "--push-x": `${-(pos.towardsPot ?? 0) * 10}px` }}
+                // Which way its owner is, so the chips can be thrown from
+                // there: the keyframe starts at --push-x and settles at zero,
+                // so this has to point back at the player for the money to
+                // travel towards the pot. It used to be negated, which threw
+                // every bet at the table from the pot to the player. A seat at
+                // the top or bottom has no sideways component and simply comes
+                // up off the felt.
+                style={{ "--push-x": `${(pos.towardsPot ?? 0) * 10}px` }}
                 className={`flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70
                             border border-(--color-highlight-edge) shadow-lg shadow-black/60 ${
                               p.is_all_in ? "animate-chip-shove" : "animate-chip-in"

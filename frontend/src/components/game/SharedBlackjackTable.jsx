@@ -11,7 +11,7 @@ import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
   PLAN_MOVES, REVEAL_MS, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
   cardOverlap, dealDelay, dealerTableLine, drawDelay, myPlan, mySeat, occupancy,
-  phaseLine, players, seatState, tableActions,
+  phaseLine, players, seatState, tableActions, turnPct,
 } from "./sharedBlackjack";
 
 /**
@@ -224,6 +224,10 @@ function DealerSide({ table, seats }) {
  */
 function SeatTile({ seat, table, position = 0, seats = 1, className = "" }) {
   const state = seatState(seat, table);
+  // The clock over whoever is being asked. Only theirs: it is one seat's turn
+  // and one seat's deadline, and a bar over every chair would read as the
+  // table's.
+  const left = state.turn ? turnPct(table) : null;
   const hand = seat.hands?.[0] || null;
   const cards = hand?.cards || [];
   // Past two cards the hand is fanned rather than laid out, or a seat that drew
@@ -245,6 +249,23 @@ function SeatTile({ seat, table, position = 0, seats = 1, className = "" }) {
             : "border-(--color-border) bg-black/20"
       } ${state.won ? "animate-bj-win" : ""} ${state.bust ? "animate-bj-bust" : ""}`}
     >
+      {/* How long they have. Drawn over the seat rather than beside the heading
+          because the question it answers — "is this going to be my turn soon" —
+          is asked about a person, and the countdown in the heading is a number
+          you have to read. Transitioned, because the table is polled once a
+          second and a bar that jumped a tenth at a time would read as a stutter
+          rather than as time passing. */}
+      <div className="w-full h-1 rounded-full bg-black/40 overflow-hidden"
+        role="progressbar" aria-label="Time left on this turn">
+        {left != null && (
+          <div
+            className="h-full rounded-full bg-(--color-highlight-bright)
+                       transition-[width] duration-1000 ease-linear"
+            style={{ width: `${left}%` }}
+          />
+        )}
+      </div>
+
       <div className="flex items-center gap-1 min-w-0 w-full">
         <span className="w-5 h-5 shrink-0 rounded-full overflow-hidden">
           <Avatar

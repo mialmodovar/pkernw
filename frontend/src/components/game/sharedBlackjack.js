@@ -263,15 +263,16 @@ export const DEAL_MIN_STEP_MS = 95;
 export const DEAL_MAX_STEP_MS = 280;
 
 // The hole card turning at the end of the round, and the house drawing itself
-// out afterwards. Slower than the deal on purpose: this is the moment the round
-// is decided and it is the one thing at this table worth watching.
-export const REVEAL_MS = 420;
-export const DRAW_STEP_MS = 480;
+// out afterwards. Twice as slow as the deal and then twice as slow again: this
+// is the moment the round is decided and it is the one thing at this table
+// worth watching, and it kept going past before anybody had looked up.
+export const REVEAL_MS = 840;
+export const DRAW_STEP_MS = 960;
 // How long the turn itself takes. Mirrors .animate-bj-flip in index.css, and is
 // restated here because the first card the house draws must land after the hole
 // card has finished turning rather than on top of it — a duration CSS owns and
 // this file has to know about.
-export const FLIP_MS = 520;
+export const FLIP_MS = 1040;
 
 /** How long between one card and the next, for a table of this many players. */
 export function dealStep(seats) {
@@ -327,6 +328,27 @@ export function dealDelay(spec) {
  */
 export function drawDelay(card) {
   return REVEAL_MS + FLIP_MS + Math.max(0, card - 2) * DRAW_STEP_MS;
+}
+
+// How long a turn is, in seconds. The server's number (blackjacktable
+// PHASE_SECONDS), restated here for the same reason SEAT_COUNT is: the bar over
+// the seat being asked has to know what a full one looks like, and the payload
+// only says how much is left.
+export const TURN_SECONDS = 10;
+
+/**
+ * How much of the current turn is left, as a percentage.
+ *
+ * Null when there is no turn running, so the bar is absent rather than empty —
+ * a drained clock over a seat nobody is waiting on reads as somebody having run
+ * out of time. Clamped both ways: a turn that has overrun its clock without a
+ * poll to notice is at zero, not at a negative width.
+ */
+export function turnPct(table) {
+  if (table?.phase !== "playing" || table?.turn == null) return null;
+  const left = secondsLeft(table);
+  if (left == null) return null;
+  return Math.max(0, Math.min(100, (left / TURN_SECONDS) * 100));
 }
 
 /** The stakes this table takes, as {min, max}, before its payload has landed. */

@@ -1036,7 +1036,7 @@ button:disabled {
 }
 
 .animate-bj-deal {
-  animation: bj-deal 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: bj-deal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* The hole card turning over. Squashed through the middle rather than a true
@@ -1048,8 +1048,12 @@ button:disabled {
   100% { transform: scaleX(1); }
 }
 
+/* Slower than it was, and it starts from the back of the card rather than
+   appearing already turned. This is the moment the round is decided — the one
+   thing at this table worth watching — and it was over in a fifth of a second. */
+
 .animate-bj-flip {
-  animation: bj-flip 380ms ease-in-out both;
+  animation: bj-flip 520ms ease-in-out both;
 }
 
 /* A chip going onto the bet. Drops from the player's side and bounces once,
@@ -1091,11 +1095,16 @@ button:disabled {
 }
 
 /* What the hand paid, rising out of it. The only place a number moves in this
-   game, so it is the thing the eye goes to when the round settles. */
+   game, so it is the thing the eye goes to when the round settles.
+
+   It comes back down. It used to finish at -10px and hold there — `both` keeps
+   the last frame — so the result sat permanently ten pixels above its own line
+   and on top of the one before it: "18", "Stood" and "Lost" printed over each
+   other. The rise is the gesture; where it lands is its own row. */
 @keyframes bj-payout {
-  0%   { transform: translateY(6px) scale(0.85); opacity: 0; }
-  35%  { transform: translateY(-2px) scale(1.1); opacity: 1; }
-  100% { transform: translateY(-10px) scale(1); opacity: 1; }
+  0%   { transform: translateY(8px) scale(0.85); opacity: 0; }
+  40%  { transform: translateY(-5px) scale(1.12); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 .animate-bj-payout {

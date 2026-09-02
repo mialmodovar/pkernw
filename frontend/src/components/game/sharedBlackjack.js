@@ -196,6 +196,44 @@ export const PLAN_MOVES = [
   { key: "hit", label: "Hit" },
 ];
 
+/* ------------------------------------------------------------------------- *
+ * What a bet may be, which is now two different questions.
+ *
+ * The low room runs 5 to 500 and the high room runs 500 to whatever is in your
+ * wallet, so the three fixed chips this used to offer — 5, 25, 100 — were three
+ * buttons that could not place a legal bet in half the casino.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The most this player could actually put up.
+ *
+ * The room's ceiling where it has one, the wallet where it does not, and the
+ * lower of the two where both apply. Null balance means the wallet has not
+ * loaded yet, and the answer is then the room's ceiling or nothing.
+ */
+export function betCeiling(table, balance = null) {
+  const { max } = betLimits(table);
+  const purse = balance == null ? null : Math.max(0, Math.floor(Number(balance) || 0));
+  if (max == null) return purse;
+  return purse == null ? max : Math.min(max, purse);
+}
+
+/**
+ * Three amounts worth a button, for whichever room this is.
+ *
+ * Multiples of the room's own minimum rather than fixed figures: the low room
+ * keeps exactly the 5, 25 and 100 it always had, and the high room gets 500,
+ * 2,500 and 10,000 without a second list to keep in step. Anything past what
+ * the player can cover is dropped rather than drawn dead — a chip you cannot
+ * afford is a button that exists to be refused.
+ */
+export function betSteps(table, balance = null) {
+  const { min } = betLimits(table);
+  const ceiling = betCeiling(table, balance);
+  return [min, min * 5, min * 20]
+    .filter((value) => ceiling == null || value <= ceiling);
+}
+
 /**
  * Whether there is anything to pre-decide: a hand of yours still being played,
  * and somebody else being asked about theirs.
@@ -204,9 +242,104 @@ export function canPlan(table) {
   return table?.phase === "playing" && !myTurn(table) && myHand(table) != null;
 }
 
+/* ------------------------------------------------------------------------- *
+ * How long the cards take to arrive.
+ *
+ * The whole deal lands in one payload — the server deals a round atomically —
+ * so everything below is the client pretending to be a pair of hands. It was
+ * pretending badly: every seat's cards appeared at the same instant and eighty
+ * milliseconds apart, which is not a deal, it is a hand of cards materialising.
+ *
+ * A real deal goes round the table. So does this one, on the same beat the
+ * server used: one card to each player, the house's own face down, a second to
+ * each player, and the house's up card last.
+ * ------------------------------------------------------------------------- */
+
+// The deal, end to end, however many people are playing. A fixed step would put
+// a six-handed table three and a half seconds behind its own first turn; a
+// budget keeps it honest at any size and the step shrinks to fit.
+export const DEAL_BUDGET_MS = 1800;
+export const DEAL_MIN_STEP_MS = 95;
+export const DEAL_MAX_STEP_MS = 280;
+
+// The hole card turning at the end of the round, and the house drawing itself
+// out afterwards. Slower than the deal on purpose: this is the moment the round
+// is decided and it is the one thing at this table worth watching.
+export const REVEAL_MS = 420;
+export const DRAW_STEP_MS = 480;
+// How long the turn itself takes. Mirrors .animate-bj-flip in index.css, and is
+// restated here because the first card the house draws must land after the hole
+// card has finished turning rather than on top of it — a duration CSS owns and
+// this file has to know about.
+export const FLIP_MS = 520;
+
+/** How long between one card and the next, for a table of this many players. */
+export function dealStep(seats) {
+  const beats = Math.max(1, lastBeat(seats));
+  const step = DEAL_BUDGET_MS / beats;
+  return Math.round(Math.min(DEAL_MAX_STEP_MS, Math.max(DEAL_MIN_STEP_MS, step)));
+}
+
+/** The beat the last card of the deal lands on. */
+function lastBeat(seats) {
+  return Math.max(1, seats) * 2 + 1;
+}
+
+/**
+ * Which beat of the deal a card lands on, or null for one that was not dealt.
+ *
+ * `position` is where in the row the player is rather than their seat number,
+ * because only occupied chairs are drawn. `card` is the index within the hand.
+ * Null means "this card arrived on its own" — a hit, a split, anything past the
+ * opening two — and those have nothing to wait for.
+ */
+export function dealBeat({ card, position = 0, seats = 1, dealer = false }) {
+  const players = Math.max(1, seats);
+  if (!Number.isInteger(card) || card < 0) return null;
+
+  if (dealer) {
+    // Stored up card first, dealt hole card first: the house's own first card
+    // goes face down between the two rounds of player cards and its up card is
+    // the last thing off the shoe. See blackjacktable._deal, which is where
+    // that order is decided; this only has to agree with it.
+    if (card === 0) return lastBeat(players);
+    if (card === 1) return players;
+    return null;
+  }
+
+  if (card === 0) return position;
+  if (card === 1) return players + 1 + position;
+  return null;
+}
+
+/** When a card lands, in milliseconds after the deal began. */
+export function dealDelay(spec) {
+  const beat = dealBeat(spec);
+  return beat == null ? 0 : beat * dealStep(spec.seats ?? 1);
+}
+
+/**
+ * When one of the house's own draws lands, after the hole card has turned.
+ *
+ * A separate clock from the deal: these cards appear when the round settles,
+ * which is a different moment entirely, and they are drawn one at a time with
+ * the whole table watching. Card two is the first of them.
+ */
+export function drawDelay(card) {
+  return REVEAL_MS + FLIP_MS + Math.max(0, card - 2) * DRAW_STEP_MS;
+}
+
 /** The stakes this table takes, as {min, max}, before its payload has landed. */
 export function betLimits(table) {
-  return stakeLimits({ min: table?.min_bet, max: table?.max_bet });
+  const { min, max } = stakeLimits({ min: table?.min_bet, max: table?.max_bet });
+  // Null, not a fallback, when the room has no ceiling. stakeLimits fills a
+  // missing max with its own default, which is right for a SideGame — every one
+  // of those has a ceiling — and wrong for the high room, where the absence IS
+  // the rule: it would have quietly capped an unlimited table at the low room's
+  // maximum and refused, on the client, bets the server was happy to take.
+  // Only once the table has actually answered: a payload that has not arrived
+  // is not an unlimited table.
+  return { min, max: table && table.max_bet == null ? null : max };
 }
 
 /**
@@ -477,7 +610,11 @@ export function canBet(table, amount, balance = null) {
   if (!isSeated(table)) return { allowed: false, reason: "Take a seat first" };
   if (myBet(table) > 0) return { allowed: false, reason: "Bet placed" };
 
-  const state = bettingState({ bet: amount, balance, game: betLimits(table) });
+  // An unlimited room is measured against the wallet instead, which
+  // bettingState already checks — see betLimits for why the ceiling is null.
+  const { min, max } = betLimits(table);
+  const ceiling = max == null ? Number.MAX_SAFE_INTEGER : max;
+  const state = bettingState({ bet: amount, balance, game: { min, max: ceiling } });
   if (!state.canDeal) return { allowed: false, reason: state.reason };
   return { allowed: true, reason: null };
 }
@@ -502,7 +639,40 @@ export function canBet(table, amount, balance = null) {
 export function tableActions(table, { balance = null } = {}) {
   const hand = table?.phase === "playing" ? myHand(table) : null;
   const round = hand ? { status: "playing", hands: [hand], active: 0 } : null;
-  return actionButtons(round, { balance });
+  return actionButtons(round, { balance }).map((button) => ({
+    ...button,
+    note: actionNote(button.key, hand),
+  }));
+}
+
+/**
+ * The half-line under an action, saying what it actually does to this hand.
+ *
+ * Four one-word buttons assume the reader already plays blackjack. "Stand" and
+ * "Double" are jargon, and the two that quietly take a second stake off the
+ * wallet look exactly like the two that do not — which is the part worth
+ * fixing, because it is the part that costs coins.
+ *
+ * Written against the hand in front of the player rather than in general: "keep
+ * 18" is a sentence about this hand and "keep what you have" is a definition.
+ */
+export function actionNote(key, hand) {
+  const total = hand?.total;
+  const stake = hand?.stake;
+  switch (key) {
+    case "hit":
+      return "one more card";
+    case "stand":
+      return total ? `keep ${total}` : "keep what you have";
+    case "double":
+      // The number is the point: this is the button that doubles what is at
+      // risk, and it is one tap away from the two that do not.
+      return stake ? `+${stake} coins, one card` : "double the bet, one card";
+    case "split":
+      return stake ? `+${stake} coins, two hands` : "two hands";
+    default:
+      return null;
+  }
 }
 
 /**

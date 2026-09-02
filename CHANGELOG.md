@@ -192,6 +192,22 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The blackjack betting area, and the four buttons you play with.** There is a
+  slider now — a player asked for one, and it was the right ask twice over: the
+  three fixed chips could only ever offer three figures, and once the high room
+  arrived those three were 5, 25 and 100 at a table with a 500 minimum. The
+  slider steps in the room's own minimum, so every position it can stop on is a
+  bet the table will take, and the chips are multiples of that minimum instead
+  of fixed numbers — the low room keeps exactly the 5, 25 and 100 it always had.
+  The amount is printed above it at a size you can read, beside the most you
+  could put up; there is a Max button; and the Bet button says what it is about
+  to do rather than making you read the figure off it.
+
+  The four action buttons each carry a half-line saying what they do to the hand
+  in front of you — "keep 18", "one more card", "+25 coins, two hands". Four
+  bare verbs assume you already play blackjack, and worse, the two that quietly
+  take a second stake out of your wallet looked exactly like the two that do
+  not. Those two are drawn in gold now, so the colour says it as well.
 - **You join the blackjack table rather than picking a chair at it.** The chairs
   were identical, so choosing one was a decision with nothing behind it — and an
   empty chair between two players was a hole in the row for no reason anybody
@@ -371,6 +387,26 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The blackjack table deals at the speed of a pair of hands.** The whole round
+  arrives from the server at once, so the dealing was always the screen
+  pretending — and it was pretending badly: every seat's cards appeared at the
+  same instant, eighty milliseconds apart, which is not a deal so much as a hand
+  of cards materialising. It goes round the table now, on the same beat the
+  server dealt it: one card to each player, the house's own face down, a second
+  to each player, and the house's up card last. The whole deal takes between
+  eight tenths of a second and a second and four fifths, depending on how many
+  are playing — a budget rather than a fixed step, so a full table does not
+  spend three and a half seconds dealing itself in.
+
+  The end of the round was worse. The hole card did not turn over at all: it
+  flew in from the shoe a second time, because the card had changed and the
+  screen treated it as a new one. It turns where it lies now, and the house then
+  draws itself out one card at a time with the table watching, which is the one
+  moment in this game worth waiting for.
+- **The result of a hand no longer prints on top of the hand.** "18", "Stood"
+  and "Lost" were landing over each other. The figure that says what the hand
+  paid rises as it appears, and it was finishing its rise ten pixels above its
+  own line and staying there. It comes back down now.
 - **The dealer turns his cards over as soon as everybody has played.** At the
   shared blackjack table the playing window was twenty seconds and only the
   clock could close it, so a table where everyone stood in four seconds spent

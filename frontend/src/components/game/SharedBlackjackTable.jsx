@@ -70,33 +70,43 @@ export default function SharedBlackjackTable() {
 
   return (
     <div className="space-y-3">
-      {/* What the table is doing and how long it has to do it in. The one line
-          that has to be right: everything a player can press is decided by it. */}
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="flex items-baseline gap-2 min-w-0">
-          <span className="text-sm font-bold text-(--color-silver)">{phase.label}</span>
-          <span className="text-xs text-(--color-highlight-text) tabular-nums">
-            {phase.detail}
-          </span>
-        </span>
-        <span className="text-[11px] text-(--color-text-muted) tabular-nums shrink-0">
-          {occupancy(table)}
-        </span>
-      </div>
+      {/* What the table is doing and how long it has to do it in, and how full
+          it is. Only once you are in it: every one of those is a deadline or a
+          count for somebody playing, and to somebody still deciding whether to
+          sit down they are three numbers about a game they are not in. What
+          that person needs is the felt and the Join button, and both are below.
+          The one line that has to be right for everybody else: everything a
+          player can press is decided by it. */}
+      {seat && (
+        <>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="flex items-baseline gap-2 min-w-0">
+              <span className="text-sm font-bold text-(--color-silver)">{phase.label}</span>
+              <span className="text-xs text-(--color-highlight-text) tabular-nums">
+                {phase.detail}
+              </span>
+            </span>
+            <span className="text-[11px] text-(--color-text-muted) tabular-nums shrink-0">
+              {occupancy(table)}
+            </span>
+          </div>
 
-      {/* The betting window, drawn as well as counted. The seconds are already
-          in the line above; this is the same clock for the part of the eye that
-          does not read. Only while there is something to do about it — a bar
-          over the dealer playing is a deadline for a decision nobody has. */}
-      {betClock != null && (
-        <div className="h-1 rounded-full bg-black/40 overflow-hidden -mt-1.5"
-          role="progressbar" aria-label="Time left to bet">
-          <div
-            className="h-full rounded-full bg-(--color-highlight-bright)
-                       transition-[width] duration-1000 ease-linear"
-            style={{ width: `${betClock}%` }}
-          />
-        </div>
+          {/* The betting window, drawn as well as counted. The seconds are
+              already in the line above; this is the same clock for the part of
+              the eye that does not read. Only while there is something to do
+              about it — a bar over the dealer playing is a deadline for a
+              decision nobody has. */}
+          {betClock != null && (
+            <div className="h-1 rounded-full bg-black/40 overflow-hidden -mt-1.5"
+              role="progressbar" aria-label="Time left to bet">
+              <div
+                className="h-full rounded-full bg-(--color-highlight-bright)
+                           transition-[width] duration-1000 ease-linear"
+                style={{ width: `${betClock}%` }}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* Oxblood and gold in the high room, the house green in the low one. The

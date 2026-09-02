@@ -5,7 +5,13 @@ import { COINS } from "../api/paths";
 import useWalletStore from "./walletStore";
 
 /**
- * The shared blackjack table: eight seats, one dealer, everybody at once.
+ * The shared blackjack table: six places, one dealer, one seat asked at a time.
+ *
+ * Two rooms, and this store holds one of them at a time — `room` is sent with
+ * every request and the table that comes back is that room's. Switching rooms
+ * clears the table rather than leaving the last one on screen while the first
+ * poll of the new one is in the air, because a high-stakes felt showing the low
+ * room's chips for a second is the kind of thing somebody bets against.
  *
  * Polled rather than pushed. This app's websockets are per-tournament and
  * per-cash-table, each with a consumer and a group and a reconnect story behind
@@ -31,6 +37,10 @@ export const POLL_MS = 1000;
 
 const useBlackjackTableStore = create((set, get) => ({
   table: null,
+  // Which room is on screen. The server defaults to the low one and treats
+  // anything it does not know as the low one, so this is never load-bearing for
+  // safety — only for which felt is drawn.
+  room: "main",
   loading: false,
   error: "",
   // Which request is in flight, by name, so the pressed button can say so
@@ -47,10 +57,17 @@ const useBlackjackTableStore = create((set, get) => ({
     return table;
   },
 
+  /** Show a different room. Drops the table so nothing of the old one shows. */
+  setRoom: (room) => {
+    if (get().room === room) return;
+    set({ room, table: null, error: "", settledRound: 0 });
+    get().fetch({ silent: false });
+  },
+
   fetch: async ({ silent = true } = {}) => {
     if (!silent) set({ loading: true });
     try {
-      const { data } = await api.get(`${TABLE}/`);
+      const { data } = await api.get(`${TABLE}/`, { params: { room: get().room } });
       get().apply(data);
     } catch {
       // A poll that fails is not worth an error over a table that is otherwise
@@ -70,7 +87,7 @@ const useBlackjackTableStore = create((set, get) => ({
   post: async (path, body, name) => {
     set({ busy: name, error: "" });
     try {
-      const { data } = await api.post(`${TABLE}/${path}/`, body);
+      const { data } = await api.post(`${TABLE}/${path}/`, { ...body, room: get().room });
       return get().apply(data);
     } catch (e) {
       // A refusal still carries the table — the usual reason for one is that

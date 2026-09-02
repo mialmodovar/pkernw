@@ -2097,6 +2097,79 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(table["phase"], "betting")
         self.assertIsNone(table["seats"][0]["planned"])
 
+    def test_the_two_rooms_are_two_tables(self):
+        # Same machinery, different row: a second room is a second clock, a
+        # second shoe and a second set of chairs.
+        self.client.post(reverse("blackjack-table-join"), {"room": "high"}, format="json")
+
+        low = self.client.get(reverse("blackjack-table")).data["table"]
+        high = self.client.get(reverse("blackjack-table"), {"room": "high"}).data["table"]
+
+        self.assertEqual(low["room"]["key"], "main")
+        self.assertFalse(low["room"]["high"])
+        self.assertIsNone(low["my_seat"])
+        self.assertEqual(high["room"]["key"], "high")
+        self.assertTrue(high["room"]["high"])
+        self.assertEqual(high["my_seat"], 0)
+
+    def test_the_high_room_starts_where_the_low_one_stops(self):
+        low = self.client.get(reverse("blackjack-table")).data["table"]
+        high = self.client.get(reverse("blackjack-table"), {"room": "high"}).data["table"]
+
+        self.assertEqual((low["min_bet"], low["max_bet"]), (5, 500))
+        # No ceiling but the wallet, which is the whole point of the room.
+        self.assertEqual(high["min_bet"], 500)
+        self.assertIsNone(high["max_bet"])
+
+    def test_the_high_room_refuses_a_low_bet_and_takes_a_huge_one(self):
+        # Ten times what the low room would ever accept, and past its ceiling by
+        # twenty times. Nothing but the wallet says no.
+        grant(self.ana, 20000, "test")
+        purse = self._balance(self.ana)
+        self.client.post(reverse("blackjack-table-join"), {"room": "high"}, format="json")
+
+        small = self.client.post(
+            reverse("blackjack-table-bet"), {"amount": 100, "room": "high"}, format="json",
+        )
+        self.assertEqual(small.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("500", small.data["error"])
+
+        big = self.client.post(
+            reverse("blackjack-table-bet"), {"amount": 10000, "room": "high"}, format="json",
+        )
+        self.assertEqual(big.status_code, status.HTTP_200_OK)
+        self.assertEqual(self._balance(self.ana), purse - 10000)
+
+    def test_a_bet_past_the_wallet_is_still_refused_in_the_high_room(self):
+        # Unlimited means unlimited by the house, not by arithmetic.
+        self.client.post(reverse("blackjack-table-join"), {"room": "high"}, format="json")
+
+        refused = self.client.post(
+            reverse("blackjack-table-bet"),
+            {"amount": SIGNUP_COINS + 1, "room": "high"}, format="json",
+        )
+
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._balance(self.ana), SIGNUP_COINS)
+
+    def test_a_room_nobody_has_heard_of_is_the_cheap_one(self):
+        # The room is a query parameter, and the safe direction to be wrong in
+        # is the one that costs less.
+        table = self.client.get(reverse("blackjack-table"), {"room": "penthouse"}).data["table"]
+
+        self.assertEqual(table["room"]["key"], "main")
+        self.assertEqual(table["min_bet"], 5)
+
+    def test_a_seat_in_one_room_is_not_a_seat_in_the_other(self):
+        self.client.post(reverse("blackjack-table-join"))
+
+        refused = self.client.post(
+            reverse("blackjack-table-bet"), {"amount": 500, "room": "high"}, format="json",
+        )
+
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._balance(self.ana), SIGNUP_COINS)
+
     def test_a_round_pays_out_once_however_many_times_it_is_walked(self):
         self._deal_a_round()
         self._run_out()

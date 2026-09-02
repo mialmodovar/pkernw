@@ -75,7 +75,6 @@ from django.utils import timezone
 
 from . import blackjack, games
 from .economy import grant, spend, wallet_for
-from .games import clean_stake
 from .models import BlackjackSeat, BlackjackTable, CoinLedger
 
 BETTING = BlackjackTable.BETTING
@@ -124,6 +123,71 @@ TABLE_FIELDS = ["phase", "phase_ends_at", "round_number", "deck", "dealer", "tur
 SEAT_FIELDS = ["bet", "hands", "net", "idle_rounds", "planned"]
 
 PUBLIC = "main"
+HIGH = "high"
+
+# The two rooms, which are two rows in the same table and nothing else. `key`
+# was always on the model for this — see BlackjackTable — so a second room is a
+# second clock, a second shoe and a second set of chairs, with every coin memo
+# already carrying the table id that keeps them apart.
+#
+# `max` of None means the only ceiling is the wallet. That is the whole point of
+# the high room: the low one is a place to learn the game for pocket change and
+# the high one is a place to lose a afternoon's winnings on one hand, and a cap
+# would be the house telling somebody how brave they may be. The floor is what
+# actually separates them — 500 in the high room is the low room's entire
+# ceiling — so nobody wanders in by accident.
+ROOMS = {
+    PUBLIC: {
+        "key": PUBLIC,
+        "name": "Low stakes",
+        "blurb": "Five to five hundred. Learn it here.",
+        "min": games.BLACKJACK.min_stake,
+        "max": games.BLACKJACK.max_stake,
+    },
+    HIGH: {
+        "key": HIGH,
+        "name": "High stakes",
+        "blurb": "Five hundred minimum, and no ceiling but your wallet.",
+        "min": 500,
+        "max": None,
+    },
+}
+
+
+def room_of(key) -> dict:
+    """The room a request is about, defaulting to the low one.
+
+    Anything unrecognised is the low room rather than an error: the room is a
+    query parameter and the worst a bad one can do is put somebody at the
+    cheaper table, which is the safe direction to be wrong in.
+    """
+    return ROOMS.get(str(key or PUBLIC), ROOMS[PUBLIC])
+
+
+def room_stake(room: dict, value):
+    """A stake this room will take, or None.
+
+    Refused rather than clamped, exactly as games.clean_stake refuses: a player
+    who asked for ten thousand and was quietly given five hundred has been
+    charged something they did not agree to. Kept here rather than there because
+    a SideGame has one pair of limits and this table now has two.
+    """
+    try:
+        stake = int(value)
+    except (TypeError, ValueError):
+        return None
+    if stake < room["min"]:
+        return None
+    if room["max"] is not None and stake > room["max"]:
+        return None
+    return stake
+
+
+def stake_range(room: dict) -> str:
+    """What to tell somebody whose bet was refused."""
+    if room["max"] is None:
+        return f"A bet is {room['min']} coins or more."
+    return f"A bet is between {room['min']} and {room['max']} coins."
 
 
 # ---------------------------------------------------------------------------
@@ -220,19 +284,19 @@ def seat_memo(table, seat_number: int) -> str:
 # The table itself.
 # ---------------------------------------------------------------------------
 
-def public_table():
-    """The one public table, opened the first time anybody looks at it.
+def public_table(room=PUBLIC):
+    """A room's table, opened the first time anybody looks at it.
 
     Created on demand rather than by a migration or a fixture, exactly as
     economy.wallet_for opens a wallet: there is nothing to run and nothing to
     remember to run, and a fresh database grows a table the moment somebody
     asks for one.
     """
-    table, _ = BlackjackTable.objects.get_or_create(key=PUBLIC)
+    table, _ = BlackjackTable.objects.get_or_create(key=room_of(room)["key"])
     return table
 
 
-def locked_table(now=None, rng=None):
+def locked_table(room=PUBLIC, now=None, rng=None):
     """The table, held under a row lock and walked up to date.
 
     Must be called inside `transaction.atomic`, and is the first thing every
@@ -241,8 +305,9 @@ def locked_table(now=None, rng=None):
     and deal the same round, and the second one blocks here until the first has
     committed and then reads a table that has already moved on.
     """
-    public_table()
-    table = BlackjackTable.objects.select_for_update().get(key=PUBLIC)
+    key = room_of(room)["key"]
+    public_table(key)
+    table = BlackjackTable.objects.select_for_update().get(key=key)
     advance(table, now, rng)
     return table
 
@@ -551,7 +616,7 @@ def seat_of(table, user):
     return table.seats.filter(user=user).first()
 
 
-def look(user=None, now=None):
+def look(user=None, room=PUBLIC, now=None):
     """The table as it stands, walked up to date and nothing else.
 
     A read that writes, which is the price of having no worker: the request that
@@ -560,7 +625,7 @@ def look(user=None, now=None):
     a poll arriving mid-deal waits for the deal rather than seeing half of it.
     """
     with transaction.atomic():
-        return locked_table(now)
+        return locked_table(room, now)
 
 
 def free_seat(taken) -> int | None:
@@ -574,7 +639,7 @@ def free_seat(taken) -> int | None:
     return next((number for number in range(SEATS) if number not in taken), None)
 
 
-def join(user, now=None):
+def join(user, room=PUBLIC, now=None):
     """Join the game. The table finds you a chair.
 
     Choosing a seat was a decision with nothing behind it: the chairs are
@@ -586,7 +651,7 @@ def join(user, now=None):
     which is what joining a table in play means everywhere.
     """
     with transaction.atomic():
-        table = locked_table(now)
+        table = locked_table(room, now)
         if seat_of(table, user) is not None:
             return "You are already at this table."
 
@@ -610,7 +675,7 @@ def join(user, now=None):
     return table
 
 
-def leave(user, now=None):
+def leave(user, room=PUBLIC, now=None):
     """Give up your seat, taking back a bet that has not been dealt to yet.
 
     Refused while there are cards on the seat. A hand that has been dealt is
@@ -622,7 +687,7 @@ def leave(user, now=None):
     their seat idles out three windows after that.
     """
     with transaction.atomic():
-        table = locked_table(now)
+        table = locked_table(room, now)
         seat = seat_of(table, user)
         if seat is None:
             return "You are not sitting at this table."
@@ -639,7 +704,7 @@ def leave(user, now=None):
     return table
 
 
-def place_bet(user, amount, now=None):
+def place_bet(user, amount, room=PUBLIC, now=None):
     """Put coins up for the coming round, on your own seat, once.
 
     There is no seat on the wire: a bet is placed on the seat the caller is
@@ -651,7 +716,7 @@ def place_bet(user, amount, now=None):
     add to it, which is a raise, and neither is a thing this table offers.
     """
     with transaction.atomic():
-        table = locked_table(now)
+        table = locked_table(room, now)
         if table.phase != BETTING:
             return "Betting is closed for this round."
 
@@ -661,12 +726,10 @@ def place_bet(user, amount, now=None):
         if seat.bet > 0:
             return "You have already bet this round."
 
-        stake = clean_stake(games.BLACKJACK, amount)
+        limits = room_of(room)
+        stake = room_stake(limits, amount)
         if stake is None:
-            return (
-                f"A bet is between {games.BLACKJACK.min_stake} "
-                f"and {games.BLACKJACK.max_stake} coins."
-            )
+            return stake_range(limits)
 
         # Taken before the bet is written and inside the same transaction as it,
         # so there is never a bet on the table that nobody paid for. A refusal
@@ -727,7 +790,7 @@ def _split(table, seat, hand):
 MOVES = {"hit": _hit, "stand": _stand, "double": _double, "split": _split}
 
 
-def act(user, action, now=None):
+def act(user, action, room=PUBLIC, now=None):
     """Play your own hand, during the playing window, if the rules allow it.
 
     The client's opinion about which buttons it drew is not consulted. This asks
@@ -739,7 +802,7 @@ def act(user, action, now=None):
         return "That is not a move."
 
     with transaction.atomic():
-        table = locked_table(now)
+        table = locked_table(room, now)
         if table.phase != PLAYING:
             return "There is nothing to play right now."
 
@@ -783,7 +846,7 @@ def act(user, action, now=None):
     return table
 
 
-def plan(user, action, now=None):
+def plan(user, action, room=PUBLIC, now=None):
     """Choose a move for a turn that has not arrived yet. Returns the table.
 
     Deliberately not validated against the cards. What is legal changes between
@@ -801,7 +864,7 @@ def plan(user, action, now=None):
         return "That is not a move."
 
     with transaction.atomic():
-        table = locked_table(now)
+        table = locked_table(room, now)
         seat = seat_of(table, user)
         if seat is None:
             return "You are not sitting at this table."
@@ -823,5 +886,6 @@ __all__ = [
     "advance", "act", "join", "leave", "look", "place_bet", "public_table",
     "seat_of", "free_seat",
     "seat_memo", "seconds_left", "phase_after", "active_hand",
+    "ROOMS", "PUBLIC", "HIGH", "room_of", "room_stake", "stake_range",
     "turn_after", "plan",
 ]

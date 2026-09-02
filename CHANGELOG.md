@@ -9,6 +9,17 @@ remembering.
 ## Unreleased
 
 ### Added
+- **A high-stakes blackjack room.** Two tables now instead of one, and they are
+  two tables rather than two views of the same one — a clock, a shoe and six
+  chairs each. The low room is the one that was already there: five to five
+  hundred, somewhere to learn the game for pocket change. The high room starts
+  at five hundred, which is the low room's entire ceiling, and has no ceiling of
+  its own at all: the only thing that says no is your wallet. A floor that high
+  is also what stops anybody wandering in by accident.
+
+  It gets a felt of its own — oxblood and gold against the house green — because
+  the difference between the two rooms is the sort of thing that has to be
+  obvious from across the lobby rather than read off a number.
 - **The blackjack table is shared.** Eight seats, one dealer, one shoe: you take
   a chair and the cards that come out are the cards everybody else at the table
   is looking at, settled against the same dealer hand. What makes it worth

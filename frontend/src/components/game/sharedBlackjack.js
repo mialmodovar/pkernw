@@ -37,10 +37,13 @@ import {
   outcomeLine, stakeLimits,
 } from "./blackjack";
 
-// Eight chairs, drawn before the table has said anything at all. The number is
-// the server's (see the contract); it is restated here only so the felt can be
-// laid out on the first paint instead of popping into existence a poll later.
-export const SEAT_COUNT = 8;
+// Six chairs, drawn before the table has said anything at all. The number is
+// the server's (see blackjacktable.SEATS); it is restated here only so the felt
+// can be laid out on the first paint instead of popping into existence a poll
+// later. Six rather than eight because eight fitted on the row and not on the
+// felt — two neighbours who each drew twice had four cards where there was room
+// for two.
+export const SEAT_COUNT = 6;
 
 // Rounds without a bet before the seat is given up. Restated for exactly one
 // purpose — warning somebody who is on their last one. The standing up itself
@@ -410,21 +413,44 @@ export function seatStates(table) {
  * afford to bet from is a seat the server stands you up out of in three rounds,
  * and that is worth saying before somebody takes it rather than after.
  */
-export function canSit(table, seat, balance = null) {
+export function canJoin(table, balance = null) {
   if (!table) return { allowed: false, reason: "Waiting for the table" };
-
-  const index = seatIndex(seat);
-  if (index == null || index < 0 || index >= seatTotal(table)) {
-    return { allowed: false, reason: "No such seat" };
+  if (isSeated(table)) return { allowed: false, reason: "You are already here" };
+  if (players(table).length >= seatTotal(table)) {
+    return { allowed: false, reason: "The table is full" };
   }
-  if (seatRow(table, index)?.player) return { allowed: false, reason: "Taken" };
-  if (isSeated(table)) return { allowed: false, reason: "You are already seated" };
 
   const { min } = betLimits(table);
   if (balance != null && Number(balance) < min) {
     return { allowed: false, reason: "Not enough coins" };
   }
   return { allowed: true, reason: null };
+}
+
+/**
+ * The people actually at the table, in the order they are asked.
+ *
+ * Only the occupied chairs. There is no picking a seat any more, so an empty
+ * one is not a thing to offer — it is a gap in a row of people, and the row
+ * spreads to fill the felt instead of leaving holes where nobody is.
+ */
+export function players(table) {
+  return seatRows(table).filter((row) => row?.player);
+}
+
+/**
+ * How much of each card after the first is hidden behind the one before it.
+ *
+ * Two cards fit side by side at any table size, so they sit side by side. Past
+ * that they are fanned, because the seat tile does not grow when a hand does:
+ * two players next to each other who each drew twice had four cards where there
+ * was room for two, and the tiles ran into one another. A fanned hand is how a
+ * hand of cards actually looks in somebody's hand, and it is readable — the
+ * rank is centred on the card and the overlap comes off the right of each.
+ */
+export function cardOverlap(count) {
+  if (count <= 2) return 0;
+  return count === 3 ? 0.3 : 0.45;
 }
 
 /**

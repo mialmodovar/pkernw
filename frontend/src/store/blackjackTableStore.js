@@ -84,7 +84,8 @@ const useBlackjackTableStore = create((set, get) => ({
     }
   },
 
-  sit: (seat) => get().post("sit", { seat }, `sit:${seat}`),
+  /** Join the game. There is no chair to pick — the table finds you one. */
+  join: () => get().post("join", {}, "join"),
   leave: () => get().post("leave", {}, "leave"),
   bet: (amount) => get().post("bet", { amount }, "bet"),
   act: (action) => get().post("act", { action }, action),

@@ -9,8 +9,8 @@ import useWalletStore from "../../store/walletStore";
 import { playBlackjack, playBust, playCard, playChips, playPush, playWin } from "./sounds";
 import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
-  PLAN_MOVES, canBet, canPlan, canSit, dealerTableLine, myPlan, occupancy, mySeat,
-  phaseLine, seatState, tableActions,
+  PLAN_MOVES, canBet, canJoin, canPlan, cardOverlap, dealerTableLine, myPlan,
+  mySeat, occupancy, phaseLine, players, seatState, tableActions,
 } from "./sharedBlackjack";
 
 /**
@@ -34,7 +34,7 @@ import {
  */
 export default function SharedBlackjackTable() {
   const {
-    table, error, busy, settledRound, fetch, sit, leave, bet, act, plan,
+    table, error, busy, settledRound, fetch, join, leave, bet, act, plan,
     markSettled, clearError,
   } = useBlackjackTableStore();
   const balance = useWalletStore((s) => s.balance);
@@ -56,6 +56,8 @@ export default function SharedBlackjackTable() {
 
   const phase = phaseLine(table);
   const seat = mySeat(table);
+  const seated = players(table);
+  const entry = canJoin(table, balance);
   // The bet being built. Cleared once it is placed, and again whenever a new
   // round comes round, so last round's stack is not sitting on the felt.
   useEffect(() => { setPending(0); }, [table?.round]);
@@ -83,21 +85,28 @@ export default function SharedBlackjackTable() {
       <div className="@container felt rounded-2xl px-3 py-4 sm:px-5 space-y-4">
         <DealerSide table={table} />
 
-        {/* The eight chairs. Two across on a phone, all eight in a row on a
-            wide screen — a table is a row of people, and it should look like
-            one wherever there is room for it to. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2">
-          {(table.seats || []).map((one) => (
-            <SeatTile
-              key={one.seat}
-              seat={one}
-              table={table}
-              balance={balance}
-              busy={busy}
-              onSit={() => sit(one.seat)}
-            />
-          ))}
-        </div>
+        {/* The people who are here, and only them. A row rather than a grid of
+            chairs: nobody picks a seat any more, so an empty one is not an
+            offer, it is a hole. Each tile takes an equal share of the felt
+            between a floor and a ceiling, so two players get a wide comfortable
+            hand each and six still fit — and the row wraps rather than
+            squeezing past the point a hand can be read. */}
+        {seated.length > 0 ? (
+          <div className="flex flex-wrap justify-center gap-2">
+            {seated.map((one) => (
+              <SeatTile
+                key={one.seat}
+                seat={one}
+                table={table}
+                className="flex-1 basis-[7.5rem] min-w-[7.5rem] max-w-[13rem]"
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-xs text-(--color-text-muted) py-6">
+            Nobody is playing. The table deals as soon as somebody bets.
+          </p>
+        )}
       </div>
 
       {error && (
@@ -120,9 +129,24 @@ export default function SharedBlackjackTable() {
           onLeave={leave}
         />
       ) : (
-        <p className="text-xs text-(--color-text-muted) text-center py-2">
-          Take a seat to play. The table deals whether or not you are in it.
-        </p>
+        <div className="space-y-1.5">
+          {/* One button, because there is one thing to decide. Picking a chair
+              was a choice with nothing behind it — see blackjacktable.join. */}
+          <button
+            type="button"
+            disabled={!entry.allowed || busy === "join"}
+            onClick={join}
+            className={`w-full py-2.5 rounded font-bold text-sm transition-colors ${
+              entry.allowed && busy !== "join"
+                ? "btn-accent" : "btn-secondary opacity-50 cursor-not-allowed"
+            }`}
+          >
+            {busy === "join" ? "Joining..." : entry.allowed ? "Join the game" : entry.reason}
+          </button>
+          <p className="text-[11px] text-(--color-text-muted) text-center">
+            The table deals whether or not you are in it.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -165,30 +189,13 @@ function DealerSide({ table }) {
  * the person next to you draw to sixteen is the entire reason to sit at a table
  * rather than play alone.
  */
-function SeatTile({ seat, table, balance, busy, onSit }) {
+function SeatTile({ seat, table, className = "" }) {
   const state = seatState(seat, table);
   const hand = seat.hands?.[0] || null;
-
-  if (state.empty) {
-    const { allowed, reason } = canSit(table, seat.seat, balance);
-    return (
-      <button
-        type="button"
-        disabled={!allowed || busy === `sit:${seat.seat}`}
-        onClick={onSit}
-        title={reason || `Sit in seat ${seat.seat + 1}`}
-        className={`rounded-lg border border-dashed min-h-[5.5rem] flex flex-col
-                    items-center justify-center gap-1 transition-colors ${
-          allowed
-            ? "border-(--color-border-strong) text-(--color-text-muted) hover:border-(--color-highlight-text) hover:text-(--color-silver)"
-            : "border-(--color-border) text-(--color-text-muted) opacity-40 cursor-not-allowed"
-        }`}
-      >
-        <Icon name="casino" className="w-4 h-4" />
-        <span className="text-[10px] uppercase tracking-wider">Sit</span>
-      </button>
-    );
-  }
+  const cards = hand?.cards || [];
+  // Past two cards the hand is fanned rather than laid out, or a seat that drew
+  // twice runs into the one beside it. See cardOverlap.
+  const overlap = cardOverlap(cards.length);
 
   return (
     <div
@@ -196,8 +203,8 @@ function SeatTile({ seat, table, balance, busy, onSit }) {
       // screen that everybody has to be able to find at a glance, so it beats
       // "this one is mine" for the border — you already know which seat is
       // yours, and the ring says it too.
-      className={`rounded-lg px-2 py-2 min-h-[5.5rem] flex flex-col items-center gap-1
-                  border transition-colors ${
+      className={`${className} rounded-lg px-2 py-2 min-h-[5.5rem] flex flex-col
+                  items-center gap-1 border transition-colors ${
         state.turn
           ? "border-(--color-highlight-text) bg-(--color-highlight-dim) ring-2 ring-(--color-highlight-edge)"
           : state.mine
@@ -221,10 +228,25 @@ function SeatTile({ seat, table, balance, busy, onSit }) {
         </span>
       </div>
 
-      <div className="flex gap-0.5 min-h-[2rem] items-start">
-        {(hand?.cards || []).map((card, index) => (
-          <span key={`${card}-${index}`} className="animate-bj-deal"
-            style={{ animationDelay: `${index * 70}ms` }}>
+      <div className="flex min-h-[2rem] items-start justify-center">
+        {cards.map((card, index) => (
+          <span
+            key={`${card}-${index}`}
+            className="animate-bj-deal shrink-0"
+            style={{
+              // A share of one card's width, which is the clamp PlayingCard
+              // gives size="seat" — kept in step with it by hand, because a
+              // Tailwind class has to be a literal string for the scanner to
+              // find it and cannot be built out of a shared constant.
+              marginLeft: index === 0
+                ? undefined
+                : `calc(-${overlap} * clamp(1.52rem,4.97cqw,3.31rem))`,
+              // Later cards over earlier ones, so the fan opens to the right
+              // and every rank stays readable.
+              zIndex: index,
+              animationDelay: `${index * 70}ms`,
+            }}
+          >
             <PlayingCard card={card} size="seat" />
           </span>
         ))}

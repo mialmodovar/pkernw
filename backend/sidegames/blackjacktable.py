@@ -92,7 +92,13 @@ SETTLING = BlackjackTable.SETTLING
 # move never costs the table a full one.
 PHASE_SECONDS = {BETTING: 12, PLAYING: 10, SETTLING: 6}
 
-SEATS = 8
+# Six rather than eight. Eight fitted on the row and not on the felt: two
+# players sitting next to each other who each drew twice had four cards where
+# there was room for two, and the tiles overlapped into each other. Six is the
+# most this table can seat and still give everybody a hand you can read, and the
+# layout spreads whoever is actually there across the room the empties are no
+# longer taking — see the client.
+SEATS = 6
 
 # Betting windows in a row a seat may sit out before it is given up. Three is
 # about thirty-six seconds of a seat held by somebody who is not playing.
@@ -557,40 +563,49 @@ def look(user=None, now=None):
         return locked_table(now)
 
 
-def sit(user, seat_value, now=None):
-    """Take a seat. Refuses one that is taken, and a second seat for one player.
+def free_seat(taken) -> int | None:
+    """The lowest chair nobody is in, or None at a full table.
+
+    Lowest rather than any, so that a table filling up fills up from one end and
+    the players sit together. The number still decides the order they are asked
+    in — see turn_after — but it is no longer something anybody picks: you join
+    the game and the table puts you somewhere.
+    """
+    return next((number for number in range(SEATS) if number not in taken), None)
+
+
+def join(user, now=None):
+    """Join the game. The table finds you a chair.
+
+    Choosing a seat was a decision with nothing behind it: the chairs are
+    identical, an empty one between two players was a hole in the layout, and
+    the only thing the number decides is the order the seats are asked in, which
+    is not a thing anybody was picking a chair to get.
 
     Allowed in any phase — you sit down and wait for the next betting window,
-    which is what sitting down at a table in play means everywhere.
+    which is what joining a table in play means everywhere.
     """
-    try:
-        seat_number = int(seat_value)
-    except (TypeError, ValueError):
-        return "That is not a seat."
-    if seat_number < 0 or seat_number >= SEATS:
-        return f"Seats are numbered 0 to {SEATS - 1}."
-
     with transaction.atomic():
         table = locked_table(now)
-        mine = seat_of(table, user)
-        if mine is not None:
-            return (
-                "You are already in this seat."
-                if mine.seat == seat_number
-                else f"You are already sitting in seat {mine.seat}."
-            )
+        if seat_of(table, user) is not None:
+            return "You are already at this table."
+
+        taken = {seat.seat for seat in table.seats.all()}
+        number = free_seat(taken)
+        if number is None:
+            return "The table is full."
 
         try:
             # In its own block so that a refused seat leaves the transaction
             # usable: an IntegrityError poisons the atomic block it happens in,
             # and the walk that advance() just did is in the outer one and must
-            # survive. The lock above already serialises two people pressing the
-            # same seat; this is the guard for the case a lock cannot cover, and
-            # for the day this table is served by two processes on two rows.
+            # survive. The lock above already serialises two people joining at
+            # once; this is the guard for the case a lock cannot cover, and for
+            # the day this table is served by two processes on two rows.
             with transaction.atomic():
-                BlackjackSeat.objects.create(table=table, user=user, seat=seat_number)
+                BlackjackSeat.objects.create(table=table, user=user, seat=number)
         except IntegrityError:
-            return "That seat has just been taken."
+            return "Somebody got there first — try again."
 
     return table
 
@@ -805,7 +820,8 @@ def balance_of(user) -> int:
 
 __all__ = [
     "BETTING", "PLAYING", "SETTLING", "SEATS", "PHASE_SECONDS", "IDLE_LIMIT",
-    "advance", "act", "leave", "look", "place_bet", "public_table", "seat_of",
-    "seat_memo", "seconds_left", "phase_after", "active_hand", "sit",
+    "advance", "act", "join", "leave", "look", "place_bet", "public_table",
+    "seat_of", "free_seat",
+    "seat_memo", "seconds_left", "phase_after", "active_hand",
     "turn_after", "plan",
 ]

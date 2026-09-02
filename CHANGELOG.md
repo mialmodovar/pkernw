@@ -192,6 +192,15 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **A clock over the seat being asked, and a slower reveal.** Whoever the table
+  is waiting on now has a bar draining across the top of their place, so "is it
+  nearly me" is a thing you can see rather than a number you have to find and
+  read. Only theirs — it is one seat's deadline, and a bar over every chair
+  would read as the table's.
+
+  The dealer's reveal is half the speed it was again. Turning the hole card and
+  drawing the house out is the moment the round is decided, and it was still
+  going past before anybody had looked up.
 - **The blackjack betting area, and the four buttons you play with.** There is a
   slider now — a player asked for one, and it was the right ask twice over: the
   three fixed chips could only ever offer three figures, and once the high room

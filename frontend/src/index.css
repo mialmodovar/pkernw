@@ -1053,7 +1053,7 @@ button:disabled {
    thing at this table worth watching — and it was over in a fifth of a second. */
 
 .animate-bj-flip {
-  animation: bj-flip 520ms ease-in-out both;
+  animation: bj-flip 1040ms ease-in-out both;
 }
 
 /* A chip going onto the bet. Drops from the player's side and bounces once,

@@ -396,6 +396,18 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The hole card turns over instead of being turned over and then wobbling.**
+  It was showing its face the moment the round settled and playing the flip
+  afterwards, which is the reveal happening and then an animation about it. The
+  back is still there now and still has to get out of the way: it squashes to
+  nothing and the face opens out from behind it, half a turn later.
+
+### Changed
+- **Fifteen seconds a turn instead of ten**, which was long enough to press a
+  button and not long enough to think about a sixteen against a face card.
+- **The betting window has a bar as well as a number.** Twelve seconds is a
+  thing you have to read; a bar draining is a thing you see, and this is the
+  window with something to do in it.
 - **The blackjack table deals at the speed of a pair of hands.** The whole round
   arrives from the server at once, so the dealing was always the screen
   pretending — and it was pretending badly: every seat's cards appeared at the

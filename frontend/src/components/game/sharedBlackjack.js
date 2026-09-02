@@ -330,25 +330,45 @@ export function drawDelay(card) {
   return REVEAL_MS + FLIP_MS + Math.max(0, card - 2) * DRAW_STEP_MS;
 }
 
-// How long a turn is, in seconds. The server's number (blackjacktable
-// PHASE_SECONDS), restated here for the same reason SEAT_COUNT is: the bar over
-// the seat being asked has to know what a full one looks like, and the payload
-// only says how much is left.
-export const TURN_SECONDS = 10;
+// How long each window is, in seconds. The server's numbers (blackjacktable
+// PHASE_SECONDS), restated here for the same reason SEAT_COUNT is: a bar has to
+// know what a full one looks like, and the payload only says how much is left.
+export const TURN_SECONDS = 15;
+export const BETTING_SECONDS = 12;
 
 /**
- * How much of the current turn is left, as a percentage.
+ * How much of a window is left, as a percentage of its full length.
  *
- * Null when there is no turn running, so the bar is absent rather than empty —
- * a drained clock over a seat nobody is waiting on reads as somebody having run
- * out of time. Clamped both ways: a turn that has overrun its clock without a
- * poll to notice is at zero, not at a negative width.
+ * Clamped both ways: a window that has overrun its clock without a poll to
+ * notice it is at zero, not at a negative width.
+ */
+function windowPct(table, seconds) {
+  const left = secondsLeft(table);
+  if (left == null) return null;
+  return Math.max(0, Math.min(100, (left / seconds) * 100));
+}
+
+/**
+ * How much of the current turn is left, or null when nobody is being asked.
+ *
+ * Null rather than zero, so the bar is absent rather than empty — a drained
+ * clock over a seat nobody is waiting on reads as somebody having timed out.
  */
 export function turnPct(table) {
   if (table?.phase !== "playing" || table?.turn == null) return null;
-  const left = secondsLeft(table);
-  if (left == null) return null;
-  return Math.max(0, Math.min(100, (left / TURN_SECONDS) * 100));
+  return windowPct(table, TURN_SECONDS);
+}
+
+/**
+ * How much of the betting window is left, or null when it is not open.
+ *
+ * The same clock the heading already prints as a number. A bar as well, because
+ * "twelve seconds" is a thing you have to read and a bar is a thing you see —
+ * and this is the window with something to do in it.
+ */
+export function bettingPct(table) {
+  if (table?.phase !== "betting") return null;
+  return windowPct(table, BETTING_SECONDS);
 }
 
 /** The stakes this table takes, as {min, max}, before its payload has landed. */

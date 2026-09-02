@@ -88,8 +88,10 @@ SETTLING = BlackjackTable.SETTLING
 # than the twenty seconds it used to be — eight of these end to end is already
 # a long time to sit through, and the two things that keep it short in practice
 # are that a turn ends when its seat is done and that a seat which planned its
-# move never costs the table a full one.
-PHASE_SECONDS = {BETTING: 12, PLAYING: 10, SETTLING: 6}
+# move never costs the table a full one. Fifteen rather than ten: ten was long
+# enough to hit a button and not long enough to think about a sixteen against a
+# face card, which is the hand the whole game is about.
+PHASE_SECONDS = {BETTING: 12, PLAYING: 15, SETTLING: 6}
 
 # Six rather than eight. Eight fitted on the row and not on the felt: two
 # players sitting next to each other who each drew twice had four cards where

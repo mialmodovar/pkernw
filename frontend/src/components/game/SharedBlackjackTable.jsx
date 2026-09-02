@@ -9,9 +9,9 @@ import useWalletStore from "../../store/walletStore";
 import { playBlackjack, playBust, playCard, playChips, playPush, playWin } from "./sounds";
 import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
-  PLAN_MOVES, REVEAL_MS, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
+  FLIP_MS, PLAN_MOVES, REVEAL_MS, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
   cardOverlap, dealDelay, dealerTableLine, drawDelay, myPlan, mySeat, occupancy,
-  phaseLine, players, seatState, tableActions, turnPct,
+  bettingPct, phaseLine, players, seatState, tableActions, turnPct,
 } from "./sharedBlackjack";
 
 /**
@@ -56,6 +56,7 @@ export default function SharedBlackjackTable() {
   useTableSounds(table, settledRound, markSettled);
 
   const phase = phaseLine(table);
+  const betClock = bettingPct(table);
   const seat = mySeat(table);
   const seated = players(table);
   const entry = canJoin(table, balance);
@@ -82,6 +83,21 @@ export default function SharedBlackjackTable() {
           {occupancy(table)}
         </span>
       </div>
+
+      {/* The betting window, drawn as well as counted. The seconds are already
+          in the line above; this is the same clock for the part of the eye that
+          does not read. Only while there is something to do about it — a bar
+          over the dealer playing is a deadline for a decision nobody has. */}
+      {betClock != null && (
+        <div className="h-1 rounded-full bg-black/40 overflow-hidden -mt-1.5"
+          role="progressbar" aria-label="Time left to bet">
+          <div
+            className="h-full rounded-full bg-(--color-highlight-bright)
+                       transition-[width] duration-1000 ease-linear"
+            style={{ width: `${betClock}%` }}
+          />
+        </div>
+      )}
 
       {/* Oxblood and gold in the high room, the house green in the low one. The
           minimum in there is this room's whole ceiling, so the two must not be
@@ -198,14 +214,28 @@ function DealerSide({ table, seats }) {
                 : `${drawDelay(index)}ms`,
             }}
           >
-            {card === "??"
-              ? <CardBack size="hand" />
-              : (
-                <span key={card} className={index === 1 ? "block animate-bj-flip" : "block"}
-                  style={index === 1 ? { animationDelay: `${REVEAL_MS}ms` } : undefined}>
+            {card === "??" ? (
+              <CardBack size="hand" />
+            ) : index === 1 ? (
+              // The hole card, turning over. The back is still there and still
+              // has to get out of the way: it squashes to nothing and the face
+              // opens out from nothing behind it, half a turn later. Showing
+              // the face and then animating it is what this did before, and
+              // what that looks like is the card being revealed and then
+              // wobbling.
+              <span className="relative block">
+                <span className="block animate-bj-turn-in"
+                  style={{ animationDelay: `${REVEAL_MS + FLIP_MS / 2}ms` }}>
                   <PlayingCard card={card} size="hand" />
                 </span>
-              )}
+                <span className="absolute inset-0 animate-bj-turn-out"
+                  style={{ animationDelay: `${REVEAL_MS}ms` }} aria-hidden="true">
+                  <CardBack size="hand" />
+                </span>
+              </span>
+            ) : (
+              <PlayingCard card={card} size="hand" />
+            )}
           </span>
         ))}
       </div>

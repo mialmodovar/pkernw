@@ -1658,6 +1658,45 @@ class BlackjackTableRulesTests(TestCase):
         self.assertEqual(phase_after(SETTLING, dealt=True), BETTING)
 
 
+class _FakeSeat:
+    """Just enough of a seat for turn_after, which only reads two attributes."""
+
+    def __init__(self, seat, hands):
+        self.seat = seat
+        self.hands = hands
+
+
+class BlackjackTableTurnTests(TestCase):
+    """Who is asked, and in what order."""
+
+    def _live(self, number):
+        return _FakeSeat(number, [blackjack.new_hand(["9s", "7h"], 25)])
+
+    def _done(self, number):
+        hand = blackjack.new_hand(["Ts", "Ks"], 25)
+        hand["status"] = blackjack.STOOD
+        return _FakeSeat(number, [hand])
+
+    def test_the_first_turn_is_the_right_hand_seat(self):
+        seats = [self._live(0), self._live(3), self._live(6)]
+        self.assertEqual(blackjacktable.turn_after(seats, None), 6)
+
+    def test_the_turn_counts_down_and_never_doubles_back(self):
+        seats = [self._live(0), self._live(3), self._live(6)]
+        self.assertEqual(blackjacktable.turn_after(seats, 6), 3)
+        self.assertEqual(blackjacktable.turn_after(seats, 3), 0)
+        self.assertIsNone(blackjacktable.turn_after(seats, 0))
+
+    def test_a_seat_with_nothing_to_decide_is_never_asked(self):
+        # A natural, a hand already stood, and a chair nobody bet from.
+        seats = [self._live(1), self._done(4), _FakeSeat(7, [])]
+        self.assertEqual(blackjacktable.turn_after(seats, None), 1)
+
+    def test_no_seat_left_to_ask_is_how_the_round_ends(self):
+        self.assertIsNone(blackjacktable.turn_after([self._done(2)], None))
+        self.assertIsNone(blackjacktable.turn_after([], None))
+
+
 class BlackjackTableApiTests(APITestCase):
     """Eight seats, one dealer, and the money that moves between them."""
 
@@ -1749,11 +1788,12 @@ class BlackjackTableApiTests(APITestCase):
     def _shoe(self, *named):
         """Two decks with these cards on top, in the order they come out.
 
-        The table deals round the seats, then the dealer's up card, then round
-        the seats again, then the hole card, so `named` reads in exactly that
-        order — and anything after the sixth is a card drawn later, in the order
-        it is drawn. The rest of the shoe follows in an order nobody should
-        depend on: a test that needs a particular card must name it.
+        The table deals the way a casino does: one card round the seats, the
+        house's hole card face down, a second card round the seats, and the
+        house's up card last. So `named` reads in that order — seat 0, seat 4,
+        HOLE, seat 0, seat 4, UP — and anything after the sixth is a card drawn
+        later, in the order it is drawn. The rest of the shoe follows in an
+        order nobody should depend on: a test that needs a card must name it.
         """
         named = list(named)
         assert len(set(named)) == len(named), "a stacked shoe named the same card twice"
@@ -1772,7 +1812,7 @@ class BlackjackTableApiTests(APITestCase):
     # gave the dealer blackjack and settled the round before the playing window
     # ever opened — and every test below that assumes a window failed for a
     # reason that had nothing to do with what it was testing.
-    QUIET = ("9s", "Td", "5s", "7h", "6c", "9c")
+    QUIET = ("9s", "Td", "9c", "7h", "6c", "5s")
 
     def _deal_a_round(self, *named):
         """Both players seated and bet, and the betting window closed."""
@@ -1823,50 +1863,93 @@ class BlackjackTableApiTests(APITestCase):
 
     def test_a_seat_that_never_acts_is_stood_and_still_settles(self):
         self._deal_a_round()
-        # Neither player touches a button; the playing window simply runs out.
+        # Neither player touches a button. Each turn runs out in its own time
+        # and stands the seat on what it has; nobody freezes the table for
+        # longer than one turn's worth of clock.
         self._run_out()
+        middle = self.client.get(reverse("blackjack-table")).data["table"]
+        self.assertEqual(middle["phase"], "playing")
+        self.assertEqual(middle["turn"], 0)
 
+        self._run_out()
         table = self.client.get(reverse("blackjack-table")).data["table"]
 
         self.assertEqual(table["phase"], "settling")
+        self.assertIsNone(table["turn"])
         for seat in [one for one in table["seats"] if one["player"]]:
             self.assertIsNotNone(seat["hands"][0]["outcome"])
         # And the dealer is face up now that there is nothing left to decide.
         self.assertNotIn("??", table["dealer"]["cards"])
 
+    def test_the_turn_starts_at_the_right_hand_seat(self):
+        # First base is the seat furthest to the right and the turn counts down
+        # from there, which is the order the cards were dealt in.
+        table = self._deal_a_round()
+
+        self.assertEqual(table["phase"], "playing")
+        self.assertEqual(table["turn"], 4)
+
+    def test_the_house_takes_its_hole_card_before_the_second_round_of_cards(self):
+        # One card round the seats, the house's own face down, a second card
+        # round the seats, and the house's up card last of all.
+        table = self._deal_a_round()
+
+        self.assertEqual(table["dealer"]["cards"][0], "5s")
+        self.assertEqual(table["dealer"]["cards"][1], "??")
+        # Stored up card first, whatever order they came off the shoe in: that
+        # is what every reader of the list assumes and what the payload hides.
+        self.assertEqual(self._table().dealer, ["5s", "9c"])
+
+    def test_acting_out_of_turn_is_refused(self):
+        self._deal_a_round()   # the turn is bea's, in seat 4
+        self._as(self.ana)
+
+        refused = self.client.post(
+            reverse("blackjack-table-act"), {"action": "hit"}, format="json",
+        )
+
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(refused.data["table"]["turn"], 4)
+        # And no card left the shoe on her behalf, which is the point: there is
+        # one shoe and the order it comes off in is the order the seats are
+        # asked.
+        self.assertEqual(len(refused.data["table"]["seats"][0]["hands"][0]["cards"]), 2)
+
     def test_the_dealer_turns_over_the_moment_the_last_player_has_played(self):
-        # The window is a deadline, not a duration. Both seats stand well inside
-        # it, nobody touches the clock, and the round is over: a hole card whose
-        # value is already fixed has nothing to gain by staying face down while
-        # the table watches a countdown.
+        # A turn is a deadline, not a duration. Both seats play well inside
+        # theirs, nobody touches the clock, and the round is over: a hole card
+        # whose value is already fixed has nothing to gain by staying face down
+        # while the table watches a countdown.
         self._deal_a_round()
 
-        self._as(self.ana)
+        self._as(self.bea)
         first = self.client.post(
             reverse("blackjack-table-act"), {"action": "stand"}, format="json",
         ).data["table"]
-        # One seat still to play, so nothing has moved and nothing is shown.
+        # One seat still to play, so the turn moves along and nothing is shown.
         self.assertEqual(first["phase"], "playing")
+        self.assertEqual(first["turn"], 0)
         self.assertEqual(first["dealer"]["cards"][1], "??")
 
-        self._as(self.bea)
+        self._as(self.ana)
         table = self.client.post(
             reverse("blackjack-table-act"), {"action": "stand"}, format="json",
         ).data["table"]
 
         self.assertEqual(table["phase"], "settling")
+        self.assertIsNone(table["turn"])
         self.assertNotIn("??", table["dealer"]["cards"])
         for seat in [one for one in table["seats"] if one["player"]]:
             self.assertIsNotNone(seat["hands"][0]["outcome"])
 
     def test_closing_early_gives_settling_its_own_six_seconds(self):
         # An early close has no old end worth adding to. Rolling from the
-        # playing window's scheduled end would hold the cards up for the seconds
-        # the players saved and then six more.
+        # turn's scheduled end would hold the cards up for the seconds the
+        # players saved and then six more.
         self._deal_a_round()
-        self._as(self.ana)
-        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
         self._as(self.bea)
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
+        self._as(self.ana)
         self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
 
         table = self.client.get(reverse("blackjack-table")).data["table"]
@@ -1876,32 +1959,25 @@ class BlackjackTableApiTests(APITestCase):
         )
 
     def test_a_seat_that_has_busted_is_not_waited_for(self):
-        # Ana draws to twenty-six, which decides her hand as firmly as standing
-        # does. Bea is then the last decision at the table.
+        # Ana draws to twenty-six, which ends her turn as firmly as standing
+        # would, and she is the last seat.
         self._deal_a_round(*self.QUIET, "Th")
+        self._as(self.bea)
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
 
         self._as(self.ana)
-        busted = self.client.post(
+        table = self.client.post(
             reverse("blackjack-table-act"), {"action": "hit"}, format="json",
         ).data["table"]
-        self.assertEqual(busted["seats"][0]["hands"][0]["status"], "bust")
-        # Bea has not played, so the dealer waits for her however dead ana is.
-        self.assertEqual(busted["phase"], "playing")
-        self.assertEqual(busted["dealer"]["cards"][1], "??")
 
-        self._as(self.bea)
-        table = self.client.post(
-            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
-        ).data["table"]
-
+        self.assertEqual(table["seats"][0]["hands"][0]["status"], "bust")
         self.assertEqual(table["phase"], "settling")
         self.assertNotIn("??", table["dealer"]["cards"])
 
     def test_a_split_is_not_mistaken_for_being_finished(self):
         # Splitting replaces one decision with two, so the seat that splits is
-        # further from done than it was. Bea stands first, which leaves ana as
-        # the only seat still holding the round up.
-        self._deal_a_round("8s", "Td", "5s", "8h", "6c", "9c", "2h", "3h")
+        # further from done than it was and must keep the turn.
+        self._deal_a_round("8s", "Td", "9c", "8h", "6c", "5s", "2h", "3h")
         self._as(self.bea)
         self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
 
@@ -1912,6 +1988,7 @@ class BlackjackTableApiTests(APITestCase):
 
         self.assertEqual(len(after["seats"][0]["hands"]), 2)
         self.assertEqual(after["phase"], "playing")
+        self.assertEqual(after["turn"], 0)
         self.assertEqual(after["dealer"]["cards"][1], "??")
 
         # Both halves stood, and only then is the table finished with her.
@@ -1921,6 +1998,76 @@ class BlackjackTableApiTests(APITestCase):
         ).data["table"]
         self.assertEqual(table["phase"], "settling")
         self.assertNotIn("??", table["dealer"]["cards"])
+
+    def test_a_planned_move_is_played_the_moment_the_turn_arrives(self):
+        # The whole point of planning: the table does not stop for somebody who
+        # has already made up their mind. Bea's stand is the only request made,
+        # and the round is over when it returns.
+        self._deal_a_round()
+        self._as(self.ana)
+        planned = self.client.post(
+            reverse("blackjack-table-plan"), {"action": "stand"}, format="json",
+        ).data["table"]
+        self.assertEqual(planned["seats"][0]["planned"], "stand")
+        self.assertEqual(planned["turn"], 4)
+
+        self._as(self.bea)
+        table = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+
+        self.assertEqual(table["phase"], "settling")
+        self.assertEqual(table["seats"][0]["hands"][0]["status"], "stood")
+        self.assertNotIn("??", table["dealer"]["cards"])
+
+    def test_a_planned_hit_hands_the_turn_back_rather_than_on(self):
+        # A hit that survives leaves a new decision, and that one was not made
+        # in advance — so the seat keeps the turn and the clock.
+        self._deal_a_round(*self.QUIET, "2h")
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-plan"), {"action": "hit"}, format="json")
+
+        self._as(self.bea)
+        table = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+
+        self.assertEqual(table["phase"], "playing")
+        self.assertEqual(table["turn"], 0)
+        self.assertEqual(len(table["seats"][0]["hands"][0]["cards"]), 3)
+
+    def test_a_plan_is_nobody_elses_business_until_it_is_played(self):
+        self._deal_a_round()
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-plan"), {"action": "stand"}, format="json")
+
+        self._as(self.bea)
+        table = self.client.get(reverse("blackjack-table")).data["table"]
+
+        self.assertIsNone(table["seats"][0]["planned"])
+
+    def test_a_plan_is_refused_once_the_turn_is_yours(self):
+        self._deal_a_round()   # bea has the turn, and the buttons that go with it
+
+        refused = self.client.post(
+            reverse("blackjack-table-plan"), {"action": "stand"}, format="json",
+        )
+
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_plan_does_not_outlive_the_round_it_was_made_about(self):
+        self._deal_a_round()
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-plan"), {"action": "double"}, format="json")
+        # Ana's turn never arrives: both turns and the settling window run out.
+        for _ in range(3):
+            self._run_out()
+            self.client.get(reverse("blackjack-table"))
+
+        table = self.client.get(reverse("blackjack-table")).data["table"]
+
+        self.assertEqual(table["phase"], "betting")
+        self.assertIsNone(table["seats"][0]["planned"])
 
     def test_a_round_pays_out_once_however_many_times_it_is_walked(self):
         self._deal_a_round()
@@ -1934,18 +2081,17 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(self._balance(self.bea), after_first)
 
     def test_acting_only_ever_touches_your_own_hand(self):
-        self._deal_a_round()
-        self._as(self.ana)
+        self._deal_a_round()   # authenticated as bea, in seat 4, whose turn it is
         before = len(self.client.get(reverse("blackjack-table"))
-                     .data["table"]["seats"][4]["hands"][0]["cards"])
+                     .data["table"]["seats"][0]["hands"][0]["cards"])
 
         # There is no seat on the wire at all: acting is always on your own
         # seat, which is the shape of the protection rather than a check.
         self.client.post(reverse("blackjack-table-act"), {"action": "hit"}, format="json")
 
         after = self.client.get(reverse("blackjack-table")).data["table"]
-        self.assertEqual(len(after["seats"][4]["hands"][0]["cards"]), before)
-        self.assertEqual(len(after["seats"][0]["hands"][0]["cards"]), 3)
+        self.assertEqual(len(after["seats"][0]["hands"][0]["cards"]), before)
+        self.assertEqual(len(after["seats"][4]["hands"][0]["cards"]), 3)
 
     def test_a_stranger_gets_nothing_from_the_table(self):
         self.client.force_authenticate(None)

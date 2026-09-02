@@ -3,6 +3,7 @@ from django.urls import path
 from .blackjacktable_views import (
     blackjack_table,
     blackjack_table_act,
+    blackjack_table_plan,
     blackjack_table_bet,
     blackjack_table_leave,
     blackjack_table_sit,
@@ -41,4 +42,5 @@ urlpatterns = [
     path("blackjack/table/leave/", blackjack_table_leave, name="blackjack-table-leave"),
     path("blackjack/table/bet/", blackjack_table_bet, name="blackjack-table-bet"),
     path("blackjack/table/act/", blackjack_table_act, name="blackjack-table-act"),
+    path("blackjack/table/plan/", blackjack_table_plan, name="blackjack-table-plan"),
 ]

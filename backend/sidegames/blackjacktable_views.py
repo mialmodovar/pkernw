@@ -1,4 +1,4 @@
-"""The five requests the shared blackjack table is played through.
+"""The six requests the shared blackjack table is played through.
 
 One endpoint per thing a player can press, and one shape for every answer:
 `{"table": ..., "balance": ...}`. As in the solo game next door, the balance
@@ -70,9 +70,12 @@ def _dealer_payload(table) -> dict:
 def _hand_payload(hand, index: int, hands, mine: bool, playing: bool, balance: int) -> dict:
     total, soft = blackjack.hand_value(hand["cards"])
     active = blackjacktable.active_hand(hands)
-    # Only your own seat is ever offered a button, and only while the window is
-    # open. Everybody else's `can` is all-false — they are somebody else's
-    # decisions and this client has no business being told it could make them.
+    # Only your own seat is ever offered a button, only while the round is being
+    # played, and only when the turn is actually yours — `playing` carries all
+    # three, see _seat_payload. Everybody else's `can` is all-false: they are
+    # somebody else's decisions and this client has no business being told it
+    # could make them. A player waiting for their turn is offered `plan` on the
+    # seat instead, which promises a move rather than making one.
     can = (
         blackjack.actions_for(hands, index, active)
         if (mine and playing) else dict(blackjack.NO_ACTIONS)
@@ -109,6 +112,11 @@ def _seat_payload(seat, *, mine: bool, playing: bool, balance: int) -> dict:
         ],
         "net": seat.net,
         "idle_rounds": seat.idle_rounds,
+        # What this seat has chosen to do when its turn comes. Only ever your
+        # own: a plan is a thing you have not done yet, and the table knowing
+        # what the seat beside it is about to do is a table playing somebody
+        # else's hand.
+        "planned": (seat.planned or None) if mine else None,
     }
 
 
@@ -126,6 +134,9 @@ def table_payload(table, user, balance: int) -> dict:
         "phase": table.phase,
         "ends_in": blackjacktable.seconds_left(table.phase_ends_at),
         "round": table.round_number,
+        # Whose turn it is, so every client can draw the same seat lit up and
+        # the clock above it can be read as that seat's rather than the table's.
+        "turn": table.turn,
         "min_bet": games.BLACKJACK.min_stake,
         "max_bet": games.BLACKJACK.max_stake,
         "dealer": _dealer_payload(table),
@@ -133,11 +144,11 @@ def table_payload(table, user, balance: int) -> dict:
             _seat_payload(
                 seated[number],
                 mine=seated[number].user_id == user.id,
-                playing=playing,
+                playing=playing and table.turn == number,
                 balance=balance,
             ) if number in seated else {
                 "seat": number, "player": None, "bet": 0,
-                "hands": [], "net": 0, "idle_rounds": 0,
+                "hands": [], "net": 0, "idle_rounds": 0, "planned": None,
             }
             for number in range(blackjacktable.SEATS)
         ],
@@ -146,7 +157,7 @@ def table_payload(table, user, balance: int) -> dict:
 
 
 def _respond(user, result):
-    """One answer shape for all five endpoints.
+    """One answer shape for all six endpoints.
 
     A refusal still carries the table, because the usual reason for one is that
     the table has moved on since the client last looked — the window closed, the
@@ -199,4 +210,13 @@ def blackjack_table_bet(request):
 def blackjack_table_act(request):
     return _respond(
         request.user, blackjacktable.act(request.user, request.data.get("action")),
+    )
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def blackjack_table_plan(request):
+    """Choose now what to do when the turn arrives. An empty action cancels."""
+    return _respond(
+        request.user, blackjacktable.plan(request.user, request.data.get("action")),
     )

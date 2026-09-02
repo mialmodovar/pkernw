@@ -328,6 +328,19 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The dealer turns his cards over as soon as everybody has played.** At the
+  shared blackjack table the playing window was twenty seconds and only the
+  clock could close it, so a table where everyone stood in four seconds spent
+  the other sixteen looking at a face-down card whose value was already fixed.
+  The dealer's hole card stays hidden until the round is settling — which is
+  right, and is what stops the card being read off the total — but the round
+  was not allowed to reach settling early. It is now: the last decision at the
+  table closes the window, the dealer draws, and the hands are paid.
+
+  The twenty seconds are a deadline rather than a duration, so nothing about a
+  player who puts their phone down has changed — their hand is still stood on
+  what it has when the clock runs out. The solo game already behaved this way,
+  since a round with no hand left to play goes straight to the dealer.
 - **A few things on a phone that were out of reach.** The lobby's three tabs no
   longer push each other off a 360-point screen — there are three of them now
   where the layout was written for two, so they are allowed to shrink and let

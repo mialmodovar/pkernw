@@ -187,8 +187,9 @@ def blackjack_table(request):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
-def blackjack_table_sit(request):
-    return _respond(request.user, blackjacktable.sit(request.user, request.data.get("seat")))
+def blackjack_table_join(request):
+    """Join the game. There is no seat to choose — see blackjacktable.join."""
+    return _respond(request.user, blackjacktable.join(request.user))
 
 
 @api_view(["POST"])

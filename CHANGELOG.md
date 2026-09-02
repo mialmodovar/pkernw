@@ -181,6 +181,19 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **You join the blackjack table rather than picking a chair at it.** The chairs
+  were identical, so choosing one was a decision with nothing behind it — and an
+  empty chair between two players was a hole in the row for no reason anybody
+  had chosen. One button now, and the table seats you.
+
+  Six places instead of eight, and only the people who are actually there are
+  drawn. Eight fitted on the row and not on the felt: two players sitting next
+  to each other who had each drawn twice ended up with four cards where there
+  was room for two, and their hands ran into one another. The row now shares the
+  felt out between whoever is present, so two players get a wide comfortable
+  hand each and six still fit, and a hand longer than two cards is fanned the
+  way a hand of cards actually sits rather than laid out flat until it collides
+  with the next player.
 - **The shared blackjack table deals and plays like a real one.** The cards come
   out in the casino's order — one round the seats, the house's own card face
   down, a second round the seats, and the house's up card last — and the seats

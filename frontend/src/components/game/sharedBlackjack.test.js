@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PLAN_MOVES, SEAT_COUNT, betLimits, canBet, canPlan, canSit, dealerTableLine, isSeated,
-  myHand, myPlan, mySeat, myTurn, occupancy, phaseLine, seatState, seatStates, secondsLeft,
-  settledSeats, tableActions,
+  PLAN_MOVES, SEAT_COUNT, betLimits, canBet, canJoin, canPlan, cardOverlap,
+  dealerTableLine, isSeated, myHand, myPlan, mySeat, myTurn, occupancy, phaseLine,
+  players, seatState, seatStates, secondsLeft, settledSeats, tableActions,
 } from "./sharedBlackjack";
 
 /** A hand as the server sends one, with only the fields a test cares about. */
@@ -33,7 +33,7 @@ const table = (over = {}) => ({
   my_seat: null,
   dealer: { cards: [], total: 0, soft: false, blackjack: false },
   ...over,
-  seats: Array.from({ length: 8 }, (_, index) => ({
+  seats: Array.from({ length: 6 }, (_, index) => ({
     seat: index, player: null, bet: 0, hands: [], net: 0, idle_rounds: 0,
     ...((over.seats || []).find((one) => one.seat === index) || {}),
   })),
@@ -67,31 +67,62 @@ describe("phaseLine", () => {
   });
 });
 
-describe("canSit", () => {
-  it("lets you into an empty chair", () => {
-    expect(canSit(table(), 3, 500)).toEqual({ allowed: true, reason: null });
+describe("canJoin", () => {
+  it("lets you in while there is a chair", () => {
+    expect(canJoin(table(), 500)).toEqual({ allowed: true, reason: null });
+    expect(canJoin(table({ seats: [{ seat: 0, player: player() }] }), 500))
+      .toMatchObject({ allowed: true });
   });
 
-  it("refuses a chair somebody is in, and says which is which", () => {
-    const busy = table({ seats: [{ seat: 3, player: player() }] });
-    expect(canSit(busy, 3, 500)).toMatchObject({ allowed: false });
-    expect(canSit(busy, 4, 500)).toMatchObject({ allowed: true });
-  });
-
-  it("refuses a second seat for one player", () => {
-    // Eight chairs is few enough that one person holding two is one fewer
-    // person who can play at all.
+  it("refuses a second chair for one player", () => {
+    // Six chairs is few enough that one person holding two is one fewer person
+    // who can play at all.
     const seated = table({ my_seat: 0, seats: [{ seat: 0, player: player("me") }] });
-    expect(canSit(seated, 5, 500)).toMatchObject({ allowed: false });
+    expect(canJoin(seated, 500)).toMatchObject({ allowed: false });
+  });
+
+  it("refuses a full table", () => {
+    const full = table({
+      seats: Array.from({ length: 6 }, (_, seat) => ({ seat, player: player(`p${seat}`) })),
+    });
+    expect(canJoin(full, 500)).toMatchObject({ allowed: false, reason: "The table is full" });
   });
 
   it("refuses somebody who cannot cover the smallest bet", () => {
-    expect(canSit(table(), 1, 2)).toMatchObject({ allowed: false, reason: "Not enough coins" });
+    expect(canJoin(table(), 2)).toMatchObject({ allowed: false, reason: "Not enough coins" });
   });
 
-  it("refuses a seat that does not exist, and a table that has not loaded", () => {
-    expect(canSit(table(), 99, 500).allowed).toBe(false);
-    expect(canSit(null, 0, 500).allowed).toBe(false);
+  it("refuses a table that has not loaded", () => {
+    expect(canJoin(null, 500).allowed).toBe(false);
+  });
+});
+
+describe("who is at the table", () => {
+  it("is the occupied chairs only, in the order they are asked", () => {
+    const one = table({
+      seats: [{ seat: 0, player: player("ana") }, { seat: 2, player: player("bea") }],
+    });
+    expect(players(one).map((row) => row.seat)).toEqual([0, 2]);
+    expect(players(table())).toEqual([]);
+    expect(players(null)).toEqual([]);
+  });
+});
+
+describe("cardOverlap", () => {
+  it("lays two cards out and fans anything longer", () => {
+    // Two fit side by side at any table size. Past that the tile does not grow
+    // with the hand, and four cards where there is room for two is what ran two
+    // players' seats into each other.
+    expect(cardOverlap(0)).toBe(0);
+    expect(cardOverlap(2)).toBe(0);
+    expect(cardOverlap(3)).toBeGreaterThan(0);
+    expect(cardOverlap(5)).toBeGreaterThan(cardOverlap(3));
+  });
+
+  it("never hides a whole card behind the one before it", () => {
+    for (const count of [3, 4, 5, 6, 10]) {
+      expect(cardOverlap(count)).toBeLessThan(1);
+    }
   });
 });
 
@@ -185,7 +216,7 @@ describe("seatState", () => {
     expect(seatState(0, one).netLabel).toBe("+25");
   });
 
-  it("draws all eight chairs before anybody is in any of them", () => {
+  it("draws all six chairs before anybody is in any of them", () => {
     expect(seatStates(table())).toHaveLength(SEAT_COUNT);
     expect(seatStates(null)).toHaveLength(SEAT_COUNT);
   });
@@ -228,8 +259,8 @@ describe("dealerTableLine", () => {
 describe("the heading figures", () => {
   it("counts who is actually sitting down", () => {
     const two = table({ seats: [{ seat: 0, player: player() }, { seat: 5, player: player("b") }] });
-    expect(occupancy(two)).toBe("2 of 8 seated");
-    expect(occupancy(table())).toBe("0 of 8 seated");
+    expect(occupancy(two)).toBe("2 of 6 seated");
+    expect(occupancy(table())).toBe("0 of 6 seated");
   });
 
   it("reads the limits off the table, and has an answer before it loads", () => {

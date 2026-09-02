@@ -1725,38 +1725,66 @@ class BlackjackTableApiTests(APITestCase):
         table.phase_ends_at = timezone.now() - timedelta(seconds=1)
         table.save(update_fields=["phase_ends_at"])
 
-    def test_the_table_is_eight_seats_whether_or_not_anybody_is_in_them(self):
+    def test_the_table_is_six_chairs_whether_or_not_anybody_is_in_them(self):
         response = self.client.get(reverse("blackjack-table"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         seats = response.data["table"]["seats"]
-        self.assertEqual([seat["seat"] for seat in seats], list(range(8)))
+        self.assertEqual([seat["seat"] for seat in seats], list(range(6)))
         self.assertTrue(all(seat["player"] is None for seat in seats))
         self.assertIsNone(response.data["table"]["my_seat"])
 
-    def test_a_seat_somebody_is_in_cannot_be_taken_by_anybody_else(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 3}, format="json")
-
+    def test_the_table_fills_from_one_end(self):
+        # Nobody picks a chair. They are identical, and an empty one between two
+        # players was a hole in the layout for no reason anybody chose.
+        self.client.post(reverse("blackjack-table-join"))
         self._as(self.bea)
-        response = self.client.post(reverse("blackjack-table-sit"), {"seat": 3}, format="json")
+        response = self.client.post(reverse("blackjack-table-join"))
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # The refusal still draws the table, and it draws ana in the chair.
-        self.assertEqual(response.data["table"]["seats"][3]["player"]["username"], "bj_ana")
-        self.assertIsNone(response.data["table"]["my_seat"])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        seats = response.data["table"]["seats"]
+        self.assertEqual(seats[0]["player"]["username"], "bj_ana")
+        self.assertEqual(seats[1]["player"]["username"], "bj_bea")
+        self.assertEqual(response.data["table"]["my_seat"], 1)
 
-    def test_one_player_holds_one_seat(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
-        response = self.client.post(reverse("blackjack-table-sit"), {"seat": 1}, format="json")
+    def test_the_chair_somebody_left_is_the_next_one_given_out(self):
+        self.client.post(reverse("blackjack-table-join"))
+        self._as(self.bea)
+        self.client.post(reverse("blackjack-table-join"))
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-leave"))
+
+        # Ana's chair is the lowest free one, so she gets it back.
+        response = self.client.post(reverse("blackjack-table-join"))
+        self.assertEqual(response.data["table"]["my_seat"], 0)
+
+    def test_one_player_holds_one_chair(self):
+        self.client.post(reverse("blackjack-table-join"))
+        response = self.client.post(reverse("blackjack-table-join"))
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data["table"]["my_seat"], 0)
+
+    def test_a_seventh_player_is_told_the_table_is_full(self):
+        User = get_user_model()
+        for index in range(6):
+            self._as(User.objects.create_user(username=f"bj_full{index}", password="x"))
+            self.assertEqual(
+                self.client.post(reverse("blackjack-table-join")).status_code,
+                status.HTTP_200_OK,
+            )
+
+        self._as(self.ana)
+        refused = self.client.post(reverse("blackjack-table-join"))
+
+        self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(refused.data["table"]["my_seat"])
 
     def test_a_bet_needs_a_seat_and_a_bet_within_the_limits(self):
         response = self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         for amount in (1, 5000):
             with self.subTest(amount=amount):
                 refused = self.client.post(
@@ -1766,7 +1794,7 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(self._balance(self.ana), SIGNUP_COINS)
 
     def test_a_bet_is_taken_once_and_not_topped_up(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
 
         self.assertEqual(self._balance(self.ana), SIGNUP_COINS - 25)
@@ -1776,7 +1804,7 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(self._balance(self.ana), SIGNUP_COINS - 25)
 
     def test_nobody_betting_rolls_the_window_over_rather_than_dealing(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         self._run_out()
 
         response = self.client.get(reverse("blackjack-table"))
@@ -1815,12 +1843,12 @@ class BlackjackTableApiTests(APITestCase):
     QUIET = ("9s", "Td", "9c", "7h", "6c", "5s")
 
     def _deal_a_round(self, *named):
-        """Both players seated and bet, and the betting window closed."""
+        """Both players joined and bet, and the betting window closed."""
         self._as(self.ana)
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
         self._as(self.bea)
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 4}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
         self._run_out()
         shoe = self._shoe(*(named or self.QUIET))
@@ -1854,9 +1882,9 @@ class BlackjackTableApiTests(APITestCase):
         self.assertFalse(table["dealer"]["blackjack"])
 
     def test_only_your_own_seat_is_ever_offered_a_button(self):
-        table = self._deal_a_round()   # authenticated as bea, in seat 4
+        table = self._deal_a_round()   # authenticated as bea, in seat 1
 
-        mine = next(seat for seat in table["seats"] if seat["seat"] == 4)
+        mine = next(seat for seat in table["seats"] if seat["seat"] == 1)
         theirs = next(seat for seat in table["seats"] if seat["seat"] == 0)
         self.assertTrue(any(mine["hands"][0]["can"].values()))
         self.assertFalse(any(theirs["hands"][0]["can"].values()))
@@ -1887,7 +1915,7 @@ class BlackjackTableApiTests(APITestCase):
         table = self._deal_a_round()
 
         self.assertEqual(table["phase"], "playing")
-        self.assertEqual(table["turn"], 4)
+        self.assertEqual(table["turn"], 1)
 
     def test_the_house_takes_its_hole_card_before_the_second_round_of_cards(self):
         # One card round the seats, the house's own face down, a second card
@@ -1901,7 +1929,7 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(self._table().dealer, ["5s", "9c"])
 
     def test_acting_out_of_turn_is_refused(self):
-        self._deal_a_round()   # the turn is bea's, in seat 4
+        self._deal_a_round()   # the turn is bea's, in seat 1
         self._as(self.ana)
 
         refused = self.client.post(
@@ -1909,7 +1937,7 @@ class BlackjackTableApiTests(APITestCase):
         )
 
         self.assertEqual(refused.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(refused.data["table"]["turn"], 4)
+        self.assertEqual(refused.data["table"]["turn"], 1)
         # And no card left the shoe on her behalf, which is the point: there is
         # one shoe and the order it comes off in is the order the seats are
         # asked.
@@ -2009,7 +2037,7 @@ class BlackjackTableApiTests(APITestCase):
             reverse("blackjack-table-plan"), {"action": "stand"}, format="json",
         ).data["table"]
         self.assertEqual(planned["seats"][0]["planned"], "stand")
-        self.assertEqual(planned["turn"], 4)
+        self.assertEqual(planned["turn"], 1)
 
         self._as(self.bea)
         table = self.client.post(
@@ -2081,7 +2109,7 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(self._balance(self.bea), after_first)
 
     def test_acting_only_ever_touches_your_own_hand(self):
-        self._deal_a_round()   # authenticated as bea, in seat 4, whose turn it is
+        self._deal_a_round()   # authenticated as bea, in seat 1, whose turn it is
         before = len(self.client.get(reverse("blackjack-table"))
                      .data["table"]["seats"][0]["hands"][0]["cards"])
 
@@ -2091,7 +2119,7 @@ class BlackjackTableApiTests(APITestCase):
 
         after = self.client.get(reverse("blackjack-table")).data["table"]
         self.assertEqual(len(after["seats"][0]["hands"][0]["cards"]), before)
-        self.assertEqual(len(after["seats"][4]["hands"][0]["cards"]), 3)
+        self.assertEqual(len(after["seats"][1]["hands"][0]["cards"]), 3)
 
     def test_a_stranger_gets_nothing_from_the_table(self):
         self.client.force_authenticate(None)
@@ -2101,7 +2129,7 @@ class BlackjackTableApiTests(APITestCase):
         )
 
     def test_leaving_frees_the_chair(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 2}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         response = self.client.post(reverse("blackjack-table-leave"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -2109,7 +2137,7 @@ class BlackjackTableApiTests(APITestCase):
         self.assertIsNone(response.data["table"]["seats"][2]["player"])
 
     def test_a_table_left_alone_for_hours_lands_somewhere_coherent(self):
-        self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
+        self.client.post(reverse("blackjack-table-join"))
         self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
         table = self._table()
         table.phase_ends_at = timezone.now() - timedelta(hours=3)

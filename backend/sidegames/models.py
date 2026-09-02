@@ -232,6 +232,12 @@ class BlackjackTable(models.Model):
     # done on the way out and never by leaving a card unrecorded, so that the
     # dealer's hand is one thing rather than one thing plus a promise.
     dealer = models.JSONField(default=list, blank=True)
+    # Whose turn it is, while the phase is `playing`, and None otherwise. The
+    # table went round the seats all at once until it went round them one at a
+    # time; this is the whole of that change as far as storage goes, because
+    # WHICH hand of that seat is being played is still worked out from the cards
+    # rather than stored beside them.
+    turn = models.IntegerField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -266,6 +272,12 @@ class BlackjackSeat(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="blackjack_seats",
     )
     seat = models.IntegerField()
+    # A move chosen before the turn arrives, played the instant it does. Seat by
+    # seat is the honest way to deal blackjack and it is also seven people
+    # waiting for one, so a player who has already made up their mind can say so
+    # and not be waited for. Emptied as it is played and again at the end of
+    # every round: a plan is for the hand it was made about.
+    planned = models.CharField(max_length=6, blank=True, default="")
     # The opening stake for this round, and zero between rounds. A doubled or
     # split hand carries its own larger figure inside `hands`; this is what the
     # seat sat down for, which is what the other seven players get to see.

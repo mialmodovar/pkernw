@@ -133,6 +133,14 @@ function anyCardsOut(table) {
  * A phase this module does not recognise is treated as a table that has not
  * loaded, because there is nothing truthful to say about it.
  */
+/** Whose turn it is, in words. Yours is worth saying differently. */
+function turnLine(table) {
+  if (myTurn(table)) return "Your turn";
+  const player = seatRow(table, table?.turn)?.player;
+  if (!player) return "Playing";
+  return `${player.display_name || player.username}'s turn`;
+}
+
 export function phaseLine(table) {
   const left = secondsLeft(table);
   const clock = left == null ? null : `${left}s`;
@@ -141,14 +149,56 @@ export function phaseLine(table) {
     case "betting":
       return { label: "Place your bets", detail: clock };
     case "playing":
-      return anyCardsOut(table)
-        ? { label: "Playing", detail: clock }
-        : { label: "Dealing", detail: null };
+      if (!anyCardsOut(table)) return { label: "Dealing", detail: null };
+      // Named, because the clock beside it is one seat's rather than the
+      // table's now and a bare "Playing" over a countdown would read as
+      // everybody's deadline.
+      return { label: turnLine(table), detail: clock };
     case "settling":
       return { label: "Dealer plays", detail: null };
     default:
       return { label: "Connecting", detail: null };
   }
+}
+
+/**
+ * Whether the table is waiting on this client right now.
+ *
+ * The server decides this — it will refuse a move from anybody else — and every
+ * button below narrows against it rather than widening: a client that thought
+ * it had the turn and did not would only be drawing buttons that get refused.
+ */
+export function myTurn(table) {
+  const seat = table?.my_seat;
+  return table?.phase === "playing" && seat != null && table?.turn === seat;
+}
+
+/** The move this seat has already chosen for a turn that has not arrived. */
+export function myPlan(table) {
+  return mySeat(table)?.planned || null;
+}
+
+/**
+ * The moves worth choosing before your turn arrives.
+ *
+ * Stand and Hit only, and deliberately. Those two are legal for any hand still
+ * being played, so offering them promises nothing that can turn out to be
+ * impossible. Double and Split depend on the cards and on the wallet, and the
+ * client does not get to hold an opinion about either — see tableActions. A
+ * player who wants one of those is a player who wants to look at their hand,
+ * which is what the turn is for.
+ */
+export const PLAN_MOVES = [
+  { key: "stand", label: "Stand" },
+  { key: "hit", label: "Hit" },
+];
+
+/**
+ * Whether there is anything to pre-decide: a hand of yours still being played,
+ * and somebody else being asked about theirs.
+ */
+export function canPlan(table) {
+  return table?.phase === "playing" && !myTurn(table) && myHand(table) != null;
 }
 
 /** The stakes this table takes, as {min, max}, before its payload has landed. */
@@ -323,6 +373,10 @@ export function seatState(seat, table) {
     name: player ? (player.display_name || player.username || "Player") : "",
     waiting: !empty && phase === "betting" && bet <= 0,
     playing: live,
+    // The seat the table is actually waiting on, which is not the same as a
+    // seat with cards still in play: seven of them can be live at once and only
+    // one of them is being asked.
+    turn: phase === "playing" && index != null && table?.turn === index,
     inRound: hands.length > 0,
     settled,
     bet,

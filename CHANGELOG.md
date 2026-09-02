@@ -181,6 +181,25 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The shared blackjack table deals and plays like a real one.** The cards come
+  out in the casino's order — one round the seats, the house's own card face
+  down, a second round the seats, and the house's up card last — and the seats
+  are then asked one at a time instead of all at once.
+
+  The turn starts at the right-hand seat and works back, which is the order the
+  cards were dealt in, and a seat with nothing left to decide is skipped rather
+  than given a turn it could only sit through. Your turn ends the moment your
+  hand does, so a table of quick players moves at the speed of the players
+  rather than at the speed of the clock.
+
+  Going round the seats in order is honest and it is also seven people waiting
+  for one, so the clock is per turn rather than per table — nobody can hold the
+  game up for longer than one turn's worth of it, and a turn that runs out
+  stands that seat on what it has, exactly as the shared window used to. And a
+  player who has already made up their mind can say so before their turn
+  arrives: choose Stand or Hit while somebody else is being asked and it plays
+  itself the instant the turn lands, so a table where everybody has decided
+  resolves without anybody waiting at all.
 - **A tournament row you can read at a glance.** The line under a tournament's
   name had grown to eleven facts joined by dots, inside a paragraph marked
   `truncate` — which means it never wrapped, whatever the comment above it

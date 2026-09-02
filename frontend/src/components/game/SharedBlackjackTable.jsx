@@ -9,7 +9,8 @@ import useWalletStore from "../../store/walletStore";
 import { playBlackjack, playBust, playCard, playChips, playPush, playWin } from "./sounds";
 import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
-  canBet, canSit, dealerTableLine, mySeat, occupancy, phaseLine, seatState, tableActions,
+  PLAN_MOVES, canBet, canPlan, canSit, dealerTableLine, myPlan, occupancy, mySeat,
+  phaseLine, seatState, tableActions,
 } from "./sharedBlackjack";
 
 /**
@@ -33,7 +34,8 @@ import {
  */
 export default function SharedBlackjackTable() {
   const {
-    table, error, busy, settledRound, fetch, sit, leave, bet, act, markSettled, clearError,
+    table, error, busy, settledRound, fetch, sit, leave, bet, act, plan,
+    markSettled, clearError,
   } = useBlackjackTableStore();
   const balance = useWalletStore((s) => s.balance);
   const fetchWallet = useWalletStore((s) => s.fetchWallet);
@@ -114,6 +116,7 @@ export default function SharedBlackjackTable() {
           setPending={setPending}
           onBet={() => bet(pending)}
           onAct={act}
+          onPlan={plan}
           onLeave={leave}
         />
       ) : (
@@ -189,11 +192,17 @@ function SeatTile({ seat, table, balance, busy, onSit }) {
 
   return (
     <div
+      // Lit while the table is waiting on it. The turn is the one thing on this
+      // screen that everybody has to be able to find at a glance, so it beats
+      // "this one is mine" for the border — you already know which seat is
+      // yours, and the ring says it too.
       className={`rounded-lg px-2 py-2 min-h-[5.5rem] flex flex-col items-center gap-1
                   border transition-colors ${
-        state.mine
-          ? "border-(--color-highlight-text) bg-black/30"
-          : "border-(--color-border) bg-black/20"
+        state.turn
+          ? "border-(--color-highlight-text) bg-(--color-highlight-dim) ring-2 ring-(--color-highlight-edge)"
+          : state.mine
+            ? "border-(--color-highlight-text) bg-black/30"
+            : "border-(--color-border) bg-black/20"
       } ${state.won ? "animate-bj-win" : ""} ${state.bust ? "animate-bj-bust" : ""}`}
     >
       <div className="flex items-center gap-1 min-w-0 w-full">
@@ -244,12 +253,18 @@ function SeatTile({ seat, table, balance, busy, onSit }) {
  * the screen through all three, so a thumb already moving towards Stand does not
  * find Deal underneath it.
  */
-function YourSeat({ table, seat, balance, busy, pending, setPending, onBet, onAct, onLeave }) {
+function YourSeat({
+  table, seat, balance, busy, pending, setPending, onBet, onAct, onPlan, onLeave,
+}) {
   const hand = seat.hands?.[0] || null;
   const betting = table.phase === "betting";
   const placed = seat.bet > 0;
   const check = canBet(table, pending, balance);
   const buttons = tableActions(table);
+  // Somebody else is being asked, and you are still in the round: the buttons
+  // would all be dead, so they are replaced by the promise of them.
+  const planning = canPlan(table);
+  const planned = myPlan(table);
 
   return (
     <div className="panel-raised rounded-xl p-3 space-y-3">
@@ -343,7 +358,42 @@ function YourSeat({ table, seat, balance, busy, pending, setPending, onBet, onAc
         </p>
       )}
 
-      {table.phase === "playing" && hand && (
+      {planning && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-center text-(--color-text-muted)">
+            Not your turn yet — choose now and it plays itself when it is.
+          </p>
+          {/* Stand and Hit only. Both are legal for any hand still being
+              played, so neither can turn out to be a promise the table cannot
+              keep; Double and Split want a look at the cards, which is what
+              the turn is for. See PLAN_MOVES. */}
+          <div className="grid grid-cols-2 gap-2">
+            {PLAN_MOVES.map((move) => {
+              const armed = planned === move.key;
+              return (
+                <button
+                  key={move.key}
+                  type="button"
+                  aria-pressed={armed}
+                  disabled={Boolean(busy)}
+                  // Pressing the armed one puts the decision back: a plan is a
+                  // convenience and must never be a thing you cannot undo.
+                  onClick={() => onPlan(armed ? "" : move.key)}
+                  className={`py-2.5 rounded font-bold text-sm transition-colors border ${
+                    armed
+                      ? "border-(--color-highlight-edge) bg-(--color-highlight-dim) text-(--color-highlight-text)"
+                      : "border-(--color-border) btn-secondary"
+                  } ${busy ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {armed ? `${move.label} \u2713` : move.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {table.phase === "playing" && hand && !planning && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {buttons.map((button) => (
             <button

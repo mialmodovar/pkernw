@@ -6,22 +6,34 @@ economy.py, and what lives in between is the part that can get somebody's
 balance wrong. Everything below exists because a table with eight people at it
 raises two problems a table with one person at it does not.
 
-The first is whose turn it is. Real blackjack goes seat by seat, and copying
-that needs a per-seat clock, skip logic, and an answer to what happens when one
-player puts their phone down mid-hand and freezes seven other people. This table
-deletes that problem instead of solving it: **everybody acts at the same time**.
-There is one twenty-second `playing` window, every seat plays its own hand
-inside it in whatever order it likes, and any hand still undecided when the
-window shuts is stood on what it has. The dealer then draws once and every seat
-settles against that same hand — which is the thing a shared table is actually
-for, and the thing eight parallel solo games could never give you.
+The first is whose turn it is. This table went round the seats all at once for a
+while — one window, everybody acting inside it — because seat by seat needs a
+per-seat clock and an answer to what happens when one player puts their phone
+down and freezes seven other people. It goes seat by seat now, which is how
+blackjack is actually dealt, and the two problems are answered rather than
+avoided:
 
-The twenty seconds are a deadline, not a duration: the window also closes the
-moment the last undecided hand is decided. It has to, because the dealer's hole
-card stays face down until the table is settling, so a window held open after
-everybody has played is a table full of people waiting on a clock for a card
-whose value is already fixed. Eight players who all stand in four seconds see
-the dealer in four seconds.
+* The clock is per turn. A turn that runs out stands the seat on what it has,
+  exactly as the shared window used to, and the turn moves along. Nobody can
+  freeze the table for longer than one turn's worth of it.
+* A player who has already made up their mind says so in advance — see
+  `planned` on the seat — and their turn is played and passed on the instant it
+  reaches them. Seven people waiting for one is the real cost of dealing in
+  order, and this is what buys most of it back.
+
+The order is from the right: seat seven is first base and the turn counts down
+to seat zero, which is the order the cards were dealt in. Seats with nothing
+left to decide are never given a turn at all, and a turn ends the moment its
+seat has no undecided hand left rather than when its clock runs out — so a
+table of quick players moves at the speed of the players. When the last seat is
+done the dealer draws once and every hand settles against that one hand, which
+is the thing a shared table is for and the thing eight parallel solo games could
+never give you.
+
+The dealer's hole card stays face down until the round is settling, so none of
+the above may hold a finished round open: a clock still running after the last
+decision is a table watching a countdown for a card whose value is already
+fixed.
 
 The second is who moves the clock. Nothing here runs in the background: no
 worker, no task, no loop. `advance()` reads the stored `phase_ends_at`, works
@@ -71,10 +83,14 @@ PLAYING = BlackjackTable.PLAYING
 SETTLING = BlackjackTable.SETTLING
 
 # How long each window is open. Betting is short because a table that spends
-# most of its time waiting for bets feels broken; playing is long enough for a
-# split and two decisions on a phone; settling is long enough to read a result
-# and not long enough to get bored of it.
-PHASE_SECONDS = {BETTING: 12, PLAYING: 20, SETTLING: 6}
+# most of its time waiting for bets feels broken; settling is long enough to
+# read a result and not long enough to get bored of it. Playing is now ONE
+# SEAT'S turn rather than the whole table's window, which is why it is shorter
+# than the twenty seconds it used to be — eight of these end to end is already
+# a long time to sit through, and the two things that keep it short in practice
+# are that a turn ends when its seat is done and that a seat which planned its
+# move never costs the table a full one.
+PHASE_SECONDS = {BETTING: 12, PLAYING: 10, SETTLING: 6}
 
 SEATS = 8
 
@@ -98,8 +114,8 @@ CATCH_UP_LIMIT = 32
 # Spelled out rather than a bare save(), so that a stray attribute set somewhere
 # else cannot ride along with a phase change. Same discipline as
 # blackjackbank.ROUND_FIELDS.
-TABLE_FIELDS = ["phase", "phase_ends_at", "round_number", "deck", "dealer"]
-SEAT_FIELDS = ["bet", "hands", "net", "idle_rounds"]
+TABLE_FIELDS = ["phase", "phase_ends_at", "round_number", "deck", "dealer", "turn"]
+SEAT_FIELDS = ["bet", "hands", "net", "idle_rounds", "planned"]
 
 PUBLIC = "main"
 
@@ -149,15 +165,24 @@ def active_hand(hands):
     )
 
 
-def nobody_left_to_act(seats) -> bool:
-    """Whether every hand dealt this round has been decided.
+def turn_after(seats, current=None):
+    """Which seat acts next, or None when nobody at the table has to be asked.
 
-    Two places need this answer and they must not disagree about it: the deal,
-    where a table of naturals has nothing to open a playing window for, and
-    every move, after which this may have become the last one. Seats with no
-    hands are not in the round and are not waited for.
+    Counting DOWN from the right: seat seven is first base and the turn works
+    back to seat zero, which is the order the cards came out in. `current` is
+    the seat that has just finished — pass None for the first turn of a round.
+
+    Seats with nothing left to decide are skipped rather than given a turn they
+    would only be able to sit through: a natural, a hand already stood, a seat
+    that never bet. That is also what makes this the whole of the "is the round
+    over" question — no next seat means no decisions left anywhere.
     """
-    return all(active_hand(seat.hands) is None for seat in seats if seat.hands)
+    waiting = [
+        seat.seat for seat in seats
+        if seat.hands and active_hand(seat.hands) is not None
+        and (current is None or seat.seat < current)
+    ]
+    return max(waiting, default=None)
 
 
 def fresh_shoe(rng=None) -> list:
@@ -320,16 +345,15 @@ def _close_betting(table, now, rng) -> None:
 
 
 def _deal(table, seats, rng) -> None:
-    """One card to each seat, one to the dealer, again, and the peek.
+    """One card to each seat, one to the house face down, again, and the peek.
 
-    In the order a real table deals — round the seats, dealer's up card, round
-    the seats again, dealer's hole card — because that is the order a stacked
-    deck in a test should read in, and because it decides which of the dealer's
-    two cards is the one nobody may see.
+    In the order a real table deals it — round the seats, the house's hole card,
+    round the seats again, the house's up card last — because that is the order
+    a stacked deck in a test should read in, and because it decides which cards
+    off the shoe end up where.
     """
     table.round_number += 1
     table.deck = fresh_shoe(rng)
-    dealer = []
 
     for seat in seats:
         seat.hands = [blackjack.new_hand([blackjack.draw(table.deck)], seat.bet)]
@@ -337,34 +361,109 @@ def _deal(table, seats, rng) -> None:
         # to be cleared later: a seat showing +50 next to two fresh cards is
         # saying something that is no longer true.
         seat.net = 0
-    dealer.append(blackjack.draw(table.deck))
+    # The house's own first card is the one that goes face down. Dealt here,
+    # between the two rounds of player cards, because that is when it leaves the
+    # shoe at a real table — one card to everybody, one to the house face down,
+    # a second to everybody, and the house's up card last of all.
+    #
+    # Stored the other way round: `dealer[0]` is the up card and `dealer[1]` is
+    # the hole card, which is what every reader of this list already assumes and
+    # what _dealer_payload hides. Which card came off the shoe first and which
+    # one the table may see are two different questions.
+    hole = blackjack.draw(table.deck)
     for seat in seats:
         seat.hands[0]["cards"].append(blackjack.draw(table.deck))
-    dealer.append(blackjack.draw(table.deck))
-    table.dealer = dealer
+    table.dealer = [blackjack.draw(table.deck), hole]
 
     for seat in seats:
         if blackjack.is_blackjack(seat.hands[0]["cards"]):
             seat.hands[0]["status"] = blackjack.BLACKJACK
 
-    # The peek, and the naturals. If the dealer has blackjack the round is
-    # already over, and if every seat was dealt one there is nothing for anybody
-    # to decide — either way a playing window would be twenty seconds of eight
-    # people looking at buttons that do nothing.
-    if blackjack.is_blackjack(dealer) or nobody_left_to_act(seats):
+    # The peek. A dealer blackjack ends the round before anybody acts — that is
+    # the solo game's rule too, and it is what stops a player doubling into a
+    # hand that was lost before they touched it.
+    if blackjack.is_blackjack(table.dealer):
+        table.turn = None
         _settle(table, seats)
         _roll(table, SETTLING)
         return
 
     for seat in seats:
         seat.save(update_fields=SEAT_FIELDS)
-    _roll(table, PLAYING)
+    # First base, and away. _open_turn settles the round itself if it turns out
+    # there is nobody to ask — a table where every seat was dealt a natural.
+    _open_turn(table, seats, None)
 
 
 def _close_playing(table) -> None:
-    """The window is shut. Everybody who is still holding cards is stood."""
-    _settle(table, [seat for seat in _seats_of(table) if seat.hands])
-    _roll(table, SETTLING)
+    """A turn ran out. That seat stands on what it has, and the turn moves on.
+
+    Standing is what the shared window used to do to everybody at once when it
+    shut, and it is the only defensible answer: the cards are the cards, and a
+    player who is not there does not get to have drawn to them later.
+    """
+    seats = _seats_of(table)
+    seat = next((one for one in seats if one.seat == table.turn), None)
+    if seat is not None:
+        for hand in seat.hands:
+            if hand.get("status") == blackjack.PLAYING:
+                hand["status"] = blackjack.STOOD
+        seat.save(update_fields=SEAT_FIELDS)
+    _open_turn(table, seats, table.turn)
+
+
+def _play_plan(table, seat) -> bool:
+    """Play this seat's pre-decided move, if it still has one that is legal.
+
+    Returns whether anything was played. The plan is spent whether or not it
+    could be used — it was a decision about one moment, and a player whose
+    planned double is refused for want of coins is owed the chance to choose
+    again rather than a second silent attempt at the same thing.
+
+    Legality is asked of blackjack.actions_for now, against the hand as it
+    actually is, exactly as `act` does with a move a client has just sent. A
+    plan is a move that arrives early, not a move that arrives trusted.
+    """
+    plan, seat.planned = seat.planned, ""
+    index = active_hand(seat.hands)
+    played = False
+    if plan and index is not None and blackjack.actions_for(seat.hands, index, index)[plan]:
+        played = MOVES[plan](table, seat, seat.hands[index]) is None
+    seat.save(update_fields=SEAT_FIELDS)
+    return played
+
+
+def _open_turn(table, seats, after, now=None) -> None:
+    """Pass the turn along until it reaches somebody who has to be asked.
+
+    The loop is what pre-deciding buys: a seat that has already chosen plays the
+    moment the turn arrives and hands it straight on, so a table where everybody
+    planned resolves in one request instead of eight turns of clock. A seat that
+    planned a Hit and survived it keeps the turn — it has a new decision now,
+    which is not one it made in advance.
+
+    `now` says the previous window ended early: settling and the next turn then
+    start from here rather than from a schedule the table has already overtaken.
+    See _restart.
+    """
+    open_window = (lambda phase: _roll(table, phase)) if now is None else (
+        lambda phase: _restart(table, phase, now)
+    )
+
+    while True:
+        nxt = turn_after(seats, after)
+        if nxt is None:
+            table.turn = None
+            _settle(table, [seat for seat in seats if seat.hands])
+            open_window(SETTLING)
+            return
+
+        seat = next(one for one in seats if one.seat == nxt)
+        if not _play_plan(table, seat) or active_hand(seat.hands) is not None:
+            table.turn = nxt
+            open_window(PLAYING)
+            return
+        after = nxt
 
 
 def _settle(table, seats) -> None:
@@ -424,9 +523,14 @@ def _close_settling(table) -> None:
         seat.bet = 0
         seat.hands = []
         seat.net = 0
+        # A plan made about last round's cards must not be played against this
+        # round's. Most are spent as they are played; this catches the ones
+        # belonging to a seat the turn never reached.
+        seat.planned = ""
         seat.save(update_fields=SEAT_FIELDS)
     table.deck = []
     table.dealer = []
+    table.turn = None
     _roll(table, BETTING)
 
 
@@ -629,6 +733,11 @@ def act(user, action, now=None):
             return "You are not sitting at this table."
         if not seat.hands:
             return "You are not in this round."
+        if seat.seat != table.turn:
+            # Not a rudeness check: acting out of turn would draw a card that
+            # belongs to somebody else's hand, since there is one shoe and the
+            # order it comes off in is the order the seats are asked.
+            return "It is not your turn."
 
         index = active_hand(seat.hands)
         if index is None:
@@ -642,24 +751,49 @@ def act(user, action, now=None):
 
         seat.save(update_fields=SEAT_FIELDS)
 
-        # That may have been the last decision at the table, and if it was there
-        # is nothing left for the window to wait for. The dealer's hole card is
-        # face down for exactly as long as the table is not settling — see
-        # _dealer_payload — so a window held open out of deference to a clock is
-        # eight people looking at a card that has already been decided against.
-        # Everybody standing four seconds in used to mean sixteen more seconds
-        # of nothing happening.
+        # Done with this seat, so the turn moves along — and if there is nobody
+        # after it, the round is over and the dealer turns over. A turn that
+        # waited out its clock after its seat had finished would be a table
+        # watching a countdown for a card whose value is already fixed.
         #
-        # Read back from the database rather than trusting the seat in hand: the
-        # question is about all eight of them and this request only ever touched
-        # one. The save above is what puts this seat's move into that answer.
-        dealt = [one for one in _seats_of(table) if one.hands]
-        if nobody_left_to_act(dealt):
-            _settle(table, dealt)
-            _restart(table, SETTLING, now or timezone.now())
+        # Read the seats back rather than trusting the one in hand: passing the
+        # turn is a question about all eight, and this request only touched one.
+        # The save above is what puts this seat's move into that answer.
+        if active_hand(seat.hands) is None:
+            _open_turn(table, _seats_of(table), seat.seat, now or timezone.now())
 
         # The deck moved, and it lives on the table rather than on the seat.
         table.save(update_fields=TABLE_FIELDS)
+
+    return table
+
+
+def plan(user, action, now=None):
+    """Choose a move for a turn that has not arrived yet. Returns the table.
+
+    Deliberately not validated against the cards. What is legal changes between
+    now and the moment the turn lands — a hand that can be split now may have
+    been split already by then — so the only thing checked here is that this is
+    a move at all, and _play_plan asks the real question when the time comes.
+    An empty action clears the plan, which is how a player changes their mind.
+
+    Refused once the turn is yours: at that point the buttons do the thing
+    rather than promise it, and a plan sitting behind a live decision is two
+    answers to one question.
+    """
+    action = str(action or "")
+    if action and action not in MOVES:
+        return "That is not a move."
+
+    with transaction.atomic():
+        table = locked_table(now)
+        seat = seat_of(table, user)
+        if seat is None:
+            return "You are not sitting at this table."
+        if table.phase == PLAYING and seat.seat == table.turn:
+            return "It is your turn — just play it."
+        seat.planned = action
+        seat.save(update_fields=SEAT_FIELDS)
 
     return table
 
@@ -673,5 +807,5 @@ __all__ = [
     "BETTING", "PLAYING", "SETTLING", "SEATS", "PHASE_SECONDS", "IDLE_LIMIT",
     "advance", "act", "leave", "look", "place_bet", "public_table", "seat_of",
     "seat_memo", "seconds_left", "phase_after", "active_hand", "sit",
-    "nobody_left_to_act",
+    "turn_after", "plan",
 ]

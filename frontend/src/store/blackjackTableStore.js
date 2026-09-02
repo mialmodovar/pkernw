@@ -89,6 +89,9 @@ const useBlackjackTableStore = create((set, get) => ({
   bet: (amount) => get().post("bet", { amount }, "bet"),
   act: (action) => get().post("act", { action }, action),
 
+  /** Choose a move for a turn that has not arrived. "" cancels the choice. */
+  plan: (action) => get().post("plan", { action }, `plan:${action || "none"}`),
+
   clearError: () => set({ error: "" }),
 }));
 

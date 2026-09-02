@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  SEAT_COUNT, betLimits, canBet, canSit, dealerTableLine, isSeated, mySeat, myHand,
-  occupancy, phaseLine, seatState, seatStates, secondsLeft, settledSeats, tableActions,
+  PLAN_MOVES, SEAT_COUNT, betLimits, canBet, canPlan, canSit, dealerTableLine, isSeated,
+  myHand, myPlan, mySeat, myTurn, occupancy, phaseLine, seatState, seatStates, secondsLeft,
+  settledSeats, tableActions,
 } from "./sharedBlackjack";
 
 /** A hand as the server sends one, with only the fields a test cares about. */
@@ -246,5 +247,108 @@ describe("the heading figures", () => {
     });
     expect(settledSeats(one).map((seat) => seat.seat)).toEqual([0]);
     expect(settledSeats(table())).toEqual([]);
+  });
+});
+
+
+describe("whose turn it is", () => {
+  /** A round in play, with ana in seat 4 and bea in seat 0. */
+  const round = (over = {}) => table({
+    phase: "playing",
+    my_seat: 4,
+    dealer: { cards: ["5s", "??"], total: 5, soft: false, blackjack: false },
+    seats: [
+      { seat: 0, player: player("bea"), bet: 25, hands: [hand()] },
+      { seat: 4, player: player("ana"), bet: 25, hands: [hand()] },
+    ],
+    ...over,
+  });
+
+  it("is mine only when the table says the turn is my seat", () => {
+    expect(myTurn(round({ turn: 4 }))).toBe(true);
+    expect(myTurn(round({ turn: 0 }))).toBe(false);
+    // Not during betting or settling, whatever the turn field happens to hold.
+    expect(myTurn(round({ turn: 4, phase: "settling" }))).toBe(false);
+    expect(myTurn(table({ turn: 4 }))).toBe(false);
+  });
+
+  it("lights exactly one seat, and it is not just the live ones", () => {
+    const seats = seatStates(round({ turn: 0 }));
+    expect(seats.filter((one) => one.turn).map((one) => one.seat)).toEqual([0]);
+    // Both seats still hold cards; only one of them is being asked.
+    expect(seats.filter((one) => one.playing).map((one) => one.seat)).toEqual([0, 4]);
+  });
+
+  it("says who is being asked, by name, and says yours differently", () => {
+    expect(phaseLine(round({ turn: 4 })).label).toBe("Your turn");
+    expect(phaseLine(round({ turn: 0 })).label).toBe("bea's turn");
+    // The beat after the phase turns over and before the cards land.
+    expect(phaseLine(table({ phase: "playing", turn: 0 })).label).toBe("Dealing");
+  });
+
+  it("offers the buttons only on your own turn, because the server does", () => {
+    // `can` is the server's word and it is all-false off your turn — see
+    // _hand_payload. The client narrows against that rather than widening it.
+    const away = round({
+      turn: 0,
+      seats: [
+        { seat: 0, player: player("bea"), bet: 25, hands: [hand()] },
+        {
+          seat: 4,
+          player: player("ana"),
+          bet: 25,
+          hands: [hand({ can: { hit: false, stand: false, double: false, split: false } })],
+        },
+      ],
+    });
+    expect(tableActions(away).every((button) => !button.enabled)).toBe(true);
+  });
+});
+
+describe("planning a move before the turn arrives", () => {
+  const round = (over = {}) => table({
+    phase: "playing",
+    my_seat: 4,
+    turn: 0,
+    seats: [
+      { seat: 0, player: player("bea"), bet: 25, hands: [hand()] },
+      { seat: 4, player: player("ana"), bet: 25, hands: [hand()], planned: null },
+    ],
+    ...over,
+  });
+
+  it("is offered while somebody else is being asked and you still hold cards", () => {
+    expect(canPlan(round())).toBe(true);
+    // Not on your own turn: the buttons do the thing rather than promise it.
+    expect(canPlan(round({ turn: 4 }))).toBe(false);
+    // Not with nothing left to decide, and not outside the round.
+    const done = hand({
+      status: "stood",
+      // As the server sends a finished hand: nothing on offer for it.
+      can: { hit: false, stand: false, double: false, split: false },
+    });
+    expect(canPlan(round({
+      seats: [
+        { seat: 0, player: player("bea"), bet: 25, hands: [hand()] },
+        { seat: 4, player: player("ana"), bet: 25, hands: [done] },
+      ],
+    }))).toBe(false);
+    expect(canPlan(table({ my_seat: 4 }))).toBe(false);
+  });
+
+  it("reads back the move this seat has chosen", () => {
+    expect(myPlan(round())).toBe(null);
+    expect(myPlan(round({
+      seats: [
+        { seat: 0, player: player("bea"), bet: 25, hands: [hand()] },
+        { seat: 4, player: player("ana"), bet: 25, hands: [hand()], planned: "stand" },
+      ],
+    }))).toBe("stand");
+  });
+
+  it("promises only moves that are legal for any hand still in play", () => {
+    // Double and split depend on the cards and on the wallet, and a plan is
+    // made before either can be looked at.
+    expect(PLAN_MOVES.map((one) => one.key)).toEqual(["stand", "hit"]);
   });
 });

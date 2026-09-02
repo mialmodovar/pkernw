@@ -25,7 +25,7 @@ from rest_framework.response import Response
 from accounts.avatars import avatar_url
 from accounts.naming import shown_name
 
-from . import blackjack, blackjacktable, games
+from . import blackjack, blackjacktable
 
 
 def _player_payload(user) -> dict:
@@ -120,6 +120,21 @@ def _seat_payload(seat, *, mine: bool, playing: bool, balance: int) -> dict:
     }
 
 
+def _room_payload(room: dict) -> dict:
+    """Which room this is, and what it costs to sit in it.
+
+    Sent rather than assumed, so the client draws one table component against
+    whatever the server says the stakes are instead of holding its own copy of
+    two sets of numbers.
+    """
+    return {
+        "key": room["key"],
+        "name": room["name"],
+        "blurb": room["blurb"],
+        "high": room["key"] == blackjacktable.HIGH,
+    }
+
+
 def table_payload(table, user, balance: int) -> dict:
     """The table, as one client is served it.
 
@@ -130,15 +145,18 @@ def table_payload(table, user, balance: int) -> dict:
     seated = {seat.seat: seat for seat in table.seats.select_related("user", "user__profile")}
     mine = next((seat for seat in seated.values() if seat.user_id == user.id), None)
     playing = table.phase == blackjacktable.PLAYING
+    room = blackjacktable.room_of(table.key)
     return {
+        "room": _room_payload(room),
         "phase": table.phase,
         "ends_in": blackjacktable.seconds_left(table.phase_ends_at),
         "round": table.round_number,
         # Whose turn it is, so every client can draw the same seat lit up and
         # the clock above it can be read as that seat's rather than the table's.
         "turn": table.turn,
-        "min_bet": games.BLACKJACK.min_stake,
-        "max_bet": games.BLACKJACK.max_stake,
+        "min_bet": room["min"],
+        # Null in the high room, where the only ceiling is the wallet.
+        "max_bet": room["max"],
         "dealer": _dealer_payload(table),
         "seats": [
             _seat_payload(
@@ -156,7 +174,7 @@ def table_payload(table, user, balance: int) -> dict:
     }
 
 
-def _respond(user, result):
+def _respond(user, result, room=None):
     """One answer shape for all six endpoints.
 
     A refusal still carries the table, because the usual reason for one is that
@@ -169,7 +187,7 @@ def _respond(user, result):
         return Response(
             {
                 "error": result,
-                "table": table_payload(blackjacktable.look(user), user, balance),
+                "table": table_payload(blackjacktable.look(user, room), user, balance),
                 "balance": balance,
             },
             status=400,
@@ -182,35 +200,42 @@ def _respond(user, result):
 def blackjack_table(request):
     """The table as it stands — and, because there is no worker, the request
     that walks its clock forward. See the note at the top of this file."""
-    return _respond(request.user, blackjacktable.look(request.user))
+    room = request.query_params.get("room")
+    return _respond(request.user, blackjacktable.look(request.user, room), room)
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def blackjack_table_join(request):
     """Join the game. There is no seat to choose — see blackjacktable.join."""
-    return _respond(request.user, blackjacktable.join(request.user))
+    room = request.data.get("room")
+    return _respond(request.user, blackjacktable.join(request.user, room), room)
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def blackjack_table_leave(request):
-    return _respond(request.user, blackjacktable.leave(request.user))
+    room = request.data.get("room")
+    return _respond(request.user, blackjacktable.leave(request.user, room), room)
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def blackjack_table_bet(request):
+    room = request.data.get("room")
     return _respond(
-        request.user, blackjacktable.place_bet(request.user, request.data.get("amount")),
+        request.user,
+        blackjacktable.place_bet(request.user, request.data.get("amount"), room),
+        room,
     )
 
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def blackjack_table_act(request):
+    room = request.data.get("room")
     return _respond(
-        request.user, blackjacktable.act(request.user, request.data.get("action")),
+        request.user, blackjacktable.act(request.user, request.data.get("action"), room), room,
     )
 
 
@@ -218,6 +243,7 @@ def blackjack_table_act(request):
 @permission_classes([permissions.IsAuthenticated])
 def blackjack_table_plan(request):
     """Choose now what to do when the turn arrives. An empty action cancels."""
+    room = request.data.get("room")
     return _respond(
-        request.user, blackjacktable.plan(request.user, request.data.get("action")),
+        request.user, blackjacktable.plan(request.user, request.data.get("action"), room), room,
     )

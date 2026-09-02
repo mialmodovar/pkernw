@@ -82,7 +82,12 @@ export default function SharedBlackjackTable() {
         </span>
       </div>
 
-      <div className="@container felt rounded-2xl px-3 py-4 sm:px-5 space-y-4">
+      {/* Oxblood and gold in the high room, the house green in the low one. The
+          minimum in there is this room's whole ceiling, so the two must not be
+          mistakable for one another at a glance. */}
+      <div className={`@container felt rounded-2xl px-3 py-4 sm:px-5 space-y-4 ${
+        table.room?.high ? "felt-high" : ""
+      }`}>
         <DealerSide table={table} />
 
         {/* The people who are here, and only them. A row rather than a grid of

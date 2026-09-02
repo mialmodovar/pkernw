@@ -1039,9 +1039,29 @@ button:disabled {
   animation: bj-deal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* The hole card turning over. Squashed through the middle rather than a true
-   3D flip: the card is drawn by the same component the poker table uses, and
-   giving it a backface would mean two of them stacked. */
+/* The hole card turning over.
+   Two halves of one gesture rather than one animation, because the card has to
+   still be face DOWN for the first half of it. Squashing a card that is already
+   showing its face is not a card turning over — it is the reveal happening and
+   then an animation about it, which is what this used to do: `both` holds the
+   first frame through the delay, and the first frame was the face at full
+   width. So the back squashes to nothing and the face opens out of nothing
+   behind it, half a turn later.
+
+   Squashed through the middle rather than a true 3D flip: the card is drawn by
+   the same component the poker table uses, and giving it a backface would mean
+   two of them stacked — which, for this one card, is exactly what happens. */
+@keyframes bj-turn-out {
+  0%   { transform: scaleX(1); opacity: 1; }
+  99%  { opacity: 1; }
+  100% { transform: scaleX(0.04); opacity: 0; }
+}
+
+@keyframes bj-turn-in {
+  0%   { transform: scaleX(0.04); }
+  100% { transform: scaleX(1); }
+}
+
 @keyframes bj-flip {
   0%   { transform: scaleX(1); }
   50%  { transform: scaleX(0.06); }
@@ -1054,6 +1074,16 @@ button:disabled {
 
 .animate-bj-flip {
   animation: bj-flip 1040ms ease-in-out both;
+}
+
+/* Half a turn each, and the face waits for the back to be gone. The delays are
+   set inline, from REVEAL_MS and FLIP_MS in sharedBlackjack.js. */
+.animate-bj-turn-out {
+  animation: bj-turn-out 520ms ease-in both;
+}
+
+.animate-bj-turn-in {
+  animation: bj-turn-in 520ms ease-out both;
 }
 
 /* A chip going onto the bet. Drops from the player's side and bounces once,
@@ -1120,5 +1150,9 @@ button:disabled {
   .animate-bj-chip,
   .animate-bj-payout { animation: fade-in 0.12s ease-out both; }
   .animate-bj-flip { animation: fade-in 0.12s ease-out both; }
+  .animate-bj-turn-in { animation: fade-in 0.12s ease-out both; }
+  /* The back still has to get out of the way, so this one keeps its job and
+     only loses its travel. */
+  .animate-bj-turn-out { animation: bj-turn-out 0.12s linear both; }
   .animate-bj-bust { animation: none; }
 }

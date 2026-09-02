@@ -5,7 +5,8 @@ import {
   SEAT_COUNT, actionNote, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
   cardOverlap, dealBeat, dealStep, dealerTableLine, drawDelay, isSeated, myHand,
   myPlan, mySeat, myTurn, occupancy, phaseLine, players, seatState, seatStates,
-  secondsLeft, settledSeats, tableActions, turnPct, TURN_SECONDS,
+  secondsLeft, settledSeats, tableActions, turnPct, bettingPct,
+  BETTING_SECONDS, TURN_SECONDS,
 } from "./sharedBlackjack";
 
 /** A hand as the server sends one, with only the fields a test cares about. */
@@ -506,7 +507,9 @@ describe("turnPct", () => {
 
   it("is the share of one turn still to run", () => {
     expect(turnPct(asking())).toBe(100);
-    expect(turnPct(asking({ ends_in: TURN_SECONDS / 2 }))).toBe(50);
+    // A whole number of seconds: secondsLeft rounds up, because the heading
+    // prints it and a countdown that shows 0 with time left on it is a lie.
+    expect(turnPct(asking({ ends_in: 6 }))).toBeCloseTo((6 / TURN_SECONDS) * 100, 5);
     expect(turnPct(asking({ ends_in: 0 }))).toBe(0);
   });
 
@@ -521,5 +524,19 @@ describe("turnPct", () => {
   it("never draws a negative or an overfull bar", () => {
     expect(turnPct(asking({ ends_in: -5 }))).toBe(0);
     expect(turnPct(asking({ ends_in: TURN_SECONDS * 3 }))).toBe(100);
+  });
+});
+
+
+describe("bettingPct", () => {
+  it("is the share of the betting window still to run", () => {
+    expect(bettingPct(table({ phase: "betting", ends_in: BETTING_SECONDS }))).toBe(100);
+    expect(bettingPct(table({ phase: "betting", ends_in: 0 }))).toBe(0);
+  });
+
+  it("is absent outside the window, where there is nothing to do about it", () => {
+    expect(bettingPct(table({ phase: "playing", turn: 0, ends_in: 5 }))).toBe(null);
+    expect(bettingPct(table({ phase: "settling", ends_in: 5 }))).toBe(null);
+    expect(bettingPct(null)).toBe(null);
   });
 });

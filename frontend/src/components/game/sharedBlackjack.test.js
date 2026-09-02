@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PLAN_MOVES, SEAT_COUNT, betLimits, canBet, canJoin, canPlan, cardOverlap,
-  dealerTableLine, isSeated, myHand, myPlan, mySeat, myTurn, occupancy, phaseLine,
-  players, seatState, seatStates, secondsLeft, settledSeats, tableActions,
+  DEAL_BUDGET_MS, DEAL_MAX_STEP_MS, DEAL_MIN_STEP_MS, FLIP_MS, PLAN_MOVES, REVEAL_MS,
+  SEAT_COUNT, actionNote, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
+  cardOverlap, dealBeat, dealStep, dealerTableLine, drawDelay, isSeated, myHand,
+  myPlan, mySeat, myTurn, occupancy, phaseLine, players, seatState, seatStates,
+  secondsLeft, settledSeats, tableActions,
 } from "./sharedBlackjack";
 
 /** A hand as the server sends one, with only the fields a test cares about. */
@@ -381,5 +383,115 @@ describe("planning a move before the turn arrives", () => {
     // Double and split depend on the cards and on the wallet, and a plan is
     // made before either can be looked at.
     expect(PLAN_MOVES.map((one) => one.key)).toEqual(["stand", "hit"]);
+  });
+});
+
+
+describe("the shape of the deal", () => {
+  it("goes round the table the way the server dealt it", () => {
+    // One card to each player, the house's own face down, a second to each
+    // player, and the house's up card last. Three players: eight beats, 0..7.
+    const beats = (spec) => dealBeat({ seats: 3, ...spec });
+    expect([0, 1, 2].map((position) => beats({ card: 0, position }))).toEqual([0, 1, 2]);
+    expect(beats({ card: 1, dealer: true })).toBe(3);          // the hole card
+    expect([0, 1, 2].map((position) => beats({ card: 1, position }))).toEqual([4, 5, 6]);
+    expect(beats({ card: 0, dealer: true })).toBe(7);          // the up card, last
+  });
+
+  it("knows the house's stored order is not its dealt order", () => {
+    // dealer[0] is the up card and dealer[1] is the hole card, but the hole
+    // card leaves the shoe first. Getting this backwards would have the house
+    // turning its up card over between the two rounds of player cards.
+    expect(dealBeat({ card: 1, dealer: true, seats: 2 }))
+      .toBeLessThan(dealBeat({ card: 0, dealer: true, seats: 2 }));
+  });
+
+  it("has nothing to say about a card that was not dealt", () => {
+    // A hit, a split, the house drawing itself out: those arrive on their own
+    // and have nothing to wait for.
+    expect(dealBeat({ card: 2, seats: 3 })).toBe(null);
+    expect(dealBeat({ card: 4, dealer: true, seats: 3 })).toBe(null);
+    expect(dealBeat({ card: -1, seats: 3 })).toBe(null);
+  });
+
+  it("fits the whole deal in the same budget however many are playing", () => {
+    for (const seats of [1, 2, 3, 4, 5, 6]) {
+      const step = dealStep(seats);
+      expect(step).toBeGreaterThanOrEqual(DEAL_MIN_STEP_MS);
+      expect(step).toBeLessThanOrEqual(DEAL_MAX_STEP_MS);
+      // The last card of the deal, which is the house's up card.
+      const last = dealBeat({ card: 0, dealer: true, seats }) * step;
+      expect(last, `${seats}-handed`).toBeLessThanOrEqual(DEAL_BUDGET_MS + step);
+    }
+  });
+
+  it("slows down as the table empties rather than snapping", () => {
+    // Heads up against the house should not be over before it is seen.
+    expect(dealStep(1)).toBeGreaterThan(dealStep(6));
+  });
+
+  it("draws the house out one card at a time, after the hole card turns", () => {
+    // After it has finished turning, not while it is still going.
+    expect(drawDelay(2)).toBeGreaterThanOrEqual(REVEAL_MS + FLIP_MS);
+    expect(drawDelay(3)).toBeGreaterThan(drawDelay(2));
+    expect(drawDelay(4) - drawDelay(3)).toBe(drawDelay(3) - drawDelay(2));
+  });
+});
+
+describe("what a bet may be", () => {
+  const low = table({ min_bet: 5, max_bet: 500 });
+  const high = table({ min_bet: 500, max_bet: null });
+
+  it("keeps the high room's missing ceiling missing", () => {
+    // stakeLimits fills an absent max with its own default, which would have
+    // capped the unlimited room at the low room's maximum — and refused, on the
+    // client, bets the server was happy to take.
+    expect(betLimits(low)).toEqual({ min: 5, max: 500 });
+    expect(betLimits(high)).toEqual({ min: 500, max: null });
+    // A table that has not answered yet is not an unlimited table.
+    expect(betLimits(null).max).toBe(500);
+  });
+
+  it("is capped by the room, or by the wallet, whichever is lower", () => {
+    expect(betCeiling(low, 10000)).toBe(500);
+    expect(betCeiling(low, 120)).toBe(120);
+    expect(betCeiling(high, 12000)).toBe(12000);
+  });
+
+  it("lets the high room take a bet the low room never could", () => {
+    expect(canBet({ ...high, phase: "betting", my_seat: 0 }, 5000, 9000)).toMatchObject({
+      allowed: true,
+    });
+    expect(canBet({ ...high, phase: "betting", my_seat: 0 }, 5000, 100)).toMatchObject({
+      allowed: false,
+    });
+  });
+
+  it("offers chips the room can actually take", () => {
+    expect(betSteps(low, 10000)).toEqual([5, 25, 100]);
+    expect(betSteps(high, 100000)).toEqual([500, 2500, 10000]);
+    // And drops the ones this wallet could never cover.
+    expect(betSteps(high, 600)).toEqual([500]);
+  });
+});
+
+describe("actionNote", () => {
+  it("says what the two spending buttons cost, in coins", () => {
+    // The confusion worth paying a line for: Double and Split quietly take a
+    // second stake and look exactly like the two that do not.
+    expect(actionNote("double", { stake: 25 })).toContain("25");
+    expect(actionNote("split", { stake: 25 })).toContain("25");
+  });
+
+  it("talks about the hand in front of the player", () => {
+    expect(actionNote("stand", { total: 18 })).toBe("keep 18");
+    expect(actionNote("hit", { total: 18 })).toBe("one more card");
+  });
+
+  it("still says something with no hand to say it about", () => {
+    for (const key of ["hit", "stand", "double", "split"]) {
+      expect(actionNote(key, null)).toBeTruthy();
+    }
+    expect(actionNote("nonsense", null)).toBe(null);
   });
 });

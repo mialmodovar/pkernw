@@ -9,8 +9,9 @@ import useWalletStore from "../../store/walletStore";
 import { playBlackjack, playBust, playCard, playChips, playPush, playWin } from "./sounds";
 import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
-  PLAN_MOVES, canBet, canJoin, canPlan, cardOverlap, dealerTableLine, myPlan,
-  mySeat, occupancy, phaseLine, players, seatState, tableActions,
+  PLAN_MOVES, REVEAL_MS, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
+  cardOverlap, dealDelay, dealerTableLine, drawDelay, myPlan, mySeat, occupancy,
+  phaseLine, players, seatState, tableActions,
 } from "./sharedBlackjack";
 
 /**
@@ -88,7 +89,7 @@ export default function SharedBlackjackTable() {
       <div className={`@container felt rounded-2xl px-3 py-4 sm:px-5 space-y-4 ${
         table.room?.high ? "felt-high" : ""
       }`}>
-        <DealerSide table={table} />
+        <DealerSide table={table} seats={seated.length} />
 
         {/* The people who are here, and only them. A row rather than a grid of
             chairs: nobody picks a seat any more, so an empty one is not an
@@ -98,11 +99,13 @@ export default function SharedBlackjackTable() {
             squeezing past the point a hand can be read. */}
         {seated.length > 0 ? (
           <div className="flex flex-wrap justify-center gap-2">
-            {seated.map((one) => (
+            {seated.map((one, index) => (
               <SeatTile
                 key={one.seat}
                 seat={one}
                 table={table}
+                position={index}
+                seats={seated.length}
                 className="flex-1 basis-[7.5rem] min-w-[7.5rem] max-w-[13rem]"
               />
             ))}
@@ -157,8 +160,13 @@ export default function SharedBlackjackTable() {
   );
 }
 
+// The two actions that take a second stake out of the wallet. They get the
+// accent so that "this one costs more" is carried by the colour as well as by
+// the line under the word.
+const SPENDS = ["double", "split"];
+
 /** The dealer, and how much of their hand anybody is allowed to know yet. */
-function DealerSide({ table }) {
+function DealerSide({ table, seats }) {
   const cards = table.dealer?.cards || [];
   return (
     <div className="flex flex-col items-center gap-1.5">
@@ -173,11 +181,31 @@ function DealerSide({ table }) {
       <div className="flex gap-1.5 min-h-[3.4rem] items-start">
         {cards.length === 0 && <EmptySlot />}
         {cards.map((card, index) => (
-          <span key={`${card}-${index}`} className="animate-bj-deal"
-            style={{ animationDelay: `${index * 90}ms` }}>
+          // Keyed on the round and the slot rather than on the card, so the
+          // hole card's node survives being turned over: keyed on the card it
+          // would unmount as "??" and remount as a nine, and fly in from the
+          // shoe a second time instead of flipping where it lies. A new round
+          // changes the key and everything deals again.
+          <span
+            key={`${table.round}-${index}`}
+            className="animate-bj-deal"
+            style={{
+              animationDelay: index < 2
+                ? `${dealDelay({ card: index, seats, dealer: true })}ms`
+                // The house drawing itself out at the end, one card at a time
+                // with the whole table watching. Its own clock — these arrive
+                // when the round settles, which is not when the deal happened.
+                : `${drawDelay(index)}ms`,
+            }}
+          >
             {card === "??"
               ? <CardBack size="hand" />
-              : <PlayingCard card={card} size="hand" />}
+              : (
+                <span key={card} className={index === 1 ? "block animate-bj-flip" : "block"}
+                  style={index === 1 ? { animationDelay: `${REVEAL_MS}ms` } : undefined}>
+                  <PlayingCard card={card} size="hand" />
+                </span>
+              )}
           </span>
         ))}
       </div>
@@ -194,7 +222,7 @@ function DealerSide({ table }) {
  * the person next to you draw to sixteen is the entire reason to sit at a table
  * rather than play alone.
  */
-function SeatTile({ seat, table, className = "" }) {
+function SeatTile({ seat, table, position = 0, seats = 1, className = "" }) {
   const state = seatState(seat, table);
   const hand = seat.hands?.[0] || null;
   const cards = hand?.cards || [];
@@ -236,9 +264,13 @@ function SeatTile({ seat, table, className = "" }) {
       <div className="flex min-h-[2rem] items-start justify-center">
         {cards.map((card, index) => (
           <span
-            key={`${card}-${index}`}
+            key={`${table.round}-${index}`}
             className="animate-bj-deal shrink-0"
             style={{
+              // Round the table, on the same beat the server dealt: one card to
+              // everybody, the house's own, a second to everybody. Every seat's
+              // cards used to land at the same instant.
+              animationDelay: `${dealDelay({ card: index, position, seats })}ms`,
               // A share of one card's width, which is the clamp PlayingCard
               // gives size="seat" — kept in step with it by hand, because a
               // Tailwind class has to be a literal string for the scanner to
@@ -249,7 +281,6 @@ function SeatTile({ seat, table, className = "" }) {
               // Later cards over earlier ones, so the fan opens to the right
               // and every rank stays readable.
               zIndex: index,
-              animationDelay: `${index * 70}ms`,
             }}
           >
             <PlayingCard card={card} size="seat" />
@@ -283,10 +314,18 @@ function SeatTile({ seat, table, className = "" }) {
 function YourSeat({
   table, seat, balance, busy, pending, setPending, onBet, onAct, onPlan, onLeave,
 }) {
+  // Where this seat sits in the row of players, so the big copy of your hand
+  // deals on the same beat as the small one on the felt above it.
+  const row = players(table);
+  const seats = row.length || 1;
+  const seatPosition = Math.max(0, row.findIndex((one) => one.seat === seat.seat));
   const hand = seat.hands?.[0] || null;
   const betting = table.phase === "betting";
   const placed = seat.bet > 0;
   const check = canBet(table, pending, balance);
+  const limits = betLimits(table);
+  const ceiling = betCeiling(table, balance) ?? limits.min;
+  const steps = betSteps(table, balance);
   const buttons = tableActions(table);
   // Somebody else is being asked, and you are still in the round: the buttons
   // would all be dead, so they are replaced by the promise of them.
@@ -300,8 +339,8 @@ function YourSeat({
         <div key={index} className="flex items-center gap-3">
           <div className="flex gap-1.5">
             {one.cards.map((card, i) => (
-              <span key={`${card}-${i}`} className="animate-bj-deal"
-                style={{ animationDelay: `${i * 90}ms` }}>
+              <span key={`${table.round}-${index}-${i}`} className="animate-bj-deal"
+                style={{ animationDelay: `${dealDelay({ card: i, position: seatPosition, seats })}ms` }}>
                 <PlayingCard card={card} size="hand" />
               </span>
             ))}
@@ -330,9 +369,41 @@ function YourSeat({
       ))}
 
       {betting && !placed && (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
+          {/* The figure first and big. It used to be readable only off the Bet
+              button, which is the one thing on this panel that moves. */}
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">
+              Your bet
+            </span>
+            <span className="flex items-baseline gap-1.5 min-w-0">
+              <span className="text-xl font-bold tabular-nums text-(--color-highlight-text)">
+                {pending.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-(--color-text-muted) tabular-nums">
+                of {ceiling.toLocaleString()}
+              </span>
+            </span>
+          </div>
+
+          {/* A slider, because the chips can only ever offer a few figures and
+              the high room runs from five hundred to whatever is in the wallet.
+              Steps of the room's own minimum, so every position it can stop on
+              is a bet the table will take. */}
+          <input
+            type="range"
+            min={0}
+            max={ceiling}
+            step={limits.min}
+            value={Math.min(pending, ceiling)}
+            onChange={(event) => setPending(Number(event.target.value))}
+            aria-label="Bet amount"
+            className="w-full h-11 accent-(--color-highlight-bright) cursor-pointer
+                       touch-manipulation"
+          />
+
           <div className="flex items-center justify-center gap-2 sm:gap-3">
-            {[5, 25, 100].map((value) => {
+            {steps.map((value) => {
               const next = canBet(table, pending + value, balance);
               return (
                 <button
@@ -340,7 +411,8 @@ function YourSeat({
                   type="button"
                   disabled={!next.allowed}
                   onClick={() => { setPending(pending + value); playChips(); }}
-                  aria-label={`Bet ${value} more`}
+                  aria-label={`Add ${value.toLocaleString()} to the bet`}
+                  title={`Add ${value.toLocaleString()}`}
                   className={`rounded-full transition-transform ${
                     next.allowed ? "hover:scale-110 active:scale-95" : "opacity-30 cursor-not-allowed"
                   }`}
@@ -350,12 +422,13 @@ function YourSeat({
               );
             })}
           </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
               disabled={pending === 0}
               onClick={() => setPending(0)}
-              className={`px-3 py-2.5 rounded text-xs font-semibold btn-secondary ${
+              className={`px-3 min-h-11 rounded text-xs font-semibold btn-secondary ${
                 pending === 0 ? "opacity-40 cursor-not-allowed" : ""
               }`}
             >
@@ -363,16 +436,26 @@ function YourSeat({
             </button>
             <button
               type="button"
+              disabled={ceiling <= 0}
+              onClick={() => setPending(ceiling)}
+              className={`px-3 min-h-11 rounded text-xs font-semibold btn-secondary ${
+                ceiling <= 0 ? "opacity-40 cursor-not-allowed" : ""
+              }`}
+            >
+              Max
+            </button>
+            <button
+              type="button"
               disabled={!check.allowed || busy === "bet"}
               onClick={onBet}
-              className={`flex-1 py-2.5 rounded font-bold text-sm transition-colors ${
+              className={`flex-1 min-h-11 rounded font-bold text-sm transition-colors ${
                 check.allowed && busy !== "bet"
                   ? "btn-accent" : "btn-secondary opacity-50 cursor-not-allowed"
               }`}
             >
               {busy === "bet" ? "Placing..." : check.allowed
-                ? `Bet ${pending.toLocaleString()}`
-                : check.reason || "Bet"}
+                ? `Deal me in for ${pending.toLocaleString()}`
+                : check.reason || "Place a bet"}
             </button>
           </div>
         </div>
@@ -428,13 +511,30 @@ function YourSeat({
               type="button"
               disabled={!button.enabled || Boolean(busy)}
               onClick={() => onAct(button.key)}
-              className={`py-3 rounded font-bold text-sm transition-colors ${
+              // The word, and under it what it does to this hand. Four bare
+              // verbs assume the reader already plays — and the two that take
+              // a second stake off the wallet looked exactly like the two that
+              // do not, which is the confusion worth paying a line for.
+              // Gold for the two that spend, so they read as the bigger ones.
+              className={`min-h-14 px-2 py-2 rounded font-bold text-sm leading-tight
+                          flex flex-col items-center justify-center gap-0.5
+                          transition-colors ${
                 button.enabled && !busy
-                  ? button.key === "stand" ? "btn-secondary" : "btn-accent"
+                  ? SPENDS.includes(button.key)
+                    ? "btn-accent" : "btn-secondary border border-(--color-border-strong)"
                   : "btn-secondary opacity-35 cursor-not-allowed"
               }`}
             >
-              {busy === button.key ? "..." : button.label}
+              {busy === button.key ? "..." : (
+                <>
+                  <span>{button.label}</span>
+                  {button.note && (
+                    <span className="text-[9px] font-semibold uppercase tracking-wide opacity-70">
+                      {button.note}
+                    </span>
+                  )}
+                </>
+              )}
             </button>
           ))}
         </div>

@@ -192,6 +192,11 @@ remembering.
   can afford to sit down.
 
 ### Changed
+- **The blackjack clock only shows once you are in the game.** The phase, the
+  countdown and the seat count are all things a player needs; to somebody still
+  deciding whether to sit down they are three numbers about a game they are not
+  in. What that person needs is the felt and the Join button, and both were
+  already there under them.
 - **A clock over the seat being asked, and a slower reveal.** Whoever the table
   is waiting on now has a bar draining across the top of their place, so "is it
   nearly me" is a thing you can see rather than a number you have to find and

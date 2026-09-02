@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 
 from game.throwables import unlock_key
 
-from . import blackjack, blackjackbank
+from . import blackjack, blackjackbank, blackjacktable
 from .economy import (
     DAILY_COINS,
     SIGNUP_COINS,
@@ -1746,7 +1746,35 @@ class BlackjackTableApiTests(APITestCase):
         self.assertEqual(response.data["table"]["round"], 0)
         self.assertGreater(response.data["table"]["ends_in"], 0)
 
-    def _deal_a_round(self):
+    def _shoe(self, *named):
+        """Two decks with these cards on top, in the order they come out.
+
+        The table deals round the seats, then the dealer's up card, then round
+        the seats again, then the hole card, so `named` reads in exactly that
+        order — and anything after the sixth is a card drawn later, in the order
+        it is drawn. The rest of the shoe follows in an order nobody should
+        depend on: a test that needs a particular card must name it.
+        """
+        named = list(named)
+        assert len(set(named)) == len(named), "a stacked shoe named the same card twice"
+        rest = [
+            rank + suit
+            for _ in range(blackjacktable.SHOE_DECKS)
+            for rank in blackjack.RANKS for suit in blackjack.SUITS
+        ]
+        for card in named:
+            rest.remove(card)
+        return named + rest
+
+    # Two sixteens and a dealer showing five: nobody is dealt a natural, both
+    # seats still have something to decide, and the dealer has to draw. The deal
+    # used to come out of a shuffled shoe, which meant about one run in twenty
+    # gave the dealer blackjack and settled the round before the playing window
+    # ever opened — and every test below that assumes a window failed for a
+    # reason that had nothing to do with what it was testing.
+    QUIET = ("9s", "Td", "5s", "7h", "6c", "9c")
+
+    def _deal_a_round(self, *named):
         """Both players seated and bet, and the betting window closed."""
         self._as(self.ana)
         self.client.post(reverse("blackjack-table-sit"), {"seat": 0}, format="json")
@@ -1755,7 +1783,9 @@ class BlackjackTableApiTests(APITestCase):
         self.client.post(reverse("blackjack-table-sit"), {"seat": 4}, format="json")
         self.client.post(reverse("blackjack-table-bet"), {"amount": 25}, format="json")
         self._run_out()
-        return self.client.get(reverse("blackjack-table")).data["table"]
+        shoe = self._shoe(*(named or self.QUIET))
+        with mock.patch.object(blackjacktable, "fresh_shoe", return_value=shoe):
+            return self.client.get(reverse("blackjack-table")).data["table"]
 
     def test_everybody_is_dealt_against_the_same_dealer_hand(self):
         table = self._deal_a_round()
@@ -1802,6 +1832,94 @@ class BlackjackTableApiTests(APITestCase):
         for seat in [one for one in table["seats"] if one["player"]]:
             self.assertIsNotNone(seat["hands"][0]["outcome"])
         # And the dealer is face up now that there is nothing left to decide.
+        self.assertNotIn("??", table["dealer"]["cards"])
+
+    def test_the_dealer_turns_over_the_moment_the_last_player_has_played(self):
+        # The window is a deadline, not a duration. Both seats stand well inside
+        # it, nobody touches the clock, and the round is over: a hole card whose
+        # value is already fixed has nothing to gain by staying face down while
+        # the table watches a countdown.
+        self._deal_a_round()
+
+        self._as(self.ana)
+        first = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+        # One seat still to play, so nothing has moved and nothing is shown.
+        self.assertEqual(first["phase"], "playing")
+        self.assertEqual(first["dealer"]["cards"][1], "??")
+
+        self._as(self.bea)
+        table = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+
+        self.assertEqual(table["phase"], "settling")
+        self.assertNotIn("??", table["dealer"]["cards"])
+        for seat in [one for one in table["seats"] if one["player"]]:
+            self.assertIsNotNone(seat["hands"][0]["outcome"])
+
+    def test_closing_early_gives_settling_its_own_six_seconds(self):
+        # An early close has no old end worth adding to. Rolling from the
+        # playing window's scheduled end would hold the cards up for the seconds
+        # the players saved and then six more.
+        self._deal_a_round()
+        self._as(self.ana)
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
+        self._as(self.bea)
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
+
+        table = self.client.get(reverse("blackjack-table")).data["table"]
+        self.assertEqual(table["phase"], "settling")
+        self.assertLessEqual(
+            table["ends_in"], blackjacktable.PHASE_SECONDS[blackjacktable.SETTLING],
+        )
+
+    def test_a_seat_that_has_busted_is_not_waited_for(self):
+        # Ana draws to twenty-six, which decides her hand as firmly as standing
+        # does. Bea is then the last decision at the table.
+        self._deal_a_round(*self.QUIET, "Th")
+
+        self._as(self.ana)
+        busted = self.client.post(
+            reverse("blackjack-table-act"), {"action": "hit"}, format="json",
+        ).data["table"]
+        self.assertEqual(busted["seats"][0]["hands"][0]["status"], "bust")
+        # Bea has not played, so the dealer waits for her however dead ana is.
+        self.assertEqual(busted["phase"], "playing")
+        self.assertEqual(busted["dealer"]["cards"][1], "??")
+
+        self._as(self.bea)
+        table = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+
+        self.assertEqual(table["phase"], "settling")
+        self.assertNotIn("??", table["dealer"]["cards"])
+
+    def test_a_split_is_not_mistaken_for_being_finished(self):
+        # Splitting replaces one decision with two, so the seat that splits is
+        # further from done than it was. Bea stands first, which leaves ana as
+        # the only seat still holding the round up.
+        self._deal_a_round("8s", "Td", "5s", "8h", "6c", "9c", "2h", "3h")
+        self._as(self.bea)
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
+
+        self._as(self.ana)
+        after = self.client.post(
+            reverse("blackjack-table-act"), {"action": "split"}, format="json",
+        ).data["table"]
+
+        self.assertEqual(len(after["seats"][0]["hands"]), 2)
+        self.assertEqual(after["phase"], "playing")
+        self.assertEqual(after["dealer"]["cards"][1], "??")
+
+        # Both halves stood, and only then is the table finished with her.
+        self.client.post(reverse("blackjack-table-act"), {"action": "stand"}, format="json")
+        table = self.client.post(
+            reverse("blackjack-table-act"), {"action": "stand"}, format="json",
+        ).data["table"]
+        self.assertEqual(table["phase"], "settling")
         self.assertNotIn("??", table["dealer"]["cards"])
 
     def test_a_round_pays_out_once_however_many_times_it_is_walked(self):

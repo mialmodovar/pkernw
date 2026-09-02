@@ -16,6 +16,13 @@ window shuts is stood on what it has. The dealer then draws once and every seat
 settles against that same hand — which is the thing a shared table is actually
 for, and the thing eight parallel solo games could never give you.
 
+The twenty seconds are a deadline, not a duration: the window also closes the
+moment the last undecided hand is decided. It has to, because the dealer's hole
+card stays face down until the table is settling, so a window held open after
+everybody has played is a table full of people waiting on a clock for a card
+whose value is already fixed. Eight players who all stand in four seconds see
+the dealer in four seconds.
+
 The second is who moves the clock. Nothing here runs in the background: no
 worker, no task, no loop. `advance()` reads the stored `phase_ends_at`, works
 out what should have happened since, and does it — possibly several phases at
@@ -142,6 +149,17 @@ def active_hand(hands):
     )
 
 
+def nobody_left_to_act(seats) -> bool:
+    """Whether every hand dealt this round has been decided.
+
+    Two places need this answer and they must not disagree about it: the deal,
+    where a table of naturals has nothing to open a playing window for, and
+    every move, after which this may have become the last one. Seats with no
+    hands are not in the round and are not waited for.
+    """
+    return all(active_hand(seat.hands) is None for seat in seats if seat.hands)
+
+
 def fresh_shoe(rng=None) -> list:
     """Two shuffled 52s, dealt from the front.
 
@@ -250,9 +268,14 @@ def _roll(table, phase: str) -> None:
 def _restart(table, phase: str, now) -> None:
     """Open `phase` starting now, abandoning a schedule nobody was keeping.
 
-    Used only when the table is empty, and it is what makes the catch-up walk
-    terminate: without it a table left alone overnight would be walked forward
-    one twelve-second window at a time by whoever opened it in the morning.
+    Two callers, and both of them are cases where the old schedule has stopped
+    meaning anything. An empty table restarts rather than rolling, which is what
+    makes the catch-up walk terminate: without it a table left alone overnight
+    would be walked forward one twelve-second window at a time by whoever opened
+    it in the morning. And a playing window closed early — see `act` — has no
+    old end worth adding to, since the whole point is that the round finished
+    before the clock said it would; rolling there would leave the dealer's cards
+    on screen for the seconds the players saved plus six.
     """
     table.phase = phase
     table.phase_ends_at = now + timedelta(seconds=PHASE_SECONDS[phase])
@@ -328,8 +351,7 @@ def _deal(table, seats, rng) -> None:
     # already over, and if every seat was dealt one there is nothing for anybody
     # to decide — either way a playing window would be twenty seconds of eight
     # people looking at buttons that do nothing.
-    nothing_to_decide = all(active_hand(seat.hands) is None for seat in seats)
-    if blackjack.is_blackjack(dealer) or nothing_to_decide:
+    if blackjack.is_blackjack(dealer) or nobody_left_to_act(seats):
         _settle(table, seats)
         _roll(table, SETTLING)
         return
@@ -619,6 +641,23 @@ def act(user, action, now=None):
             return refusal
 
         seat.save(update_fields=SEAT_FIELDS)
+
+        # That may have been the last decision at the table, and if it was there
+        # is nothing left for the window to wait for. The dealer's hole card is
+        # face down for exactly as long as the table is not settling — see
+        # _dealer_payload — so a window held open out of deference to a clock is
+        # eight people looking at a card that has already been decided against.
+        # Everybody standing four seconds in used to mean sixteen more seconds
+        # of nothing happening.
+        #
+        # Read back from the database rather than trusting the seat in hand: the
+        # question is about all eight of them and this request only ever touched
+        # one. The save above is what puts this seat's move into that answer.
+        dealt = [one for one in _seats_of(table) if one.hands]
+        if nobody_left_to_act(dealt):
+            _settle(table, dealt)
+            _restart(table, SETTLING, now or timezone.now())
+
         # The deck moved, and it lives on the table rather than on the seat.
         table.save(update_fields=TABLE_FIELDS)
 
@@ -634,4 +673,5 @@ __all__ = [
     "BETTING", "PLAYING", "SETTLING", "SEATS", "PHASE_SECONDS", "IDLE_LIMIT",
     "advance", "act", "leave", "look", "place_bet", "public_table", "seat_of",
     "seat_memo", "seconds_left", "phase_after", "active_hand", "sit",
+    "nobody_left_to_act",
 ]

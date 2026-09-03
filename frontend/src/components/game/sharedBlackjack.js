@@ -319,6 +319,27 @@ export function dealDelay(spec) {
   return beat == null ? 0 : beat * dealStep(spec.seats ?? 1);
 }
 
+// How long a card takes to land once it starts. Mirrors .animate-bj-deal in
+// index.css, and is here for the same reason FLIP_MS is: the total under the
+// dealer's hand must not appear until the last card has actually arrived.
+export const DEAL_CARD_MS = 420;
+
+/**
+ * When the dealer's hand has finished arriving, and may therefore be counted.
+ *
+ * The payload's total is the settled one — the whole hand, drawn out — and it
+ * lands in the same response that turns the hole card over. Printing it then is
+ * printing the answer above a card that is still face down and three more that
+ * have not been drawn yet, which gives away the only moment in this game worth
+ * watching. So the line waits for the cards. See dealerTableLine's `revealed`,
+ * which has been the way to say so all along and was never being passed.
+ */
+export function revealDelay(count) {
+  const cards = Math.max(2, Number(count) || 0);
+  if (cards === 2) return REVEAL_MS + FLIP_MS;
+  return drawDelay(cards - 1) + DEAL_CARD_MS;
+}
+
 /**
  * When one of the house's own draws lands, after the hole card has turned.
  *
@@ -369,6 +390,25 @@ export function turnPct(table) {
 export function bettingPct(table) {
   if (table?.phase !== "betting") return null;
   return windowPct(table, BETTING_SECONDS);
+}
+
+/**
+ * What the round came to for you, said once and in words.
+ *
+ * The per-hand outcome is already printed beside each hand, which is the right
+ * place for it and the wrong size: after a split it is two small lines saying
+ * two different things, and what somebody wants to know when the cards stop is
+ * whether they are up or down and by how much. That is one number, and the seat
+ * already carries it.
+ */
+export function settlementLine(table) {
+  const row = mySeat(table);
+  if (table?.phase !== "settling" || !row || !(row.hands || []).length) return null;
+
+  const net = Number(row.net) || 0;
+  if (net > 0) return { label: `You won ${coins(net)}`, net, tone: "win" };
+  if (net < 0) return { label: `You lost ${coins(Math.abs(net))}`, net, tone: "loss" };
+  return { label: "Push — your bet comes back", net: 0, tone: "push" };
 }
 
 /** The stakes this table takes, as {min, max}, before its payload has landed. */

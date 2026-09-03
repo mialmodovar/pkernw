@@ -401,6 +401,23 @@ remembering.
   you happen to be sitting at.
 
 ### Fixed
+- **The dealer's total no longer gives the hand away before the cards turn.** It
+  was printed the instant the round settled — which is the same instant the hole
+  card is still face down and the cards the house has yet to draw have not
+  arrived — so the answer was on screen a second and a half before the moment it
+  was the answer to. The line waits for the last card now. The win chime waited
+  for nothing at all either, which was worse: there is no unhearing it.
+
+  The settling window is eight seconds rather than six to make room for that. A
+  hand the house has to draw four cards to make was taking longer to show than
+  the window was open for.
+
+### Changed
+- **What you won is said in one place, at a size you can read.** The outcome was
+  a footnote beside each hand — and after a split, two footnotes saying two
+  different things. The one number anybody wants when the cards stop is whether
+  they are up or down and by how much, so that is now a line of its own across
+  your seat: "You won 75", "You lost 25", "Push — your bet comes back".
 - **The hole card turns over instead of being turned over and then wobbling.**
   It was showing its face the moment the round settled and playing the flip
   afterwards, which is the reveal happening and then an animation about it. The

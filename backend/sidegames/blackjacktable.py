@@ -83,7 +83,10 @@ SETTLING = BlackjackTable.SETTLING
 
 # How long each window is open. Betting is short because a table that spends
 # most of its time waiting for bets feels broken; settling is long enough to
-# read a result and not long enough to get bored of it. Playing is now ONE
+# read a result and not long enough to get bored of it — eight rather than six,
+# because the client now turns the hole card over and draws the house out one
+# card at a time, and a hand the dealer has to draw four cards to make was
+# taking longer to show than the window was open for. Playing is now ONE
 # SEAT'S turn rather than the whole table's window, which is why it is shorter
 # than the twenty seconds it used to be — eight of these end to end is already
 # a long time to sit through, and the two things that keep it short in practice
@@ -91,7 +94,7 @@ SETTLING = BlackjackTable.SETTLING
 # move never costs the table a full one. Fifteen rather than ten: ten was long
 # enough to hit a button and not long enough to think about a sixteen against a
 # face card, which is the hand the whole game is about.
-PHASE_SECONDS = {BETTING: 12, PLAYING: 15, SETTLING: 6}
+PHASE_SECONDS = {BETTING: 12, PLAYING: 15, SETTLING: 8}
 
 # Six rather than eight. Eight fitted on the row and not on the felt: two
 # players sitting next to each other who each drew twice had four cards where

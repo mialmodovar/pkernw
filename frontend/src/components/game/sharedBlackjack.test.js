@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DEAL_BUDGET_MS, DEAL_MAX_STEP_MS, DEAL_MIN_STEP_MS, FLIP_MS, PLAN_MOVES, REVEAL_MS,
+  DEAL_BUDGET_MS, DEAL_CARD_MS, DEAL_MAX_STEP_MS, DEAL_MIN_STEP_MS, FLIP_MS,
+  PLAN_MOVES, REVEAL_MS, revealDelay, settlementLine,
   SEAT_COUNT, actionNote, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
   cardOverlap, dealBeat, dealStep, dealerTableLine, drawDelay, isSeated, myHand,
   myPlan, mySeat, myTurn, occupancy, phaseLine, players, seatState, seatStates,
@@ -538,5 +539,70 @@ describe("bettingPct", () => {
     expect(bettingPct(table({ phase: "playing", turn: 0, ends_in: 5 }))).toBe(null);
     expect(bettingPct(table({ phase: "settling", ends_in: 5 }))).toBe(null);
     expect(bettingPct(null)).toBe(null);
+  });
+});
+
+
+describe("revealDelay", () => {
+  it("outlasts the card it is waiting for", () => {
+    // The whole point: the total must not be printed over a card that is still
+    // face down, so the line waits until the turn has finished.
+    expect(revealDelay(2)).toBeGreaterThanOrEqual(REVEAL_MS + FLIP_MS);
+  });
+
+  it("waits for the house to finish drawing, not just to turn over", () => {
+    // A dealer that turns a six and then draws to nineteen has three more
+    // cards to land, and the answer is the nineteen.
+    expect(revealDelay(3)).toBeGreaterThan(revealDelay(2));
+    expect(revealDelay(5)).toBeGreaterThan(revealDelay(4));
+    expect(revealDelay(3)).toBeGreaterThanOrEqual(drawDelay(2) + DEAL_CARD_MS);
+  });
+
+  it("has an answer for a hand that makes no sense", () => {
+    for (const count of [undefined, null, 0, 1, -4]) {
+      expect(revealDelay(count)).toBe(revealDelay(2));
+    }
+  });
+});
+
+describe("settlementLine", () => {
+  const settled = (net, over = {}) => table({
+    phase: "settling",
+    my_seat: 0,
+    seats: [{
+      seat: 0, player: player(), bet: 25, net,
+      hands: [hand({ status: "stood", outcome: net > 0 ? "win" : "lose" })],
+      ...over,
+    }],
+  });
+
+  it("says what you are up or down, in one number", () => {
+    expect(settlementLine(settled(50))).toMatchObject({ tone: "win" });
+    expect(settlementLine(settled(50)).label).toContain("50");
+    expect(settlementLine(settled(-25))).toMatchObject({ tone: "loss" });
+    expect(settlementLine(settled(-25)).label).toContain("25");
+    expect(settlementLine(settled(0))).toMatchObject({ tone: "push" });
+  });
+
+  it("is one line however many hands a split made", () => {
+    // Two hands that went different ways is two footnotes and one answer.
+    const split = table({
+      phase: "settling",
+      my_seat: 0,
+      seats: [{
+        seat: 0, player: player(), bet: 50, net: 25,
+        hands: [
+          hand({ status: "stood", outcome: "win" }),
+          hand({ status: "bust", outcome: "lose" }),
+        ],
+      }],
+    });
+    expect(settlementLine(split)).toMatchObject({ tone: "win", net: 25 });
+  });
+
+  it("says nothing before the round is over, or from a chair you are not in", () => {
+    expect(settlementLine(table({ phase: "playing", my_seat: 0 }))).toBe(null);
+    expect(settlementLine(table({ phase: "settling" }))).toBe(null);
+    expect(settlementLine(null)).toBe(null);
   });
 });

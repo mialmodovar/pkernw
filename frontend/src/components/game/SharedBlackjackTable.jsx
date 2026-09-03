@@ -11,6 +11,7 @@ import { chipsFor, handLabel, handTotal, outcomeLine } from "./blackjack";
 import {
   FLIP_MS, PLAN_MOVES, REVEAL_MS, betCeiling, betLimits, betSteps, canBet, canJoin, canPlan,
   cardOverlap, dealDelay, dealerTableLine, drawDelay, myPlan, mySeat, occupancy,
+  revealDelay, settlementLine,
   bettingPct, phaseLine, players, seatState, tableActions, turnPct,
 } from "./sharedBlackjack";
 
@@ -191,9 +192,40 @@ export default function SharedBlackjackTable() {
 // the line under the word.
 const SPENDS = ["double", "split"];
 
+/**
+ * Whether the dealer's hand has finished arriving on screen.
+ *
+ * True at once for every phase but settling — before that there is nothing to
+ * hold back, and the line is already only saying what is face up. At settling
+ * it waits out the turn and the draws, and it is keyed on the round so the next
+ * one starts hidden again rather than inheriting this one's answer.
+ */
+function useDealerReveal(table, count) {
+  const settling = table?.phase === "settling";
+  const round = table?.round;
+  const [done, setDone] = useState(!settling);
+
+  useEffect(() => {
+    if (!settling) {
+      setDone(true);
+      return undefined;
+    }
+    setDone(false);
+    const timer = setTimeout(() => setDone(true), revealDelay(count));
+    return () => clearTimeout(timer);
+  }, [settling, round, count]);
+
+  return done;
+}
+
 /** The dealer, and how much of their hand anybody is allowed to know yet. */
 function DealerSide({ table, seats }) {
   const cards = table.dealer?.cards || [];
+  // The payload's total is the settled one and it arrives in the same response
+  // that turns the hole card over, so printing it straight away prints the
+  // answer over a card still face down. `revealed` is dealerTableLine's own way
+  // of saying "not yet" — it has been there all along and was never passed.
+  const revealed = useDealerReveal(table, cards.length);
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="flex items-baseline gap-2 min-h-[1.1rem]">
@@ -201,7 +233,7 @@ function DealerSide({ table, seats }) {
           Dealer
         </span>
         <span className="text-xs font-semibold text-(--color-silver) tabular-nums">
-          {dealerTableLine(table)}
+          {dealerTableLine(table, revealed)}
         </span>
       </div>
       <div className="flex gap-1.5 min-h-[3.4rem] items-start">
@@ -387,6 +419,7 @@ function YourSeat({
   const limits = betLimits(table);
   const ceiling = betCeiling(table, balance) ?? limits.min;
   const steps = betSteps(table, balance);
+  const result = settlementLine(table);
   const buttons = tableActions(table);
   // Somebody else is being asked, and you are still in the round: the buttons
   // would all be dead, so they are replaced by the promise of them.
@@ -564,6 +597,25 @@ function YourSeat({
         </div>
       )}
 
+      {result && (
+        // The per-hand outcome is beside each hand already, at the size a
+        // footnote deserves. This is the one number somebody actually wants
+        // when the cards stop, at the size that answers it from across a room.
+        <div className={`rounded-lg px-3 py-2 text-center animate-bj-payout ${
+          result.tone === "win"
+            ? "bg-(--color-highlight-dim) border border-(--color-highlight-edge)"
+            : "panel-raised border border-(--color-border)"
+        }`}>
+          <span className={`block text-lg font-bold tabular-nums ${
+            result.tone === "win"
+              ? "text-(--color-highlight-text)"
+              : result.tone === "loss" ? "text-[#c76b7a]" : "text-(--color-silver)"
+          }`}>
+            {result.label}
+          </span>
+        </div>
+      )}
+
       {table.phase === "playing" && hand && !planning && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {buttons.map((button) => (
@@ -648,9 +700,19 @@ function useTableSounds(table, settledRound, markSettled) {
     const mine = mySeat(table);
     if (!mine) return;
     const hands = mine.hands || [];
-    if (hands.some((one) => one.outcome === "blackjack")) playBlackjack();
-    else if (hands.some((one) => one.outcome === "win")) playWin();
-    else if (hands.length && hands.every((one) => one.outcome === "push")) playPush();
-    else if (hands.length) playBust();
+    if (!hands.length) return;
+
+    // Held until the cards have finished arriving, for the same reason the
+    // dealer's total is — and more so. A win chime over a hole card still face
+    // down does not merely give the answer away, it gives it away before the
+    // player has had a chance to look, and there is no unhearing it.
+    const wait = revealDelay(table?.dealer?.cards?.length || 2);
+    const timer = setTimeout(() => {
+      if (hands.some((one) => one.outcome === "blackjack")) playBlackjack();
+      else if (hands.some((one) => one.outcome === "win")) playWin();
+      else if (hands.every((one) => one.outcome === "push")) playPush();
+      else playBust();
+    }, wait);
+    return () => clearTimeout(timer);
   }, [table, round, settledRound, markSettled]);
 }
